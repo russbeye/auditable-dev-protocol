@@ -1,0 +1,61 @@
+schema_version: "1.0"
+
+task:
+  id: "Stable identifier, e.g. GROW-6687-email-validation"
+  title: "One line naming the task"
+  author: "Who wrote this prompt"
+  date: "YYYY-MM-DD"
+
+preamble: |
+  Directives to apply before reasoning about the ask.
+  Name memories to ignore, assumptions to hold, or context to reset.
+  Delete this block when there is nothing to set up.
+
+role:
+  lens: "The perspective to reason from, e.g. staff engineer accountable for data integrity"
+  priorities:
+    - "What this lens optimizes for, most important first"
+    - "The next priority"
+
+prompt: |
+  The task in one or two sentences: what to do, and the outcome a person should see when it works.
+
+constraints:
+  out_of_scope:
+    - "What this task does not cover"
+  must_not:
+    - "A hard prohibition, e.g. do not change the public API signature"
+
+context:
+  background: |
+    What the model cannot infer from the code: system history, intent, org constraints.
+  references:
+    - path: "src/path/to/file.ts"
+      lines: "42-88"
+      note: "Why this location matters"
+  links:
+    - "URL or ticket the model should read"
+
+lessons_learned:
+  - context: "What a prior session tried or surfaced"
+    takeaway: "The dead end to avoid, or the fact now known"
+
+output:
+  format: "code | patch | json | yaml | markdown | prose"
+  destination: "Where the result goes, e.g. edit files in place, new file at path, PR description, inline"
+  structure: |
+    The shape the output must take. For json or yaml, name the keys. For code, name the files and functions.
+
+requirements:
+  - id: "R1"
+    statement: "A single condition that must hold for the task to count as done"
+    verify: "How to confirm it: a command to run, a test name, or an observable behavior"
+
+protocol:
+  apply: true
+  stake_single_recommendation: true
+  log_assumptions: true
+  flag_low_confidence: true
+  artifacts:
+    - decision_log
+    - test_adversary

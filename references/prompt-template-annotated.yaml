@@ -1,0 +1,93 @@
+# Annotated prompt template for the Auditable AI-Assisted Development Protocol.
+# This file documents every field and every option. It is a reference, not a form.
+# Copy prompts/prompt-template.yaml for the clean version to fill in.
+# Validate a filled prompt with: python3 scripts/validate-prompt.py <file>
+# Every value below is a valid example, so this file also serves as a passing fixture.
+
+# Required. Bump when the structure changes so a validator can branch on it.
+schema_version: "1.0"
+
+# Required. Identifies the prompt and gives a validator a stable header.
+task:
+  id: "GROW-6687-email-validation"   # required
+  title: "Add server-side validation to the signup email field"   # required
+  author: "rbeye"   # required
+  date: "2026-06-18"   # required
+
+# Optional. Directives applied before the model reasons about the ask.
+# Use it to scope memory and assumptions. Omit the whole key when not needed.
+preamble: |
+  Ignore prior memories about the visual config builder.
+  Assume the reader knows the signup runtime, not the builder.
+
+# Required. The lens the model reasons through.
+role:
+  lens: "Staff engineer accountable for data integrity"   # required
+  priorities:   # optional, repeatable; list most important first
+    - "Reject invalid input before it reaches the database"
+    - "Keep the change small and reversible"
+
+# Required. The task in one or two sentences: what to do and the human-level
+# outcome. Keep it to the ask. Put exclusions in constraints.
+prompt: |
+  Validate the signup email on the server so malformed addresses are rejected
+  with a 422 and a clear message, instead of being stored.
+
+# Optional. The bounds on the solution. This is the protocol's "what the problem is not".
+constraints:
+  out_of_scope:   # optional, repeatable
+    - "Client-side validation changes"
+    - "Email deliverability or verification mail"
+  must_not:   # optional, repeatable
+    - "Change the public signup API response shape"
+
+# Optional. Information the model cannot infer from the code.
+context:
+  background: |   # optional
+    Signup currently trusts the client to validate. Bad addresses reach the users table.
+  references:   # optional, repeatable
+    - path: "src/signup/handler.ts"   # required within a reference item
+      lines: "42-88"   # optional
+      note: "Where the request body is parsed and persisted"   # optional
+  links:   # optional, repeatable
+    - "https://example.atlassian.net/browse/GROW-6687"
+
+# Optional. Prior dead ends, so the model does not repeat them.
+lessons_learned:   # optional, repeatable
+  - context: "A regex-only check was tried before"   # required within an item
+    takeaway: "It rejected valid plus-addressed emails; use a parser, not a regex"   # required within an item
+
+# Required. What the model must produce.
+output:
+  format: "patch"   # required; one of: code | patch | json | yaml | markdown | prose
+  destination: "Edit files in place"   # required
+  structure: |   # optional
+    A minimal diff to src/signup/handler.ts plus one test file.
+    Name each file and the functions touched.
+
+# Required. Each requirement is one condition plus how to confirm it.
+# "Done" is observable behavior, not "tests pass". Repeatable; at least one.
+requirements:
+  - id: "R1"   # required within an item
+    statement: "A malformed email returns 422 and is not persisted"   # required within an item
+    verify: "Integration test posts a bad address and asserts 422 plus no new row"   # required within an item
+
+# Required. How much protocol rigor to apply, and which artifacts to produce.
+protocol:
+  apply: true   # required; false turns all rigor off for trivial tasks
+  stake_single_recommendation: true   # one defended claim, no menu of options
+  log_assumptions: true   # no silent assumptions
+  flag_low_confidence: true   # surface shaky decisions for review
+  artifacts:   # optional, repeatable; any subset of the values listed below
+    - decision_log
+    - test_adversary
+    # Full set of allowed values:
+    #   problem_statement
+    #   knowledge_gap
+    #   recommendation_brief
+    #   premortem
+    #   decision_log
+    #   test_adversary
+    #   pr_summary
+    #   deployment_risk
+    #   obligation_tickets

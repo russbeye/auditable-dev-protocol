@@ -1,0 +1,47 @@
+{
+  "skill_name": "auditable-dev-protocol",
+  "evals": [
+    {
+      "id": 0,
+      "name": "full-protocol-payment-idempotency",
+      "prompt": "Use the auditable dev protocol to plan and implement adding idempotency keys to our payment-charge API endpoint, so that a client retrying a request (e.g. after a network timeout) never double-charges the customer. The endpoint is a POST that calls our external payment provider and then writes a row to the `charges` table. I'm the sole reviewer on this. Walk through every phase end to end: produce each artifact, and at each phase gate where you'd normally stop for my confirmation, state the gate explicitly, make and log your best assumption, then continue — so I can see the whole artifact chain in one pass.",
+      "expected_output": "Runs the full 9-phase protocol in order, producing each named artifact. Stakes a single defended recommendation with rejected alternatives. Decisions carry confidence + assumptions. Pre-Mortem resolves HIGH items before implementation. Test Adversary enumerates what tests don't prove. Deployment statement defines concrete rollback triggers.",
+      "files": [],
+      "expectations": [
+        "Produces all nine protocol artifacts, each clearly labeled: Problem Statement, Knowledge Gap, Recommendation Brief, Pre-Mortem, Decision Log, Test Adversary, PR Summary, Deployment Risk Statement, and Obligation Ticket List.",
+        "The Problem Statement includes an explicit 'what the problem is not' section (scope exclusions), not just what it is.",
+        "Phase 3 stakes a single recommended approach and lists the rejected alternatives with reasons — it does not present an undecided menu of options.",
+        "Decision Log entries each carry a Confidence rating (HIGH/MEDIUM/LOW) and an Assumptions field.",
+        "The Pre-Mortem rates failure modes by likelihood and impact and resolves every HIGH-likelihood item (rebuttal or mitigation) before implementation is authorized.",
+        "The Test Adversary Document explicitly enumerates what passing tests do NOT prove, not merely what they cover.",
+        "The Deployment Risk Statement defines specific, observable rollback trigger conditions (e.g. a named metric crossing a threshold), not a vague 'we'll know if it breaks'.",
+        "Addresses the core idempotency design concretely: an idempotency key persisted with a uniqueness constraint, and a lookup that makes a retried request return the original result rather than re-charging (handling the provider-call vs DB-write ordering)."
+      ]
+    },
+    {
+      "id": 1,
+      "name": "highstakes-no-name-jwt-migration",
+      "prompt": "We're planning to migrate all of our user session handling from signed, httpOnly cookies to JWTs kept in localStorage, across the entire web frontend. Once it's shipped and users have tokens in the wild, backing it out cleanly would be really painful. How should we approach this change?",
+      "expected_output": "Recognizes high-stakes/hard-to-reverse work and engages the protocol unprompted. Starts with a Problem Statement and honors the Phase 1 gate (pauses or flags an unconfirmed framing) instead of barreling through. Stakes a position on the localStorage-XSS risk rather than presenting a neutral menu.",
+      "files": [],
+      "expectations": [
+        "Recognizes the change as high-stakes / hard-to-reverse and applies a rigorous, phase-gated process (engages the protocol) rather than replying with a generic ad-hoc plan or checklist.",
+        "Begins with a Problem Statement that restates the goal and includes explicit scope boundaries (what the change is and is not) and a human-level definition of done.",
+        "Honors the Phase 1 confirmation gate: it pauses for the developer to confirm the framing, or explicitly flags that it is proceeding on an unconfirmed framing and invites correction — it does not silently treat its own restatement as settled and barrel through every later phase.",
+        "Stakes a clear position on the central risk — flags that JWTs in localStorage are exposed to XSS whereas httpOnly cookies are not — and gives a defended recommendation rather than a neutral list of options."
+      ]
+    },
+    {
+      "id": 2,
+      "name": "trivial-task-guardrail",
+      "prompt": "Quick one — in this function just rename the variable `usr` to `user`, nothing else:\n\n```ts\nfunction greet(usr: string) {\n  const msg = `Hello, ${usr}`;\n  return msg.replace(usr, usr.trim());\n}\n```",
+      "expected_output": "Recognizes the task is trivial and does NOT impose the protocol. Performs the rename correctly (all four `usr` occurrences -> `user`) and stays lightweight.",
+      "files": [],
+      "expectations": [
+        "Renames every occurrence of `usr` to `user` (the parameter, the template literal, and both arguments to `.replace`), producing valid TypeScript.",
+        "Does NOT impose the protocol: produces none of the protocol artifacts (no Problem Statement, Knowledge Gap, Recommendation Brief, Pre-Mortem, Decision Log, Test Adversary, PR Summary, or Deployment Risk Statement).",
+        "Stays lightweight and on-scope: recognizes the task is trivial, makes no unrequested changes, and does not pad the reply with protocol ceremony."
+      ]
+    }
+  ]
+}
