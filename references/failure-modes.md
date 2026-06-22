@@ -24,9 +24,11 @@ requirements:
 3. Everything is accessible to anyone who would need to audit a production failure.
 4. Obligation Tickets reference their Decision Log entry by ID in whatever ticket system is used.
 
-In a Claude Code session the natural home is markdown: artifacts inline in the conversation, and the
-Decision Log persisted to a file (e.g. `docs/decision-log-<feature>.md`) when work spans sessions so it
-survives context loss.
+In a Claude Code session the home is one markdown audit-log file (e.g. `docs/audit-log-<feature>.md`),
+created in Phase 1 and appended to live as each artifact is produced — the full chain, every phase, in
+that one file. The conversation mirrors the file but is not the record: it can be summarized or lost, so
+no artifact may live only there. Persisting from Phase 1 (not just when work spans sessions) is what lets
+the developer watch the log grow and what makes it survive context loss.
 
 ## Meta
 

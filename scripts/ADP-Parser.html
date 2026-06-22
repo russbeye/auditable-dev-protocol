@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Auditable Protocol · Artifact Viewer</title>
+<link rel="stylesheet" href="adp-theme.css" />
+<script>
+/* set theme before first paint — stored preference, else system, else dark */
+(function(){try{var t=localStorage.getItem('adp-theme');if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
+</script>
+</head>
+<body>
+<div class="dropmask" id="dropmask"><div class="msg">▾ Drop protocol output to view</div></div>
+<div class="wrap">
+
+  <header class="masthead">
+      <div class="eyebrow">
+        <span class="tag">◢ AUDITABLE PROTOCOL</span>
+        <span class="page-nav">
+          <a class="page-link" href="prompt-builder.html">Prompt Builder</a>
+          <span class="sep">·</span>
+          <span class="page-link active" aria-current="page">Artifact Viewer</span>
+        </span>
+        <span class="lic">· reads the skill output · MIT</span>
+      <label class="theme-toggle" title="Toggle light / dark">
+        <span class="tt-icon" id="tt-icon" aria-hidden="true">☾</span>
+        <span class="sw"><input type="checkbox" id="themetoggle" aria-label="Dark mode"><span class="track"></span><span class="knob"></span></span>
+      </label>
+    </div>
+
+    <div class="console">
+      <div class="con-head">
+        <div class="term-dots"><i id="livedot"></i><i></i><i></i></div>
+        <div class="con-file">source: <b id="srcname">none</b></div>
+        <div class="status idle" id="status"><span class="blk"></span><span id="status-txt">IDLE</span></div>
+      </div>
+      <div class="toolbar">
+        <button class="btn primary" id="open">⌖ Open &amp; watch file</button>
+        <button class="btn" id="reload" disabled>↻ Reload</button>
+        <button class="btn" id="pastebtn">⌨ Paste</button>
+        <button class="btn" id="example">Load example</button>
+        <button class="btn ghost" id="expandall" disabled>Expand all</button>
+        <button class="btn" id="collapseall" disabled>Collapse all</button>
+        <label class="auto-toggle" title="Poll the watched file for changes">
+          auto
+          <span class="sw"><input type="checkbox" id="autoupd" checked><span class="track"></span><span class="knob"></span></span>
+        </label>
+      </div>
+      <div class="paste-drawer" id="pastedrawer">
+        <textarea id="pastearea" placeholder="Paste the protocol's markdown output here — it renders live as you type or paste."></textarea>
+      </div>
+    </div>
+  </header>
+
+  <div class="grid">
+    <aside>
+      <div class="toc-wrap">
+        <nav class="toc">
+          <div class="toc-head"><span>◳ Contents</span><span class="count" id="toc-count">0</span></div>
+          <ol id="toc-list"></ol>
+          <div class="toc-empty" id="toc-empty">No sections yet. Open, drop, or paste protocol output to populate.</div>
+        </nav>
+      </div>
+    </aside>
+
+    <main id="content"></main>
+  </div>
+
+  <div class="foot">
+    <span>AUDITABLE-DEV-PROTOCOL</span>
+    <span id="foot-mode">schema_version 1.0</span>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+  const $ = (s,r=document)=>r.querySelector(s);
+  const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+
+  /* =========================================================
+     DL-001  Hand-rolled markdown renderer (artifact subset)
+     ========================================================= */
+  function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+  // inline formatting on a single raw text run
+  function inline(s){
+    let t = esc(s);
+    const codes=[];
+    t = t.replace(/`([^`]+)`/g,(m,c)=>{codes.push(c);return '\u0000'+(codes.length-1)+'\u0000';});
+    t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,(m,txt,url)=>`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${txt}</a>`);
+    t = t.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+    t = t.replace(/__([^_]+)__/g,'<strong>$1</strong>');
+    t = t.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g,'$1<em>$2</em>');
+    t = t.replace(/\u0000(\d+)\u0000/g,(m,i)=>`<code>${esc(codes[+i])}</code>`);
+    return t;
+  }
+  // wrap free-standing status keywords as pills (uppercase tokens never collide with html tag names)
+  function decorate(html){
+    return html.replace(/(^|[^A-Za-z0-9_>"\/])(INVALIDATED|VALIDATED|MEDIUM|HIGH|OPEN|LOW)\b/g,
+      (m,pre,w)=>pre+`<span class="pill ${TOK[w]}">${w}</span>`);
+  }
+  const TOK={HIGH:'p-high',MEDIUM:'p-med',LOW:'p-low','H':'p-high','M':'p-med','L':'p-low',
+             OPEN:'p-open',VALIDATED:'p-ok',INVALIDATED:'p-bad',YES:'p-ok',NO:'p-bad','N/A':'p-low'};
+
+  function isTableStart(lines,i){
+    return lines[i] && lines[i].indexOf('|')>-1 && i+1<lines.length
+      && /-/.test(lines[i+1]) && /^[\s|:\-]+$/.test(lines[i+1]) && lines[i+1].indexOf('|')>-1;
+  }
+  function isBlockStart(lines,i){
+    if(i>=lines.length) return true;
+    const l=lines[i];
+    if(/^\s*$/.test(l)) return true;
+    if(/^\s*```/.test(l)) return true;
+    if(/^#{1,6}\s/.test(l)) return true;
+    if(/^\s*([-*+]|\d+\.)\s+/.test(l)) return true;
+    if(/^\s*>/.test(l)) return true;
+    if(/^\s*([-*_])\1{2,}\s*$/.test(l)) return true;
+    if(isTableStart(lines,i)) return true;
+    return false;
+  }
+
+  function splitRow(r){
+    return r.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(c=>c.trim());
+  }
+  function cell(c){
+    const key=c.trim().toUpperCase();
+    if(TOK[key]) return `<span class="pill ${TOK[key]}">${esc(c.trim())}</span>`;
+    return decorate(inline(c));
+  }
+  function renderTable(rows){
+    const head=splitRow(rows[0]);
+    const body=rows.slice(2).filter(r=>r.indexOf('|')>-1).map(splitRow);
+    const th=head.map(h=>`<th>${decorate(inline(h))}</th>`).join('');
+    const trs=body.map(r=>`<tr>${head.map((_,j)=>`<td>${cell(r[j]!=null?r[j]:'')}</td>`).join('')}</tr>`).join('');
+    return `<div class="tbl-wrap"><table class="md-tbl"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></div>`;
+  }
+
+  function renderList(lines,start){
+    let i=start; const ordered=/^\s*\d+\.\s/.test(lines[i]); const items=[];
+    while(i<lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])){
+      let content=lines[i].replace(/^\s*([-*+]|\d+\.)\s+/,''); i++;
+      while(i<lines.length && /^\s{2,}\S/.test(lines[i]) && !/^\s*([-*+]|\d+\.)\s+/.test(lines[i])){
+        content+=' '+lines[i].trim(); i++;
+      }
+      items.push(content);
+    }
+    const lis=items.map(c=>{
+      const cb=c.match(/^\[([ xX])\]\s+([\s\S]*)$/);
+      if(cb){const on=cb[1].toLowerCase()==='x';
+        return `<li class="task"><span class="cbx ${on?'on':''}">${on?'✓':''}</span><span>${decorate(inline(cb[2]))}</span></li>`;}
+      return `<li>${decorate(inline(c))}</li>`;
+    }).join('');
+    return {html:`<${ordered?'ol':'ul'} class="md-list">${lis}</${ordered?'ol':'ul'}>`,next:i};
+  }
+
+  function subHead(s){
+    const m=s.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
+    if(m) return `<span class="idbadge">${esc(m[1])}</span> <span>${decorate(inline(m[2]))}</span>`;
+    return decorate(inline(s));
+  }
+
+  function renderMarkdown(md){
+    const lines=String(md).replace(/\r\n/g,'\n').replace(/\t/g,'  ').split('\n');
+    let html=''; let i=0;
+    while(i<lines.length){
+      const line=lines[i];
+      if(/^\s*$/.test(line)){i++;continue;}
+      if(/^\s*```/.test(line)){
+        const buf=[]; i++;
+        while(i<lines.length && !/^\s*```/.test(lines[i])){buf.push(lines[i]);i++;}
+        i++; html+=`<pre class="cb"><code>${esc(buf.join('\n'))}</code></pre>`; continue;
+      }
+      let hm=line.match(/^(#{1,6})\s+(.*)$/);
+      if(hm){ const lvl=Math.min(6,Math.max(3,hm[1].length)); html+=`<h${lvl} class="sub">${subHead(hm[2].trim())}</h${lvl}>`; i++; continue; }
+      if(/^\s*([-*_])\1{2,}\s*$/.test(line)){html+='<hr>';i++;continue;}
+      if(isTableStart(lines,i)){
+        const tbl=[]; while(i<lines.length && lines[i].indexOf('|')>-1 && !/^\s*$/.test(lines[i])){tbl.push(lines[i]);i++;}
+        html+=renderTable(tbl); continue;
+      }
+      if(/^\s*>/.test(line)){
+        const buf=[]; while(i<lines.length && /^\s*>/.test(lines[i])){buf.push(lines[i].replace(/^\s*>\s?/,''));i++;}
+        html+=`<blockquote>${renderMarkdown(buf.join('\n'))}</blockquote>`; continue;
+      }
+      if(/^\s*([-*+]|\d+\.)\s+/.test(line)){ const r=renderList(lines,i); html+=r.html; i=r.next; continue; }
+      const buf=[lines[i]]; i++;
+      while(i<lines.length && !isBlockStart(lines,i)){buf.push(lines[i]);i++;}
+      html+=`<p>${buf.map(l=>decorate(inline(l))).join('<br>')}</p>`;
+    }
+    return html;
+  }
+
+  /* =========================================================
+     Section splitter + artifact registry
+     ========================================================= */
+  const ART=[
+    {re:/problem statement/i,            icon:'◎', tag:'P1'},
+    {re:/knowledge gap/i,                icon:'◫', tag:'P2'},
+    {re:/open questions/i,               icon:'?', tag:'P2'},
+    {re:/recommendation brief/i,         icon:'◆', tag:'P3'},
+    {re:/pre-?mortem/i,                  icon:'⚠', tag:'P4'},
+    {re:/implementation authorization/i, icon:'⊞', tag:'P4'},
+    {re:/decision log/i,                 icon:'⎇', tag:'P5', spine:true},
+    {re:/test adversary/i,               icon:'⊗', tag:'P6'},
+    {re:/mandatory review/i,             icon:'🚩', tag:'P7', alert:true},
+    {re:/residual risk/i,                icon:'◬', tag:'P7'},
+    {re:/test coverage gaps/i,           icon:'▤', tag:'P6'},
+    {re:/pr summary/i,                   icon:'⇡', tag:'P7'},
+    {re:/deployment risk/i,              icon:'⟲', tag:'P8'},
+    {re:/obligation ticket/i,            icon:'✓', tag:'P9'}
+  ];
+  function metaFor(title){ for(const a of ART) if(a.re.test(title)) return a; return {icon:'§',tag:''}; }
+
+  function parseSections(md){
+    const lines=String(md).replace(/\r\n/g,'\n').split('\n');
+    const secs=[]; let cur=null; const intro=[];
+    let inFence=false;
+    for(const line of lines){
+      if(/^\s*```/.test(line)) inFence=!inFence;
+      const m=!inFence && line.match(/^##\s+(.*)$/);
+      if(m){ if(cur) secs.push(cur); cur={title:m[1].trim(), body:[]}; }
+      else if(cur) cur.body.push(line);
+      else intro.push(line);
+    }
+    if(cur) secs.push(cur);
+    return {intro:intro.join('\n').trim(), secs};
+  }
+
+  function slug(s){return 'sec-'+(s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,42)||'x');}
+
+  /* =========================================================
+     DL-007  Decision Log "ledger card" rendering (the spine)
+     Tournament winner: Design B (header strip + status rail +
+     top-right Confidence/Status pills) wrapping Design A's grid.
+     ========================================================= */
+  function parseDLFields(lines){
+    const fields=[]; let cur=null;
+    for(const raw of lines){
+      const line=raw.replace(/\s+$/,'');
+      if(/^\s*$/.test(line)) continue;
+      const m=line.match(/^\s*[-*+]?\s*\*\*\s*([^*]+?)\s*\*\*\s*:?\s*(.*)$/);
+      if(m){ cur={label:m[1].trim().replace(/:\s*$/,''), value:m[2].trim()}; fields.push(cur); }
+      else if(cur){ cur.value += ' ' + line.trim(); }
+      else fields.push({label:'', value:line.trim()});
+    }
+    return fields;
+  }
+  function dlConfPill(v){
+    const t=v.trim().toUpperCase();
+    const cls = t.indexOf('HIGH')===0?'p-ok' : t.indexOf('MED')===0?'p-med' : t.indexOf('LOW')===0?'p-high' : 'p-low';
+    return `<span class="pill dl-pill ${cls}"><i>conf</i>${esc(v.trim())}</span>`;
+  }
+  function dlStatusPill(v){
+    const t=v.trim().toUpperCase();
+    const cls = t.indexOf('INVALIDATED')===0?'p-bad' : t.indexOf('VALIDATED')===0?'p-ok' : t.indexOf('OPEN')===0?'p-open' : 'p-low';
+    return `<span class="pill dl-pill ${cls}"><i>status</i>${esc(v.trim())}</span>`;
+  }
+  function dlRail(status){
+    const t=(status||'').trim().toUpperCase();
+    if(t.indexOf('INVALIDATED')===0) return 'rail-bad';
+    if(t.indexOf('VALIDATED')===0) return 'rail-ok';
+    if(t.indexOf('OPEN')===0) return 'rail-open';
+    return '';
+  }
+  function renderDLCard(entry){
+    const hm=entry.head.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
+    const id=hm?hm[1].trim():''; const title=hm?hm[2].trim():entry.head;
+    const fields=parseDLFields(entry.lines);
+    let confidence='', status=''; const body=[];
+    for(const f of fields){
+      const k=f.label.toLowerCase();
+      if(k==='confidence'){ confidence=f.value; continue; }
+      if(k==='status'){ status=f.value; continue; }
+      body.push(f);
+    }
+    const pills=(confidence?dlConfPill(confidence):'')+(status?dlStatusPill(status):'');
+    const grid=body.map(f=>
+      `<div class="dl-row"><span class="dl-k">${esc(f.label)}</span><span class="dl-v">${decorate(inline(f.value))}</span></div>`
+    ).join('');
+    return `<div class="dl-card ${dlRail(status)}">
+      <div class="dl-head">
+        <span class="dl-id">${id?esc(id):'—'}</span>
+        <span class="dl-title">${decorate(inline(title))}</span>
+        <span class="dl-pills">${pills}</span>
+      </div>
+      ${grid?`<div class="dl-grid">${grid}</div>`:''}
+    </div>`;
+  }
+  function renderDecisionLog(body){
+    const lines=String(body).replace(/\r\n/g,'\n').split('\n');
+    const entries=[]; const pre=[]; let cur=null; let inFence=false;
+    for(const line of lines){
+      if(/^\s*```/.test(line)) inFence=!inFence;
+      const m=!inFence && line.match(/^###\s+(.*)$/);
+      if(m){ if(cur) entries.push(cur); cur={head:m[1].trim(), lines:[]}; }
+      else if(cur) cur.lines.push(line);
+      else pre.push(line);
+    }
+    if(cur) entries.push(cur);
+    if(!entries.length) return renderMarkdown(body);   // no DL entries → generic render
+    const preTxt=pre.join('\n').trim();
+    return (preTxt?`<div class="md">${renderMarkdown(preTxt)}</div>`:'')
+      + `<div class="dl-cards">${entries.map(renderDLCard).join('')}</div>`;
+  }
+
+  /* =========================================================
+     DL-003  State preserved across live re-renders
+     ========================================================= */
+  const collapsed = new Set();   // keys of collapsed sections
+  let lastHashes = new Map();    // key -> body hash (to flash only true changes)
+  let currentText = '';
+  let primed = false;            // first render done? (so initial load doesn't flash everything)
+
+  function hash(s){ let h=0; for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0;} return h; }
+
+  function render(isLive){
+    const main=$('#content'), tocList=$('#toc-list'), tocEmpty=$('#toc-empty');
+    if(!currentText.trim()){
+      main.innerHTML = emptyState();
+      tocList.innerHTML=''; tocEmpty.style.display='block'; $('#toc-count').textContent='0';
+      setControlsEnabled(false);
+      return;
+    }
+    const {secs}=parseSections(currentText);
+    if(!secs.length){
+      main.innerHTML = `<div class="empty-state"><div class="es-mark">⌑</div><h2>No protocol sections found</h2><p>The text loaded, but no <code>## Section</code> headers were detected. The viewer keys off level-2 markdown headings like <code>## Problem Statement</code> or <code>## Decision Log</code>.</p></div>`;
+      tocList.innerHTML=''; tocEmpty.style.display='block'; $('#toc-count').textContent='0';
+      setControlsEnabled(false);
+      return;
+    }
+
+    const prevScroll = window.scrollY;
+    const seen={}; const newHashes=new Map(); const tocItems=[];
+    let bodyHtml='';
+
+    secs.forEach((sec,idx)=>{
+      let key=slug(sec.title);
+      if(seen[key]!=null){ key=key+'-'+(++seen[key]); } else seen[key]=0;
+      const meta=metaFor(sec.title);
+      const bodyRaw=sec.body.join('\n');
+      const innerHtml=(meta.spine ? renderDecisionLog(bodyRaw) : renderMarkdown(bodyRaw)) || '<p style="color:var(--faint)">(empty)</p>';
+      const h=hash(bodyRaw + '|' + sec.title);
+      newHashes.set(key,h);
+
+      const changed = primed && isLive && lastHashes.get(key)!==h;
+      const isCollapsed = collapsed.has(key);
+      const cls=['art', meta.spine?'spine':'', meta.alert?'alert':'', isCollapsed?'collapsed':'', changed?'flash':''].filter(Boolean).join(' ');
+      const spinePill = meta.spine?'<span class="art-spine-pill">spine</span>':'';
+      const tagPill = meta.tag?`<span class="art-tag">${meta.tag}</span>`:'';
+
+      bodyHtml += `
+        <section class="${cls}" id="${key}" data-key="${key}">
+          <div class="art-head" data-toggle="${key}">
+            <span class="art-icon">${meta.icon}</span>
+            <span class="art-title">${esc(sec.title)}</span>
+            ${tagPill}${spinePill}
+            <span class="art-toggle" aria-hidden="true">▾</span>
+          </div>
+          <div class="art-body"><div class="md">${innerHtml}</div></div>
+        </section>`;
+
+      tocItems.push(`<li><a href="#${key}" data-toc="${key}"><span class="ti-icon">${meta.icon}</span><span class="ti-name">${esc(sec.title)}</span>${meta.tag?`<span class="ti-tag">${meta.tag}</span>`:''}</a></li>`);
+    });
+
+    main.innerHTML=bodyHtml;
+    tocList.innerHTML=tocItems.join('');
+    tocEmpty.style.display='none';
+    $('#toc-count').textContent=String(secs.length);
+    lastHashes=newHashes; primed=true;
+    setControlsEnabled(true);
+
+    // preserve scroll on live updates so the view doesn't jump
+    if(isLive){ window.scrollTo(0,prevScroll); }
+    scrollSpy();
+  }
+
+  function emptyState(){
+    const fs = ('showOpenFilePicker' in window);
+    return `<div class="empty-state">
+      <div class="es-mark">◢◣◤◥</div>
+      <h2>No artifacts loaded</h2>
+      <p>This viewer renders the markdown the <b>auditable-dev-protocol</b> skill produces — Problem Statement, Recommendation Brief, Pre-Mortem, Decision Log, and the rest — as collapsible, navigable sections.</p>
+      <p>${fs ? 'Click <code>Open &amp; watch file</code> to pick your output file — it will re-render automatically as the protocol appends more sections.' : 'Your browser lacks the File System Access API, so live watching is off. Use <code>Paste</code> or drag a markdown file onto the window.'}</p>
+      <div class="keys">drag &amp; drop a <code>.md</code> file anywhere &nbsp;·&nbsp; or <code>Load example</code> to see it in action</div>
+    </div>`;
+  }
+
+  function setControlsEnabled(on){
+    $('#expandall').disabled=!on; $('#collapseall').disabled=!on;
+  }
+
+  /* =========================================================
+     TOC scroll-spy
+     ========================================================= */
+  let spyTick=false;
+  function scrollSpy(){
+    const arts=$$('.art'); if(!arts.length) return;
+    let activeKey=arts[0].id;
+    for(const a of arts){ if(a.getBoundingClientRect().top - 130 <= 0) activeKey=a.id; else break; }
+    $$('#toc-list a').forEach(el=>el.classList.toggle('active', el.getAttribute('data-toc')===activeKey));
+  }
+  window.addEventListener('scroll',()=>{ if(spyTick)return; spyTick=true; requestAnimationFrame(()=>{scrollSpy();spyTick=false;}); },{passive:true});
+
+  /* =========================================================
+     DL-002  Source acquisition: FS Access watch + fallbacks
+     ========================================================= */
+  let fileHandle=null, watchTimer=null, lastSig='';
+
+  function setSource(name,state){
+    $('#srcname').textContent=name||'none';
+    const st=$('#status'), txt=$('#status-txt'), dot=$('#livedot');
+    st.className='status '+(state==='WATCHING'?'ok':state==='IDLE'?'idle':'warn');
+    txt.textContent=state;
+    dot.classList.toggle('live', state==='WATCHING');
+    $('#foot-mode').textContent = state==='WATCHING' ? 'watching file · polling 1.5s' : (state==='PASTED'?'paste mode · live':'no dependencies · single file');
+  }
+
+  function update(text, isLive){ currentText=text; render(isLive); }
+
+  async function pollTick(){
+    if(!fileHandle || !$('#autoupd').checked) return;
+    try{
+      const f=await fileHandle.getFile();
+      const sig=f.lastModified+':'+f.size;
+      if(sig!==lastSig){ lastSig=sig; const text=await f.text(); setSource(f.name,'WATCHING'); update(text,true); }
+    }catch(e){ /* file moved/closed — leave last render in place */ }
+  }
+  function startWatch(){
+    if(watchTimer) clearInterval(watchTimer);
+    $('#reload').disabled=false;
+    pollTick();
+    watchTimer=setInterval(pollTick,1500);
+  }
+
+  $('#open').addEventListener('click', async ()=>{
+    if(!('showOpenFilePicker' in window)){ toast('File watching needs a Chromium browser — use Paste or drop'); $('#pastedrawer').classList.add('open'); return; }
+    try{
+      const [h]=await window.showOpenFilePicker({types:[{description:'Markdown / text',accept:{'text/markdown':['.md','.markdown'],'text/plain':['.txt']}}]});
+      fileHandle=h; lastSig=''; closePaste(); startWatch(); toast('Watching '+h.name);
+    }catch(e){ /* user cancelled */ }
+  });
+  $('#reload').addEventListener('click', ()=>{ lastSig=''; pollTick(); toast('Reloaded'); });
+
+  // paste mode
+  function closePaste(){ $('#pastedrawer').classList.remove('open'); }
+  $('#pastebtn').addEventListener('click', ()=>{
+    const d=$('#pastedrawer'); d.classList.toggle('open');
+    if(d.classList.contains('open')){ $('#pastearea').focus(); }
+  });
+  $('#pastearea').addEventListener('input', e=>{
+    if(watchTimer){ clearInterval(watchTimer); watchTimer=null; fileHandle=null; $('#reload').disabled=true; }
+    setSource('pasted text','PASTED'); update(e.target.value,false);
+  });
+
+  // drag & drop (tries to obtain a live handle for watching; else one-shot read)
+  const mask=$('#dropmask'); let dragDepth=0;
+  window.addEventListener('dragenter',e=>{ e.preventDefault(); dragDepth++; mask.classList.add('show'); });
+  window.addEventListener('dragover',e=>{ e.preventDefault(); });
+  window.addEventListener('dragleave',e=>{ dragDepth--; if(dragDepth<=0){dragDepth=0;mask.classList.remove('show');} });
+  window.addEventListener('drop', async e=>{
+    e.preventDefault(); dragDepth=0; mask.classList.remove('show');
+    const item=e.dataTransfer.items && e.dataTransfer.items[0];
+    if(item && item.getAsFileSystemHandle){
+      try{ const h=await item.getAsFileSystemHandle(); if(h && h.kind==='file'){ fileHandle=h; lastSig=''; closePaste(); startWatch(); toast('Watching '+h.name); return; } }catch(_){}
+    }
+    const file=e.dataTransfer.files && e.dataTransfer.files[0];
+    if(file){ const text=await file.text(); if(watchTimer){clearInterval(watchTimer);watchTimer=null;fileHandle=null;} setSource(file.name+' (snapshot)','LOADED'); update(text,false); }
+  });
+
+  // expand / collapse
+  $('#content').addEventListener('click', e=>{
+    const head=e.target.closest('.art-head'); if(!head) return;
+    const key=head.getAttribute('data-toggle');
+    const sec=document.getElementById(key); if(!sec) return;
+    sec.classList.toggle('collapsed');
+    if(sec.classList.contains('collapsed')) collapsed.add(key); else collapsed.delete(key);
+  });
+  $('#expandall').addEventListener('click', ()=>{ collapsed.clear(); $$('.art').forEach(a=>a.classList.remove('collapsed')); });
+  $('#collapseall').addEventListener('click', ()=>{ $$('.art').forEach(a=>{a.classList.add('collapsed');collapsed.add(a.id);}); });
+
+  // smooth-scroll TOC (and keep hash out of history spam)
+  $('#toc-list').addEventListener('click', e=>{
+    const a=e.target.closest('a'); if(!a) return;
+    e.preventDefault();
+    const t=document.getElementById(a.getAttribute('data-toc'));
+    if(t){ t.scrollIntoView({behavior:'smooth',block:'start'}); }
+  });
+
+  function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1800); }
+
+  if(!('showOpenFilePicker' in window)){ $('#open').textContent='⌨ Open (paste)'; $('#foot-mode').textContent='paste/drop only · this browser has no File System Access'; }
+
+  /* =========================================================
+     Example: a full protocol run covering every artifact
+     ========================================================= */
+  const EXAMPLE = `## Problem Statement
+**What the problem is:** Add server-side validation to the signup email field so malformed addresses are rejected before they reach the users table.
+**What the problem is not:** This is *not* a change to client-side validation, and *not* email deliverability/verification mail.
+**Human-level definition of done:** A bad address posted to signup returns a clear 422 and never creates a row.
+**Confirmed by:** rbeye   **Date:** 2026-06-18
+
+## Knowledge Gap Document
+| Known | Inferred (flagged) | Cannot Determine |
+|-------|--------------------|------------------|
+| Signup handler parses the body at \`src/signup/handler.ts:42\` | Validation belongs in the handler, not middleware | Whether downstream relies on bad rows |
+| No validation exists today | A parser beats a regex | Email volume per day |
+
+## Open Questions (resolve before Phase 3)
+1. Should plus-addressing be allowed? → RESOLVED: yes, use a parser not a regex.
+2. Reject or sanitize? → ACCEPTED UNKNOWN — logged to Decision Log.
+
+## Recommendation Brief
+**Recommended approach:** Validate in the handler with a tolerant RFC-5321 parser, return 422 on failure.
+**Defense:** Smallest reversible change; keeps the rule next to persistence; a parser avoids the plus-address bug a regex caused before.
+**Alternatives considered:**
+| Alternative | Reason rejected |
+|-------------|-----------------|
+| Regex check | Rejected valid plus-addressed emails last time |
+| Middleware layer | Spreads the rule away from where the row is written |
+
+## Pre-Mortem Report
+Assumed: this implementation failed in production. Most likely causes:
+| Failure mode | Likelihood | Impact | Developer response |
+|--------------|------------|--------|--------------------|
+| Parser rejects valid intl addresses | M | H | Mitigated: use a spec-tolerant parser; add intl test cases |
+| 422 breaks a client expecting 400 | L | M | Rebutted: clients treat 4xx uniformly here |
+
+## Implementation Authorization
+All HIGH-likelihood items resolved: YES
+Authorized by: rbeye
+
+## Decision Log
+
+### [DL-001] Validate in handler, not middleware
+- **Decision:** Put the check in \`handler.ts\` beside the insert.
+- **Alternatives considered:** Express middleware; a DB constraint.
+- **Rationale:** Keeps the invariant next to the write; easiest to test.
+- **Confidence:** HIGH
+- **Assumptions:** Signup is the only writer of the users.email column.
+- **Status:** VALIDATED
+
+### [DL-002] Reject rather than sanitize
+- **Decision:** Return 422 instead of trying to fix the address.
+- **Rationale:** Silent fixes hide client bugs.
+- **Confidence:** LOW
+- **Assumptions:** Product wants hard rejection, not best-effort repair.
+- **Status:** OPEN
+
+## Test Adversary Document
+**What passing tests prove:** Malformed addresses get 422 and create no row; valid plus-addresses pass.
+**What passing tests do not prove:**
+| Gap | Why untestable / untested | Risk if the assumption is wrong |
+|-----|---------------------------|---------------------------------|
+| Real-world intl addresses | Test set is finite | A valid user is blocked |
+| Concurrent duplicate signups | Not exercised | Race could double-insert |
+
+## PR Summary
+**Problem being solved:** Bad emails reach the users table.
+**Approach taken:** Tolerant parser in the handler; 422 on failure.
+**Key decisions:** DL-001 (HIGH) handler-side; DL-002 (LOW) reject-not-sanitize.
+
+## 🚩 Mandatory Review Items (LOW-confidence decisions)
+- [ ] DL-002: reject vs sanitize — confirm product wants hard rejection — reviewer must respond.
+
+## Residual Risk
+Reject-not-sanitize is unconfirmed with product; intl coverage is finite.
+
+## Test Coverage Gaps
+Concurrency and exhaustive international address shapes are not covered by tests.
+
+## Deployment Risk Statement
+**Known unknowns at ship time:** DL-002 product intent.
+**Monitoring targets:**
+| Assumption | Signal that it was wrong | Threshold |
+|------------|--------------------------|-----------|
+| Rejection is rare | 422 rate on /signup | > 2% of attempts in 1h |
+**Rollback trigger conditions:**
+- [ ] 422 rate on /signup exceeds 2% for 1h → rollback
+**Staged rollout:** YES — 10% then 100%.
+
+## Obligation Ticket List
+| Ticket ID | Decision Log ref | Assumption to validate | Priority |
+|-----------|------------------|------------------------|----------|
+| GROW-6701 | DL-002 | Product confirms reject-not-sanitize | HIGH |
+**Decision Log status:** OPEN — one ticket outstanding.`;
+
+  $('#example').addEventListener('click', ()=>{
+    if(watchTimer){ clearInterval(watchTimer); watchTimer=null; fileHandle=null; $('#reload').disabled=true; }
+    closePaste(); primed=false; collapsed.clear(); lastHashes=new Map();
+    setSource('example.md','LOADED'); update(EXAMPLE,false); toast('Example loaded');
+  });
+
+  // theme switcher (DL-008) — sun/moon toggle switch on the eyebrow line
+  const themeCb=$('#themetoggle'), themeIcon=$('#tt-icon');
+  function syncThemeUI(){
+    const t=document.documentElement.getAttribute('data-theme');
+    themeCb.checked=(t==='dark');
+    if(themeIcon) themeIcon.textContent=(t==='dark')?'☾':'☀';
+  }
+  themeCb.addEventListener('change', ()=>{
+    const t=themeCb.checked?'dark':'light';
+    document.documentElement.setAttribute('data-theme', t);
+    try{ localStorage.setItem('adp-theme', t); }catch(_){}
+    syncThemeUI();
+  });
+  syncThemeUI();
+
+  // initial paint
+  render(false);
+})();
+</script>
+</body>
+</html>

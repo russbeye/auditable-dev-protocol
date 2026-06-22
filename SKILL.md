@@ -92,8 +92,17 @@ Phase 9  The Loop           → Obligation Ticket List
 
 Each artifact feeds the next; none may be produced while the prior one has open items. The **Decision
 Log** is the spine — it opens in Phase 5, stays live through Phase 8, and is the first thing you open
-when something breaks. Produce artifacts as markdown inline in the conversation. For work spanning
-sessions, persist the Decision Log to a file (e.g. `docs/decision-log-<feature>.md`) so it survives.
+when something breaks.
+
+**Persist everything to one audit-log file, written live.** At Phase 1, create a single markdown file
+(e.g. `docs/audit-log-<feature>.md`) and make it the system of record for the entire run. Append each
+artifact to it **in full, the moment it is formulated** — the Problem Statement before Phase 2 begins,
+each Decision Log entry as the decision is made, each later phase's document as you produce it. The file
+is a living document the developer watches grow in real time; it is never reconstructed or dumped in one
+shot at the end. The conversation is a mirror of the file, never its replacement — it may be summarized,
+truncated, or gone by the time anyone audits the work. Therefore **no artifact may be reduced to a
+summary that points back to "the conversation" (or any other ephemeral context).** Every phase's
+artifact lives in the file, complete, even when a later phase repeats or supersedes an earlier one.
 
 ## Core principles
 
@@ -104,8 +113,11 @@ sessions, persist the Decision Log to a file (e.g. `docs/decision-log-<feature>.
    happened. Write them as if a post-incident reviewer will read them.
 4. **The Decision Log is the spine.** Every other artifact is a phase snapshot; the log is the
    continuous thread.
-5. **The developer is an interrogator, not an approver.**
-6. **Follow-up obligations are first-class.** Unvalidated assumptions don't expire — they become tickets.
+5. **The audit log is written live and kept whole.** Every artifact is appended to the persisted file
+   the moment it exists, in full. Nothing is batched for the end; nothing is collapsed into a summary
+   that defers to the conversation — the conversation is not guaranteed to survive.
+6. **The developer is an interrogator, not an approver.**
+7. **Follow-up obligations are first-class.** Unvalidated assumptions don't expire — they become tickets.
 
 ---
 
@@ -113,6 +125,8 @@ sessions, persist the Decision Log to a file (e.g. `docs/decision-log-<feature>.
 
 **Do:** Restate the problem in your own words before any planning. The restatement must cover what the
 problem **is**, what it is **not**, and what success looks like at a human level (not a test level).
+Create the persisted audit-log file now (see *The artifact chain*) and write this Problem Statement into
+it as the first entry — every later artifact appends to the same file, live, in full.
 
 **Gate:** The developer must confirm the restatement. Loop on corrections until confirmed, then treat
 it as locked — it doesn't change without a logged reason.
@@ -309,6 +323,8 @@ corresponding ticket. No entry stays OPEN without a ticket.
 |------|---------------|
 | No phase skipping | Skipping a phase doesn't cancel it — it creates an unacknowledged assumption, logged immediately to the Decision Log at LOW confidence. |
 | No silent assumptions | An assumption not in the Decision Log does not exist, protocol-wise. |
+| No artifact deferred to the conversation | Every phase's artifact is written to the audit-log file in full. A phase reduced to a summary that points at "the conversation" (or any ephemeral context) is a violation — that context may be gone at audit time. |
+| The log is written live, not reconstructed | Each artifact is appended the moment it is formulated, never held in memory and dumped at the end. The developer must be able to watch the file grow. |
 | No hedged recommendations | Commit to a position. Options without a defense are a hedge and are rejected. |
 | No PR without a Test Adversary Document | Analysis must complete before synthesis. |
 | No open HIGH-likelihood failure modes | The Pre-Mortem must show all HIGH items resolved before implementation. |

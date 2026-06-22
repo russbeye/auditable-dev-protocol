@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Auditable Protocol · Prompt Builder</title>
+<link rel="stylesheet" href="adp-theme.css" />
+<script>
+/* set theme before first paint — stored preference, else system, else dark */
+(function(){try{var t=localStorage.getItem('adp-theme');if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
+</script>
+<style>
+/* prompt-builder component layer — sits on top of adp-theme.css (shared design system).
+   Tokens, base/reset, ambient grid, masthead, .btn, .sw, .theme-toggle, .status, .term-dots,
+   .toast, .foot and @keyframes all come from the shared sheet. Only PB-specific
+   form/preview components live here, using the shared design tokens. */
+
+/* builder layout — the form leads; the preview gets just enough width to stay legible.
+   The shared .grid is 248px 1fr for the parser's TOC-left order; here the children are
+   reversed (form first, preview second), so the columns are set locally. */
+.grid{grid-template-columns:minmax(0,1fr) clamp(320px,30%,440px)}
+@media (max-width:980px){ .grid{grid-template-columns:1fr} }
+
+/* form section card labels on top of the shared .panel-card primitive */
+.sec-idx{font-family:var(--mono);font-size:12px;color:var(--blue-bright);border:1px solid var(--line-bright);padding:2px 8px;letter-spacing:.05em;background:var(--inset);white-space:nowrap}
+.sec-name{font-family:var(--disp);font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:14px}
+.sec-key{color:var(--faint);font-size:12px}
+.req-pill{margin-left:auto;font-size:10px;letter-spacing:.18em;text-transform:uppercase;padding:3px 8px;border:1px solid;white-space:nowrap}
+.req-pill.req{color:var(--blue-bright);border-color:rgba(0,41,222,.4);background:rgba(0,41,222,.08)}
+.req-pill.opt{color:var(--dim);border-color:var(--line-bright)}
+.sec-note{color:var(--faint);font-size:12px;margin:-4px 0 14px;line-height:1.5}
+
+/* builder-specific repeatable row layouts */
+.ref-row{border:1px dashed var(--line-bright);padding:10px;background:rgba(0,41,222,.03)}
+.ref-grid{display:grid;grid-template-columns:1fr 110px;gap:8px}
+@media(max-width:520px){.ref-grid{grid-template-columns:1fr}}
+.ref-grid .full{grid-column:1 / -1}
+.lesson-row,.req-row{border:1px dashed var(--line-bright);padding:10px;background:rgba(0,41,222,.03);display:flex;flex-direction:column;gap:8px}
+.req-row .req-top{display:grid;grid-template-columns:90px 1fr;gap:8px}
+@media(max-width:520px){.req-row .req-top{grid-template-columns:1fr}}
+
+/* labelled toggles (the knob switch .sw is shared) */
+.toggle{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px dotted var(--line)}
+.toggle:last-of-type{border-bottom:none}
+.toggle .t-meta{flex:1}
+.toggle .t-name{font-size:12.5px;color:var(--ink)}
+.toggle .t-key{font-size:11px;color:var(--faint)}
+
+/* artifact chips */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{position:relative;cursor:pointer;user-select:none}
+.chip input{position:absolute;opacity:0;pointer-events:none}
+.chip .box{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line-bright);background:var(--inset);color:var(--dim);font-size:12px;padding:7px 11px;transition:.12s}
+.chip .box::before{content:"[ ]";color:var(--faint);font-size:11px;letter-spacing:-.05em}
+.chip input:checked + .box{border-color:var(--blue);color:var(--ink);background:rgba(0,41,222,.10)}
+.chip input:checked + .box::before{content:"[x]";color:var(--blue-bright)}
+.chip input:focus-visible + .box{box-shadow:0 0 0 2px var(--blue)}
+
+/* preview terminal */
+.preview-wrap{position:sticky;top:18px}
+.code{margin:0;padding:16px;max-height:56vh;overflow:auto;font-family:var(--mono);font-size:12.5px;line-height:1.65;white-space:pre;tab-size:2;color:var(--ink)}
+.code .k{color:var(--blue-bright)}
+.code .s{color:var(--ok)}
+.code .b{color:var(--warn)}
+.code .d{color:var(--faint)}
+.code .v{color:var(--ink)}
+.code .cur{background:var(--blue-bright);color:var(--blue-bright);animation:blink 1.1s steps(1) infinite}
+
+/* paste/import drawer (shared .paste-drawer + .sw come from the design system) */
+.paste-actions{display:flex;align-items:center;gap:12px;margin-top:10px}
+.paste-msg{flex:1;font-size:11.5px;letter-spacing:.02em;color:var(--dim);min-height:1.2em;line-height:1.4}
+.paste-msg.ok{color:var(--ok)}
+.paste-msg.warn{color:var(--warn)}
+
+/* validation issues list */
+.issues{border:1px solid var(--line);border-top:none;background:var(--panel-2);padding:0 14px}
+.issues.empty{display:none}
+.issues h4{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--warn);margin:14px 0 8px;display:flex;align-items:center;gap:8px}
+.issues ul{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-direction:column;gap:5px}
+.issues li{font-size:12px;color:var(--dim);display:flex;gap:9px;align-items:baseline}
+.issues li::before{content:"!";color:var(--warn);font-weight:700;flex:0 0 auto}
+.issues li code{color:var(--ink);background:var(--inset);padding:0 5px;border:1px solid var(--line)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+      <div class="eyebrow">
+        <span class="tag">◢ AUDITABLE PROTOCOL</span>
+        <span class="page-nav">
+          <span class="page-link active" aria-current="page">Prompt Builder</span>
+          <span class="sep">·</span>
+          <a class="page-link" href="ADP-Parser.html">Artifact Viewer</a>
+        </span>
+        <span class="lic">· schema v1.0 · MIT</span>
+      <label class="theme-toggle" title="Toggle light / dark">
+        <span class="tt-icon" id="tt-icon" aria-hidden="true">☾</span>
+        <span class="sw"><input type="checkbox" id="themetoggle" aria-label="Dark mode"><span class="track"></span><span class="knob"></span></span>
+      </label>
+    </div>
+
+    <div class="console">
+      <div class="con-head">
+        <div class="term-dots"><i class="live"></i><i></i><i></i></div>
+        <div class="con-file"><b>prompt</b>.yaml</div>
+        <div class="status ok" id="status"><span class="blk"></span><span id="status-txt">VALID</span></div>
+      </div>
+      <div class="toolbar">
+        <button class="btn" id="pastebtn">⌨ Paste</button>
+        <button class="btn" id="example">Load example</button>
+        <button class="btn primary ghost" id="copy">⧉ Copy YAML</button>
+        <button class="btn" id="clear">Clear</button>
+        <button class="btn" id="download">↓ Download</button>
+      </div>
+      <div class="paste-drawer" id="pastedrawer">
+        <textarea id="pastearea" placeholder="Paste a prompt.yaml here, then Import into form. Unrecognized or invalid keys are skipped and reported below."></textarea>
+        <div class="paste-actions">
+          <span class="paste-msg" id="pastemsg"></span>
+          <button class="btn primary" id="pasteimport">Import into form</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- ============ FORM ============ -->
+    <main>
+
+      <!-- 1 TASK -->
+      <section class="section panel-card">
+        <div class="sec-head panel-card-head">
+          <span class="sec-idx">#1</span>
+          <span class="sec-name">Task</span><span class="sec-key">task</span>
+          <span class="req-pill req">Required</span>
+        </div>
+        <div class="sec-body panel-card-body">
+          <div class="row2">
+            <div class="field">
+              <label class="lbl" for="t_id"><span class="dot"></span>id <span class="ck" data-ck="task.id"></span></label>
+              <input type="text" id="t_id" data-f="task.id" placeholder="Stable identifier, e.g. GROW-6687-email-validation">
+            </div>
+            <div class="field">
+              <label class="lbl" for="t_title"><span class="dot"></span>title <span class="ck" data-ck="task.title"></span></label>
+              <input type="text" id="t_title" data-f="task.title" placeholder="One line naming the task">
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label class="lbl" for="t_author"><span class="dot"></span>author <span class="ck" data-ck="task.author"></span></label>
+              <input type="text" id="t_author" data-f="task.author" placeholder="Who wrote this prompt">
+            </div>
+            <div class="field">
+              <label class="lbl" for="t_date"><span class="dot"></span>date <span class="ck" data-ck="task.date"></span></label>
+              <input type="text" id="t_date" data-f="task.date" placeholder="YYYY-MM-DD" inputmode="numeric">
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2 PREAMBLE -->
+      <section class="section panel-card">
+        <div class="sec-head panel-card-head">
+          <span class="sec-idx">#2</span>
+          <span class="sec-name">Preamble</span><span class="sec-key">preamble</span>
+          <span class="req-pill opt">Optional</span>
+        </div>
+        <div class="sec-body panel-card-body">
+          <p class="sec-note">Directives applied before the model reasons about the ask. Leave empty to omit the block.</p>
+          <textarea id="preamble" data-f="preamble" rows="10" placeholder="Directives to apply before reasoning about the ask.&#10;Name memories to ignore, assumptions to hold, or context to reset.&#10;Delete this block when there is nothing to set up."></textarea>
+        </div>
+      </section>
+
+      <!-- 3 ROLE -->
+      <section class="section panel-card">
+        <div class="sec-head panel-card-head">
+          <span class="sec-idx">#3</span>
+          <span class="sec-name">Role</span><span class="sec-key">role</span>
+          <span class="req-pill req">Required</span>
+        </div>
+        <div class="sec-body panel-card-body">
+          <div class="field">
+            <label class="lbl" for="r_lens"><span class="dot"></span>lens <span class="ck" data-ck="role.lens"></span></label>
+            <input type="text" id="r_lens" data-f="role.lens" placeholder="The perspective to reason from, e.g. staff engineer accountable for data integrity">
+          </div>
+          <div class="field">
+            <div class="sub-lbl">priorities · optional, most important first</div>
+            <div class="list-rows" data-list="priorities"></div>
+            <button class="add" data-add="priorities">+ add priority</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4 PROMPT -->
+      <section class="section panel-card">
+        <div class="sec-head panel-card-head">
+          <span class="sec-idx">#4</span>
+          <span class="sec-name">Prompt</span><span class="sec-key">prompt</span>
+          <span class="req-pill req">Required</span>
+        </div>
+        <div class="sec-body panel-card-body">
+          <div class="field">
+            <label class="lbl" for="prompt"><span class="dot"></span>the ask <span class="ck" data-ck="prompt"></span></label>
+            <textarea id="prompt" data-f="prompt" rows="10" placeholder="The task in one or two sentences: what to do, and the outcome a person should see when it works."></textarea>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5 CONSTRAINTS -->
+      <section class="section panel-card">
+        <div class="sec-head panel-card-head">
+          <span class="sec-idx">#5</span>
+          <span class="sec-name">Constraints</span><span class="sec-key">constraints</span>
+          <span class="req-pill opt">Optional</span>
+        </div>
+        <div class="sec-body panel-card-body">
+          <div class="field">
+            <div class="sub-lbl">out_of_scope · what this task does not cover</div>
+            <div class="list-rows" data-list="out_of_scope"></div>
+            <button class="add" data-add="out_of_scope">+ add exclusion</button>
+          </div>
+          <div class="field">
+            <div class="sub-lbl">must_not · hard prohibitions</div>
+            <div class="list-rows" data-list="must_not"></div>
+            <button class="add" data-add="must_not">+ add prohibition</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6 CONTEXT -->
+      <section class="section panel-card">
+        <div class="sec-head panel-card-head">
+          <span class="sec-idx">#6</span>
+          <span class="sec-name">Context</span><span class="sec-key">context</span>
+          <span class="req-pill opt">Optional</span>
+        </div>
+        <div class="sec-body panel-card-body">
+          <div class="field">
+            <label class="lbl" for="c_bg"><span class="dot o"></span>background</label>
+            <textarea id="c_bg" data-f="context.background" rows="10" placeholder="What the model cannot infer from the code: system history, intent, org constraints."></textarea>
+          </div>
+          <div class="field">
+            <div class="sub-lbl">references · path required per item</div>
+            <div class="list-rows" data-list="references"></div>
+            <button class="add" data-add="references">+ add reference</button>
+          </div>
+          <div class="field">
+            <div class="sub-lbl">links · urls or tickets to read</div>
+            <div class="list-rows" data-list="links"></div>
+            <button class="add" data-add="links">+ add link</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7 LESSONS -->
+      <section class="section panel-card">
+        <div class="sec-head panel-card-head">
+          <span class="sec-idx">#7</span>
+          <span class="sec-name">Lessons Learned</span><span class="sec-key">lessons_learned</span>
+          <span class="req-pill opt">Optional</span>
+        </div>
+        <div class="sec-body panel-card-body">
+          <p class="sec-note">Prior dead ends, so the model does not repeat them. Each item needs both fields.</p>
+          <div class="list-rows" data-list="lessons_learned"></div>
+          <button class="add" data-add="lessons_learned">+ add lesson</button>
+        </div>
+      </section>
+
+      <!-- 8 OUTPUT -->
+      <section class="section panel-card">
+        <div class="sec-head panel-card-head">
+          <span class="sec-idx">#8</span>
+          <span class="sec-name">Output</span><span class="sec-key">output</span>
+          <span class="req-pill req">Required</span>
+        </div>
+        <div class="sec-body panel-card-body">
+          <div class="row2">
+            <div class="field">
+              <label class="lbl" for="o_fmt"><span class="dot"></span>format <span class="ck" data-ck="output.format"></span></label>
+              <select id="o_fmt" data-f="output.format" class="unset">
+                <option value="" disabled selected>code | patch | json | yaml | markdown | prose</option>
+                <option value="code">code</option>
+                <option value="patch">patch</option>
+                <option value="json">json</option>
+                <option value="yaml">yaml</option>
+                <option value="markdown">markdown</option>
+                <option value="prose">prose</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="lbl" for="o_dest"><span class="dot"></span>destination <span class="ck" data-ck="output.destination"></span></label>
+              <input type="text" id="o_dest" data-f="output.destination" placeholder="Where the result goes, e.g. edit files in place, new file at path, PR description, inline">
+            </div>
+          </div>
+          <div class="field">
+            <label class="lbl" for="o_struct"><span class="dot o"></span>structure <span class="ck muted" data-ck="">optional</span></label>
+            <textarea id="o_struct" data-f="output.structure" rows="10" placeholder="The shape the output must take. For json or yaml, name the keys. For code, name the files and functions."></textarea>
+          </div>
+        </div>
+      </section>
+
+      <!-- 9 REQUIREMENTS -->
+      <section class="section panel-card">
+        <div class="sec-head panel-card-head">
+          <span class="sec-idx">#9</span>
+          <span class="sec-name">Requirements</span><span class="sec-key">requirements</span>
+          <span class="req-pill req">Required · ≥1</span>
+        </div>
+        <div class="sec-body panel-card-body">
+          <p class="sec-note">Each is one condition plus how to confirm it. "Done" is observable behavior, not "tests pass".</p>
+          <div class="list-rows" data-list="requirements"></div>
+          <button class="add" data-add="requirements">+ add requirement</button>
+        </div>
+      </section>
+
+      <!-- 10 PROTOCOL -->
+      <section class="section panel-card">
+        <div class="sec-head panel-card-head">
+          <span class="sec-idx">#10</span>
+          <span class="sec-name">Protocol</span><span class="sec-key">protocol</span>
+          <span class="req-pill req">Required</span>
+        </div>
+        <div class="sec-body panel-card-body">
+          <div class="toggle">
+            <div class="t-meta"><div class="t-name">Apply protocol rigor</div><div class="t-key">protocol.apply — false turns all rigor off for trivial tasks</div></div>
+            <label class="sw"><input type="checkbox" id="p_apply" data-f="protocol.apply" checked><span class="track"></span><span class="knob"></span></label>
+          </div>
+          <div class="toggle">
+            <div class="t-meta"><div class="t-name">Stake a single recommendation</div><div class="t-key">protocol.stake_single_recommendation — one defended claim, no menu</div></div>
+            <label class="sw"><input type="checkbox" id="p_stake" data-f="protocol.stake_single_recommendation" checked><span class="track"></span><span class="knob"></span></label>
+          </div>
+          <div class="toggle">
+            <div class="t-meta"><div class="t-name">Log assumptions</div><div class="t-key">protocol.log_assumptions — no silent assumptions</div></div>
+            <label class="sw"><input type="checkbox" id="p_log" data-f="protocol.log_assumptions" checked><span class="track"></span><span class="knob"></span></label>
+          </div>
+          <div class="toggle">
+            <div class="t-meta"><div class="t-name">Flag low confidence</div><div class="t-key">protocol.flag_low_confidence — surface shaky decisions for review</div></div>
+            <label class="sw"><input type="checkbox" id="p_flag" data-f="protocol.flag_low_confidence" checked><span class="track"></span><span class="knob"></span></label>
+          </div>
+          <div class="field field-gap-top">
+            <div class="sub-lbl">artifacts · any subset to produce</div>
+            <div class="chips" id="artifacts"></div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ============ PREVIEW ============ -->
+    <aside>
+      <div class="preview-wrap">
+        <div class="terminal compact-terminal">
+          <div class="term-head compact-terminal-head">
+            <div class="term-dots"><i class="live"></i><i></i><i></i></div>
+            <div class="term-title compact-terminal-title"><b>prompt</b>.yaml</div>
+          </div>
+          <pre class="code" id="code"></pre>
+        </div>
+        <div class="issues empty" id="issues">
+          <h4 id="issues-h">⚠ Protocol checks</h4>
+          <ul id="issues-list"></ul>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="foot">
+    <span>AUDITABLE-DEV-PROTOCOL</span>
+    <span>prompt-template.yaml · schema_version 1.0</span>
+  </div>
+</div>
+
+<div class="toast" id="toast">Copied</div>
+
+<script>
+(function(){
+  "use strict";
+  const $ = (s,r=document)=>r.querySelector(s);
+  const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+
+  const ARTIFACTS = ["problem_statement","knowledge_gap","recommendation_brief","premortem","decision_log","test_adversary","pr_summary","deployment_risk","obligation_tickets"];
+  const FORMATS = ["code","patch","json","yaml","markdown","prose"];
+  const DEFAULT_ARTIFACTS = ["decision_log","test_adversary"];
+
+  // ---- row factories (placeholders are template values verbatim) ----
+  function simpleRow(name, placeholder, value){
+    const div=document.createElement("div"); div.className="lrow";
+    div.innerHTML=`<input class="grow" type="text" data-field="${name}" placeholder="${escAttr(placeholder)}">`
+      +`<button class="rm" type="button" aria-label="remove">×</button>`;
+    if(value!=null) div.querySelector("input").value=value;
+    return div;
+  }
+  function refRow(v){
+    v=v||{};
+    const div=document.createElement("div"); div.className="ref-row";
+    div.innerHTML=`
+      <div class="ref-grid">
+        <div class="full"><div class="sub-lbl">path · required</div><input type="text" data-field="path" placeholder="src/path/to/file.ts"></div>
+        <div><div class="sub-lbl">lines</div><input type="text" data-field="lines" placeholder="42-88"></div>
+        <div class="full"><div class="sub-lbl">note</div><input type="text" data-field="note" placeholder="Why this location matters"></div>
+      </div>
+      <div class="action-row"><button class="rm wide" type="button" aria-label="remove">× remove reference</button></div>`;
+    if(v.path) div.querySelector('[data-field=path]').value=v.path;
+    if(v.lines) div.querySelector('[data-field=lines]').value=v.lines;
+    if(v.note) div.querySelector('[data-field=note]').value=v.note;
+    return div;
+  }
+  function lessonRow(v){
+    v=v||{};
+    const div=document.createElement("div"); div.className="lesson-row";
+    div.innerHTML=`
+      <div><div class="sub-lbl">context · required</div><input type="text" data-field="context" placeholder="What a prior session tried or surfaced"></div>
+      <div><div class="sub-lbl">takeaway · required</div><input type="text" data-field="takeaway" placeholder="The dead end to avoid, or the fact now known"></div>
+      <div class="action-row"><button class="rm wide" type="button" aria-label="remove">× remove lesson</button></div>`;
+    if(v.context) div.querySelector('[data-field=context]').value=v.context;
+    if(v.takeaway) div.querySelector('[data-field=takeaway]').value=v.takeaway;
+    return div;
+  }
+  function reqRow(v){
+    v=v||{};
+    const div=document.createElement("div"); div.className="req-row";
+    div.innerHTML=`
+      <div class="req-top">
+        <div><div class="sub-lbl">id</div><input type="text" data-field="id" placeholder="R1"></div>
+        <div><div class="sub-lbl">statement</div><input type="text" data-field="statement" placeholder="A single condition that must hold for the task to count as done"></div>
+      </div>
+      <div><div class="sub-lbl">verify</div><input type="text" data-field="verify" placeholder="How to confirm it: a command to run, a test name, or an observable behavior"></div>
+      <div class="action-row"><button class="rm wide" type="button" aria-label="remove">× remove requirement</button></div>`;
+    if(v.id) div.querySelector('[data-field=id]').value=v.id;
+    if(v.statement) div.querySelector('[data-field=statement]').value=v.statement;
+    if(v.verify) div.querySelector('[data-field=verify]').value=v.verify;
+    return div;
+  }
+
+  const LIST_PLACEHOLDERS = {
+    priorities:["What this lens optimizes for, most important first","The next priority"],
+    out_of_scope:["What this task does not cover"],
+    must_not:["A hard prohibition, e.g. do not change the public API signature"],
+    links:["URL or ticket the model should read"]
+  };
+
+  function addRow(list, value){
+    const container = $(`.list-rows[data-list="${list}"]`);
+    let row;
+    if(list==="references") row=refRow(value);
+    else if(list==="lessons_learned") row=lessonRow(value);
+    else if(list==="requirements") row=reqRow(value);
+    else {
+      const ph = (LIST_PLACEHOLDERS[list]||[""]);
+      const idx = container.children.length;
+      row=simpleRow(list, ph[Math.min(idx,ph.length-1)]||ph[0], value);
+    }
+    container.appendChild(row);
+    return row;
+  }
+
+  // seed initial rows so every template example surfaces as a placeholder
+  function seed(){
+    LIST_PLACEHOLDERS.priorities.forEach(()=>addRow("priorities"));
+    addRow("out_of_scope"); addRow("must_not");
+    addRow("references"); addRow("links");
+    addRow("lessons_learned");
+    addRow("requirements");
+    // artifacts chips
+    const wrap=$("#artifacts");
+    ARTIFACTS.forEach(a=>{
+      const lab=document.createElement("label"); lab.className="chip";
+      lab.innerHTML=`<input type="checkbox" value="${a}" ${DEFAULT_ARTIFACTS.includes(a)?"checked":""}><span class="box">${a}</span>`;
+      wrap.appendChild(lab);
+    });
+  }
+
+  // ---------- serialization ----------
+  function escAttr(s){return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");}
+  function qstr(s){ return '"'+String(s).replace(/\\/g,"\\\\").replace(/"/g,'\\"')+'"'; }
+  function block(key, val, indent){
+    const pad=" ".repeat(indent);
+    const lines=String(val).replace(/\s+$/,"").split("\n");
+    return pad+key+": |\n"+lines.map(l=>pad+"  "+l).join("\n");
+  }
+  function listOf(name){ return $$(`.list-rows[data-list="${name}"] > *`); }
+  function rowVal(row, field){ const el=field?row.querySelector(`[data-field="${field}"]`):row.querySelector('input'); return el?el.value.trim():""; }
+  function val(sel){ const el=$(sel); return el?el.value.trim():""; }
+
+  function gather(){
+    // simple lists
+    const priorities = listOf("priorities").map(r=>rowVal(r)).filter(Boolean);
+    const out_of_scope = listOf("out_of_scope").map(r=>rowVal(r)).filter(Boolean);
+    const must_not = listOf("must_not").map(r=>rowVal(r)).filter(Boolean);
+    const links = listOf("links").map(r=>rowVal(r)).filter(Boolean);
+    const references = listOf("references").map(r=>({path:rowVal(r,"path"),lines:rowVal(r,"lines"),note:rowVal(r,"note")}));
+    const lessons = listOf("lessons_learned").map(r=>({context:rowVal(r,"context"),takeaway:rowVal(r,"takeaway")}));
+    const requirements = listOf("requirements").map(r=>({id:rowVal(r,"id"),statement:rowVal(r,"statement"),verify:rowVal(r,"verify")}));
+    const artifacts = $$("#artifacts input:checked").map(i=>i.value);
+    return {
+      task:{id:val("#t_id"),title:val("#t_title"),author:val("#t_author"),date:val("#t_date")},
+      preamble:val("#preamble"),
+      role:{lens:val("#r_lens"),priorities},
+      prompt:val("#prompt"),
+      constraints:{out_of_scope,must_not},
+      context:{background:val("#c_bg"),references,links},
+      lessons_learned:lessons,
+      output:{format:val("#o_fmt"),destination:val("#o_dest"),structure:val("#o_struct")},
+      requirements,
+      protocol:{
+        apply:$("#p_apply").checked,
+        stake_single_recommendation:$("#p_stake").checked,
+        log_assumptions:$("#p_log").checked,
+        flag_low_confidence:$("#p_flag").checked,
+        artifacts
+      }
+    };
+  }
+
+  // Build YAML in template key order. Omit empty optional blocks.
+  function buildYaml(d){
+    const L=[];
+    L.push(`schema_version: "1.0"`);
+    L.push("");
+    // task (always emit; warnings handle empties) — emit only non-empty keys
+    L.push("task:");
+    ["id","title","author","date"].forEach(k=>{ if(d.task[k]) L.push(`  ${k}: ${qstr(d.task[k])}`); });
+    L.push("");
+    if(d.preamble){ L.push(block("preamble", d.preamble, 0)); L.push(""); }
+    // role
+    L.push("role:");
+    if(d.role.lens) L.push(`  lens: ${qstr(d.role.lens)}`);
+    if(d.role.priorities.length){ L.push("  priorities:"); d.role.priorities.forEach(p=>L.push(`    - ${qstr(p)}`)); }
+    L.push("");
+    if(d.prompt){ L.push(block("prompt", d.prompt, 0)); L.push(""); }
+    // constraints (optional)
+    if(d.constraints.out_of_scope.length || d.constraints.must_not.length){
+      L.push("constraints:");
+      if(d.constraints.out_of_scope.length){ L.push("  out_of_scope:"); d.constraints.out_of_scope.forEach(x=>L.push(`    - ${qstr(x)}`)); }
+      if(d.constraints.must_not.length){ L.push("  must_not:"); d.constraints.must_not.forEach(x=>L.push(`    - ${qstr(x)}`)); }
+      L.push("");
+    }
+    // context (optional)
+    const refs=d.context.references.filter(r=>r.path||r.lines||r.note);
+    if(d.context.background || refs.length || d.context.links.length){
+      L.push("context:");
+      if(d.context.background){ L.push(block("background", d.context.background, 2)); }
+      if(refs.length){
+        L.push("  references:");
+        refs.forEach(r=>{
+          L.push(`    - path: ${qstr(r.path)}`);
+          if(r.lines) L.push(`      lines: ${qstr(r.lines)}`);
+          if(r.note) L.push(`      note: ${qstr(r.note)}`);
+        });
+      }
+      if(d.context.links.length){ L.push("  links:"); d.context.links.forEach(x=>L.push(`    - ${qstr(x)}`)); }
+      L.push("");
+    }
+    // lessons (optional)
+    const lessons=d.lessons_learned.filter(x=>x.context||x.takeaway);
+    if(lessons.length){
+      L.push("lessons_learned:");
+      lessons.forEach(x=>{ L.push(`  - context: ${qstr(x.context)}`); L.push(`    takeaway: ${qstr(x.takeaway)}`); });
+      L.push("");
+    }
+    // output
+    L.push("output:");
+    if(d.output.format) L.push(`  format: ${qstr(d.output.format)}`);
+    if(d.output.destination) L.push(`  destination: ${qstr(d.output.destination)}`);
+    if(d.output.structure){ L.push(block("structure", d.output.structure, 2)); }
+    L.push("");
+    // requirements
+    const reqs=d.requirements.filter(r=>r.id||r.statement||r.verify);
+    L.push("requirements:");
+    reqs.forEach(r=>{
+      L.push(`  - id: ${qstr(r.id)}`);
+      L.push(`    statement: ${qstr(r.statement)}`);
+      L.push(`    verify: ${qstr(r.verify)}`);
+    });
+    L.push("");
+    // protocol
+    L.push("protocol:");
+    L.push(`  apply: ${d.protocol.apply}`);
+    L.push(`  stake_single_recommendation: ${d.protocol.stake_single_recommendation}`);
+    L.push(`  log_assumptions: ${d.protocol.log_assumptions}`);
+    L.push(`  flag_low_confidence: ${d.protocol.flag_low_confidence}`);
+    if(d.protocol.artifacts.length){ L.push("  artifacts:"); d.protocol.artifacts.forEach(a=>L.push(`    - ${a}`)); }
+    return L.join("\n").replace(/\n{3,}/g,"\n\n").replace(/\s+$/,"")+"\n";
+  }
+
+  // Validation mirrors validate-prompt.py (surfaced as warnings)
+  function validate(d){
+    const e=[];
+    ["id","title","author","date"].forEach(k=>{ if(!d.task[k]) e.push([`task.${k}`,"required"]); });
+    if(!d.role.lens) e.push(["role.lens","required"]);
+    if(!d.prompt) e.push(["prompt","required"]);
+    if(!FORMATS.includes(d.output.format)) e.push(["output.format","pick one of code|patch|json|yaml|markdown|prose"]);
+    if(!d.output.destination) e.push(["output.destination","required"]);
+    const reqs=d.requirements.filter(r=>r.id||r.statement||r.verify);
+    if(reqs.length===0) e.push(["requirements","at least one complete requirement"]);
+    reqs.forEach((r,i)=>{ ["id","statement","verify"].forEach(k=>{ if(!r[k]) e.push([`requirements[${i}].${k}`,"required within item"]); }); });
+    d.context.references.filter(r=>r.lines||r.note).forEach((r,i)=>{ if(!r.path) e.push([`context.references[${i}].path`,"required when reference is used"]); });
+    d.lessons_learned.forEach((x,i)=>{ const any=x.context||x.takeaway; if(any && (!x.context||!x.takeaway)) e.push([`lessons_learned[${i}]`,"needs context and takeaway"]); });
+    return e;
+  }
+
+  // light YAML syntax highlight for display
+  function highlight(yaml){
+    return yaml.split("\n").map(line=>{
+      const esc=l=>l.replace(/&/g,"&amp;").replace(/</g,"&lt;");
+      let m;
+      // "  key: value"
+      if((m=line.match(/^(\s*)([A-Za-z0-9_]+)(:)(.*)$/))){
+        const rest=m[4];
+        let restHtml;
+        if(/^\s*\|$/.test(rest)) restHtml=` <span class="d">|</span>`;
+        else if(/^\s*(true|false)\s*$/.test(rest)) restHtml=`<span class="b">${esc(rest)}</span>`;
+        else if(/^\s*".*"\s*$/.test(rest)) restHtml=`<span class="s">${esc(rest)}</span>`;
+        else restHtml=`<span class="v">${esc(rest)}</span>`;
+        return `${m[1]}<span class="k">${m[2]}</span><span class="d">:</span>${restHtml}`;
+      }
+      // "  - item"
+      if((m=line.match(/^(\s*)(- )(.*)$/))){
+        const body=m[3];
+        const bodyHtml=/^".*"$/.test(body)?`<span class="s">${esc(body)}</span>`:`<span class="v">${esc(body)}</span>`;
+        return `${m[1]}<span class="d">-</span> ${bodyHtml}`;
+      }
+      return `<span class="d">${esc(line)}</span>`;
+    }).join("\n");
+  }
+
+  let CURRENT="";
+  function render(){
+    const d=gather();
+    const yaml=buildYaml(d);
+    CURRENT=yaml;
+    $("#code").innerHTML=highlight(yaml)
+    const errs=validate(d);
+    // status
+    const st=$("#status"), txt=$("#status-txt");
+    if(errs.length===0){ st.className="status ok"; txt.textContent="VALID"; }
+    else { st.className="status warn"; txt.textContent=errs.length+" "+(errs.length===1?"ISSUE":"ISSUES"); }
+    // issues list
+    const box=$("#issues"), list=$("#issues-list");
+    if(errs.length===0){ box.classList.add("empty"); list.innerHTML=""; }
+    else{
+      box.classList.remove("empty");
+      $("#issues-h").textContent=`⚠ ${errs.length} protocol ${errs.length===1?"check":"checks"} unmet`;
+      list.innerHTML=errs.map(([k,m])=>`<li><code>${k}</code> — ${m}</li>`).join("");
+    }
+    // per-field check badges
+    $$(".ck[data-ck]").forEach(b=>{
+      const key=b.getAttribute("data-ck"); if(!key) return;
+      const bad=errs.some(([k])=>k===key);
+      b.textContent = bad ? "missing" : "ok";
+      b.className = "ck "+(bad?"bad":"good");
+    });
+    // select placeholder styling
+    const sel=$("#o_fmt"); sel.classList.toggle("unset", !sel.value);
+  }
+
+  // ---------- events ----------
+  document.addEventListener("input", render);
+  document.addEventListener("change", render);
+  document.addEventListener("click", e=>{
+    const add=e.target.closest("[data-add]");
+    if(add){ const r=addRow(add.getAttribute("data-add")); const inp=r.querySelector("input"); if(inp) inp.focus(); render(); return; }
+    const rm=e.target.closest(".rm");
+    if(rm){ const row=rm.closest(".lrow,.ref-row,.lesson-row,.req-row"); if(row) row.remove(); render(); }
+  });
+
+  function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),1500); }
+
+  $("#copy").addEventListener("click", async ()=>{
+    try{ await navigator.clipboard.writeText(CURRENT); toast("Copied to clipboard"); }
+    catch{ const ta=document.createElement("textarea"); ta.value=CURRENT; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");toast("Copied");}catch{toast("Copy failed");} ta.remove(); }
+  });
+  $("#download").addEventListener("click", ()=>{
+    const id=val("#t_id").replace(/[^A-Za-z0-9_.-]/g,"-")||"prompt";
+    const blob=new Blob([CURRENT],{type:"text/yaml"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=id+".yaml"; a.click(); URL.revokeObjectURL(a.href);
+    toast("Downloaded "+id+".yaml");
+  });
+  $("#clear").addEventListener("click", ()=>{
+    if(!confirm("Clear all fields?")) return;
+    $$("input[type=text],textarea").forEach(el=>el.value="");
+    $("#o_fmt").value="";
+    ["#p_apply","#p_stake","#p_log","#p_flag"].forEach(s=>$(s).checked=true);
+    $$("#artifacts input").forEach(i=>i.checked=DEFAULT_ARTIFACTS.includes(i.value));
+    render(); toast("Cleared");
+  });
+
+  const EXAMPLE={
+    task:{id:"GROW-6687-email-validation",title:"Add server-side validation to the signup email field",author:"rbeye",date:"2026-06-18"},
+    preamble:"Ignore prior memories about the visual config builder.\nAssume the reader knows the signup runtime, not the builder.",
+    lens:"Staff engineer accountable for data integrity",
+    priorities:["Reject invalid input before it reaches the database","Keep the change small and reversible"],
+    prompt:"Validate the signup email on the server so malformed addresses are rejected\nwith a 422 and a clear message, instead of being stored.",
+    out_of_scope:["Client-side validation changes","Email deliverability or verification mail"],
+    must_not:["Change the public signup API response shape"],
+    background:"Signup currently trusts the client to validate. Bad addresses reach the users table.",
+    references:[{path:"src/signup/handler.ts",lines:"42-88",note:"Where the request body is parsed and persisted"}],
+    links:["https://example.atlassian.net/browse/GROW-6687"],
+    lessons:[{context:"A regex-only check was tried before",takeaway:"It rejected valid plus-addressed emails; use a parser, not a regex"}],
+    format:"patch",destination:"Edit files in place",
+    structure:"A minimal diff to src/signup/handler.ts plus one test file.\nName each file and the functions touched.",
+    requirements:[{id:"R1",statement:"A malformed email returns 422 and is not persisted",verify:"Integration test posts a bad address and asserts 422 plus no new row"}]
+  };
+  $("#example").addEventListener("click", ()=>{
+    const E=EXAMPLE;
+    $("#t_id").value=E.task.id; $("#t_title").value=E.task.title; $("#t_author").value=E.task.author; $("#t_date").value=E.task.date;
+    $("#preamble").value=E.preamble; $("#r_lens").value=E.lens; $("#prompt").value=E.prompt;
+    $("#c_bg").value=E.background; $("#o_fmt").value=E.format; $("#o_dest").value=E.destination; $("#o_struct").value=E.structure;
+    function refill(list, vals, setter){ const c=$(`.list-rows[data-list="${list}"]`); c.innerHTML=""; vals.forEach(v=>{ const r=addRow(list,setter?undefined:v); if(setter) setter(r,v); }); }
+    refill("priorities",E.priorities);
+    refill("out_of_scope",E.out_of_scope);
+    refill("must_not",E.must_not);
+    refill("links",E.links);
+    refill("references",E.references,(r,v)=>{ r.querySelector('[data-field=path]').value=v.path; r.querySelector('[data-field=lines]').value=v.lines; r.querySelector('[data-field=note]').value=v.note; });
+    refill("lessons_learned",E.lessons,(r,v)=>{ r.querySelector('[data-field=context]').value=v.context; r.querySelector('[data-field=takeaway]').value=v.takeaway; });
+    refill("requirements",E.requirements,(r,v)=>{ r.querySelector('[data-field=id]').value=v.id; r.querySelector('[data-field=statement]').value=v.statement; r.querySelector('[data-field=verify]').value=v.verify; });
+    $$("#artifacts input").forEach(i=>i.checked=DEFAULT_ARTIFACTS.includes(i.value));
+    render(); toast("Example loaded");
+  });
+
+  // ---------- paste / import ----------
+  // Minimal block-YAML parser covering the schema this builder emits:
+  // nested maps (2-space indent), scalar/quoted/boolean values, block scalars (|),
+  // scalar sequences and sequences of scalar-valued maps. Keys are identifiers.
+  function parseYAML(text){
+    const lines=String(text).replace(/\r\n/g,"\n").replace(/\t/g,"  ").split("\n");
+    const N=lines.length; let i=0;
+    const indentOf=s=>s.match(/^ */)[0].length;
+    const skippable=s=>s.trim()===""||/^\s*#/.test(s);
+    const KEY=/^([A-Za-z0-9_]+):(?:\s+(.*)|\s*)$/;
+
+    function parseScalar(s){
+      let v=s.trim();
+      if(v==="") return "";
+      if(v[0]==='"'&&v[v.length-1]==='"') return v.slice(1,-1).replace(/\\"/g,'"').replace(/\\\\/g,"\\");
+      if(v[0]==="'"&&v[v.length-1]==="'") return v.slice(1,-1).replace(/''/g,"'");
+      if(v==="true") return true;
+      if(v==="false") return false;
+      if(v==="null"||v==="~") return null;
+      return v;
+    }
+    function parseBlockScalar(parentIndent){
+      const buf=[]; let blockIndent=null;
+      while(i<N){
+        if(lines[i].trim()===""){ buf.push(""); i++; continue; }
+        const ci=indentOf(lines[i]);
+        if(ci<=parentIndent) break;
+        if(blockIndent===null) blockIndent=ci;
+        buf.push(lines[i].slice(blockIndent)); i++;
+      }
+      while(buf.length&&buf[buf.length-1]==="") buf.pop();
+      return buf.join("\n");
+    }
+    function parseNodeDeeper(parentIndent){
+      let j=i; while(j<N&&skippable(lines[j])) j++;
+      if(j>=N) return null;
+      const ci=indentOf(lines[j]); if(ci<=parentIndent) return null;
+      i=j; const body=lines[i].slice(ci);
+      return (body[0]==="-"&&(body.length===1||body[1]===" ")) ? parseSeq(ci) : parseMap(ci);
+    }
+    function parseMap(indent){
+      const obj={};
+      while(i<N){
+        if(skippable(lines[i])){ i++; continue; }
+        const ci=indentOf(lines[i]); if(ci<indent) break; if(ci>indent){ i++; continue; }
+        const m=lines[i].slice(indent).match(KEY); if(!m){ i++; continue; }
+        const key=m[1]; const rest=m[2]!==undefined?m[2]:"";
+        if(/^[|>][+-]?$/.test(rest)){ i++; obj[key]=parseBlockScalar(indent); }
+        else if(rest===""){ i++; obj[key]=parseNodeDeeper(indent); }
+        else { obj[key]=parseScalar(rest); i++; }
+      }
+      return obj;
+    }
+    function parseSeq(indent){
+      const arr=[];
+      while(i<N){
+        if(skippable(lines[i])){ i++; continue; }
+        const ci=indentOf(lines[i]); if(ci<indent) break; if(ci>indent){ i++; continue; }
+        const body=lines[i].slice(ci);
+        if(body[0]!=="-"||(body.length>1&&body[1]!==" ")) break;
+        if(body==="-"){ i++; arr.push(parseNodeDeeper(ci)); continue; }
+        const after=body.slice(1).replace(/^\s+/,"");
+        const itemIndent=ci+(body.length-after.length);
+        const km=(after[0]!=='"'&&after[0]!=="'")?after.match(KEY):null;
+        if(km){
+          const obj={}; const key=km[1]; const rest=km[2]!==undefined?km[2]:"";
+          if(/^[|>][+-]?$/.test(rest)){ i++; obj[key]=parseBlockScalar(itemIndent-1); }
+          else if(rest===""){ i++; obj[key]=parseNodeDeeper(itemIndent-1); }
+          else { obj[key]=parseScalar(rest); i++; }
+          while(i<N){
+            if(skippable(lines[i])){ i++; continue; }
+            if(indentOf(lines[i])!==itemIndent) break;
+            const m2=lines[i].slice(itemIndent).match(KEY); if(!m2) break;
+            const k2=m2[1]; const r2=m2[2]!==undefined?m2[2]:"";
+            if(/^[|>][+-]?$/.test(r2)){ i++; obj[k2]=parseBlockScalar(itemIndent); }
+            else if(r2===""){ i++; obj[k2]=parseNodeDeeper(itemIndent); }
+            else { obj[k2]=parseScalar(r2); i++; }
+          }
+          arr.push(obj);
+        } else { arr.push(parseScalar(after)); i++; }
+      }
+      return arr;
+    }
+    while(i<N&&skippable(lines[i])) i++;
+    if(i>=N) return {};
+    return parseMap(indentOf(lines[i]));
+  }
+
+  const isObj=x=>x&&typeof x==="object"&&!Array.isArray(x);
+  const isStr=x=>typeof x==="string";
+  const scalarish=x=>typeof x==="string"||typeof x==="number"||typeof x==="boolean";
+  const asStr=x=>scalarish(x)?String(x):"";
+  function setV(sel,v){ if(scalarish(v)){ const el=$(sel); if(el) el.value=String(v); } }
+  function unk(o,allowed,prefix,failed){ Object.keys(o).forEach(k=>{ if(!allowed.includes(k)) failed.push(prefix+k); }); }
+  function refillList(list,vals,setter){
+    const c=$(`.list-rows[data-list="${list}"]`); if(!c) return; c.innerHTML="";
+    vals.forEach(v=>{ const r=addRow(list,setter?undefined:v); if(setter) setter(r,v); });
+  }
+
+  function importYaml(text){
+    let obj=null; try{ obj=parseYAML(text); }catch(e){ obj=null; }
+    if(!isObj(obj)) return {parseError:true, failed:[]};
+    const failed=[];
+    const TOP=["schema_version","task","preamble","role","prompt","constraints","context","lessons_learned","output","requirements","protocol"];
+    Object.keys(obj).forEach(k=>{ if(!TOP.includes(k)) failed.push(k); });
+
+    // replace the form contents (paste loads a document, like the example loader)
+    $$("main input[type=text],main textarea").forEach(el=>el.value="");
+    $("#o_fmt").value="";
+    ["#p_apply","#p_stake","#p_log","#p_flag"].forEach(s=>$(s).checked=true);
+    $$("#artifacts input").forEach(i=>i.checked=DEFAULT_ARTIFACTS.includes(i.value));
+    $$(".list-rows").forEach(c=>c.innerHTML="");
+
+    if(isObj(obj.task)){
+      unk(obj.task,["id","title","author","date"],"task.",failed);
+      setV("#t_id",obj.task.id); setV("#t_title",obj.task.title); setV("#t_author",obj.task.author); setV("#t_date",obj.task.date);
+    } else if("task" in obj){ failed.push("task"); }
+
+    if("preamble" in obj){ if(isStr(obj.preamble)) setV("#preamble",obj.preamble); else failed.push("preamble"); }
+
+    if(isObj(obj.role)){
+      unk(obj.role,["lens","priorities"],"role.",failed);
+      setV("#r_lens",obj.role.lens);
+      if(Array.isArray(obj.role.priorities)) refillList("priorities",obj.role.priorities.filter(scalarish).map(asStr));
+    } else if("role" in obj){ failed.push("role"); }
+
+    if("prompt" in obj){ if(isStr(obj.prompt)) setV("#prompt",obj.prompt); else failed.push("prompt"); }
+
+    if(isObj(obj.constraints)){
+      unk(obj.constraints,["out_of_scope","must_not"],"constraints.",failed);
+      if(Array.isArray(obj.constraints.out_of_scope)) refillList("out_of_scope",obj.constraints.out_of_scope.filter(scalarish).map(asStr));
+      if(Array.isArray(obj.constraints.must_not)) refillList("must_not",obj.constraints.must_not.filter(scalarish).map(asStr));
+    } else if("constraints" in obj){ failed.push("constraints"); }
+
+    if(isObj(obj.context)){
+      unk(obj.context,["background","references","links"],"context.",failed);
+      setV("#c_bg",obj.context.background);
+      if(Array.isArray(obj.context.references)) refillList("references",obj.context.references.filter(isObj),(r,v)=>{
+        if(v.path!=null) r.querySelector("[data-field=path]").value=asStr(v.path);
+        if(v.lines!=null) r.querySelector("[data-field=lines]").value=asStr(v.lines);
+        if(v.note!=null) r.querySelector("[data-field=note]").value=asStr(v.note);
+      });
+      if(Array.isArray(obj.context.links)) refillList("links",obj.context.links.filter(scalarish).map(asStr));
+    } else if("context" in obj){ failed.push("context"); }
+
+    if(Array.isArray(obj.lessons_learned)) refillList("lessons_learned",obj.lessons_learned.filter(isObj),(r,v)=>{
+      if(v.context!=null) r.querySelector("[data-field=context]").value=asStr(v.context);
+      if(v.takeaway!=null) r.querySelector("[data-field=takeaway]").value=asStr(v.takeaway);
+    });
+    else if("lessons_learned" in obj){ failed.push("lessons_learned"); }
+
+    if(isObj(obj.output)){
+      unk(obj.output,["format","destination","structure"],"output.",failed);
+      if(obj.output.format!=null){ if(FORMATS.includes(obj.output.format)) $("#o_fmt").value=obj.output.format; else failed.push("output.format"); }
+      setV("#o_dest",obj.output.destination); setV("#o_struct",obj.output.structure);
+    } else if("output" in obj){ failed.push("output"); }
+
+    if(Array.isArray(obj.requirements)) refillList("requirements",obj.requirements.filter(isObj),(r,v)=>{
+      if(v.id!=null) r.querySelector("[data-field=id]").value=asStr(v.id);
+      if(v.statement!=null) r.querySelector("[data-field=statement]").value=asStr(v.statement);
+      if(v.verify!=null) r.querySelector("[data-field=verify]").value=asStr(v.verify);
+    });
+    else if("requirements" in obj){ failed.push("requirements"); }
+
+    if(isObj(obj.protocol)){
+      unk(obj.protocol,["apply","stake_single_recommendation","log_assumptions","flag_low_confidence","artifacts"],"protocol.",failed);
+      if(typeof obj.protocol.apply==="boolean") $("#p_apply").checked=obj.protocol.apply;
+      if(typeof obj.protocol.stake_single_recommendation==="boolean") $("#p_stake").checked=obj.protocol.stake_single_recommendation;
+      if(typeof obj.protocol.log_assumptions==="boolean") $("#p_log").checked=obj.protocol.log_assumptions;
+      if(typeof obj.protocol.flag_low_confidence==="boolean") $("#p_flag").checked=obj.protocol.flag_low_confidence;
+      if(Array.isArray(obj.protocol.artifacts)){
+        const set=new Set(obj.protocol.artifacts);
+        $$("#artifacts input").forEach(i=>i.checked=set.has(i.value));
+        obj.protocol.artifacts.filter(a=>!ARTIFACTS.includes(a)).forEach(a=>failed.push("protocol.artifacts: "+a));
+      }
+    } else if("protocol" in obj){ failed.push("protocol"); }
+
+    render();
+    return {parseError:false, failed};
+  }
+
+  function setPasteMsg(msg,cls){ const el=$("#pastemsg"); el.textContent=msg; el.className="paste-msg"+(cls?" "+cls:""); }
+  $("#pastebtn").addEventListener("click", ()=>{
+    const d=$("#pastedrawer"); d.classList.toggle("open");
+    if(d.classList.contains("open")) $("#pastearea").focus();
+  });
+  $("#pasteimport").addEventListener("click", ()=>{
+    const text=$("#pastearea").value;
+    if(!text.trim()){ setPasteMsg("Nothing to import — paste YAML first.","warn"); return; }
+    const res=importYaml(text);
+    if(res.parseError){ setPasteMsg("Couldn't parse that as YAML — check indentation and structure.","warn"); toast("Import failed"); return; }
+    if(res.failed.length){
+      setPasteMsg(`Imported. Skipped ${res.failed.length} unrecognized field${res.failed.length===1?"":"s"}: ${res.failed.join(", ")}`,"warn");
+      toast(`Imported · ${res.failed.length} skipped`);
+    } else { setPasteMsg("Imported all recognized fields.","ok"); toast("Imported"); }
+  });
+
+  seed();
+  render();
+})();
+</script>
+<script>
+(function(){var cb=document.getElementById('themetoggle'),icon=document.getElementById('tt-icon');if(!cb)return;
+  function sync(){var t=document.documentElement.getAttribute('data-theme');
+    cb.checked=(t==='dark');if(icon)icon.textContent=(t==='dark')?'☾':'☀';}
+  cb.addEventListener('change',function(){var t=cb.checked?'dark':'light';
+    document.documentElement.setAttribute('data-theme',t);
+    try{localStorage.setItem('adp-theme',t);}catch(_){}sync();});
+  sync();})();
+</script>
+<script>
+/* collapsible form sections — parity with the parser's artifact cards */
+(function(){document.querySelectorAll('.section > .sec-head').forEach(function(h){
+  var t=document.createElement('span');t.className='sec-toggle panel-card-toggle';t.setAttribute('aria-hidden','true');t.textContent='▾';
+  h.appendChild(t);
+  h.addEventListener('click',function(){h.parentElement.classList.toggle('collapsed');});
+});})();
+</script>
+</body>
+</html>
