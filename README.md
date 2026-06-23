@@ -22,6 +22,8 @@ A nine-phase protocol for AI-assisted development. Under it, the model defends o
 - `references/prompt-template-annotated.yaml`: the same template, documenting every field and option.
 - `references/failure-modes.md`: maps a symptom to the artifact you open first when something breaks.
 - `scripts/validate-prompt.py`: checks a filled prompt for structure, types, and allowed values.
+- `scripts/prompt-builder.html`: a browser form for filling the template, with import and YAML export.
+- `scripts/ADP-Parser.html`: a browser viewer that renders the protocol's markdown output by section.
 
 ## Using the protocol
 
@@ -43,3 +45,10 @@ A YAML-based prompt template is provided for structured prompting to ensure cons
    The script prints each problem it finds and exits non-zero. A clean run prints `VALID`.
 
 Invoke the skill with a request in hand and it offers to draft a filled template from what you gave it. Tell it where to save the file.
+
+## Browser tools
+
+Two pages run the template and its output with no build step. Open them in a browser, and keep `adp-theme.css` and `adp-bg.svg` in the same folder.
+
+- **Prompt Builder** (`scripts/prompt-builder.html`) fills the template through a form instead of a text editor. Paste an existing `prompt.yaml` to import it, or load the example, then copy or download the result. It reports any keys it does not recognize.
+- **Artifact Viewer** (`scripts/ADP-Parser.html`) renders the protocol's markdown output. Paste or drop the text and it splits into the protocol's sections (Problem Statement, Decision Log, and so on) as you type.
