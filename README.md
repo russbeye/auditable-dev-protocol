@@ -1,4 +1,17 @@
-# Auditable AI-Assisted Development Protocol
+<div align="center">
+  <h1>Auditable AI-Assisted Development Protocol</h1>
+  <p><strong>A structured operating system for defensible AI-assisted engineering work.</strong></p>
+  <p>
+    <img alt="Protocol: 9 phases" src="https://img.shields.io/badge/protocol-9%20phases-2f6f68">
+    <img alt="Prompt format: YAML" src="https://img.shields.io/badge/prompt%20format-YAML-cb6f3d">
+    <img alt="Validation: Python" src="https://img.shields.io/badge/validation-Python-3776ab">
+    <img alt="Artifacts: auditable" src="https://img.shields.io/badge/artifacts-auditable-6f42c1">
+  </p>
+  <p>
+    <img alt="Prompt Builder interface" src="assets/builder.png" width="48%">
+    <img alt="ADP Parser interface" src="assets/parser.png" width="48%">
+  </p>
+</div>
 
 A nine-phase protocol for AI-assisted development. Under it, the model defends one recommendation, logs every assumption with its confidence, and leaves traceable artifacts. Use it when defensibility matters more than speed, on work that is hard to reverse.
 
