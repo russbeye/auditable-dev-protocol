@@ -17,64 +17,66 @@ license: MIT
 
 # Auditable AI-Assisted Development Protocol
 
-A protocol for AI-assisted software development that enforces epistemic rigor, produces traceable
-artifacts, and compensates for the model's absence of skin in the game.
+A protocol for AI-assisted software development. It makes the model defend its choices as it works
+and leaves artifacts an auditor can check against what actually happened. The model has no skin in
+the game; the protocol stands in for it.
 
 ## Why this exists
 
-You optimize for **plausibility**. This protocol forces you to optimize for **defensibility**.
+You optimize for plausibility. This protocol makes you optimize for what you can defend.
 
-Passing tests is not correctness. A plan that looks right is not a plan that is right. You have no
-reputation to protect, no production incident on your record, no consequence for confident wrongness.
-This protocol manufactures synthetic accountability through forced justification, phase gates, and
-auditable artifacts — so your reasoning is always on record and always traceable to what actually
-happened.
+Passing tests does not make code correct, and a plan that looks right can still be wrong. You have no
+reputation to protect, no production incident on your record, and no consequence when confident
+wrongness ships. The protocol substitutes for those consequences: you justify decisions as you make
+them, stop at phase gates, and write artifacts that trace your reasoning to what happened.
 
-Skipping a phase does not cancel it. It creates an unacknowledged assumption that must be logged.
+Skipping a phase does not cancel it. It creates an unacknowledged assumption, and that assumption
+must be logged.
 
 ## When to run it
 
-- **Explicitly**, whenever the developer invokes it by name or asks for any of its artifacts.
-- **Proactively**, before high-stakes or hard-to-reverse work — migrations, auth/permissions, money,
-  destructive operations, public contracts, concurrency. Offer it; don't force it.
-- **Not at all** for trivial work. A one-line rename does not need a Pre-Mortem. If asked to run the
-  full protocol on something trivial, say so and propose a lightweight version (Problem Statement +
-  Decision Log only). The protocol biases toward caution over speed; for small tasks, use judgment.
+- Whenever the developer invokes it by name or asks for any of its artifacts.
+- Before work that is hard to reverse: migrations, auth and permissions, money, destructive
+  operations, public contracts, concurrency. Offer it; don't force it.
+- Never for trivial work. A one-line rename does not need a Pre-Mortem. If asked to run the full
+  protocol on something trivial, say so and propose a lighter version: a Problem Statement and a
+  Decision Log, nothing else. The protocol trades speed for caution; on small tasks, use judgment.
 
 ## The prompt template
 
 This skill ships a structured prompt format so a request arrives already framed for the protocol. A
 filled prompt states the lens to reason from, the ask, the constraints, the context, prior dead ends,
-the shape of the output, the requirements that define done, and which artifacts to produce. It is YAML
-so the structure can be validated.
+the shape of the output, the requirements that define done, and which artifacts to produce. It is
+YAML so a script can check the structure.
 
-- **`prompts/prompt-template.yaml`** — the clean template. Copy it, fill it, delete what you don't need.
-- **`references/prompt-template-annotated.yaml`** — every field and every option documented, including
-  the full `output.format` and `protocol.artifacts` value sets.
-- **`scripts/validate-prompt.py`** — checks a filled prompt for required keys, types, and allowed
-  values. Run `python3 scripts/validate-prompt.py <file>`; it exits non-zero and lists what is wrong.
+- `prompts/prompt-template.yaml` is the clean template. Copy it, fill it, delete what you don't need.
+- `references/prompt-template-annotated.yaml` documents every field and option, including the full
+  `output.format` and `protocol.artifacts` value sets.
+- `scripts/validate-prompt.py` checks a filled prompt for required keys, types, and allowed values.
+  Run `python3 scripts/validate-prompt.py <file>`; it exits non-zero and lists what is wrong.
 
-**When invoked directly, nudge first.** Before you restate the problem in Phase 1, point the developer
-at the template. Offer to draft one pre-filled with whatever they have already given you — the ask,
-file paths, constraints, anything already in the conversation — and ask where to save it. If they
-decline, proceed to Phase 1 as normal. A filled prompt is an input to the protocol, not a replacement
-for any phase.
+When invoked directly, nudge first. Before you restate the problem in Phase 1, point the developer at
+the template. Offer to draft one pre-filled with whatever they have already given you: the ask, file
+paths, constraints, anything already in the conversation. Save a prompt drafted in session to
+`.adp/<task.id>/prompt.yaml` beside the run's other artifacts; do not ask where to put it. If the
+developer declines, proceed to Phase 1 as normal. A filled prompt is an input to the protocol, not a
+replacement for any phase.
 
 ## Your stance inside the protocol
 
-The protocol changes how you behave, not just what you output. Hold these throughout:
+The protocol changes your behavior as well as your output. Hold these throughout:
 
-- **You are being interrogated, not approved.** The developer's job at each gate is to probe and
-  challenge. Expect to defend your reasoning. Output that merely "looks correct" is not the goal.
-- **Stake claims, don't offer options.** Presenting alternatives without a defended recommendation is
-  a hedge, and hedges are rejected and sent back. Commit to one position and defend it. "It depends"
-  without a committed answer is not an answer.
-- **No silent assumptions.** Any assumption not written into the Decision Log does not exist as far as
-  the protocol is concerned. Log it the moment you make it — with its confidence level — not at PR time.
-- **Gates are real stops.** Do not begin the next phase while the current artifact has unresolved open
-  items. When working with a human in the loop, stop at the gate and wait for confirmation. When that
-  isn't possible (you're running solo or one-shot), write the gate confirmation out explicitly as a
-  forcing function and proceed on your stated best assumption, logged.
+- Expect interrogation at every gate. The developer's job is to probe and challenge your reasoning,
+  so output that merely looks correct will not survive.
+- Stake claims. Presenting alternatives without a defended recommendation is a hedge, and hedges get
+  sent back. Commit to one position and defend it. "It depends" without a committed answer is a
+  refusal to answer.
+- Log assumptions the moment you make them, with a confidence level. An assumption missing from the
+  Decision Log does not exist as far as the protocol is concerned.
+- Gates are real stops. Do not begin the next phase while the current artifact has unresolved open
+  items. With a human in the loop, stop at the gate and wait for confirmation. Running solo or
+  one-shot, write the gate confirmation out explicitly as a forcing function and proceed on your
+  stated best assumption, logged.
 
 ## The artifact chain
 
@@ -90,48 +92,80 @@ Phase 8  Communication      → Deployment Risk Statement
 Phase 9  The Loop           → Obligation Ticket List
 ```
 
-Each artifact feeds the next; none may be produced while the prior one has open items. The **Decision
-Log** is the spine — it opens in Phase 5, stays live through Phase 8, and is the first thing you open
+Each artifact feeds the next, and no artifact starts while the prior one has open items. The Decision
+Log is the spine: it opens in Phase 5, stays live through Phase 8, and is the first thing you open
 when something breaks.
 
-**Persist everything to one audit-log file, written live.** At Phase 1, create a single markdown file
-(e.g. `docs/audit-log-<feature>.md`) and make it the system of record for the entire run. Append each
-artifact to it **in full, the moment it is formulated** — the Problem Statement before Phase 2 begins,
-each Decision Log entry as the decision is made, each later phase's document as you produce it. The file
-is a living document the developer watches grow in real time; it is never reconstructed or dumped in one
-shot at the end. The conversation is a mirror of the file, never its replacement — it may be summarized,
-truncated, or gone by the time anyone audits the work. Therefore **no artifact may be reduced to a
-summary that points back to "the conversation" (or any other ephemeral context).** Every phase's
-artifact lives in the file, complete, even when a later phase repeats or supersedes an earlier one.
+**Persist everything to one audit-log file, written live.** Every run has a task id, taken from the
+filled prompt's `task.id` or derived as a short, stable kebab-case slug when no filled prompt exists.
+At Phase 1, create `.adp/<task.id>/audit-log.md` at the project root and make it the system of record
+for the run. Every artifact the run produces lives in `.adp/<task.id>/`: the audit log, a prompt
+drafted in session, anything else. Append each artifact to the audit log in full, the moment you
+formulate it: the Problem Statement before Phase 2 begins, each Decision Log entry as the decision is
+made, each later phase's document as you produce it. The developer watches the file grow in real
+time, so never hold artifacts back and dump them at the end. The conversation may be summarized,
+truncated, or gone by the time anyone audits the work, so no artifact may shrink to a summary that
+points back at the conversation or any other ephemeral context. Every phase's artifact lives in the
+file, complete, even when a later phase repeats or supersedes an earlier one.
+
+Whether `.adp/` is committed or gitignored is the developer's decision, not the protocol's.
+Committing keeps the audit trail with the code; ignoring keeps it local. If the project has no stated
+preference, ask once at Phase 1 and respect the answer.
+
+**The audit log is the observability layer, not the conversation.** The developer watches the run in
+the Artifact Viewer, not in session output. Immediately after creating the audit log in Phase 1,
+start the viewer server in the background and open the URL it prints in the browser (`xdg-open`,
+`open`, or `start`, whichever the platform has):
+
+```
+python3 <skill-dir>/scripts/adp-serve.py .adp/<task.id>/audit-log.md
+# prints e.g. http://127.0.0.1:38393/ADP-Parser.html?file=/audit-log.md
+```
+
+The page polls the log and re-renders on every append; nobody clicks anything. Tell the developer in
+one plain line that carries nothing beyond the task id and the file it names:
+
+> ADP-Parser opened, watching `.adp/<task.id>/audit-log.md`.
+
+From that point on, do not restate, summarize, or excerpt artifacts in the session. Session output is
+limited to gate questions and whatever answers you need from the developer; a gate prompt refers to
+the artifact by name and does not reproduce it. Everything else goes to the file. This is a
+deliberate output-token budget: narrating artifacts into the chat duplicates the audit log and pays
+for it twice.
 
 ## Core principles
 
-1. **No ambiguity is carried forward.** Each phase resolves its open questions before the next begins.
-   Unresolved questions become logged assumptions, not silent decisions.
-2. **Stake claims, not options.** A defended recommendation, never a menu.
-3. **Artifacts are liabilities, not deliverables.** Each one can be audited against what actually
-   happened. Write them as if a post-incident reviewer will read them.
-4. **The Decision Log is the spine.** Every other artifact is a phase snapshot; the log is the
-   continuous thread.
-5. **The audit log is written live and kept whole.** Every artifact is appended to the persisted file
-   the moment it exists, in full. Nothing is batched for the end; nothing is collapsed into a summary
-   that defers to the conversation — the conversation is not guaranteed to survive.
-6. **The developer is an interrogator, not an approver.**
-7. **Follow-up obligations are first-class.** Unvalidated assumptions don't expire — they become tickets.
+1. Each phase resolves its open questions before the next begins. An unresolved question becomes a
+   logged assumption, never a silent decision.
+2. Stake claims, not options: a defended recommendation, never a menu.
+3. Treat artifacts as liabilities. Each one can be audited against what actually happened, so write
+   them for the post-incident reviewer.
+4. The Decision Log is the spine. Every other artifact is a phase snapshot; the log is the continuous
+   thread.
+5. Write the audit log live and keep it whole. Append every artifact the moment it exists, in full.
+   Batching entries for the end, or collapsing an artifact into a summary that defers to the
+   conversation, breaks the audit trail, because the conversation is not guaranteed to survive.
+6. The developer is an interrogator, not an approver.
+7. Follow-up obligations are first-class work. Unvalidated assumptions do not expire; they become
+   tickets.
+8. The audit log is the observability layer. The developer watches the file in the Artifact Viewer,
+   not the chat. Keep session output to gate questions and needed answers, and never narrate
+   artifacts into the session.
 
 ---
 
-## Phase 1 — Observation
+## Phase 1: Observation
 
-**Do:** Restate the problem in your own words before any planning. The restatement must cover what the
-problem **is**, what it is **not**, and what success looks like at a human level (not a test level).
-Create the persisted audit-log file now (see *The artifact chain*) and write this Problem Statement into
-it as the first entry — every later artifact appends to the same file, live, in full.
+**Do:** Restate the problem in your own words before any planning. The restatement must cover what
+the problem is, what it is not, and what success looks like at a human level rather than a test
+level. Create `.adp/<task.id>/audit-log.md` now (see *The artifact chain*), write the Problem
+Statement into it as the first entry, and open the Artifact Viewer on it with the one-line notice
+(see *the observability layer*). Every later artifact appends to the same file, live and in full.
 
 **Gate:** The developer must confirm the restatement. Loop on corrections until confirmed, then treat
-it as locked — it doesn't change without a logged reason.
+it as locked; it does not change without a logged reason.
 
-**Output — Problem Statement Document:**
+**Output: Problem Statement Document**
 ```
 ## Problem Statement
 **What the problem is:** [restatement]
@@ -141,18 +175,18 @@ it as locked — it doesn't change without a logged reason.
 **Revision history:** [if amended, the reason]
 ```
 
-## Phase 2 — Literature Review
+## Phase 2: Literature Review
 
-**Do:** Two inputs, in order. (1) **Codebase context from the developer** — architecture, conventions,
-operational and org constraints, system history and intent; the situational awareness a senior engineer
-carries that lives in no file. Ask for it. (2) **Directed code reading by you** — targeted examination
-to answer questions the Problem Statement raised. Directed by hypotheses, not curiosity. Then build a
-three-column knowledge inventory.
+**Do:** Gather two inputs, in order. First, codebase context from the developer: architecture,
+conventions, operational and organizational constraints, system history and intent. This is the
+situational awareness a senior engineer carries and no file records, so ask for it. Second, directed
+code reading by you: targeted examination that answers questions the Problem Statement raised,
+directed by hypotheses rather than curiosity. Then build the three-column knowledge inventory.
 
-**Gate:** Every "Cannot Determine" item is resolved by the developer or explicitly logged as an
-accepted unknown before Phase 3.
+**Gate:** Every "Cannot Determine" item is resolved by the developer or logged as an accepted unknown
+before Phase 3.
 
-**Output — Knowledge Gap Document:**
+**Output: Knowledge Gap Document**
 ```
 ## Knowledge Gap Document
 | Known | Inferred (flagged) | Cannot Determine |
@@ -163,16 +197,16 @@ accepted unknown before Phase 3.
 1. [question] → [resolution OR: ACCEPTED UNKNOWN — logged to Decision Log]
 ```
 
-## Phase 3 — Hypothesis
+## Phase 3: Hypothesis
 
-**Do:** Stake a single recommended approach and defend it — not just what it does, but why it beats the
-alternatives. Enumerate the alternatives you considered and give a written rejection of each. Sitting on
-the fence is not permitted.
+**Do:** Stake a single recommended approach and defend it: say what it does and why it beats the
+alternatives. Enumerate the alternatives you considered and write a rejection for each. Sitting
+on the fence is not permitted.
 
-**Gate:** The developer interrogates the recommendation; you defend it. If it changes under
+**Gate:** The developer interrogates the recommendation and you defend it. If it changes under
 interrogation, the new recommendation restarts this phase.
 
-**Output — Recommendation Brief:**
+**Output: Recommendation Brief**
 ```
 ## Recommendation Brief
 **Recommended approach:** [single, specific]
@@ -184,15 +218,15 @@ interrogation, the new recommendation restarts this phase.
 **Assumptions this depends on:** [each becomes a tracked Decision Log item]
 ```
 
-## Phase 4 — Research Design
+## Phase 4: Research Design
 
 **Do:** Pre-mortem your own plan. Assume it has failed in production six months out and enumerate the
 most likely causes, each rated by likelihood and impact.
 
-**Gate:** Every HIGH-likelihood failure mode must be rebutted with reasoning or mitigated with a design
-change before Phase 5. Medium/low items are logged. Open HIGH items **block implementation**.
+**Gate:** Every HIGH-likelihood failure mode must be rebutted with reasoning or mitigated with a
+design change before Phase 5. Medium and low items are logged. Open HIGH items block implementation.
 
-**Output — Pre-Mortem Report:**
+**Output: Pre-Mortem Report**
 ```
 ## Pre-Mortem Report
 Assumed: this implementation failed in production. Most likely causes:
@@ -205,16 +239,16 @@ All HIGH-likelihood items resolved: [YES / NO — if NO, blocked]
 Authorized by: [developer]
 ```
 
-## Phase 5 — Implementation
+## Phase 5: Implementation
 
-**Do:** Write the code. Annotate every non-trivial decision in the Decision Log **as you make it** — no
-silent choices, no batching it up for PR time. A decision made under uncertainty is logged with its
-confidence level immediately. The log is a living document that grows here and stays open through Phase 8.
+**Do:** Write the code. Annotate every non-trivial decision in the Decision Log as you make it,
+rather than saving entries up for PR time. Log a decision made under uncertainty with its confidence
+level immediately. The log grows here and stays open through Phase 8.
 
-**Gate:** "Done" is not "compiles" or "tests pass." Done is: every decision in the implementation has a
-corresponding Decision Log entry.
+**Gate:** "Done" is not "compiles" or "tests pass." Done means every decision in the implementation
+has a corresponding Decision Log entry.
 
-**Output — Annotated Decision Log** *(the spine):*
+**Output: Annotated Decision Log** *(the spine)*
 ```
 ## Decision Log
 
@@ -230,16 +264,16 @@ corresponding Decision Log entry.
 [repeat per non-trivial decision]
 ```
 
-## Phase 6 — Analysis
+## Phase 6: Analysis
 
-**Do:** Write tests to **falsify**, not to confirm. Then enumerate what passing tests do **not** prove —
-the untestable assumptions, the scenarios tests can't reach, the conditions under which the code could
+**Do:** Write tests to falsify, not to confirm. Then enumerate what passing tests do not prove: the
+untestable assumptions, the scenarios tests cannot reach, the conditions under which the code could
 be wrong despite green CI.
 
 **Gate:** The Test Adversary Document exists before the PR is opened. A PR without it is missing its
 analysis phase.
 
-**Output — Test Adversary Document:**
+**Output: Test Adversary Document**
 ```
 ## Test Adversary Document
 **What passing tests prove:** [explicit scope of coverage]
@@ -250,16 +284,16 @@ analysis phase.
 **Untestable assumptions logged to Decision Log:** [reference DL entries]
 ```
 
-## Phase 7 — Synthesis
+## Phase 7: Synthesis
 
-**Do:** Write the PR description as a confidence-weighted summary — not a changelog. Explain decisions,
-rejected alternatives, and residual risk. Surface every LOW-confidence Decision Log entry for
-**mandatory** (not optional) human review.
+**Do:** Write the PR description as a confidence-weighted summary rather than a changelog. Explain
+decisions, rejected alternatives, and residual risk. Surface every LOW-confidence Decision Log entry
+for mandatory human review.
 
 **Gate:** Every LOW-confidence DL entry appears in the PR summary as a flagged review item that
 reviewers must respond to.
 
-**Output — Confidence-Weighted PR Summary:**
+**Output: Confidence-Weighted PR Summary**
 ```
 ## PR Summary
 **Problem being solved:** [→ Problem Statement Document]
@@ -276,15 +310,15 @@ reviewers must respond to.
 [→ Test Adversary Document — what reviewers should know tests don't cover]
 ```
 
-## Phase 8 — Communication
+## Phase 8: Communication
 
-**Do:** Before deploying, document the known unknowns at ship time, what monitoring should catch if an
-assumption was wrong, and explicit rollback triggers.
+**Do:** Before deploying, document the known unknowns at ship time, what monitoring should catch if
+an assumption was wrong, and explicit rollback triggers.
 
-**Gate:** Rollback trigger conditions are defined before deployment. "We'll know if something is wrong"
-is not a trigger condition — name the observable signal and threshold.
+**Gate:** Rollback trigger conditions are defined before deployment. "We'll know if something is
+wrong" is not a trigger condition; name the observable signal and threshold.
 
-**Output — Deployment Risk Statement:**
+**Output: Deployment Risk Statement**
 ```
 ## Deployment Risk Statement
 **Known unknowns at ship time:** [→ Decision Log OPEN items]
@@ -297,16 +331,16 @@ is not a trigger condition — name the observable signal and threshold.
 **Staged rollout:** [YES / NO — if NO, justify]
 ```
 
-## Phase 9 — The Loop
+## Phase 9: The Loop
 
 **Do:** After deployment, review every OPEN or UNVALIDATED Decision Log assumption. Each one not
-resolved during implementation becomes an Obligation Ticket — a first-class work item, not a
-suggestion — that traces back to the DL entry that created it.
+resolved during implementation becomes an Obligation Ticket: a first-class work item that traces back
+to the DL entry that created it.
 
-**Gate:** The Decision Log is marked CLOSED only when every entry is VALIDATED, INVALIDATED, or has a
-corresponding ticket. No entry stays OPEN without a ticket.
+**Gate:** The Decision Log is marked CLOSED only when every entry is VALIDATED, INVALIDATED, or
+ticketed. No entry stays OPEN without a ticket.
 
-**Output — Obligation Ticket List:**
+**Output: Obligation Ticket List**
 ```
 ## Obligation Ticket List
 | Ticket ID | Decision Log ref | Assumption to validate | Priority |
@@ -321,25 +355,26 @@ corresponding ticket. No entry stays OPEN without a ticket.
 
 | Rule | What it means |
 |------|---------------|
-| No phase skipping | Skipping a phase doesn't cancel it — it creates an unacknowledged assumption, logged immediately to the Decision Log at LOW confidence. |
-| No silent assumptions | An assumption not in the Decision Log does not exist, protocol-wise. |
-| No artifact deferred to the conversation | Every phase's artifact is written to the audit-log file in full. A phase reduced to a summary that points at "the conversation" (or any ephemeral context) is a violation — that context may be gone at audit time. |
-| The log is written live, not reconstructed | Each artifact is appended the moment it is formulated, never held in memory and dumped at the end. The developer must be able to watch the file grow. |
-| No hedged recommendations | Commit to a position. Options without a defense are a hedge and are rejected. |
-| No PR without a Test Adversary Document | Analysis must complete before synthesis. |
-| No open HIGH-likelihood failure modes | The Pre-Mortem must show all HIGH items resolved before implementation. |
+| No phase skipping | A skipped phase becomes an unacknowledged assumption, logged immediately to the Decision Log at LOW confidence. |
+| No silent assumptions | An assumption missing from the Decision Log does not exist, protocol-wise. |
+| No artifact deferred to the conversation | Every phase's artifact is written to the audit log in full. A phase reduced to a summary that points at the conversation, or any other ephemeral context, is a violation; that context may be gone at audit time. |
+| The log is written live, not reconstructed | Append each artifact the moment you formulate it. The developer must be able to watch the file grow. |
+| Artifacts stay out of the session | The audit log rendered in the Artifact Viewer is the observability layer. Restating or summarizing artifacts in session output is a violation; only gate questions and the one-line viewer notice belong in the conversation. |
+| No hedged recommendations | Commit to a position. Options without a defense are a hedge and get sent back. |
+| No PR without a Test Adversary Document | Analysis completes before synthesis. |
+| No open HIGH-likelihood failure modes | The Pre-Mortem must show every HIGH item resolved before implementation starts. |
 | No open Decision Log entries without tickets | The loop closes the log. OPEN entries without tickets are protocol violations. |
 
 ## Solo vs. team
 
-- **Solo:** You and the developer play both roles — interrogator and gate authority. Self-approval is
-  the main failure mode. Write the gate confirmations out explicitly even alone; that's the forcing
-  function.
-- **Team:** Phase 4 (Pre-Mortem) and Phase 7 (mandatory review items) should involve someone other than
-  the primary developer. The Decision Log is shared and visible to reviewers throughout.
+- Solo: you and the developer play both roles, interrogator and gate authority. Self-approval is the
+  main failure mode, so write the gate confirmations out explicitly even when alone. That is the
+  forcing function.
+- Team: Phase 4 (the Pre-Mortem) and Phase 7 (mandatory review items) should involve someone other
+  than the primary developer. The Decision Log stays shared and visible to reviewers throughout.
 
 ## When something breaks
 
-Consult `references/failure-modes.md` — it maps a symptom (production bug, "tests passed but production
-failed", wrong problem solved, forgotten follow-up) to the artifact you open first. It also covers the
-tool-agnostic linking requirements for where artifacts live.
+Consult `references/failure-modes.md`. It maps a symptom (a production bug, tests that passed while
+production failed, the wrong problem solved, a forgotten follow-up) to the artifact you open first,
+and covers the tool-agnostic linking requirements for where artifacts live.

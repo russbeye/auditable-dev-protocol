@@ -407,7 +407,7 @@
   /* =========================================================
      DL-002  Source acquisition: FS Access watch + fallbacks
      ========================================================= */
-  let fileHandle=null, watchTimer=null, lastSig='';
+  let fileHandle=null, watchTimer=null, lastSig='', fetchUrl=null;
 
   function setSource(name,state){
     $('#srcname').textContent=name||'none';
@@ -421,7 +421,17 @@
   function update(text, isLive){ currentText=text; render(isLive); }
 
   async function pollTick(){
-    if(!fileHandle || !$('#autoupd').checked) return;
+    if(!$('#autoupd').checked) return;
+    if(fetchUrl){
+      try{
+        const r=await fetch(fetchUrl,{cache:'no-store'});
+        if(!r.ok) return;
+        const text=await r.text();
+        if(text!==lastSig){ lastSig=text; setSource(fetchUrl.split('/').pop()||fetchUrl,'WATCHING'); update(text,true); }
+      }catch(e){ /* server gone — leave last render in place */ }
+      return;
+    }
+    if(!fileHandle) return;
     try{
       const f=await fileHandle.getFile();
       const sig=f.lastModified+':'+f.size;
@@ -439,7 +449,7 @@
     if(!('showOpenFilePicker' in window)){ toast('File watching needs a Chromium browser — use Paste or drop'); $('#pastedrawer').classList.add('open'); return; }
     try{
       const [h]=await window.showOpenFilePicker({types:[{description:'Markdown / text',accept:{'text/markdown':['.md','.markdown'],'text/plain':['.txt']}}]});
-      fileHandle=h; lastSig=''; closePaste(); startWatch(); toast('Watching '+h.name);
+      fileHandle=h; fetchUrl=null; lastSig=''; closePaste(); startWatch(); toast('Watching '+h.name);
     }catch(e){ /* user cancelled */ }
   });
   $('#reload').addEventListener('click', ()=>{ lastSig=''; pollTick(); toast('Reloaded'); });
@@ -451,7 +461,7 @@
     if(d.classList.contains('open')){ $('#pastearea').focus(); }
   });
   $('#pastearea').addEventListener('input', e=>{
-    if(watchTimer){ clearInterval(watchTimer); watchTimer=null; fileHandle=null; $('#reload').disabled=true; }
+    if(watchTimer){ clearInterval(watchTimer); watchTimer=null; fileHandle=null; fetchUrl=null; $('#reload').disabled=true; }
     setSource('pasted text','PASTED'); update(e.target.value,false);
   });
 
@@ -464,10 +474,10 @@
     e.preventDefault(); dragDepth=0; mask.classList.remove('show');
     const item=e.dataTransfer.items && e.dataTransfer.items[0];
     if(item && item.getAsFileSystemHandle){
-      try{ const h=await item.getAsFileSystemHandle(); if(h && h.kind==='file'){ fileHandle=h; lastSig=''; closePaste(); startWatch(); toast('Watching '+h.name); return; } }catch(_){}
+      try{ const h=await item.getAsFileSystemHandle(); if(h && h.kind==='file'){ fileHandle=h; fetchUrl=null; lastSig=''; closePaste(); startWatch(); toast('Watching '+h.name); return; } }catch(_){}
     }
     const file=e.dataTransfer.files && e.dataTransfer.files[0];
-    if(file){ const text=await file.text(); if(watchTimer){clearInterval(watchTimer);watchTimer=null;fileHandle=null;} setSource(file.name+' (snapshot)','LOADED'); update(text,false); }
+    if(file){ const text=await file.text(); if(watchTimer){clearInterval(watchTimer);watchTimer=null;fileHandle=null;fetchUrl=null;} setSource(file.name+' (snapshot)','LOADED'); update(text,false); }
   });
 
   // expand / collapse
@@ -588,7 +598,7 @@ Concurrency and exhaustive international address shapes are not covered by tests
 **Decision Log status:** OPEN — one ticket outstanding.`;
 
   $('#example').addEventListener('click', ()=>{
-    if(watchTimer){ clearInterval(watchTimer); watchTimer=null; fileHandle=null; $('#reload').disabled=true; }
+    if(watchTimer){ clearInterval(watchTimer); watchTimer=null; fileHandle=null; fetchUrl=null; $('#reload').disabled=true; }
     closePaste(); primed=false; collapsed.clear(); lastHashes=new Map();
     setSource('example.md','LOADED'); update(EXAMPLE,false); toast('Example loaded');
   });
@@ -610,6 +620,10 @@ Concurrency and exhaustive international address shapes are not covered by tests
 
   // initial paint
   render(false);
+
+  // zero-click: ?file=<url> fetch-watches a served file, no picker needed (DL-009)
+  fetchUrl=new URLSearchParams(location.search).get('file');
+  if(fetchUrl){ startWatch(); toast('Watching '+(fetchUrl.split('/').pop()||fetchUrl)); }
 })();
 </script>
 </body>
