@@ -53,12 +53,13 @@ def validate(doc):
         for key in ("id", "title", "author", "date"):
             require(nonempty_str(task.get(key)), f"task.{key} must be a non-empty string")
 
-    role = doc.get("role")
-    require(isinstance(role, dict), "role must be a mapping")
-    if isinstance(role, dict):
-        require(nonempty_str(role.get("lens")), "role.lens must be a non-empty string")
-        if "priorities" in role:
-            require(isinstance(role["priorities"], list), "role.priorities must be a list")
+    if "role" in doc:
+        role = doc["role"]
+        require(isinstance(role, dict), "role must be a mapping")
+        if isinstance(role, dict):
+            require(nonempty_str(role.get("lens")), "role.lens must be a non-empty string")
+            if "priorities" in role:
+                require(isinstance(role["priorities"], list), "role.priorities must be a list")
 
     require(nonempty_str(doc.get("prompt")), "prompt must be a non-empty string")
 

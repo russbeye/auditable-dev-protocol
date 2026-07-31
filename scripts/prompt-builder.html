@@ -21,6 +21,9 @@
 .grid{grid-template-columns:minmax(0,1fr) clamp(320px,30%,440px)}
 @media (max-width:980px){ .grid{grid-template-columns:1fr} }
 
+/* de-emphasized toolbar button — dev-support actions like the example loader */
+.btn.quiet{color:var(--faint);border-color:var(--line);background:transparent}
+
 /* form section card labels on top of the shared .panel-card primitive */
 .sec-idx{font-family:var(--mono);font-size:12px;color:var(--blue-bright);border:1px solid var(--line-bright);padding:2px 8px;letter-spacing:.05em;background:var(--inset);white-space:nowrap}
 .sec-name{font-family:var(--disp);font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:14px}
@@ -107,11 +110,13 @@
         <div class="status ok" id="status"><span class="blk"></span><span id="status-txt">VALID</span></div>
       </div>
       <div class="toolbar">
+        <button class="btn" id="openbtn">↑ Open</button>
         <button class="btn" id="pastebtn">⌨ Paste</button>
-        <button class="btn" id="example">Load example</button>
-        <button class="btn primary ghost" id="copy">⧉ Copy YAML</button>
-        <button class="btn" id="clear">Clear</button>
+        <button class="btn primary" id="copy">⧉ Copy YAML</button>
         <button class="btn" id="download">↓ Download</button>
+        <button class="btn ghost" id="clear">Clear</button>
+        <button class="btn quiet" id="example">Load example</button>
+        <input type="file" id="openfile" accept=".yaml,.yml,text/yaml" hidden>
       </div>
       <div class="paste-drawer" id="pastedrawer">
         <textarea id="pastearea" placeholder="Paste a prompt.yaml here, then Import into form. Unrecognized or invalid keys are skipped and reported below."></textarea>
@@ -176,11 +181,11 @@
         <div class="sec-head panel-card-head">
           <span class="sec-idx">#3</span>
           <span class="sec-name">Role</span><span class="sec-key">role</span>
-          <span class="req-pill req">Required</span>
+          <span class="req-pill opt">Optional</span>
         </div>
         <div class="sec-body panel-card-body">
           <div class="field">
-            <label class="lbl" for="r_lens"><span class="dot"></span>lens <span class="ck" data-ck="role.lens"></span></label>
+            <label class="lbl" for="r_lens"><span class="dot o"></span>lens <span class="ck" data-ck="role.lens"></span></label>
             <input type="text" id="r_lens" data-f="role.lens" placeholder="The perspective to reason from, e.g. staff engineer accountable for data integrity">
           </div>
           <div class="field">
@@ -454,8 +459,11 @@
     return row;
   }
 
+  function todayISO(){ const d=new Date(),p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
+
   // seed initial rows so every template example surfaces as a placeholder
   function seed(){
+    $("#t_date").value=todayISO();
     LIST_PLACEHOLDERS.priorities.forEach(()=>addRow("priorities"));
     addRow("out_of_scope"); addRow("must_not");
     addRow("references"); addRow("links");
@@ -522,11 +530,13 @@
     ["id","title","author","date"].forEach(k=>{ if(d.task[k]) L.push(`  ${k}: ${qstr(d.task[k])}`); });
     L.push("");
     if(d.preamble){ L.push(block("preamble", d.preamble, 0)); L.push(""); }
-    // role
-    L.push("role:");
-    if(d.role.lens) L.push(`  lens: ${qstr(d.role.lens)}`);
-    if(d.role.priorities.length){ L.push("  priorities:"); d.role.priorities.forEach(p=>L.push(`    - ${qstr(p)}`)); }
-    L.push("");
+    // role (optional)
+    if(d.role.lens || d.role.priorities.length){
+      L.push("role:");
+      if(d.role.lens) L.push(`  lens: ${qstr(d.role.lens)}`);
+      if(d.role.priorities.length){ L.push("  priorities:"); d.role.priorities.forEach(p=>L.push(`    - ${qstr(p)}`)); }
+      L.push("");
+    }
     if(d.prompt){ L.push(block("prompt", d.prompt, 0)); L.push(""); }
     // constraints (optional)
     if(d.constraints.out_of_scope.length || d.constraints.must_not.length){
@@ -587,7 +597,7 @@
   function validate(d){
     const e=[];
     ["id","title","author","date"].forEach(k=>{ if(!d.task[k]) e.push([`task.${k}`,"required"]); });
-    if(!d.role.lens) e.push(["role.lens","required"]);
+    if(d.role.priorities.length && !d.role.lens) e.push(["role.lens","required when role is used"]);
     if(!d.prompt) e.push(["prompt","required"]);
     if(!FORMATS.includes(d.output.format)) e.push(["output.format","pick one of code|patch|json|yaml|markdown|prose"]);
     if(!d.output.destination) e.push(["output.destination","required"]);
@@ -676,9 +686,23 @@
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=id+".yaml"; a.click(); URL.revokeObjectURL(a.href);
     toast("Downloaded "+id+".yaml");
   });
+  $("#openbtn").addEventListener("click", ()=>$("#openfile").click());
+  $("#openfile").addEventListener("change", e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const rd=new FileReader();
+    rd.onload=()=>{
+      const res=importYaml(String(rd.result));
+      if(res.parseError) toast("Couldn't parse "+f.name+" as YAML");
+      else if(res.failed.length) toast(`Opened ${f.name} · ${res.failed.length} field${res.failed.length===1?"":"s"} skipped`);
+      else toast("Opened "+f.name);
+    };
+    rd.readAsText(f);
+    e.target.value="";
+  });
   $("#clear").addEventListener("click", ()=>{
     if(!confirm("Clear all fields?")) return;
     $$("input[type=text],textarea").forEach(el=>el.value="");
+    $("#t_date").value=todayISO();
     $("#o_fmt").value="";
     ["#p_apply","#p_stake","#p_log","#p_flag"].forEach(s=>$(s).checked=true);
     $$("#artifacts input").forEach(i=>i.checked=DEFAULT_ARTIFACTS.includes(i.value));

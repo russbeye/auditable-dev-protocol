@@ -20,9 +20,9 @@ preamble: |
   Ignore prior memories about the visual config builder.
   Assume the reader knows the signup runtime, not the builder.
 
-# Required. The lens the model reasons through.
+# Optional. The lens the model reasons through. Omit the whole key when not needed.
 role:
-  lens: "Staff engineer accountable for data integrity"   # required
+  lens: "Staff engineer accountable for data integrity"   # required within role
   priorities:   # optional, repeatable; list most important first
     - "Reject invalid input before it reaches the database"
     - "Keep the change small and reversible"
