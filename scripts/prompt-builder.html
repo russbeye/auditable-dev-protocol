@@ -596,8 +596,9 @@
     const rd=new FileReader();
     rd.onload=()=>{
       const res=importYaml(String(rd.result));
+      const issues=res.parseError?0:res.warnings.length+res.failed.length;
       if(res.parseError) toast("Couldn't parse "+f.name+" as YAML");
-      else if(res.failed.length) toast(`Opened ${f.name} · ${res.failed.length} field${res.failed.length===1?"":"s"} skipped`);
+      else if(issues) toast(`Opened ${f.name} · ${issues} issue${issues===1?"":"s"}`);
       else toast("Opened "+f.name);
     };
     rd.readAsText(f);
@@ -653,20 +654,43 @@
   const isStr=x=>typeof x==="string";
   const scalarish=x=>typeof x==="string"||typeof x==="number"||typeof x==="boolean";
   const asStr=x=>scalarish(x)?String(x):"";
-  function setV(sel,v){ if(scalarish(v)){ const el=$(sel); if(el) el.value=String(v); } }
+  // A single-line input cannot hold newlines. The browser strips them on
+  // assignment and joins the words together. So we collapse a multiline value
+  // to spaces ourselves and report the alteration under its field name.
+  function setLine(el,v,name,failed){
+    if(!el||!scalarish(v)) return;
+    let s=String(v);
+    if(el.tagName==="INPUT"&&s.indexOf("\n")>=0){
+      failed.push(name+" (multiline value flattened to one line)");
+      s=s.replace(/\n+/g," ");
+    }
+    el.value=s;
+  }
+  function setV(sel,v,name,failed){ setLine($(sel),v,name,failed); }
   function unk(o,allowed,prefix,failed){ Object.keys(o).forEach(k=>{ if(!allowed.includes(k)) failed.push(prefix+k); }); }
+  // We name every list item this filter drops, so a wrong-shaped item never
+  // disappears silently.
+  function keepReported(arr,base,pred,why,failed){
+    return arr.filter((v,ix)=>{ if(pred(v)) return true; failed.push(`${base}[${ix}] (${why})`); return false; });
+  }
   function refillList(list,vals,setter){
     const c=$(`.list-rows[data-list="${list}"]`); if(!c) return; c.innerHTML="";
-    vals.forEach(v=>{ const r=addRow(list,setter?undefined:v); if(setter) setter(r,v); });
+    vals.forEach((v,ix)=>{ const r=addRow(list,setter?undefined:v); if(setter) setter(r,v,ix); });
   }
 
   function importYaml(text){
-    let obj=null; try{ obj=parseYAML(text); }catch(e){ obj=null; }
-    if(!isObj(obj)) return {parseError:true, failed:[]};
-    const failed=[];
+    // The parser fills this as it reads. We adopt it only after a clean parse,
+    // so a thrown parse cannot leak partial entries into the report.
+    const issues=[];
+    let obj=null; try{ obj=parseYAML(text, issues); }catch(e){ obj=null; }
+    if(!isObj(obj)) return {parseError:true, failed:[], warnings:[]};
+    const warnings=[];
+    if("schema_version" in obj && String(obj.schema_version)!=="1.0")
+      warnings.push(`schema_version is "${String(obj.schema_version)}" (this builder reads 1.0); fields may not line up.`);
+    const failed=issues;
     applyPromptData(obj, failed);
     scheduleDraftSave();
-    return {parseError:false, failed};
+    return {parseError:false, failed, warnings};
   }
 
   // Populate the form from a parsed prompt object. Shared by the YAML import
@@ -684,52 +708,52 @@
 
     if(isObj(obj.task)){
       unk(obj.task,["id","title","author","date"],"task.",failed);
-      setV("#t_id",obj.task.id); setV("#t_title",obj.task.title); setV("#t_author",obj.task.author); setV("#t_date",obj.task.date);
+      setV("#t_id",obj.task.id,"task.id",failed); setV("#t_title",obj.task.title,"task.title",failed); setV("#t_author",obj.task.author,"task.author",failed); setV("#t_date",obj.task.date,"task.date",failed);
     } else if("task" in obj){ failed.push("task"); }
 
-    if("preamble" in obj){ if(isStr(obj.preamble)) setV("#preamble",obj.preamble); else failed.push("preamble"); }
+    if("preamble" in obj){ if(isStr(obj.preamble)) setV("#preamble",obj.preamble,"preamble",failed); else failed.push("preamble"); }
 
     if(isObj(obj.role)){
       unk(obj.role,["lens","priorities"],"role.",failed);
-      setV("#r_lens",obj.role.lens);
-      if(Array.isArray(obj.role.priorities)) refillList("priorities",obj.role.priorities.filter(scalarish).map(asStr));
+      setV("#r_lens",obj.role.lens,"role.lens",failed);
+      if(Array.isArray(obj.role.priorities)) refillList("priorities",keepReported(obj.role.priorities,"role.priorities",scalarish,"not a plain value; skipped",failed).map(asStr));
     } else if("role" in obj){ failed.push("role"); }
 
-    if("prompt" in obj){ if(isStr(obj.prompt)) setV("#prompt",obj.prompt); else failed.push("prompt"); }
+    if("prompt" in obj){ if(isStr(obj.prompt)) setV("#prompt",obj.prompt,"prompt",failed); else failed.push("prompt"); }
 
     if(isObj(obj.constraints)){
       unk(obj.constraints,["out_of_scope","must_not"],"constraints.",failed);
-      if(Array.isArray(obj.constraints.out_of_scope)) refillList("out_of_scope",obj.constraints.out_of_scope.filter(scalarish).map(asStr));
-      if(Array.isArray(obj.constraints.must_not)) refillList("must_not",obj.constraints.must_not.filter(scalarish).map(asStr));
+      if(Array.isArray(obj.constraints.out_of_scope)) refillList("out_of_scope",keepReported(obj.constraints.out_of_scope,"constraints.out_of_scope",scalarish,"not a plain value; skipped",failed).map(asStr));
+      if(Array.isArray(obj.constraints.must_not)) refillList("must_not",keepReported(obj.constraints.must_not,"constraints.must_not",scalarish,"not a plain value; skipped",failed).map(asStr));
     } else if("constraints" in obj){ failed.push("constraints"); }
 
     if(isObj(obj.context)){
       unk(obj.context,["background","references","links"],"context.",failed);
-      setV("#c_bg",obj.context.background);
-      if(Array.isArray(obj.context.references)) refillList("references",obj.context.references.filter(isObj),(r,v)=>{
-        if(v.path!=null) r.querySelector("[data-field=path]").value=asStr(v.path);
-        if(v.lines!=null) r.querySelector("[data-field=lines]").value=asStr(v.lines);
-        if(v.note!=null) r.querySelector("[data-field=note]").value=asStr(v.note);
+      setV("#c_bg",obj.context.background,"context.background",failed);
+      if(Array.isArray(obj.context.references)) refillList("references",keepReported(obj.context.references,"context.references",isObj,"not a map; skipped",failed),(r,v,ix)=>{
+        setLine(r.querySelector("[data-field=path]"),v.path,`context.references[${ix}].path`,failed);
+        setLine(r.querySelector("[data-field=lines]"),v.lines,`context.references[${ix}].lines`,failed);
+        setLine(r.querySelector("[data-field=note]"),v.note,`context.references[${ix}].note`,failed);
       });
-      if(Array.isArray(obj.context.links)) refillList("links",obj.context.links.filter(scalarish).map(asStr));
+      if(Array.isArray(obj.context.links)) refillList("links",keepReported(obj.context.links,"context.links",scalarish,"not a plain value; skipped",failed).map(asStr));
     } else if("context" in obj){ failed.push("context"); }
 
-    if(Array.isArray(obj.lessons_learned)) refillList("lessons_learned",obj.lessons_learned.filter(isObj),(r,v)=>{
-      if(v.context!=null) r.querySelector("[data-field=context]").value=asStr(v.context);
-      if(v.takeaway!=null) r.querySelector("[data-field=takeaway]").value=asStr(v.takeaway);
+    if(Array.isArray(obj.lessons_learned)) refillList("lessons_learned",keepReported(obj.lessons_learned,"lessons_learned",isObj,"not a map; skipped",failed),(r,v,ix)=>{
+      setLine(r.querySelector("[data-field=context]"),v.context,`lessons_learned[${ix}].context`,failed);
+      setLine(r.querySelector("[data-field=takeaway]"),v.takeaway,`lessons_learned[${ix}].takeaway`,failed);
     });
     else if("lessons_learned" in obj){ failed.push("lessons_learned"); }
 
     if(isObj(obj.output)){
       unk(obj.output,["format","destination","structure"],"output.",failed);
       if(obj.output.format!=null){ if(FORMATS.includes(obj.output.format)) $("#o_fmt").value=obj.output.format; else failed.push("output.format"); }
-      setV("#o_dest",obj.output.destination); setV("#o_struct",obj.output.structure);
+      setV("#o_dest",obj.output.destination,"output.destination",failed); setV("#o_struct",obj.output.structure,"output.structure",failed);
     } else if("output" in obj){ failed.push("output"); }
 
-    if(Array.isArray(obj.requirements)) refillList("requirements",obj.requirements.filter(isObj),(r,v)=>{
-      if(v.id!=null) r.querySelector("[data-field=id]").value=asStr(v.id);
-      if(v.statement!=null) r.querySelector("[data-field=statement]").value=asStr(v.statement);
-      if(v.verify!=null) r.querySelector("[data-field=verify]").value=asStr(v.verify);
+    if(Array.isArray(obj.requirements)) refillList("requirements",keepReported(obj.requirements,"requirements",isObj,"not a map; skipped",failed),(r,v,ix)=>{
+      setLine(r.querySelector("[data-field=id]"),v.id,`requirements[${ix}].id`,failed);
+      setLine(r.querySelector("[data-field=statement]"),v.statement,`requirements[${ix}].statement`,failed);
+      setLine(r.querySelector("[data-field=verify]"),v.verify,`requirements[${ix}].verify`,failed);
     });
     else if("requirements" in obj){ failed.push("requirements"); }
 
@@ -759,9 +783,10 @@
     if(!text.trim()){ setPasteMsg("Nothing to import — paste YAML first.","warn"); return; }
     const res=importYaml(text);
     if(res.parseError){ setPasteMsg("Couldn't parse that as YAML — check indentation and structure.","warn"); toast("Import failed"); return; }
-    if(res.failed.length){
-      setPasteMsg(`Imported. Skipped ${res.failed.length} unrecognized field${res.failed.length===1?"":"s"}: ${res.failed.join(", ")}`,"warn");
-      toast(`Imported · ${res.failed.length} skipped`);
+    const issues=res.warnings.length+res.failed.length;
+    if(issues){
+      setPasteMsg(`Imported with ${issues} issue${issues===1?"":"s"}: ${res.warnings.concat(res.failed).join("; ")}`,"warn");
+      toast(`Imported · ${issues} issue${issues===1?"":"s"}`);
     } else { setPasteMsg("Imported all recognized fields.","ok"); toast("Imported"); }
   });
 
