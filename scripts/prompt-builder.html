@@ -860,11 +860,24 @@
   sync();})();
 </script>
 <script>
-/* collapsible form sections — parity with the parser's artifact cards */
+/* We collapse the form sections the same way the parser collapses its artifact
+   cards. The script builds the toggle at load, so the static markup carries no
+   collapse plumbing. The toggle is a real button, so Enter and Space arrive as
+   a click and bubble up to the header listener. Keep that listener the only
+   writer of the collapsed class and of aria-expanded. If you add collapse
+   behavior, add it to that listener, not to the button. */
 (function(){document.querySelectorAll('.section > .sec-head').forEach(function(h){
-  var t=document.createElement('span');t.className='sec-toggle panel-card-toggle';t.setAttribute('aria-hidden','true');t.textContent='▾';
-  h.appendChild(t);
-  h.addEventListener('click',function(){h.parentElement.classList.toggle('collapsed');});
+  var sec=h.parentElement,body=sec.querySelector('.sec-body');
+  body.id='sec-body-'+h.querySelector('.sec-key').textContent;
+  var t=document.createElement('button');t.type='button';t.className='sec-toggle panel-card-toggle';
+  t.setAttribute('aria-label',h.querySelector('.sec-name').textContent+' section');
+  t.setAttribute('aria-expanded','true');t.setAttribute('aria-controls',body.id);
+  var g=document.createElement('span');g.setAttribute('aria-hidden','true');g.textContent='▾';
+  t.appendChild(g);h.appendChild(t);
+  h.addEventListener('click',function(){
+    var closed=sec.classList.toggle('collapsed');
+    t.setAttribute('aria-expanded',closed?'false':'true');
+  });
 });})();
 </script>
 </body>
