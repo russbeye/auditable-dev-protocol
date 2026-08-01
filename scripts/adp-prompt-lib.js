@@ -99,11 +99,19 @@
   // Mirror of the Python side's nonempty_str. Only a real string with visible
   // content passes, so booleans and whitespace-only values fail.
   function nonemptyStr(v){ return typeof v==="string" && v.trim()!==""; }
+  // Mirror of DATE_RE in validate-prompt.py. We check the shape of the date,
+  // not the calendar, so Feb 30 passes by contract. Keep the class [0-9] on
+  // both sides. Python's \d also matches non-ASCII digits, and the two
+  // validators must reject the same strings.
+  const DATE_RE=/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
   function validate(d){
     const e=[];
     // The builder only ever writes 1.0, so this check judges imported documents.
     if(d.schema_version!=="1.0") e.push(["schema_version",'must be the string "1.0"']);
     ["id","title","author","date"].forEach(k=>{ if(!nonemptyStr(d.task[k])) e.push([`task.${k}`,"required"]); });
+    // We judge the shape only once the field is present, so one document
+    // never flags task.date twice.
+    if(nonemptyStr(d.task.date) && !DATE_RE.test(d.task.date)) e.push(["task.date","must match YYYY-MM-DD"]);
     if(d.role.priorities.length && !nonemptyStr(d.role.lens)) e.push(["role.lens","required when role is used"]);
     if(!nonemptyStr(d.prompt)) e.push(["prompt","required"]);
     if(typeof d.preamble!=="string") e.push(["preamble","must be plain text"]);

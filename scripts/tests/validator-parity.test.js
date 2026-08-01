@@ -47,7 +47,10 @@ const sortedKeys = errs => [...new Set(errs.map(e => e[0]))].sort();
    Keep semantic rules out of this adapter. If a rule can be expressed on the
    model, it belongs in validate(), where the browser badge also enforces it. */
 
-const OK_TASK = {id: "-", title: "-", author: "-", date: "-"};
+// The date placeholder must be a well-formed date. validate() judges the
+// date's shape, and a placeholder that fails it would leak a task.date flag
+// into every structurally-broken task fixture.
+const OK_TASK = {id: "-", title: "-", author: "-", date: "2026-01-01"};
 const OK_REQ = {id: "-", statement: "-", verify: "-"};
 const OK_LESSON = {context: "-", takeaway: "-"};
 const OK_PROTOCOL = {apply: true, stake_single_recommendation: true, log_assumptions: true, flag_low_confidence: true, artifacts: []};
@@ -257,6 +260,6 @@ test("validate-prompt.py has not grown rules the corpus does not know", () => {
   const src = fs.readFileSync(VALIDATOR, "utf8");
   const requires = (src.match(/require\(/g) || []).length - (src.match(/def require\(/g) || []).length;
   const appends = (src.match(/errors\.append\(/g) || []).length;
-  assert.strictEqual(requires, 23, "require() call sites in validate-prompt.py");
+  assert.strictEqual(requires, 24, "require() call sites in validate-prompt.py");
   assert.strictEqual(appends, 2, "errors.append() sites in validate-prompt.py");
 });

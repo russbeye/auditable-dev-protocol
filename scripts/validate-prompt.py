@@ -9,6 +9,7 @@ Exit codes:
     1  invalid (problems listed on stdout)
     2  usage error, missing file, unparseable YAML, or missing PyYAML
 """
+import re
 import sys
 
 try:
@@ -29,6 +30,14 @@ ARTIFACTS = {
     "deployment_risk",
     "obligation_tickets",
 }
+
+
+# We check the shape of the date, not the calendar. Four digits, a month from
+# 01 to 12, and a day from 01 to 31 is the whole contract, so Feb 30 passes on
+# purpose. Keep the class [0-9] in both this pattern and its JS mirror.
+# Python's \d also matches non-ASCII digits, and the two validators must
+# reject the same strings.
+DATE_RE = re.compile(r"[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])")
 
 
 def nonempty_str(value):
@@ -52,6 +61,11 @@ def validate(doc):
     if isinstance(task, dict):
         for key in ("id", "title", "author", "date"):
             require(nonempty_str(task.get(key)), f"task.{key} must be a non-empty string")
+        # We judge the shape only once the field is present, so one document
+        # never flags task.date twice. fullmatch stops a partial match or a
+        # trailing newline from passing.
+        if nonempty_str(task.get("date")):
+            require(DATE_RE.fullmatch(task["date"]), "task.date must match YYYY-MM-DD")
 
     if "role" in doc:
         role = doc["role"]

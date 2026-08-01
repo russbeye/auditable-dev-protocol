@@ -90,6 +90,18 @@
   "invalid/schema-version-wrong.yaml": [
     "schema_version"
   ],
+  "invalid/task-date-month-13.yaml": [
+    "task.date"
+  ],
+  "invalid/task-date-nonascii-digits.yaml": [
+    "task.date"
+  ],
+  "invalid/task-date-unpadded.yaml": [
+    "task.date"
+  ],
+  "invalid/task-date-us-format.yaml": [
+    "task.date"
+  ],
   "invalid/task-fields-empty.yaml": [
     "task.author",
     "task.date",
@@ -106,5 +118,6 @@
   "valid/minimal.yaml": [],
   "valid/protocol-false.yaml": [],
   "valid/reference-path-only.yaml": [],
+  "valid/task-date-iso.yaml": [],
   "valid/unknown-top-key.yaml": []
 }
