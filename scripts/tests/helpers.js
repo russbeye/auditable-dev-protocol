@@ -32,6 +32,7 @@ function readReference(name){
 function normalize(doc){
   const d = doc || {};
   return {
+    schema_version: "1.0",
     task: Object.assign({id: "", title: "", author: "", date: ""}, d.task),
     preamble: d.preamble || "",
     role: Object.assign({lens: "", priorities: []}, d.role),

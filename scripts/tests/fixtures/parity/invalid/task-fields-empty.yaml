@@ -1,0 +1,22 @@
+schema_version: "1.0"
+
+task:
+  id: ""
+  title: " "
+  author: ""
+  date: ""
+
+prompt: |
+  A minimal but complete prompt body.
+
+output:
+  format: "code"
+  destination: "scripts/"
+
+requirements:
+  - id: "R1"
+    statement: "It does the thing"
+    verify: "Run it and look"
+
+protocol:
+  apply: true

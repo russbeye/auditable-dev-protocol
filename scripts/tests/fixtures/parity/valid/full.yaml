@@ -1,0 +1,62 @@
+schema_version: "1.0"
+
+task:
+  id: "PB-005-full"
+  title: "Every optional group present"
+  author: "rbeye"
+  date: "2026-07-31"
+
+preamble: |
+  Ignore prior context about other tasks.
+
+role:
+  lens: "Engineer accountable for validation truth"
+  priorities:
+    - "Badge and CI agree"
+    - "Every rule has a fixture"
+
+prompt: |
+  Exercise every optional group with well-formed content.
+
+constraints:
+  out_of_scope:
+    - "Message equality"
+  must_not:
+    - "Weaken the Python validator"
+
+context:
+  background: |
+    Two validators, one contract.
+  references:
+    - path: "scripts/validate-prompt.py"
+      lines: "38-115"
+      note: "The authoritative rule set"
+  links:
+    - "https://example.test/PB-005"
+
+lessons_learned:
+  - context: "The badge and CI disagreed on schema_version"
+    takeaway: "Pin every rule with a fixture both sides must judge"
+
+output:
+  format: "markdown"
+  destination: "docs/"
+  structure: |
+    One section per rule.
+
+requirements:
+  - id: "R1"
+    statement: "Both validators agree"
+    verify: "Run the parity suite"
+  - id: "R2"
+    statement: "Every branch is covered"
+    verify: "Check the manifest"
+
+protocol:
+  apply: true
+  stake_single_recommendation: false
+  log_assumptions: true
+  flag_low_confidence: false
+  artifacts:
+    - decision_log
+    - test_adversary

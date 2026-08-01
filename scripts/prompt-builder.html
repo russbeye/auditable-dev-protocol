@@ -494,6 +494,9 @@
     const requirements = listOf("requirements").map(r=>({id:rowVal(r,"id"),statement:rowVal(r,"statement"),verify:rowVal(r,"verify")}));
     const artifacts = $$("#artifacts input:checked").map(i=>i.value);
     return {
+      // The builder only writes 1.0 documents. validate() checks the version
+      // so an imported foreign version cannot show a VALID badge.
+      schema_version:"1.0",
       task:{id:val("#t_id"),title:val("#t_title"),author:val("#t_author"),date:val("#t_date")},
       preamble:val("#preamble"),
       role:{lens:val("#r_lens"),priorities},
@@ -759,10 +762,12 @@
 
     if(isObj(obj.protocol)){
       unk(obj.protocol,["apply","stake_single_recommendation","log_assumptions","flag_low_confidence","artifacts"],"protocol.",failed);
-      if(typeof obj.protocol.apply==="boolean") $("#p_apply").checked=obj.protocol.apply;
-      if(typeof obj.protocol.stake_single_recommendation==="boolean") $("#p_stake").checked=obj.protocol.stake_single_recommendation;
-      if(typeof obj.protocol.log_assumptions==="boolean") $("#p_log").checked=obj.protocol.log_assumptions;
-      if(typeof obj.protocol.flag_low_confidence==="boolean") $("#p_flag").checked=obj.protocol.flag_low_confidence;
+      // A checkbox can only hold a real boolean. Anything else keeps the
+      // default, and we name the alteration so the import report stays honest.
+      [["apply","#p_apply"],["stake_single_recommendation","#p_stake"],["log_assumptions","#p_log"],["flag_low_confidence","#p_flag"]].forEach(([k,sel])=>{
+        if(typeof obj.protocol[k]==="boolean") $(sel).checked=obj.protocol[k];
+        else if(k in obj.protocol) failed.push(`protocol.${k} (not true/false; kept as ${$(sel).checked})`);
+      });
       if(Array.isArray(obj.protocol.artifacts)){
         const set=new Set(obj.protocol.artifacts);
         $$("#artifacts input").forEach(i=>i.checked=set.has(i.value));

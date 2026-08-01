@@ -1,0 +1,110 @@
+{
+  "invalid/constraints-not-mapping.yaml": [
+    "constraints"
+  ],
+  "invalid/context-not-mapping.yaml": [
+    "context"
+  ],
+  "invalid/lesson-item-empty.yaml": [
+    "lessons_learned[0]"
+  ],
+  "invalid/lessons-items-bad.yaml": [
+    "lessons_learned[0]",
+    "lessons_learned[1]"
+  ],
+  "invalid/lessons-not-list.yaml": [
+    "lessons_learned"
+  ],
+  "invalid/output-destination-empty.yaml": [
+    "output.destination"
+  ],
+  "invalid/output-format-unknown.yaml": [
+    "output.format"
+  ],
+  "invalid/output-not-mapping.yaml": [
+    "output"
+  ],
+  "invalid/preamble-not-string.yaml": [
+    "preamble"
+  ],
+  "invalid/prompt-boolean.yaml": [
+    "prompt"
+  ],
+  "invalid/prompt-empty.yaml": [
+    "prompt"
+  ],
+  "invalid/protocol-apply-quoted.yaml": [
+    "protocol.apply"
+  ],
+  "invalid/protocol-artifact-unknown.yaml": [
+    "protocol.artifacts"
+  ],
+  "invalid/protocol-artifacts-not-list.yaml": [
+    "protocol.artifacts"
+  ],
+  "invalid/protocol-flags-quoted.yaml": [
+    "protocol.flag_low_confidence",
+    "protocol.log_assumptions",
+    "protocol.stake_single_recommendation"
+  ],
+  "invalid/protocol-missing.yaml": [
+    "protocol"
+  ],
+  "invalid/reference-path-missing.yaml": [
+    "context.references[1].path"
+  ],
+  "invalid/requirement-fields-missing.yaml": [
+    "requirements[0].statement",
+    "requirements[0].verify",
+    "requirements[1].id"
+  ],
+  "invalid/requirement-item-empty.yaml": [
+    "requirements[0].id",
+    "requirements[0].statement",
+    "requirements[0].verify"
+  ],
+  "invalid/requirement-item-scalar.yaml": [
+    "requirements[0]"
+  ],
+  "invalid/requirements-none.yaml": [
+    "requirements"
+  ],
+  "invalid/role-empty-lens.yaml": [
+    "role.lens"
+  ],
+  "invalid/role-lens-missing.yaml": [
+    "role.lens"
+  ],
+  "invalid/role-not-mapping.yaml": [
+    "role"
+  ],
+  "invalid/role-priorities-not-list.yaml": [
+    "role.priorities"
+  ],
+  "invalid/root-list.yaml": [
+    "root"
+  ],
+  "invalid/schema-version-missing.yaml": [
+    "schema_version"
+  ],
+  "invalid/schema-version-wrong.yaml": [
+    "schema_version"
+  ],
+  "invalid/task-fields-empty.yaml": [
+    "task.author",
+    "task.date",
+    "task.id",
+    "task.title"
+  ],
+  "invalid/task-missing.yaml": [
+    "task"
+  ],
+  "invalid/task-not-mapping.yaml": [
+    "task"
+  ],
+  "valid/full.yaml": [],
+  "valid/minimal.yaml": [],
+  "valid/protocol-false.yaml": [],
+  "valid/reference-path-only.yaml": [],
+  "valid/unknown-top-key.yaml": []
+}

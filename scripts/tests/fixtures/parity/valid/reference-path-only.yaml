@@ -1,0 +1,26 @@
+schema_version: "1.0"
+
+task:
+  id: "PB-005-fixture"
+  title: "Parity fixture"
+  author: "rbeye"
+  date: "2026-07-31"
+
+prompt: |
+  A minimal but complete prompt body.
+
+context:
+  references:
+    - path: "scripts/adp-prompt-lib.js"
+
+output:
+  format: "code"
+  destination: "scripts/"
+
+requirements:
+  - id: "R1"
+    statement: "It does the thing"
+    verify: "Run it and look"
+
+protocol:
+  apply: true

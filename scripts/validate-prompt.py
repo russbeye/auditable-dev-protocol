@@ -103,6 +103,16 @@ def validate(doc):
 
     if "context" in doc:
         require(isinstance(doc["context"], dict), "context must be a mapping")
+        # A reference that carries lines or a note but no path points at
+        # nothing. The browser badge already rejects that shape, so we hold
+        # this validator to the same rule (PB-005-validator-parity).
+        if isinstance(doc["context"], dict) and isinstance(doc["context"].get("references"), list):
+            for i, ref in enumerate(doc["context"]["references"]):
+                if isinstance(ref, dict) and (nonempty_str(ref.get("lines")) or nonempty_str(ref.get("note"))):
+                    require(
+                        nonempty_str(ref.get("path")),
+                        f"context.references[{i}].path must be a non-empty string when lines or note is set",
+                    )
 
     if "lessons_learned" in doc:
         lessons = doc["lessons_learned"]

@@ -92,19 +92,34 @@
     return L.join("\n").replace(/\n{3,}/g,"\n\n").replace(/\s+$/,"")+"\n";
   }
 
-  // Validation mirrors validate-prompt.py (surfaced as warnings)
+  // Validation mirrors validate-prompt.py (surfaced as warnings). The Python
+  // side is the authoritative rule set, and the parity suite under
+  // scripts/tests/ holds the two to the same verdicts and flagged keys
+  // (PB-005-validator-parity). Align that side first when the rules change.
+  // Mirror of the Python side's nonempty_str. Only a real string with visible
+  // content passes, so booleans and whitespace-only values fail.
+  function nonemptyStr(v){ return typeof v==="string" && v.trim()!==""; }
   function validate(d){
     const e=[];
-    ["id","title","author","date"].forEach(k=>{ if(!d.task[k]) e.push([`task.${k}`,"required"]); });
-    if(d.role.priorities.length && !d.role.lens) e.push(["role.lens","required when role is used"]);
-    if(!d.prompt) e.push(["prompt","required"]);
+    // The builder only ever writes 1.0, so this check judges imported documents.
+    if(d.schema_version!=="1.0") e.push(["schema_version",'must be the string "1.0"']);
+    ["id","title","author","date"].forEach(k=>{ if(!nonemptyStr(d.task[k])) e.push([`task.${k}`,"required"]); });
+    if(d.role.priorities.length && !nonemptyStr(d.role.lens)) e.push(["role.lens","required when role is used"]);
+    if(!nonemptyStr(d.prompt)) e.push(["prompt","required"]);
+    if(typeof d.preamble!=="string") e.push(["preamble","must be plain text"]);
     if(!FORMATS.includes(d.output.format)) e.push(["output.format","pick one of code|patch|json|yaml|markdown|prose"]);
-    if(!d.output.destination) e.push(["output.destination","required"]);
+    if(!nonemptyStr(d.output.destination)) e.push(["output.destination","required"]);
     const reqs=d.requirements.filter(r=>r.id||r.statement||r.verify);
     if(reqs.length===0) e.push(["requirements","at least one complete requirement"]);
-    reqs.forEach((r,i)=>{ ["id","statement","verify"].forEach(k=>{ if(!r[k]) e.push([`requirements[${i}].${k}`,"required within item"]); }); });
-    d.context.references.filter(r=>r.lines||r.note).forEach((r,i)=>{ if(!r.path) e.push([`context.references[${i}].path`,"required when reference is used"]); });
-    d.lessons_learned.forEach((x,i)=>{ const any=x.context||x.takeaway; if(any && (!x.context||!x.takeaway)) e.push([`lessons_learned[${i}]`,"needs context and takeaway"]); });
+    reqs.forEach((r,i)=>{ ["id","statement","verify"].forEach(k=>{ if(!nonemptyStr(r[k])) e.push([`requirements[${i}].${k}`,"required within item"]); }); });
+    // We index against the full list, not the in-use subset. A filtered index
+    // can name the wrong row when a path-only reference sits before the bad one.
+    d.context.references.forEach((r,i)=>{ if((nonemptyStr(r.lines)||nonemptyStr(r.note)) && !nonemptyStr(r.path)) e.push([`context.references[${i}].path`,"required when reference is used"]); });
+    d.lessons_learned.forEach((x,i)=>{ const any=x.context||x.takeaway; if(any && (!nonemptyStr(x.context)||!nonemptyStr(x.takeaway))) e.push([`lessons_learned[${i}]`,"needs context and takeaway"]); });
+    if(typeof d.protocol.apply!=="boolean") e.push(["protocol.apply","must be true or false"]);
+    ["stake_single_recommendation","log_assumptions","flag_low_confidence"].forEach(k=>{ if(d.protocol[k]!==undefined && typeof d.protocol[k]!=="boolean") e.push([`protocol.${k}`,"must be true or false"]); });
+    if(!Array.isArray(d.protocol.artifacts)) e.push(["protocol.artifacts","must be a list"]);
+    else d.protocol.artifacts.forEach(a=>{ if(!ARTIFACTS.includes(a)) e.push(["protocol.artifacts","unknown artifact: "+a]); });
     return e;
   }
 
