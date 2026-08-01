@@ -83,6 +83,10 @@
 .issues li{font-size:12px;color:var(--dim);display:flex;gap:9px;align-items:baseline}
 .issues li::before{content:"!";color:var(--warn);font-weight:700;flex:0 0 auto}
 .issues li code{color:var(--ink);background:var(--inset);padding:0 5px;border:1px solid var(--line)}
+
+/* We keep the live region rendered but off screen. display:none would silence
+   it for assistive technology, so we hide it with the clip pattern instead. */
+.sr-live{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 </style>
 </head>
 <body>
@@ -108,6 +112,11 @@
         <div class="term-dots"><i class="live"></i><i></i><i></i></div>
         <div class="con-file"><b>prompt</b>.yaml</div>
         <div class="status ok" id="status"><span class="blk"></span><span id="status-txt">VALID</span></div>
+        <!-- The spoken twin of the status pill. The announcer in the script
+             below fills it after input settles, so keep it empty here and
+             present from load. A region added later can be missed by
+             assistive technology. -->
+        <div class="sr-live" id="live-status" role="status" aria-live="polite"></div>
       </div>
       <div class="toolbar">
         <button class="btn" id="openbtn">↑ Open</button>
@@ -363,7 +372,10 @@
         </div>
         <div class="issues empty" id="issues">
           <h4 id="issues-h">⚠ Protocol checks</h4>
-          <ul id="issues-list"></ul>
+          <!-- Our stylesheet strips the list markers, and WebKit then drops
+               the list semantics as well. The explicit role keeps assistive
+               technology reading this as a named list. -->
+          <ul id="issues-list" role="list" aria-labelledby="issues-h"></ul>
         </div>
       </div>
     </aside>
@@ -384,7 +396,7 @@
   const $ = (s,r=document)=>r.querySelector(s);
   const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
 
-  const {ARTIFACTS, FORMATS, DEFAULT_ARTIFACTS, parseYAML, buildYaml, validate} = window.ADPPromptLib;
+  const {ARTIFACTS, FORMATS, DEFAULT_ARTIFACTS, parseYAML, buildYaml, validate, createStatusAnnouncer} = window.ADPPromptLib;
 
   // ---- row factories (placeholders are template values verbatim) ----
   function simpleRow(name, placeholder, value){
@@ -541,6 +553,15 @@
     }).join("\n");
   }
 
+  // The settle window is wider than the autosave's. A save should lose as
+  // little typing as possible, but an announcement should wait until the user
+  // has actually paused. Keep the two tunable independently.
+  const ANNOUNCE_DEBOUNCE_MS=800;
+  const announceStatus=createStatusAnnouncer({
+    say:t=>{ $("#live-status").textContent=t; },
+    debounceMs:ANNOUNCE_DEBOUNCE_MS
+  });
+
   let CURRENT="";
   function render(){
     const d=gather();
@@ -548,6 +569,7 @@
     CURRENT=yaml;
     $("#code").innerHTML=highlight(yaml)
     const errs=validate(d);
+    announceStatus(errs.length);
     // status
     const st=$("#status"), txt=$("#status-txt");
     if(errs.length===0){ st.className="status ok"; txt.textContent="VALID"; }

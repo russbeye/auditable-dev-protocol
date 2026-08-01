@@ -284,7 +284,34 @@
     return doc;
   }
 
-  const ADPPromptLib={parseYAML,buildYaml,validate,ARTIFACTS,FORMATS,DEFAULT_ARTIFACTS};
+  /* The builder's render() runs on every input event, but assistive technology
+     should only hear state transitions. This factory owns that rule. The
+     caller reports the current issue count on every render. We wait for the
+     settle window, then speak only when the settled count differs from the
+     last spoken one. The first report seeds the baseline silently, so a page
+     load or a draft restore never announces the state it opened with. We take
+     the timer functions as options so tests can drive the clock by hand. */
+  function createStatusAnnouncer(opts){
+    const say=opts.say;
+    const debounceMs=opts.debounceMs;
+    const setT=opts.setTimeout||setTimeout;
+    const clearT=opts.clearTimeout||clearTimeout;
+    let seeded=false, spoken=null, timer=null;
+    return function report(count){
+      if(!seeded){ seeded=true; spoken=count; return; }
+      clearT(timer);
+      timer=setT(function(){
+        timer=null;
+        if(count===spoken) return;
+        spoken=count;
+        // We mirror the visual pill's state names. If the pill wording in
+        // prompt-builder.html changes, change this line with it.
+        say(count===0 ? "Valid" : count+" "+(count===1?"issue":"issues"));
+      }, debounceMs);
+    };
+  }
+
+  const ADPPromptLib={parseYAML,buildYaml,validate,createStatusAnnouncer,ARTIFACTS,FORMATS,DEFAULT_ARTIFACTS};
   if(typeof module!=="undefined"&&module.exports){ module.exports=ADPPromptLib; }
   else{ global.ADPPromptLib=ADPPromptLib; }
 })(typeof globalThis!=="undefined"?globalThis:this);
