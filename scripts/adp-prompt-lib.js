@@ -132,11 +132,33 @@
       if(indentOf(lines[idx])===0&&(t==="---"||t==="...")) note(`line ${idx+1} ("${t}" marker: multi-document streams are unsupported; still read as one document)`);
       else dropped.push(idx+1);
     }
+    // YAML ends a plain scalar at the first "#" that follows whitespace. We
+    // cut that tail here, before the structural tests, so a block header or
+    // an empty value still reads correctly with a comment after it. Quoted
+    // values pass through whole, because parseScalar must find the closing
+    // quote before any "#" can count as a comment.
+    function decomment(s){
+      if(s===""||s[0]==='"'||s[0]==="'") return s;
+      if(s[0]==="#") return "";
+      const m=s.match(/\s#/);
+      return m?s.slice(0,m.index).replace(/\s+$/,""):s;
+    }
     function parseScalar(s, at){
       let v=s.trim();
       if(v==="") return "";
-      if(v[0]==='"'&&v[v.length-1]==='"') return v.slice(1,-1).replace(/\\"/g,'"').replace(/\\\\/g,"\\");
-      if(v[0]==="'"&&v[v.length-1]==="'") return v.slice(1,-1).replace(/''/g,"'");
+      // A quoted scalar ends at its closing quote, so a comment can follow it
+      // on the same line. We try the whole-value forms first to keep the old
+      // behavior, then accept a quoted value with a comment tail.
+      if(v[0]==='"'){
+        if(v[v.length-1]==='"') return v.slice(1,-1).replace(/\\"/g,'"').replace(/\\\\/g,"\\");
+        const qm=v.match(/^"((?:[^"\\]|\\.)*)"\s+#/);
+        if(qm) return qm[1].replace(/\\"/g,'"').replace(/\\\\/g,"\\");
+      }
+      if(v[0]==="'"){
+        if(v[v.length-1]==="'") return v.slice(1,-1).replace(/''/g,"'");
+        const qm=v.match(/^'((?:[^']|'')*)'\s+#/);
+        if(qm) return qm[1].replace(/''/g,"'");
+      }
       if(v==="true") return true;
       if(v==="false") return false;
       if(v==="null"||v==="~") return null;
@@ -192,7 +214,7 @@
         if(skippable(lines[i])){ i++; continue; }
         const ci=indentOf(lines[i]); if(ci<indent) break; if(ci>indent){ noteLine(i); i++; continue; }
         const m=lines[i].slice(indent).match(KEY); if(!m){ noteLine(i); i++; continue; }
-        const key=m[1]; const rest=m[2]!==undefined?m[2]:""; const kp=at?at+"."+key:key;
+        const key=m[1]; const rest=decomment(m[2]!==undefined?m[2]:""); const kp=at?at+"."+key:key;
         if(/^[|>][+-]?$/.test(rest)){ i++; obj[key]=parseBlockScalar(indent, rest, kp); }
         else if(rest===""){ i++; obj[key]=parseNodeDeeper(indent, kp); }
         else { obj[key]=parseScalar(rest, kp); i++; }
@@ -212,7 +234,7 @@
         const itemIndent=ci+(body.length-after.length);
         const km=(after[0]!=='"'&&after[0]!=="'")?after.match(KEY):null;
         if(km){
-          const obj={}; const key=km[1]; const rest=km[2]!==undefined?km[2]:"";
+          const obj={}; const key=km[1]; const rest=decomment(km[2]!==undefined?km[2]:"");
           if(/^[|>][+-]?$/.test(rest)){ i++; obj[key]=parseBlockScalar(itemIndent-1, rest, ip+"."+key); }
           else if(rest===""){ i++; obj[key]=parseNodeDeeper(itemIndent-1, ip+"."+key); }
           else { obj[key]=parseScalar(rest, ip+"."+key); i++; }
@@ -220,13 +242,13 @@
             if(skippable(lines[i])){ i++; continue; }
             if(indentOf(lines[i])!==itemIndent) break;
             const m2=lines[i].slice(itemIndent).match(KEY); if(!m2) break;
-            const k2=m2[1]; const r2=m2[2]!==undefined?m2[2]:"";
+            const k2=m2[1]; const r2=decomment(m2[2]!==undefined?m2[2]:"");
             if(/^[|>][+-]?$/.test(r2)){ i++; obj[k2]=parseBlockScalar(itemIndent, r2, ip+"."+k2); }
             else if(r2===""){ i++; obj[k2]=parseNodeDeeper(itemIndent, ip+"."+k2); }
             else { obj[k2]=parseScalar(r2, ip+"."+k2); i++; }
           }
           arr.push(obj);
-        } else { arr.push(parseScalar(after, ip)); i++; }
+        } else { arr.push(parseScalar(decomment(after), ip)); i++; }
       }
       return arr;
     }

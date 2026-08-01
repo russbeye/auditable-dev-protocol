@@ -1,0 +1,35 @@
+# A builder-dialect document that leaves the optional groups out. The suite
+# normalizes it the way the builder's import path fills its default state.
+# Then it asserts the round-trip is a fixpoint.
+schema_version: "1.0"
+
+task:
+  id: "PB-004-partial"   # trailing comments here also exercise decomment
+  title: "Round-trip a document that omits the optional groups"
+  author: "rbeye"
+  date: "2026-07-31"
+
+prompt: |
+  Confirm that a document without preamble, role, context, or lessons still
+  round-trips once the state is normalized.
+
+constraints:
+  out_of_scope:
+    - "Optional groups this document leaves out"
+
+output:
+  format: "code"
+  destination: "scripts/tests/"
+
+requirements:
+  - id: "R1"
+    statement: "The normalized round-trip is a fixpoint"
+    verify: "buildYaml over the normalized reparse equals the first build"
+
+protocol:
+  apply: true
+  stake_single_recommendation: true
+  log_assumptions: true
+  flag_low_confidence: true
+  artifacts:
+    - decision_log
