@@ -1,0 +1,55 @@
+<!-- sec-problem-statement | P1 | Problem Statement -->
+<p><strong>What the problem is:</strong> Add server-side validation to the signup email field so malformed addresses are rejected before they reach the users table.<br><strong>What the problem is not:</strong> This is <em>not</em> a change to client-side validation, and <em>not</em> email deliverability/verification mail.<br><strong>Human-level definition of done:</strong> A bad address posted to signup returns a clear 422 and never creates a row.<br><strong>Confirmed by:</strong> rbeye   <strong>Date:</strong> 2026-06-18</p>
+
+<!-- sec-knowledge-gap-document | P2 | Knowledge Gap Document -->
+<div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Known</th><th>Inferred (flagged)</th><th>Cannot Determine</th></tr></thead><tbody><tr><td>Signup handler parses the body at <code>src/signup/handler.ts:42</code></td><td>Validation belongs in the handler, not middleware</td><td>Whether downstream relies on bad rows</td></tr><tr><td>No validation exists today</td><td>A parser beats a regex</td><td>Email volume per day</td></tr></tbody></table></div>
+
+<!-- sec-open-questions-resolve-before-phase-3 | P2 | Open Questions (resolve before Phase 3) -->
+<ol class="md-list"><li>Should plus-addressing be allowed? → RESOLVED: yes, use a parser not a regex.</li><li>Reject or sanitize? → ACCEPTED UNKNOWN — logged to Decision Log.</li></ol>
+
+<!-- sec-recommendation-brief | P3 | Recommendation Brief -->
+<p><strong>Recommended approach:</strong> Validate in the handler with a tolerant RFC-5321 parser, return 422 on failure.<br><strong>Defense:</strong> Smallest reversible change; keeps the rule next to persistence; a parser avoids the plus-address bug a regex caused before.<br><strong>Alternatives considered:</strong></p><div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Alternative</th><th>Reason rejected</th></tr></thead><tbody><tr><td>Regex check</td><td>Rejected valid plus-addressed emails last time</td></tr><tr><td>Middleware layer</td><td>Spreads the rule away from where the row is written</td></tr></tbody></table></div>
+
+<!-- sec-pre-mortem-report | P4 | Pre-Mortem Report -->
+<p>Assumed: this implementation failed in production. Most likely causes:</p><div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Failure mode</th><th>Likelihood</th><th>Impact</th><th>Developer response</th></tr></thead><tbody><tr><td>Parser rejects valid intl addresses</td><td><span class="pill p-med">M</span></td><td><span class="pill p-high">H</span></td><td>Mitigated: use a spec-tolerant parser; add intl test cases</td></tr><tr><td>422 breaks a client expecting 400</td><td><span class="pill p-low">L</span></td><td><span class="pill p-med">M</span></td><td>Rebutted: clients treat 4xx uniformly here</td></tr></tbody></table></div>
+
+<!-- sec-implementation-authorization | P4 | Implementation Authorization -->
+<p>All <span class="pill p-high">HIGH</span>-likelihood items resolved: YES<br>Authorized by: rbeye</p>
+
+<!-- sec-decision-log | P5 | Decision Log -->
+<div class="dl-cards"><div class="dl-card rail-ok">
+      <div class="dl-head">
+        <span class="dl-id">DL-001</span>
+        <span class="dl-title">Validate in handler, not middleware</span>
+        <span class="dl-pills"><span class="pill dl-pill p-ok"><i>conf</i>HIGH</span><span class="pill dl-pill p-ok"><i>status</i>VALIDATED</span></span>
+      </div>
+      <div class="dl-grid"><div class="dl-row"><span class="dl-k">Decision</span><span class="dl-v">Put the check in <code>handler.ts</code> beside the insert.</span></div><div class="dl-row"><span class="dl-k">Alternatives considered</span><span class="dl-v">Express middleware; a DB constraint.</span></div><div class="dl-row"><span class="dl-k">Rationale</span><span class="dl-v">Keeps the invariant next to the write; easiest to test.</span></div><div class="dl-row"><span class="dl-k">Assumptions</span><span class="dl-v">Signup is the only writer of the users.email column.</span></div></div>
+    </div><div class="dl-card rail-open">
+      <div class="dl-head">
+        <span class="dl-id">DL-002</span>
+        <span class="dl-title">Reject rather than sanitize</span>
+        <span class="dl-pills"><span class="pill dl-pill p-high"><i>conf</i>LOW</span><span class="pill dl-pill p-open"><i>status</i>OPEN</span></span>
+      </div>
+      <div class="dl-grid"><div class="dl-row"><span class="dl-k">Decision</span><span class="dl-v">Return 422 instead of trying to fix the address.</span></div><div class="dl-row"><span class="dl-k">Rationale</span><span class="dl-v">Silent fixes hide client bugs.</span></div><div class="dl-row"><span class="dl-k">Assumptions</span><span class="dl-v">Product wants hard rejection, not best-effort repair.</span></div></div>
+    </div></div>
+
+<!-- sec-test-adversary-document | P6 | Test Adversary Document -->
+<p><strong>What passing tests prove:</strong> Malformed addresses get 422 and create no row; valid plus-addresses pass.<br><strong>What passing tests do not prove:</strong></p><div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Gap</th><th>Why untestable / untested</th><th>Risk if the assumption is wrong</th></tr></thead><tbody><tr><td>Real-world intl addresses</td><td>Test set is finite</td><td>A valid user is blocked</td></tr><tr><td>Concurrent duplicate signups</td><td>Not exercised</td><td>Race could double-insert</td></tr></tbody></table></div>
+
+<!-- sec-pr-summary | P7 | PR Summary -->
+<p><strong>Problem being solved:</strong> Bad emails reach the users table.<br><strong>Approach taken:</strong> Tolerant parser in the handler; 422 on failure.<br><strong>Key decisions:</strong> DL-001 (<span class="pill p-high">HIGH</span>) handler-side; DL-002 (<span class="pill p-low">LOW</span>) reject-not-sanitize.</p>
+
+<!-- sec-mandatory-review-items-low-confidence-deci | P7 | 🚩 Mandatory Review Items (LOW-confidence decisions) -->
+<ul class="md-list"><li class="task"><span class="cbx "></span><span>DL-002: reject vs sanitize — confirm product wants hard rejection — reviewer must respond.</span></li></ul>
+
+<!-- sec-residual-risk | P7 | Residual Risk -->
+<p>Reject-not-sanitize is unconfirmed with product; intl coverage is finite.</p>
+
+<!-- sec-test-coverage-gaps | P6 | Test Coverage Gaps -->
+<p>Concurrency and exhaustive international address shapes are not covered by tests.</p>
+
+<!-- sec-deployment-risk-statement | P8 | Deployment Risk Statement -->
+<p><strong>Known unknowns at ship time:</strong> DL-002 product intent.<br><strong>Monitoring targets:</strong></p><div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Assumption</th><th>Signal that it was wrong</th><th>Threshold</th></tr></thead><tbody><tr><td>Rejection is rare</td><td>422 rate on /signup</td><td>&gt; 2% of attempts in 1h</td></tr></tbody></table></div><p><strong>Rollback trigger conditions:</strong></p><ul class="md-list"><li class="task"><span class="cbx "></span><span>422 rate on /signup exceeds 2% for 1h → rollback</span></li></ul><p><strong>Staged rollout:</strong> YES — 10% then 100%.</p>
+
+<!-- sec-obligation-ticket-list | P9 | Obligation Ticket List -->
+<div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Ticket ID</th><th>Decision Log ref</th><th>Assumption to validate</th><th>Priority</th></tr></thead><tbody><tr><td>GROW-6701</td><td>DL-002</td><td>Product confirms reject-not-sanitize</td><td><span class="pill p-high">HIGH</span></td></tr></tbody></table></div><p><strong>Decision Log status:</strong> <span class="pill p-open">OPEN</span> — one ticket outstanding.</p>
