@@ -93,12 +93,32 @@
      ========================================================= */
   function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
+  // We never let a document-controlled URL become an anchor unless its scheme
+  // is on this list. Anything else degrades to visible text. If a legitimate
+  // new scheme turns up, add it here.
+  const LINK_SCHEMES=['http','https','mailto'];
+  // We test the URL as it will sit inside the href attribute. A double quote
+  // would close the attribute and plant a live event handler. A C0 control
+  // character can hide a scheme, because the browser strips those before it
+  // parses the URL. The control class also catches code-span placeholders,
+  // whose restored content would re-enter the attribute unescaped. A URL with
+  // no scheme is a relative path or a #fragment, and those stay clickable.
+  function safeLinkUrl(url){
+    if(/[\u0000-\u001f\u007f"]/.test(url)) return false;
+    const m=/^([a-z][a-z0-9+.-]*):/i.exec(url);
+    return !m || LINK_SCHEMES.includes(m[1].toLowerCase());
+  }
+
   // inline formatting on a single raw text run
   function inline(s){
     let t = esc(s);
     const codes=[];
     t = t.replace(/`([^`]+)`/g,(m,c)=>{codes.push(c);return '\u0000'+(codes.length-1)+'\u0000';});
-    t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,(m,txt,url)=>`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${txt}</a>`);
+    // We only build the anchor when safeLinkUrl passes. A rejected run stays
+    // in place as escaped plain text, so nothing silently vanishes.
+    t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,(m,txt,url)=>safeLinkUrl(url)
+      ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${txt}</a>`
+      : m);
     t = t.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
     t = t.replace(/__([^_]+)__/g,'<strong>$1</strong>');
     t = t.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g,'$1<em>$2</em>');
