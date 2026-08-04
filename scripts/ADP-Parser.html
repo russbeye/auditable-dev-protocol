@@ -96,12 +96,13 @@
   const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
 
   const {createStatusAnnouncer} = window.ADPPromptLib;
-  const {esc, escAttr, parseSections, sectionKeys, metaFor, renderMarkdown, renderDecisionLog} = window.ADPParserLib;
+  const {esc, escAttr, parseSections, sectionKeys, metaFor, renderMarkdown, renderDecisionLog, dlStatusCounts} = window.ADPParserLib;
 
   /* =========================================================
      DL-003  State preserved across live re-renders
      ========================================================= */
   const collapsed = new Set();   // keys of collapsed sections
+  let dlFilter = null;           // active decision-log status bucket, or null for all
   let lastHashes = new Map();    // key -> body hash (to flash only true changes)
   let currentText = '';
   let primed = false;            // first render done? (so initial load doesn't flash everything)
@@ -129,15 +130,23 @@
     // We remember which section owned focus and give it back after the swap.
     const ae=document.activeElement;
     const focusKey=(ae && ae.classList && ae.classList.contains('art-toggle')) ? ae.closest('.art').id : null;
+    // Strip buttons are rebuilt by innerHTML the same way toggles are, so we
+    // remember the focused one by section and bucket and re-focus it below.
+    const focusFilter=(ae && ae.classList && ae.classList.contains('dl-count')) ? {sec:ae.closest('.art').id, f:ae.getAttribute('data-dl-filter')} : null;
     const newHashes=new Map(); const tocItems=[]; const arrived=[];
     const keys=sectionKeys(secs);
-    let bodyHtml='';
+    let bodyHtml=''; let filterHits=0;
 
     secs.forEach((sec,idx)=>{
       const key=keys[idx];
       const meta=metaFor(sec.title);
       const bodyRaw=sec.body.join('\n');
-      const innerHtml=(meta.spine ? renderDecisionLog(bodyRaw) : renderMarkdown(bodyRaw)) || '<p style="color:var(--faint)">(empty)</p>';
+      const counts=meta.spine ? dlStatusCounts(bodyRaw) : null;
+      if(counts && dlFilter) filterHits+=counts[dlFilter];
+      let innerHtml=(meta.spine ? renderDecisionLog(bodyRaw) : renderMarkdown(bodyRaw)) || '<p style="color:var(--faint)">(empty)</p>';
+      // The strip only makes sense over cards. A spine section that fell back
+      // to the generic renderer has none, and its total is zero.
+      if(counts && counts.total) innerHtml=dlStrip(counts)+innerHtml;
       const h=hash(bodyRaw + '|' + sec.title);
       newHashes.set(key,h);
 
@@ -168,20 +177,32 @@
           <div class="art-body" id="${key}-body"><div class="md">${innerHtml}</div></div>
         </section>`;
 
-      tocItems.push(`<li><a href="#${key}" data-toc="${key}"><span class="ti-icon">${meta.icon}</span><span class="ti-name">${esc(sec.title)}</span>${meta.tag?`<span class="ti-tag">${meta.tag}</span>`:''}</a></li>`);
+      // The ti-open badge lets a reviewer spot outstanding decisions from the
+      // TOC, so it only renders when the open count is nonzero.
+      tocItems.push(`<li><a href="#${key}" data-toc="${key}"><span class="ti-icon">${meta.icon}</span><span class="ti-name">${esc(sec.title)}</span>${meta.tag?`<span class="ti-tag">${meta.tag}</span>`:''}${counts&&counts.open?`<span class="ti-tag ti-open">${counts.open} open</span>`:''}</a></li>`);
     });
 
+    // A live update can empty the active bucket. Keeping the filter would
+    // hide every card, and a pressed OTHER button can even vanish with its
+    // bucket, so we clear the filter and let the honest zeros explain it.
+    if(dlFilter && !filterHits) dlFilter=null;
     main.innerHTML=bodyHtml;
     tocList.innerHTML=tocItems.join('');
     tocEmpty.style.display='none';
     $('#toc-count').textContent=String(secs.length);
     lastHashes=newHashes; primed=true;
     setControlsEnabled(true);
+    applyDLFilter();
     if(focusKey){
       const sec=document.getElementById(focusKey);
       // The focused section can vanish from the document mid-edit. Then the
       // focus falls back to the body, the same loss every render had before.
       if(sec) sec.querySelector('.art-toggle').focus({preventScroll:true});
+    }
+    if(focusFilter){
+      const sec=document.getElementById(focusFilter.sec);
+      const btn=sec && sec.querySelector('.dl-count[data-dl-filter="'+focusFilter.f+'"]');
+      if(btn) btn.focus({preventScroll:true});
     }
 
     if(arrived.length){
@@ -207,6 +228,24 @@
 
   function setControlsEnabled(on){
     $('#expandall').disabled=!on; $('#collapseall').disabled=!on;
+  }
+
+  /* The audit strip for one spine section. The counts are the filter
+     controls, so each one is a real button and keyboard reachable. The pill
+     classes keep the status vocabulary reading the same here as on the
+     cards. ALL carries the total and is the pressed state when no filter is
+     active. OTHER only appears when some card's status matched no known
+     keyword. The template emits every button unpressed, because
+     applyDLFilter() stamps aria-pressed right after each render. */
+  function dlStrip(c){
+    const btn=(f,cls,label,n)=>`<button type="button" class="pill dl-count ${cls}" data-dl-filter="${f}" aria-pressed="false">${label} <b>${n}</b></button>`;
+    return `<div class="dl-strip" role="group" aria-label="Filter decisions by status">`
+      + btn('','p-low','ALL',c.total)
+      + btn('open','p-open','OPEN',c.open)
+      + btn('validated','p-ok','VALIDATED',c.validated)
+      + btn('invalidated','p-bad','INVALIDATED',c.invalidated)
+      + (c.other ? btn('other','p-low','OTHER',c.other) : '')
+      + `</div>`;
   }
 
   /* =========================================================
@@ -335,7 +374,7 @@
     fileHandle=null; fetchUrl=null; lastSig='';
     $('#reload').disabled=true;
     $('#pastearea').value=''; closePaste();
-    collapsed.clear(); lastHashes=new Map(); primed=false;
+    collapsed.clear(); dlFilter=null; lastHashes=new Map(); primed=false;
     setSource('','IDLE'); update('',false);
     toast('Cleared');
   });
@@ -349,9 +388,33 @@
     if(on) collapsed.add(sec.id); else collapsed.delete(sec.id);
     sec.querySelector('.art-toggle').setAttribute('aria-expanded', on?'false':'true');
   }
+  // The one writer for the filter's DOM state, the setCollapsed rule again.
+  // render() calls it after every rebuild, so a live update re-applies the
+  // active filter to the fresh cards instead of leaving stale classes. The
+  // cards are hidden by CSS keyed on the rail classes they already carry,
+  // so the filter can never disagree with the rail.
+  const DL_BUCKETS=['open','validated','invalidated','other'];
+  function applyDLFilter(){
+    $$('.art.spine').forEach(sec=>{
+      DL_BUCKETS.forEach(b=>sec.classList.toggle('dlf-'+b, b===dlFilter));
+    });
+    $$('.dl-count').forEach(b=>{
+      b.setAttribute('aria-pressed', String((b.getAttribute('data-dl-filter')||null)===dlFilter));
+    });
+  }
   // The toggle button's Enter and Space arrive here as a bubbled click, so
   // the head and the button share one path.
   $('#content').addEventListener('click', e=>{
+    // The strip lives in the section body, so the head path below never
+    // sees its buttons. Pressing the active count again clears the filter,
+    // and ALL clears it from anywhere.
+    const fbtn=e.target.closest('.dl-count');
+    if(fbtn){
+      const f=fbtn.getAttribute('data-dl-filter')||null;
+      dlFilter=(f===dlFilter)?null:f;
+      applyDLFilter();
+      return;
+    }
     const head=e.target.closest('.art-head'); if(!head) return;
     const sec=document.getElementById(head.getAttribute('data-toggle')); if(!sec) return;
     setCollapsed(sec, !sec.classList.contains('collapsed'));
@@ -469,7 +532,7 @@ Concurrency and exhaustive international address shapes are not covered by tests
 
   $('#example').addEventListener('click', ()=>{
     if(watchTimer){ clearInterval(watchTimer); watchTimer=null; fileHandle=null; fetchUrl=null; $('#reload').disabled=true; }
-    closePaste(); primed=false; collapsed.clear(); lastHashes=new Map();
+    closePaste(); primed=false; collapsed.clear(); dlFilter=null; lastHashes=new Map();
     setSource('example.md','LOADED'); update(EXAMPLE,false); toast('Example loaded');
   });
 

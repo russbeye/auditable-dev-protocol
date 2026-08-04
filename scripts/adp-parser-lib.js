@@ -236,17 +236,23 @@
     const cls = t.indexOf('HIGH')===0?'p-ok' : t.indexOf('MED')===0?'p-med' : t.indexOf('LOW')===0?'p-high' : 'p-low';
     return dlChip('conf',cls,cls!=='p-low',v);
   }
+  /* The one status classifier. The rail, the status chip, and the audit
+     counts all read a card's status through this prefix match, so they can
+     never disagree about what a status means. If you add a status keyword,
+     add it here and nowhere else. */
+  function dlStatusKind(v){
+    const t=String(v==null?'':v).trim().toUpperCase();
+    if(t.indexOf('INVALIDATED')===0) return 'invalidated';
+    if(t.indexOf('VALIDATED')===0) return 'validated';
+    if(t.indexOf('OPEN')===0) return 'open';
+    return 'other';
+  }
   function dlStatusPill(v){
-    const t=v.trim().toUpperCase();
-    const cls = t.indexOf('INVALIDATED')===0?'p-bad' : t.indexOf('VALIDATED')===0?'p-ok' : t.indexOf('OPEN')===0?'p-open' : 'p-low';
+    const cls={invalidated:'p-bad',validated:'p-ok',open:'p-open',other:'p-low'}[dlStatusKind(v)];
     return dlChip('status',cls,cls!=='p-low',v);
   }
   function dlRail(status){
-    const t=(status||'').trim().toUpperCase();
-    if(t.indexOf('INVALIDATED')===0) return 'rail-bad';
-    if(t.indexOf('VALIDATED')===0) return 'rail-ok';
-    if(t.indexOf('OPEN')===0) return 'rail-open';
-    return '';
+    return {invalidated:'rail-bad',validated:'rail-ok',open:'rail-open',other:''}[dlStatusKind(status)];
   }
   function renderDLCard(entry){
     const hm=entry.head.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
@@ -278,7 +284,10 @@
       ${grid?`<div class="dl-grid">${grid}</div>`:''}
     </div>`;
   }
-  function renderDecisionLog(body){
+  /* We split a section body into pre-entry prose and ### entries in one
+     place, because renderDecisionLog and the audit counts must see the same
+     cards. A fenced ### line stays inside its code block. */
+  function parseDLEntries(body){
     const lines=String(body).replace(/\r\n/g,'\n').split('\n');
     const entries=[]; const pre=[]; let cur=null; let inFence=false;
     for(const line of lines){
@@ -289,13 +298,37 @@
       else pre.push(line);
     }
     if(cur) entries.push(cur);
+    return {pre:pre.join('\n').trim(), entries};
+  }
+  /* renderDLCard keeps the last Status field when an entry repeats one. We
+     read the status the same way, so a count can never disagree with the
+     chip on the card it counted. */
+  function dlEntryStatus(entry){
+    let status='';
+    for(const f of parseDLFields(entry.lines)){
+      if(f.label.toLowerCase()==='status') status=f.value;
+    }
+    return status;
+  }
+  /* The audit strip and the TOC badge need the same numbers, so we count
+     once, over the same entries the cards render, through the same
+     classifier the rail uses. */
+  function dlStatusCounts(body){
+    const counts={open:0,validated:0,invalidated:0,other:0,total:0};
+    for(const e of parseDLEntries(body).entries){
+      counts[dlStatusKind(dlEntryStatus(e))]++;
+      counts.total++;
+    }
+    return counts;
+  }
+  function renderDecisionLog(body){
+    const {pre,entries}=parseDLEntries(body);
     if(!entries.length) return renderMarkdown(body);   // no DL entries → generic render
-    const preTxt=pre.join('\n').trim();
-    return (preTxt?`<div class="md">${renderMarkdown(preTxt)}</div>`:'')
+    return (pre?`<div class="md">${renderMarkdown(pre)}</div>`:'')
       + `<div class="dl-cards">${entries.map(renderDLCard).join('')}</div>`;
   }
 
-  const ADPParserLib={esc,escAttr,safeLinkUrl,inline,decorate,TOK,renderMarkdown,ART,metaFor,parseSections,slug,sectionKeys,parseDLFields,dlChipSplit,dlConfPill,dlStatusPill,dlRail,renderDLCard,renderDecisionLog};
+  const ADPParserLib={esc,escAttr,safeLinkUrl,inline,decorate,TOK,renderMarkdown,ART,metaFor,parseSections,slug,sectionKeys,parseDLFields,dlChipSplit,dlConfPill,dlStatusPill,dlStatusKind,dlRail,parseDLEntries,dlEntryStatus,dlStatusCounts,renderDLCard,renderDecisionLog};
   if(typeof module!=="undefined"&&module.exports){ module.exports=ADPParserLib; }
   else{ global.ADPParserLib=ADPParserLib; }
 })(typeof globalThis!=="undefined"?globalThis:this);

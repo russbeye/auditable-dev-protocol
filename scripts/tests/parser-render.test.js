@@ -11,7 +11,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {parserLib} = require("./helpers.js");
 const {esc, escAttr, inline, decorate, parseSections, sectionKeys, slug, metaFor,
-       dlChipSplit, dlConfPill, dlStatusPill, dlRail, renderDLCard, renderDecisionLog} = parserLib;
+       dlChipSplit, dlConfPill, dlStatusPill, dlRail, renderDLCard, renderDecisionLog,
+       dlStatusKind, parseDLEntries, dlEntryStatus, dlStatusCounts} = parserLib;
 
 // ---- dual export (R2) ----
 
@@ -147,4 +148,66 @@ test("a decision log without entries falls back to the generic renderer", () => 
   const out = renderDecisionLog("just prose\n");
   assert.ok(out.startsWith("<p>"));
   assert.ok(!out.includes("dl-cards"));
+});
+
+// ---- decision-log audit counts (AV-008) ----
+
+test("dlStatusKind classifies by the same prefix match the rail shipped with", () => {
+  assert.equal(dlStatusKind("OPEN"), "open");
+  assert.equal(dlStatusKind("VALIDATED"), "validated");
+  assert.equal(dlStatusKind("INVALIDATED"), "invalidated");
+  assert.equal(dlStatusKind("DEFERRED until Q3"), "other");
+  // The match accepts a tail, any letter case, and a longer word that opens
+  // with a keyword. We pin the quirks as they shipped in dlRail.
+  assert.equal(dlStatusKind("open — pending review"), "open");
+  assert.equal(dlStatusKind("OPENED"), "open");
+  assert.equal(dlStatusKind(""), "other");
+  assert.equal(dlStatusKind(undefined), "other");
+});
+
+test("rail and chip verdicts agree with dlStatusKind on every bucket", () => {
+  const rail = {open: "rail-open", validated: "rail-ok", invalidated: "rail-bad", other: ""};
+  const pill = {open: "p-open", validated: "p-ok", invalidated: "p-bad", other: "p-low"};
+  for (const v of ["OPEN", "VALIDATED", "INVALIDATED", "DEFERRED", "OPENED", "validated: suite green"]) {
+    const kind = dlStatusKind(v);
+    assert.equal(dlRail(v), rail[kind], v);
+    assert.ok(dlStatusPill(v).html.includes(pill[kind]), v);
+  }
+});
+
+test("parseDLEntries returns pre-entry prose separately from the entries", () => {
+  const r = parseDLEntries("intro line\n\n### [DL-1] a\n- **Status:** OPEN\n");
+  assert.equal(r.pre, "intro line");
+  assert.equal(r.entries.length, 1);
+  assert.equal(r.entries[0].head, "[DL-1] a");
+});
+
+test("dlStatusCounts counts the same entries the cards render", () => {
+  const body = [
+    "### [DL-1] a", "- **Status:** OPEN",
+    "### [DL-2] b", "- **Status:** VALIDATED — suite green",
+    "### [DL-3] c", "- **Status:** DEFERRED",
+    "### [DL-4] d", "- **Decision:** no status field at all",
+    "```", "### [DL-99] fenced, not an entry", "```",
+  ].join("\n");
+  assert.deepEqual(dlStatusCounts(body),
+    {open: 1, validated: 1, invalidated: 0, other: 2, total: 4});
+});
+
+test("a repeated Status field counts by the last one, as the card shows", () => {
+  const entry = {head: "[DL-5] t", lines: ["- **Status:** OPEN", "- **Status:** VALIDATED"]};
+  assert.equal(dlEntryStatus(entry), "VALIDATED");
+  assert.ok(renderDLCard(entry).includes("rail-ok"));
+});
+
+test("a body without entries counts all zeros", () => {
+  assert.deepEqual(dlStatusCounts("just prose\n"),
+    {open: 0, validated: 0, invalidated: 0, other: 0, total: 0});
+});
+
+test("the example's decision log counts 1 open and 1 validated", () => {
+  const example = require("./fixtures/viewer-example.js");
+  const spine = parseSections(example).secs.find(s => metaFor(s.title).spine);
+  assert.deepEqual(dlStatusCounts(spine.body.join("\n")),
+    {open: 1, validated: 1, invalidated: 0, other: 0, total: 2});
 });

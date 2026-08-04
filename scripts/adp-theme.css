@@ -292,6 +292,11 @@ select option{background:var(--panel-2);color:var(--ink)}
 .toc li a.active{color:var(--ink);border-left-color:var(--blue-bright);background:rgba(0,41,222,.10)}
 .toc .ti-icon{width:16px;text-align:center;color:var(--blue-bright);flex:0 0 auto;font-size:12px}
 .toc .ti-tag{margin-left:auto;font-size:9px;letter-spacing:.1em;color:var(--faint);border:1px solid var(--line);padding:1px 5px}
+/* Two badges on one row must not split the auto margin between them, so
+   only the first keeps it. The open-count badge borrows the warn tones of
+   the OPEN pill, so the TOC speaks the same status language as the cards. */
+.toc .ti-tag+.ti-tag{margin-left:6px}
+.toc .ti-open{color:var(--warn);border-color:rgba(255,180,84,.4)}
 .toc .ti-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .toc-empty{padding:14px;color:var(--faint);font-size:11.5px;line-height:1.6}
 
@@ -413,6 +418,23 @@ table.md-tbl tr:hover td{background:rgba(0,41,222,.03)}
 .dl-v{padding:8px 14px;background:var(--inset);color:var(--ink);font-size:13px}
 .dl-v code{font-size:12px}
 @media(max-width:560px){.dl-grid{grid-template-columns:minmax(0,1fr)}.dl-k{padding-bottom:2px}.dl-v{padding-top:2px}}
+
+/* decision-log audit strip (AV-008: status counts, click-to-filter) */
+.dl-strip{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 14px}
+.dl-count{cursor:pointer;font-family:inherit;appearance:none;border-radius:0}
+.dl-count b{font-weight:700;margin-left:2px}
+.dl-count:hover{border-color:currentColor}
+.dl-count[aria-pressed="true"]{box-shadow:inset 0 0 0 1px currentColor}
+.dl-count:focus-visible{outline:2px solid var(--blue-bright);outline-offset:2px}
+/* The filter hides cards through the rail classes the cards already carry,
+   so what a bucket shows is exactly what its rail marks. render() stamps
+   the dlf class on the section from module state after every rebuild. */
+.art.dlf-open .dl-card:not(.rail-open),
+.art.dlf-validated .dl-card:not(.rail-ok),
+.art.dlf-invalidated .dl-card:not(.rail-bad),
+.art.dlf-other .dl-card.rail-open,
+.art.dlf-other .dl-card.rail-ok,
+.art.dlf-other .dl-card.rail-bad{display:none}
 
 /* empty state */
 .empty-state{border:1px dashed var(--line-bright);background:var(--panel-2);padding:40px 28px;text-align:center}
