@@ -106,6 +106,10 @@
   let lastHashes = new Map();    // key -> body hash (to flash only true changes)
   let currentText = '';
   let primed = false;            // first render done? (so initial load doesn't flash everything)
+  // Where the boot URL asked us to land. Content arrives after load on every
+  // path, so we keep the fragment until the first render that produces
+  // sections, then resolve it once and clear it.
+  let pendingFragment=(function(){ try{ return decodeURIComponent(location.hash.slice(1))||null; }catch(e){ return location.hash.slice(1)||null; } })();
 
   function hash(s){ let h=0; for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0;} return h; }
 
@@ -133,6 +137,7 @@
     // Strip buttons are rebuilt by innerHTML the same way toggles are, so we
     // remember the focused one by section and bucket and re-focus it below.
     const focusFilter=(ae && ae.classList && ae.classList.contains('dl-count')) ? {sec:ae.closest('.art').id, f:ae.getAttribute('data-dl-filter')} : null;
+    const focusPerma=(ae && ae.classList && ae.classList.contains('art-permalink')) ? ae.closest('.art').id : null;
     const newHashes=new Map(); const tocItems=[]; const arrived=[];
     const keys=sectionKeys(secs);
     let bodyHtml=''; let filterHits=0;
@@ -161,17 +166,18 @@
       const spinePill = meta.spine?'<span class="art-spine-pill">spine</span>':'';
       const tagPill = meta.tag?`<span class="art-tag">${meta.tag}</span>`:'';
 
-      // The toggle is a real button emitted by this template, not an
-      // enhancement added after load. Live updates rebuild the markup through
-      // innerHTML, so anything bolted on afterwards would be wiped on the
-      // next poll tick. aria-expanded derives from the collapsed set, which
-      // keeps the attribute truthful across re-renders.
+      // The toggle and the permalink are real buttons emitted by this
+      // template, not enhancements added after load. Live updates rebuild the
+      // markup through innerHTML, so anything bolted on afterwards would be
+      // wiped on the next poll tick. aria-expanded derives from the collapsed
+      // set, which keeps the attribute truthful across re-renders.
       bodyHtml += `
         <section class="${cls}" id="${key}" data-key="${key}">
           <div class="art-head" data-toggle="${key}">
             <span class="art-icon">${meta.icon}</span>
             <span class="art-title">${esc(sec.title)}</span>
             ${tagPill}${spinePill}
+            <button type="button" class="art-permalink" aria-label="Copy link to ${escAttr(sec.title)}" title="Copy link"><span aria-hidden="true">#</span></button>
             <button type="button" class="art-toggle" aria-expanded="${isCollapsed?'false':'true'}" aria-controls="${key}-body" aria-label="${escAttr(sec.title)} section"><span aria-hidden="true">▾</span></button>
           </div>
           <div class="art-body" id="${key}-body"><div class="md">${innerHtml}</div></div>
@@ -204,6 +210,10 @@
       const btn=sec && sec.querySelector('.dl-count[data-dl-filter="'+focusFilter.f+'"]');
       if(btn) btn.focus({preventScroll:true});
     }
+    if(focusPerma){
+      const sec=document.getElementById(focusPerma);
+      if(sec) sec.querySelector('.art-permalink').focus({preventScroll:true});
+    }
 
     if(arrived.length){
       toast(arrived.length===1 ? 'New section: '+arrived[0]
@@ -212,6 +222,21 @@
 
     // preserve scroll on live updates so the view doesn't jump
     if(isLive){ window.scrollTo(0,prevScroll); }
+    // We resolve the boot fragment on the first render that has sections,
+    // after the scroll restore above so the deep link wins the scroll. The
+    // fragment clears even on a miss. A late landing would yank the page out
+    // from under a reader once the section finally arrives.
+    // Note: the behavior must stay explicit. A default scroll inherits the
+    // theme's smooth scrolling, and some platforms never run a scripted
+    // smooth scroll, which leaves the deep link sitting at the top.
+    if(pendingFragment){
+      const target=document.getElementById(pendingFragment);
+      if(target && target.classList.contains('art')){
+        setCollapsed(target,false);
+        target.scrollIntoView({block:'start',behavior:'instant'});
+      }
+      pendingFragment=null;
+    }
     scrollSpy();
   }
 
@@ -402,6 +427,16 @@
       b.setAttribute('aria-pressed', String((b.getAttribute('data-dl-filter')||null)===dlFilter));
     });
   }
+  /* Builds and copies the absolute link for one section. The link is the
+     current document URL with the section's fragment, so a ?file= view stays
+     a ?file= view for whoever opens it. The clipboard call and its fallback
+     follow the builder's Copy YAML. */
+  async function copySectionLink(key){
+    const u=new URL(location.href); u.hash=key;
+    try{ await navigator.clipboard.writeText(u.href); toast('Link copied'); }
+    catch{ const ta=document.createElement('textarea'); ta.value=u.href; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');toast('Link copied');}catch{toast('Copy failed');} ta.remove(); }
+  }
+
   // The toggle button's Enter and Space arrive here as a bubbled click, so
   // the head and the button share one path.
   $('#content').addEventListener('click', e=>{
@@ -415,6 +450,14 @@
       applyDLFilter();
       return;
     }
+    // The permalink sits inside the head, so its click would otherwise fall
+    // through to the collapse branch below. We return first. The copy never
+    // moves the reader or the address bar.
+    const pbtn=e.target.closest('.art-permalink');
+    if(pbtn){
+      copySectionLink(pbtn.closest('.art').id);
+      return;
+    }
     const head=e.target.closest('.art-head'); if(!head) return;
     const sec=document.getElementById(head.getAttribute('data-toggle')); if(!sec) return;
     setCollapsed(sec, !sec.classList.contains('collapsed'));
@@ -424,12 +467,16 @@
   $('#expandall').addEventListener('click', ()=>{ collapsed.clear(); $$('.art').forEach(a=>setCollapsed(a,false)); });
   $('#collapseall').addEventListener('click', ()=>{ $$('.art').forEach(a=>setCollapsed(a,true)); });
 
-  // smooth-scroll TOC (and keep hash out of history spam)
+  // Smooth-scroll TOC. replaceState keeps the address bar on the section the
+  // reader chose, without adding a history entry per click. Back still leaves
+  // the page in one step. The bare fragment keeps the path and the ?file=
+  // query intact.
   $('#toc-list').addEventListener('click', e=>{
     const a=e.target.closest('a'); if(!a) return;
     e.preventDefault();
-    const t=document.getElementById(a.getAttribute('data-toc'));
-    if(t){ t.scrollIntoView({behavior:'smooth',block:'start'}); }
+    const key=a.getAttribute('data-toc');
+    const t=document.getElementById(key);
+    if(t){ t.scrollIntoView({behavior:'smooth',block:'start'}); history.replaceState(null,'','#'+key); }
   });
 
   function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1800); }

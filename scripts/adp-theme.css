@@ -73,7 +73,7 @@ body::after{
 }
 /* smooth theme transition across surfaces */
 body,.console,.con-head,.toolbar,.paste-drawer,.paste-drawer textarea,
-.toc,.toc-head,.art,.art-head,.art-icon,.art-toggle,.panel-card,.panel-card-head,
+.toc,.toc-head,.art,.art-head,.art-icon,.art-toggle,.art-permalink,.panel-card,.panel-card-head,
 .panel-card-toggle,.compact-terminal,.compact-terminal-head,.dl-card,.dl-head,
 .dl-grid,.dl-k,.dl-v,input,textarea,select,.btn,.status,
 table.md-tbl th,table.md-tbl td,.md code,.md pre.cb,.md blockquote,.empty-state{
@@ -323,13 +323,17 @@ select option{background:var(--panel-2);color:var(--ink)}
 .art-title{font-family:var(--disp);font-weight:600;letter-spacing:.03em;text-transform:uppercase;font-size:clamp(14px,.4vw+12.6px,16px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .art-tag{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--blue-bright);border:1px solid rgba(0,41,222,.4);background:rgba(0,41,222,.08);padding:2px 7px;flex:0 0 auto}
 .art-spine-pill{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--ok);border:1px solid rgba(86,226,168,.35);background:rgba(86,226,168,.06);padding:2px 7px;flex:0 0 auto}
-.art-toggle{
+.art-toggle,.art-permalink{
   margin-left:auto;flex:0 0 auto;width:26px;height:26px;border:1px solid var(--line-bright);background:var(--inset);
   color:var(--dim);display:inline-flex;align-items:center;justify-content:center;transition:.16s;
   padding:0;border-radius:0;cursor:pointer;font:inherit;font-size:12px;appearance:none;text-align:center;
 }
-.art-head:hover .art-toggle{color:var(--blue-bright);border-color:var(--blue-bright)}
-.art-toggle:focus-visible{outline:2px solid var(--blue-bright);outline-offset:2px}
+/* The permalink renders before the toggle, so it takes the auto margin that
+   pushes the pair right. A second auto margin would split the head's free
+   space between them. */
+.art-permalink+.art-toggle{margin-left:0}
+.art-head:hover .art-toggle,.art-head:hover .art-permalink{color:var(--blue-bright);border-color:var(--blue-bright)}
+.art-toggle:focus-visible,.art-permalink:focus-visible{outline:2px solid var(--blue-bright);outline-offset:2px}
 .art.collapsed .art-toggle{transform:rotate(-90deg)}
 .art-body{padding:18px 20px}
 .art.collapsed .art-body{display:none}
