@@ -392,7 +392,13 @@ table.md-tbl tr:hover td{background:rgba(0,41,222,.03)}
 .dl-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line);background:rgba(0,41,222,.04)}
 .dl-id{font-family:var(--mono);font-size:11px;color:var(--blue-bright);border:1px solid var(--line-bright);background:var(--panel-2);padding:2px 8px;letter-spacing:.04em;flex:0 0 auto}
 .dl-title{font-family:var(--disp);font-weight:600;font-size:13.5px;color:var(--ink)}
-.dl-pills{margin-left:auto;display:flex;gap:7px;flex-wrap:wrap}
+.dl-pills{margin-left:auto;display:flex;gap:7px;flex-wrap:wrap;min-width:0}
+/* We cap the chip as a backstop. If a long value ever slips past the split
+   rule in the viewer, the chip truncates with an ellipsis instead of widening
+   the card. Note: the ellipsis needs both overflow:hidden here and
+   min-width:0 on .dl-pills, because a flex item does not shrink below its
+   content without them. */
+.dl-pill{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .dl-pill i{font-style:normal;opacity:.5;font-size:9px;margin-right:5px;letter-spacing:.08em;text-transform:uppercase}
 .dl-grid{display:grid;grid-template-columns:150px minmax(0,1fr);gap:1px;background:var(--line)}
 .dl-row{display:contents}

@@ -250,15 +250,35 @@
     }
     return fields;
   }
+  /* We keep the header chips single-word. The chip shows the leading keyword,
+     and the prose after the first separator run (dash, colon, or whitespace)
+     moves into the card grid as a labelled note row. We demote the evidence
+     instead of dropping it. */
+  function dlChipSplit(v){
+    const m=v.trim().match(/^[\s:—–-]*([^\s:—–-]+)(?:[\s:—–-]+([\s\S]*))?$/);
+    return m?{word:m[1],tail:(m[2]||'').trim()}:{word:v.trim(),tail:''};
+  }
+  /* A value that opens with no known keyword has no keyword to stand for it.
+     So we demote the whole value, not just the tail. A bare single word cuts
+     nothing and gets no note. */
+  function dlChip(kind,cls,known,v){
+    const s=dlChipSplit(v);
+    return {
+      html:`<span class="pill dl-pill ${cls}"><i>${kind}</i>${esc(s.word)}</span>`,
+      note: known ? s.tail : (s.tail ? v.trim() : '')
+    };
+  }
+  /* Note: both class matches stay on the full value, not the split word, so
+     no existing document changes chip class or rail. */
   function dlConfPill(v){
     const t=v.trim().toUpperCase();
     const cls = t.indexOf('HIGH')===0?'p-ok' : t.indexOf('MED')===0?'p-med' : t.indexOf('LOW')===0?'p-high' : 'p-low';
-    return `<span class="pill dl-pill ${cls}"><i>conf</i>${esc(v.trim())}</span>`;
+    return dlChip('conf',cls,cls!=='p-low',v);
   }
   function dlStatusPill(v){
     const t=v.trim().toUpperCase();
     const cls = t.indexOf('INVALIDATED')===0?'p-bad' : t.indexOf('VALIDATED')===0?'p-ok' : t.indexOf('OPEN')===0?'p-open' : 'p-low';
-    return `<span class="pill dl-pill ${cls}"><i>status</i>${esc(v.trim())}</span>`;
+    return dlChip('status',cls,cls!=='p-low',v);
   }
   function dlRail(status){
     const t=(status||'').trim().toUpperCase();
@@ -278,7 +298,13 @@
       if(k==='status'){ status=f.value; continue; }
       body.push(f);
     }
-    const pills=(confidence?dlConfPill(confidence):'')+(status?dlStatusPill(status):'');
+    const conf=confidence?dlConfPill(confidence):null;
+    const stat=status?dlStatusPill(status):null;
+    // We append the note rows after the author's fields so the pill order
+    // and the field order both stay unchanged.
+    if(conf&&conf.note) body.push({label:'confidence note',value:conf.note});
+    if(stat&&stat.note) body.push({label:'status note',value:stat.note});
+    const pills=(conf?conf.html:'')+(stat?stat.html:'');
     const grid=body.map(f=>
       `<div class="dl-row"><span class="dl-k">${esc(f.label)}</span><span class="dl-v">${decorate(inline(f.value))}</span></div>`
     ).join('');
