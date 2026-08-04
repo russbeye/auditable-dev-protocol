@@ -195,8 +195,12 @@ header.masthead{padding:34px 0 12px;border-bottom:1px solid var(--line)}
 .dropmask .msg{font-family:var(--disp);text-transform:uppercase;letter-spacing:.1em;color:var(--blue-bright);font-size:22px}
 
 /* ---------- layout ---------- */
-.grid{display:grid;grid-template-columns:248px 1fr;gap:26px;margin-top:26px;align-items:start}
-@media (max-width:980px){ .grid{grid-template-columns:1fr} }
+/* We size the flexible track with minmax(0,1fr), never a bare 1fr. A bare 1fr
+   means minmax(auto,1fr), and the auto floor lets one unbreakable run push the
+   column past the viewport. The builder sets its own columns locally, so it
+   does not read these values. */
+.grid{display:grid;grid-template-columns:248px minmax(0,1fr);gap:26px;margin-top:26px;align-items:start}
+@media (max-width:980px){ .grid{grid-template-columns:minmax(0,1fr)} }
 
 /* ---------- shared cards ---------- */
 .panel-card{
@@ -321,6 +325,12 @@ select option{background:var(--panel-2);color:var(--ink)}
 @keyframes flash{0%{box-shadow:inset 0 0 0 2px var(--blue)}100%{box-shadow:none}}
 
 /* ---------- rendered markdown ---------- */
+/* Protocol output carries long unbroken runs, for example an identifier in
+   inline code or a bare URL. We break those mid-token instead of letting them
+   widen the page. We use break-word and not anywhere. The anywhere value also
+   shrinks min-content sizes, so tables would wrap instead of scrolling inside
+   .tbl-wrap. */
+.md,.dl-v{overflow-wrap:break-word}
 .md > *:first-child{margin-top:0}
 .md > *:last-child{margin-bottom:0}
 .md p{margin:0 0 12px;color:var(--ink)}
@@ -384,12 +394,12 @@ table.md-tbl tr:hover td{background:rgba(0,41,222,.03)}
 .dl-title{font-family:var(--disp);font-weight:600;font-size:13.5px;color:var(--ink)}
 .dl-pills{margin-left:auto;display:flex;gap:7px;flex-wrap:wrap}
 .dl-pill i{font-style:normal;opacity:.5;font-size:9px;margin-right:5px;letter-spacing:.08em;text-transform:uppercase}
-.dl-grid{display:grid;grid-template-columns:150px 1fr;gap:1px;background:var(--line)}
+.dl-grid{display:grid;grid-template-columns:150px minmax(0,1fr);gap:1px;background:var(--line)}
 .dl-row{display:contents}
 .dl-k{padding:8px 14px;background:var(--panel-2);font-size:10px;line-height:1.7;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);white-space:nowrap}
 .dl-v{padding:8px 14px;background:var(--inset);color:var(--ink);font-size:13px}
 .dl-v code{font-size:12px}
-@media(max-width:560px){.dl-grid{grid-template-columns:1fr}.dl-k{padding-bottom:2px}.dl-v{padding-top:2px}}
+@media(max-width:560px){.dl-grid{grid-template-columns:minmax(0,1fr)}.dl-k{padding-bottom:2px}.dl-v{padding-top:2px}}
 
 /* empty state */
 .empty-state{border:1px dashed var(--line-bright);background:var(--panel-2);padding:40px 28px;text-align:center}
