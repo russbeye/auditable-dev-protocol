@@ -75,7 +75,12 @@
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
+<!-- The toast doubles as the page's live region, so every toast message is
+     spoken as well as shown. The attributes sit in the static markup because
+     a region added later can be missed by assistive technology. The theme
+     hides the toast with opacity, never display, which keeps the region in
+     the accessibility tree. -->
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 (function(){
@@ -361,7 +366,7 @@
     }
 
     const prevScroll = window.scrollY;
-    const seen={}; const newHashes=new Map(); const tocItems=[];
+    const seen={}; const newHashes=new Map(); const tocItems=[]; const arrived=[];
     let bodyHtml='';
 
     secs.forEach((sec,idx)=>{
@@ -374,6 +379,11 @@
       newHashes.set(key,h);
 
       const changed = primed && isLive && lastHashes.get(key)!==h;
+      // A key the previous render did not have is a section that just arrived.
+      // The same gate that scopes the flash keeps first loads, example, paste,
+      // and snapshots silent. We collect the whole tick before speaking so
+      // several arrivals share one toast.
+      if(primed && isLive && !lastHashes.has(key)) arrived.push(sec.title);
       const isCollapsed = collapsed.has(key);
       const cls=['art', meta.spine?'spine':'', meta.alert?'alert':'', isCollapsed?'collapsed':'', changed?'flash':''].filter(Boolean).join(' ');
       const spinePill = meta.spine?'<span class="art-spine-pill">spine</span>':'';
@@ -399,6 +409,11 @@
     $('#toc-count').textContent=String(secs.length);
     lastHashes=newHashes; primed=true;
     setControlsEnabled(true);
+
+    if(arrived.length){
+      toast(arrived.length===1 ? 'New section: '+arrived[0]
+                               : arrived.length+' new sections: '+arrived.join(', '));
+    }
 
     // preserve scroll on live updates so the view doesn't jump
     if(isLive){ window.scrollTo(0,prevScroll); }
@@ -477,7 +492,9 @@
     if(!('showOpenFilePicker' in window)){ $('#openfile').click(); return; }
     try{
       const [h]=await window.showOpenFilePicker({types:[{description:'Markdown / text',accept:{'text/markdown':['.md','.markdown'],'text/plain':['.txt']}}]});
-      fileHandle=h; fetchUrl=null; lastSig=''; closePaste(); startWatch(); toast('Watching '+h.name);
+      // A newly watched file is a first load, not an update. We drop primed so
+      // its opening render neither flashes nor announces sections.
+      fileHandle=h; fetchUrl=null; lastSig=''; primed=false; closePaste(); startWatch(); toast('Watching '+h.name);
     }catch(e){ /* user cancelled */ }
   });
   // Browsers without showOpenFilePicker cannot give us a handle to poll, so Open
@@ -513,7 +530,7 @@
     e.preventDefault(); dragDepth=0; mask.classList.remove('show');
     const item=e.dataTransfer.items && e.dataTransfer.items[0];
     if(item && item.getAsFileSystemHandle){
-      try{ const h=await item.getAsFileSystemHandle(); if(h && h.kind==='file'){ fileHandle=h; fetchUrl=null; lastSig=''; closePaste(); startWatch(); toast('Watching '+h.name); return; } }catch(_){}
+      try{ const h=await item.getAsFileSystemHandle(); if(h && h.kind==='file'){ fileHandle=h; fetchUrl=null; lastSig=''; primed=false; closePaste(); startWatch(); toast('Watching '+h.name); return; } }catch(_){}
     }
     const file=e.dataTransfer.files && e.dataTransfer.files[0];
     if(file){ const text=await file.text(); if(watchTimer){clearInterval(watchTimer);watchTimer=null;fileHandle=null;fetchUrl=null;} setSource(file.name+' (snapshot)','LOADED'); update(text,false); }
