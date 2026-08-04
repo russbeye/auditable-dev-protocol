@@ -161,7 +161,12 @@ header.masthead{padding:34px 0 12px;border-bottom:1px solid var(--line)}
 .btn:disabled{opacity:.4;cursor:not-allowed}
 .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
 .btn.primary:hover{background:var(--blue-bright);border-color:var(--blue-bright)}
+/* Ghost opens the right-aligned cluster. Both toolbars reserve it for Clear,
+   the confirm-guarded destructive action. */
 .btn.ghost{margin-left:auto}
+/* Quiet de-emphasizes dev-support actions like the example loaders. Both pages
+   want it, so it lives in the shared sheet. */
+.btn.quiet{color:var(--faint);border-color:var(--line);background:transparent}
 .btn:focus-visible{outline:2px solid var(--blue-bright);outline-offset:2px}
 .auto-toggle{display:flex;align-items:center;gap:9px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
 .sw{position:relative;width:42px;height:22px;flex:0 0 auto;cursor:pointer}

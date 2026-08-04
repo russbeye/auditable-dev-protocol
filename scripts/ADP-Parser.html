@@ -39,13 +39,15 @@
         <button class="btn primary" id="open">⌖ Open &amp; watch file</button>
         <button class="btn" id="reload" disabled>↻ Reload</button>
         <button class="btn" id="pastebtn">⌨ Paste</button>
-        <button class="btn" id="example">Load example</button>
-        <button class="btn ghost" id="expandall" disabled>Expand all</button>
+        <button class="btn quiet" id="example">Load example</button>
+        <button class="btn ghost" id="clear">Clear</button>
+        <button class="btn" id="expandall" disabled>Expand all</button>
         <button class="btn" id="collapseall" disabled>Collapse all</button>
         <label class="auto-toggle" title="Poll the watched file for changes">
           auto
           <span class="sw"><input type="checkbox" id="autoupd" checked><span class="track"></span><span class="knob"></span></span>
         </label>
+        <input type="file" id="openfile" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>
       </div>
       <div class="paste-drawer" id="pastedrawer">
         <textarea id="pastearea" placeholder="Paste the protocol's markdown output here — it renders live as you type or paste."></textarea>
@@ -383,7 +385,7 @@
       <div class="es-mark">◢◣◤◥</div>
       <h2>No artifacts loaded</h2>
       <p>This viewer renders the markdown the <b>auditable-dev-protocol</b> skill produces — Problem Statement, Recommendation Brief, Pre-Mortem, Decision Log, and the rest — as collapsible, navigable sections.</p>
-      <p>${fs ? 'Click <code>Open &amp; watch file</code> to pick your output file — it will re-render automatically as the protocol appends more sections.' : 'Your browser lacks the File System Access API, so live watching is off. Use <code>Paste</code> or drag a markdown file onto the window.'}</p>
+      <p>${fs ? 'Click <code>Open &amp; watch file</code> to pick your output file — it will re-render automatically as the protocol appends more sections.' : 'Click <code>Open file</code> to load a one-shot snapshot of your output file — your browser lacks the File System Access API, so live watching is off. Paste and drag &amp; drop also work.'}</p>
       <div class="keys">drag &amp; drop a <code>.md</code> file anywhere &nbsp;·&nbsp; or <code>Load example</code> to see it in action</div>
     </div>`;
   }
@@ -446,11 +448,22 @@
   }
 
   $('#open').addEventListener('click', async ()=>{
-    if(!('showOpenFilePicker' in window)){ toast('File watching needs a Chromium browser — use Paste or drop'); $('#pastedrawer').classList.add('open'); return; }
+    if(!('showOpenFilePicker' in window)){ $('#openfile').click(); return; }
     try{
       const [h]=await window.showOpenFilePicker({types:[{description:'Markdown / text',accept:{'text/markdown':['.md','.markdown'],'text/plain':['.txt']}}]});
       fileHandle=h; fetchUrl=null; lastSig=''; closePaste(); startWatch(); toast('Watching '+h.name);
     }catch(e){ /* user cancelled */ }
+  });
+  // Browsers without showOpenFilePicker cannot give us a handle to poll, so Open
+  // falls back to this hidden input. We read one snapshot, the same way the drop
+  // path does when no handle is available.
+  $('#openfile').addEventListener('change', async e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const text=await f.text();
+    if(watchTimer){ clearInterval(watchTimer); watchTimer=null; fileHandle=null; fetchUrl=null; }
+    closePaste(); setSource(f.name+' (snapshot)','LOADED'); update(text,false);
+    // We reset the input so picking the same file again still fires this handler.
+    e.target.value='';
   });
   $('#reload').addEventListener('click', ()=>{ lastSig=''; pollTick(); toast('Reloaded'); });
 
@@ -480,6 +493,19 @@
     if(file){ const text=await file.text(); if(watchTimer){clearInterval(watchTimer);watchTimer=null;fileHandle=null;fetchUrl=null;} setSource(file.name+' (snapshot)','LOADED'); update(text,false); }
   });
 
+  // Clear returns the viewer to its boot state. The confirm guards a live watch,
+  // which Clear stops along with every other source.
+  $('#clear').addEventListener('click', ()=>{
+    if(!confirm('Clear the viewer?')) return;
+    if(watchTimer){ clearInterval(watchTimer); watchTimer=null; }
+    fileHandle=null; fetchUrl=null; lastSig='';
+    $('#reload').disabled=true;
+    $('#pastearea').value=''; closePaste();
+    collapsed.clear(); lastHashes=new Map(); primed=false;
+    setSource('','IDLE'); update('',false);
+    toast('Cleared');
+  });
+
   // expand / collapse
   $('#content').addEventListener('click', e=>{
     const head=e.target.closest('.art-head'); if(!head) return;
@@ -501,7 +527,7 @@
 
   function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1800); }
 
-  if(!('showOpenFilePicker' in window)){ $('#open').textContent='⌨ Open (paste)'; $('#foot-mode').textContent='paste/drop only · this browser has no File System Access'; }
+  if(!('showOpenFilePicker' in window)){ $('#open').textContent='⌖ Open file'; $('#foot-mode').textContent='snapshots only · this browser has no File System Access'; }
 
   /* =========================================================
      Example: a full protocol run covering every artifact
