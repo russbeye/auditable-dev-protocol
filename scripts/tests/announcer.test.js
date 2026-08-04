@@ -24,15 +24,15 @@ function makeClock(){
   };
 }
 
-function makeAnnouncer(){
+function makeAnnouncer(extra){
   const clock = makeClock();
   const spoken = [];
-  const report = lib.createStatusAnnouncer({
+  const report = lib.createStatusAnnouncer(Object.assign({
     say: t => spoken.push(t),
     debounceMs: 800,
     setTimeout: clock.setTimeout,
     clearTimeout: clock.clearTimeout
-  });
+  }, extra));
   return {clock, spoken, report};
 }
 
@@ -97,4 +97,28 @@ test("each transition after a settle announces again", () => {
   report(3); clock.settle();
   report(0); clock.settle();
   assert.deepStrictEqual(spoken, ["3 issues", "Valid"]);
+});
+
+/* AV-006 generalizes the factory. A format option lets the viewer speak its
+   source states through the same settle-then-compare rule. The tests above
+   pin the default wording, and these pin the hook. */
+
+test("a format option controls the wording without touching the discipline", () => {
+  const {clock, spoken, report} = makeAnnouncer({format: s => "now " + s});
+  report("IDLE");
+  report("WATCHING");
+  assert.deepStrictEqual(spoken, [], "nothing speaks before the settle window");
+  clock.settle();
+  assert.deepStrictEqual(spoken, ["now WATCHING"]);
+});
+
+test("string states repeat silently and speak once per transition", () => {
+  const {clock, spoken, report} = makeAnnouncer({format: s => s});
+  report("IDLE");
+  report("WATCHING"); clock.settle();
+  // Every content change of a watched file re-reports WATCHING. None of
+  // these are transitions, so none of them speak.
+  for (let i = 0; i < 60; i++){ report("WATCHING"); clock.settle(); }
+  report("PASTED"); clock.settle();
+  assert.deepStrictEqual(spoken, ["WATCHING", "PASTED"]);
 });

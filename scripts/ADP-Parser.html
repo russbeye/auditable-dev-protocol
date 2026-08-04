@@ -34,6 +34,11 @@
         <div class="term-dots"><i id="livedot"></i><i></i><i></i></div>
         <div class="con-file">source: <b id="srcname">none</b></div>
         <div class="status idle" id="status"><span class="blk"></span><span id="status-txt">IDLE</span></div>
+        <!-- The spoken twin of the status pill. setSource reports every state
+             to the announcer in the script below, which fills this once the
+             state settles. Keep it empty here and present from load. A region
+             added later can be missed by assistive technology. -->
+        <div class="sr-live" id="live-status" role="status" aria-live="polite"></div>
       </div>
       <div class="toolbar">
         <button class="btn primary" id="open">⌖ Open &amp; watch file</button>
@@ -82,16 +87,23 @@
      the accessibility tree. -->
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+<script src="adp-prompt-lib.js"></script>
 <script>
 (function(){
   "use strict";
   const $ = (s,r=document)=>r.querySelector(s);
   const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
 
+  const {createStatusAnnouncer} = window.ADPPromptLib;
+
   /* =========================================================
      DL-001  Hand-rolled markdown renderer (artifact subset)
      ========================================================= */
   function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  // esc leaves double quotes alone, which is fine for element content. A
+  // value inside a quoted attribute needs them escaped too, or a document
+  // title could close the attribute early.
+  function escAttr(s){return esc(s).replace(/"/g,'&quot;');}
 
   // We never let a document-controlled URL become an anchor unless its scheme
   // is on this list. Anything else degrades to visible text. If a legitimate
@@ -386,6 +398,10 @@
     }
 
     const prevScroll = window.scrollY;
+    // Replacing innerHTML silently drops keyboard focus from a toggle button.
+    // We remember which section owned focus and give it back after the swap.
+    const ae=document.activeElement;
+    const focusKey=(ae && ae.classList && ae.classList.contains('art-toggle')) ? ae.closest('.art').id : null;
     const seen={}; const newHashes=new Map(); const tocItems=[]; const arrived=[];
     let bodyHtml='';
 
@@ -409,15 +425,20 @@
       const spinePill = meta.spine?'<span class="art-spine-pill">spine</span>':'';
       const tagPill = meta.tag?`<span class="art-tag">${meta.tag}</span>`:'';
 
+      // The toggle is a real button emitted by this template, not an
+      // enhancement added after load. Live updates rebuild the markup through
+      // innerHTML, so anything bolted on afterwards would be wiped on the
+      // next poll tick. aria-expanded derives from the collapsed set, which
+      // keeps the attribute truthful across re-renders.
       bodyHtml += `
         <section class="${cls}" id="${key}" data-key="${key}">
           <div class="art-head" data-toggle="${key}">
             <span class="art-icon">${meta.icon}</span>
             <span class="art-title">${esc(sec.title)}</span>
             ${tagPill}${spinePill}
-            <span class="art-toggle" aria-hidden="true">▾</span>
+            <button type="button" class="art-toggle" aria-expanded="${isCollapsed?'false':'true'}" aria-controls="${key}-body" aria-label="${escAttr(sec.title)} section"><span aria-hidden="true">▾</span></button>
           </div>
-          <div class="art-body"><div class="md">${innerHtml}</div></div>
+          <div class="art-body" id="${key}-body"><div class="md">${innerHtml}</div></div>
         </section>`;
 
       tocItems.push(`<li><a href="#${key}" data-toc="${key}"><span class="ti-icon">${meta.icon}</span><span class="ti-name">${esc(sec.title)}</span>${meta.tag?`<span class="ti-tag">${meta.tag}</span>`:''}</a></li>`);
@@ -429,6 +450,12 @@
     $('#toc-count').textContent=String(secs.length);
     lastHashes=newHashes; primed=true;
     setControlsEnabled(true);
+    if(focusKey){
+      const sec=document.getElementById(focusKey);
+      // The focused section can vanish from the document mid-edit. Then the
+      // focus falls back to the body, the same loss every render had before.
+      if(sec) sec.querySelector('.art-toggle').focus({preventScroll:true});
+    }
 
     if(arrived.length){
       toast(arrived.length===1 ? 'New section: '+arrived[0]
@@ -472,13 +499,30 @@
      ========================================================= */
   let fileHandle=null, watchTimer=null, lastSig='', fetchUrl=null;
 
+  /* The status pill's spoken twin. We reuse the lib's settle-then-compare
+     discipline, so repeated reports of one state stay silent. Every content
+     change of a watched file re-reports WATCHING, and only a real state
+     change speaks. The wording mirrors the pill's states in plain words. */
+  const SOURCE_SPOKEN={IDLE:'No source',WATCHING:'Watching file',LOADED:'Snapshot loaded',PASTED:'Paste mode'};
+  const announceSource=createStatusAnnouncer({
+    say:t=>{ $('#live-status').textContent=t; },
+    // The builder's settle window. One shared feel, one fewer constant.
+    debounceMs:800,
+    format:s=>SOURCE_SPOKEN[s]||s
+  });
+  // The pill boots as IDLE in the static markup, so we seed the announcer
+  // with the same state. The seed is silent and the first real transition
+  // speaks, a ?file= boot included.
+  announceSource('IDLE');
+
   function setSource(name,state){
     $('#srcname').textContent=name||'none';
     const st=$('#status'), txt=$('#status-txt'), dot=$('#livedot');
     st.className='status '+(state==='WATCHING'?'ok':state==='IDLE'?'idle':'warn');
     txt.textContent=state;
     dot.classList.toggle('live', state==='WATCHING');
-    $('#foot-mode').textContent = state==='WATCHING' ? 'watching file · polling 1.5s' : (state==='PASTED'?'paste mode · live':'no dependencies · single file');
+    $('#foot-mode').textContent = state==='WATCHING' ? 'watching file · polling 1.5s' : (state==='PASTED'?'paste mode · live':'no build step · local files');
+    announceSource(state);
   }
 
   function update(text, isLive){ currentText=text; render(isLive); }
@@ -570,15 +614,25 @@
   });
 
   // expand / collapse
+  // One writer moves the collapsed class, the collapsed set, and the button's
+  // aria-expanded together, the same rule PB-006 set for the builder. If you
+  // add collapse behavior, route it through here.
+  function setCollapsed(sec,on){
+    sec.classList.toggle('collapsed',on);
+    if(on) collapsed.add(sec.id); else collapsed.delete(sec.id);
+    sec.querySelector('.art-toggle').setAttribute('aria-expanded', on?'false':'true');
+  }
+  // The toggle button's Enter and Space arrive here as a bubbled click, so
+  // the head and the button share one path.
   $('#content').addEventListener('click', e=>{
     const head=e.target.closest('.art-head'); if(!head) return;
-    const key=head.getAttribute('data-toggle');
-    const sec=document.getElementById(key); if(!sec) return;
-    sec.classList.toggle('collapsed');
-    if(sec.classList.contains('collapsed')) collapsed.add(key); else collapsed.delete(key);
+    const sec=document.getElementById(head.getAttribute('data-toggle')); if(!sec) return;
+    setCollapsed(sec, !sec.classList.contains('collapsed'));
   });
-  $('#expandall').addEventListener('click', ()=>{ collapsed.clear(); $$('.art').forEach(a=>a.classList.remove('collapsed')); });
-  $('#collapseall').addEventListener('click', ()=>{ $$('.art').forEach(a=>{a.classList.add('collapsed');collapsed.add(a.id);}); });
+  // Expand all also clears keys of sections absent from the current document,
+  // so a section that later returns comes back open.
+  $('#expandall').addEventListener('click', ()=>{ collapsed.clear(); $$('.art').forEach(a=>setCollapsed(a,false)); });
+  $('#collapseall').addEventListener('click', ()=>{ $$('.art').forEach(a=>setCollapsed(a,true)); });
 
   // smooth-scroll TOC (and keep hash out of history spam)
   $('#toc-list').addEventListener('click', e=>{

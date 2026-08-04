@@ -292,29 +292,35 @@
     return doc;
   }
 
-  /* The builder's render() runs on every input event, but assistive technology
-     should only hear state transitions. This factory owns that rule. The
-     caller reports the current issue count on every render. We wait for the
-     settle window, then speak only when the settled count differs from the
-     last spoken one. The first report seeds the baseline silently, so a page
-     load or a draft restore never announces the state it opened with. We take
-     the timer functions as options so tests can drive the clock by hand. */
+  /* A status pill is re-reported far more often than it changes, and assistive
+     technology should only hear transitions. This factory owns that rule. The
+     caller reports the current status value on every render, and we speak only
+     when the settled value differs from the last spoken one. The first report
+     seeds the baseline silently, so a page load or a draft restore never
+     announces the state it opened with. Values compare by strict equality, so
+     the builder's issue counts and the viewer's source states both work. We
+     take the timer functions and the wording as options, so tests can drive
+     the clock and each page speaks its own states. */
   function createStatusAnnouncer(opts){
     const say=opts.say;
     const debounceMs=opts.debounceMs;
     const setT=opts.setTimeout||setTimeout;
     const clearT=opts.clearTimeout||clearTimeout;
+    // Without a format option we keep the builder's wording, mirroring its
+    // visual pill. If the pill wording in prompt-builder.html changes, change
+    // this default with it.
+    const format=opts.format||function(count){
+      return count===0 ? "Valid" : count+" "+(count===1?"issue":"issues");
+    };
     let seeded=false, spoken=null, timer=null;
-    return function report(count){
-      if(!seeded){ seeded=true; spoken=count; return; }
+    return function report(value){
+      if(!seeded){ seeded=true; spoken=value; return; }
       clearT(timer);
       timer=setT(function(){
         timer=null;
-        if(count===spoken) return;
-        spoken=count;
-        // We mirror the visual pill's state names. If the pill wording in
-        // prompt-builder.html changes, change this line with it.
-        say(count===0 ? "Valid" : count+" "+(count===1?"issue":"issues"));
+        if(value===spoken) return;
+        spoken=value;
+        say(format(value));
       }, debounceMs);
     };
   }
