@@ -40,6 +40,7 @@
              added later can be missed by assistive technology. -->
         <div class="sr-live" id="live-status" role="status" aria-live="polite"></div>
       </div>
+      <div class="tabstrip" id="tabstrip" role="tablist" aria-label="Open documents" hidden></div>
       <div class="toolbar">
         <button class="btn primary" id="open">⌖ Open &amp; watch file</button>
         <button class="btn" id="reload" disabled>↻ Reload</button>
@@ -48,7 +49,7 @@
         <button class="btn ghost" id="clear">Clear</button>
         <button class="btn" id="expandall" disabled>Expand all</button>
         <button class="btn" id="collapseall" disabled>Collapse all</button>
-        <label class="auto-toggle" title="Poll the watched file for changes">
+        <label class="auto-toggle" title="Poll watched files for changes">
           auto
           <span class="sw"><input type="checkbox" id="autoupd" checked><span class="track"></span><span class="knob"></span></span>
         </label>
@@ -99,29 +100,53 @@
   const {esc, escAttr, parseSections, sectionKeys, metaFor, renderMarkdown, renderDecisionLog, dlStatusCounts} = window.ADPParserLib;
 
   /* =========================================================
-     DL-003  State preserved across live re-renders
+     AV-010  Tabs: a tab object owns all per-document state
      ========================================================= */
-  const collapsed = new Set();   // keys of collapsed sections
-  let dlFilter = null;           // active decision-log status bucket, or null for all
-  let lastHashes = new Map();    // key -> body hash (to flash only true changes)
-  let currentText = '';
-  let primed = false;            // first render done? (so initial load doesn't flash everything)
-  // Where the boot URL asked us to land. Content arrives after load on every
-  // path, so we keep the fragment until the first render that produces
-  // sections, then resolve it once and clear it.
-  let pendingFragment=(function(){ try{ return decodeURIComponent(location.hash.slice(1))||null; }catch(e){ return location.hash.slice(1)||null; } })();
+  /* Everything that used to be a per-document module global lives on the tab
+     now, and the globals are gone rather than aliased. We did that on purpose.
+     The IIFE runs in strict mode, so a reference this migration missed throws
+     instead of quietly sharing one value between tabs. render() still paints
+     the one #content DOM, always from the active tab. */
+  const tabs=[];
+  let act=null;        // the active tab, or null while the workspace is empty
+  let tabSeq=0;
+
+  function newTab(props){
+    const t=Object.assign({
+      id:'t'+(++tabSeq),
+      kind:'snap',             // 'file' | 'url' | 'paste' | 'snap'
+      label:'untitled',
+      handle:null, url:null,
+      text:'', lastSig:'',
+      hashes:new Map(),        // key -> body hash (to flash only true changes)
+      collapsed:new Set(),     // keys of collapsed sections
+      dlFilter:null,           // active decision-log status bucket, or null for all
+      primed:false,            // first render done? (so a first load doesn't flash)
+      // Where a boot URL asked this tab to land. We keep the fragment until
+      // the first render that produces sections, then resolve it once and
+      // clear it.
+      pendingFragment:null,
+      scrollY:0,
+      changed:false,           // a background change lit the badge; the flash waits for activation
+      needsPermission:false,   // restored handle that still needs its user gesture
+      polling:false,           // a poll for this tab is in flight
+    }, props);
+    tabs.push(t);
+    return t;
+  }
+  const tabById=id=>tabs.find(t=>t.id===id)||null;
 
   function hash(s){ let h=0; for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0;} return h; }
 
-  function render(isLive){
+  function render(isLive, quietArrivals){
     const main=$('#content'), tocList=$('#toc-list'), tocEmpty=$('#toc-empty');
-    if(!currentText.trim()){
+    if(!act || !act.text.trim()){
       main.innerHTML = emptyState();
       tocList.innerHTML=''; tocEmpty.style.display='block'; $('#toc-count').textContent='0';
       setControlsEnabled(false);
       return;
     }
-    const {secs}=parseSections(currentText);
+    const {secs}=parseSections(act.text);
     if(!secs.length){
       main.innerHTML = `<div class="empty-state"><div class="es-mark">⌑</div><h2>No protocol sections found</h2><p>The text loaded, but no <code>## Section</code> headers were detected. The viewer keys off level-2 markdown headings like <code>## Problem Statement</code> or <code>## Decision Log</code>.</p></div>`;
       tocList.innerHTML=''; tocEmpty.style.display='block'; $('#toc-count').textContent='0';
@@ -147,7 +172,7 @@
       const meta=metaFor(sec.title);
       const bodyRaw=sec.body.join('\n');
       const counts=meta.spine ? dlStatusCounts(bodyRaw) : null;
-      if(counts && dlFilter) filterHits+=counts[dlFilter];
+      if(counts && act.dlFilter) filterHits+=counts[act.dlFilter];
       let innerHtml=(meta.spine ? renderDecisionLog(bodyRaw) : renderMarkdown(bodyRaw)) || '<p style="color:var(--faint)">(empty)</p>';
       // The strip only makes sense over cards. A spine section that fell back
       // to the generic renderer has none, and its total is zero.
@@ -155,13 +180,13 @@
       const h=hash(bodyRaw + '|' + sec.title);
       newHashes.set(key,h);
 
-      const changed = primed && isLive && lastHashes.get(key)!==h;
+      const changed = act.primed && isLive && act.hashes.get(key)!==h;
       // A key the previous render did not have is a section that just arrived.
       // The same gate that scopes the flash keeps first loads, example, paste,
       // and snapshots silent. We collect the whole tick before speaking so
       // several arrivals share one toast.
-      if(primed && isLive && !lastHashes.has(key)) arrived.push(sec.title);
-      const isCollapsed = collapsed.has(key);
+      if(act.primed && isLive && !act.hashes.has(key)) arrived.push(sec.title);
+      const isCollapsed = act.collapsed.has(key);
       const cls=['art', meta.spine?'spine':'', meta.alert?'alert':'', isCollapsed?'collapsed':'', changed?'flash':''].filter(Boolean).join(' ');
       const spinePill = meta.spine?'<span class="art-spine-pill">spine</span>':'';
       const tagPill = meta.tag?`<span class="art-tag">${meta.tag}</span>`:'';
@@ -191,12 +216,12 @@
     // A live update can empty the active bucket. Keeping the filter would
     // hide every card, and a pressed OTHER button can even vanish with its
     // bucket, so we clear the filter and let the honest zeros explain it.
-    if(dlFilter && !filterHits) dlFilter=null;
+    if(act.dlFilter && !filterHits) act.dlFilter=null;
     main.innerHTML=bodyHtml;
     tocList.innerHTML=tocItems.join('');
     tocEmpty.style.display='none';
     $('#toc-count').textContent=String(secs.length);
-    lastHashes=newHashes; primed=true;
+    act.hashes=newHashes; act.primed=true;
     setControlsEnabled(true);
     applyDLFilter();
     if(focusKey){
@@ -215,7 +240,10 @@
       if(sec) sec.querySelector('.art-permalink').focus({preventScroll:true});
     }
 
-    if(arrived.length){
+    // Activating a badged tab re-renders live so its changes flash, but it
+    // passes quietArrivals: the background delivery already toasted these
+    // arrivals by name, and announcing them twice would cry wolf.
+    if(arrived.length && !quietArrivals){
       toast(arrived.length===1 ? 'New section: '+arrived[0]
                                : arrived.length+' new sections: '+arrived.join(', '));
     }
@@ -229,13 +257,13 @@
     // Note: the behavior must stay explicit. A default scroll inherits the
     // theme's smooth scrolling, and some platforms never run a scripted
     // smooth scroll, which leaves the deep link sitting at the top.
-    if(pendingFragment){
-      const target=document.getElementById(pendingFragment);
+    if(act.pendingFragment){
+      const target=document.getElementById(act.pendingFragment);
       if(target && target.classList.contains('art')){
         setCollapsed(target,false);
         target.scrollIntoView({block:'start',behavior:'instant'});
       }
-      pendingFragment=null;
+      act.pendingFragment=null;
     }
     scrollSpy();
   }
@@ -286,15 +314,14 @@
   window.addEventListener('scroll',()=>{ if(spyTick)return; spyTick=true; requestAnimationFrame(()=>{scrollSpy();spyTick=false;}); },{passive:true});
 
   /* =========================================================
-     DL-002  Source acquisition: FS Access watch + fallbacks
+     AV-010  Sources: one shared poll loop over every watchable tab
      ========================================================= */
-  let fileHandle=null, watchTimer=null, lastSig='', fetchUrl=null;
 
   /* The status pill's spoken twin. We reuse the lib's settle-then-compare
      discipline, so repeated reports of one state stay silent. Every content
      change of a watched file re-reports WATCHING, and only a real state
      change speaks. The wording mirrors the pill's states in plain words. */
-  const SOURCE_SPOKEN={IDLE:'No source',WATCHING:'Watching file',LOADED:'Snapshot loaded',PASTED:'Paste mode'};
+  const SOURCE_SPOKEN={IDLE:'No source',WATCHING:'Watching file',LOADED:'Snapshot loaded',PASTED:'Paste mode',CACHED:'Cached copy, click the tab to resume watching'};
   const announceSource=createStatusAnnouncer({
     say:t=>{ $('#live-status').textContent=t; },
     // The builder's settle window. One shared feel, one fewer constant.
@@ -306,74 +333,169 @@
   // speaks, a ?file= boot included.
   announceSource('IDLE');
 
-  function setSource(name,state){
-    $('#srcname').textContent=name||'none';
+  // A tab's state derives from what the tab is, never from a stored flag, so
+  // the pill cannot disagree with the poll loop. CACHED is the restored file
+  // tab that still waits for its permission click.
+  function tabState(t){
+    if(!t) return 'IDLE';
+    if(t.kind==='url') return 'WATCHING';
+    if(t.kind==='file') return (t.handle && !t.needsPermission)?'WATCHING':'CACHED';
+    if(t.kind==='paste') return 'PASTED';
+    return 'LOADED';
+  }
+
+  const IDLE_FOOT=('showOpenFilePicker' in window) ? 'no build step · local files' : 'snapshots only · this browser has no File System Access';
+
+  /* The one writer for the source chrome: name, pill, live dot, footer,
+     Reload, the paste drawer, and the spoken twin, all derived from the
+     active tab. Every tab switch and every re-arm routes through here. */
+  function syncSourceUI(){
+    const state=tabState(act);
+    $('#srcname').textContent=act?act.label:'none';
     const st=$('#status'), txt=$('#status-txt'), dot=$('#livedot');
     st.className='status '+(state==='WATCHING'?'ok':state==='IDLE'?'idle':'warn');
     txt.textContent=state;
     dot.classList.toggle('live', state==='WATCHING');
-    $('#foot-mode').textContent = state==='WATCHING' ? 'watching file · polling 1.5s' : (state==='PASTED'?'paste mode · live':'no build step · local files');
+    $('#foot-mode').textContent =
+      state==='WATCHING' ? 'watching file · polling 1.5s'
+      : state==='PASTED' ? 'paste mode · live'
+      : state==='CACHED' ? 'restored from cache · click the tab to watch'
+      : IDLE_FOOT;
+    $('#reload').disabled = state!=='WATCHING';
+    // The drawer is a paste tab's editing surface, so it follows the active
+    // tab's kind instead of staying a global toggle.
+    const drawer=$('#pastedrawer');
+    if(act && act.kind==='paste'){
+      drawer.classList.add('open');
+      const ta=$('#pastearea');
+      if(ta.value!==act.text) ta.value=act.text;
+    }else{
+      drawer.classList.remove('open');
+    }
     announceSource(state);
   }
 
-  function update(text, isLive){ currentText=text; render(isLive); }
+  function update(text, isLive){ act.text=text; render(isLive); }
 
-  async function pollTick(){
-    if(!$('#autoupd').checked) return;
-    if(fetchUrl){
-      try{
-        const r=await fetch(fetchUrl,{cache:'no-store'});
-        if(!r.ok) return;
-        const text=await r.text();
-        if(text!==lastSig){ lastSig=text; setSource(fetchUrl.split('/').pop()||fetchUrl,'WATCHING'); update(text,true); }
-      }catch(e){ /* server gone — leave last render in place */ }
-      return;
-    }
-    if(!fileHandle) return;
+  async function pollTab(t){
+    // A slow source must not double-deliver, so a tab with a poll already in
+    // flight sits the tick out.
+    if(t.polling) return;
+    t.polling=true;
     try{
-      const f=await fileHandle.getFile();
-      const sig=f.lastModified+':'+f.size;
-      if(sig!==lastSig){ lastSig=sig; const text=await f.text(); setSource(f.name,'WATCHING'); update(text,true); }
-    }catch(e){ /* file moved/closed — leave last render in place */ }
+      if(t.kind==='url'){
+        const r=await fetch(t.url,{cache:'no-store'});
+        if(r.ok){
+          const text=await r.text();
+          if(text!==t.lastSig){ t.lastSig=text; deliver(t,text); }
+        }
+      }else if(t.kind==='file' && t.handle && !t.needsPermission){
+        const f=await t.handle.getFile();
+        const sig=f.lastModified+':'+f.size;
+        if(sig!==t.lastSig){ t.lastSig=sig; deliver(t, await f.text()); }
+      }
+    }catch(e){ /* source gone — leave the tab's last text in place */ }
+    t.polling=false;
   }
-  function startWatch(){
-    if(watchTimer) clearInterval(watchTimer);
-    $('#reload').disabled=false;
-    pollTick();
-    watchTimer=setInterval(pollTick,1500);
+
+  /* Where a change lands decides what it does. The active tab re-renders
+     live, which flashes and speaks exactly as before. A background tab only
+     records the new text and lights its badge; its flash waits until the
+     reader activates it, diffing against the hashes of the last render that
+     tab actually showed. New sections still toast right away, named for the
+     tab, so a glance says which run moved. */
+  function deliver(t,text){
+    if(t===act){
+      update(text,true);
+    }else{
+      const known=new Set(sectionKeys(parseSections(t.text).secs));
+      const next=parseSections(text).secs;
+      const keys=sectionKeys(next);
+      const arrivedTitles=next.filter((s,i)=>!known.has(keys[i])).map(s=>s.title);
+      t.text=text;
+      t.changed=true;
+      renderStrip();
+      if(arrivedTitles.length){
+        toast(arrivedTitles.length===1 ? 'New section in '+t.label+': '+arrivedTitles[0]
+                                       : arrivedTitles.length+' new sections in '+t.label+': '+arrivedTitles.join(', '));
+      }
+    }
+    scheduleSave();
+  }
+
+  /* One shared loop instead of a timer per tab: closing a tab is a plain
+     list splice with no timer to forget, the cadence stays one knob, and a
+     dead source costs one skipped iteration. Paste and snapshot tabs never
+     tick, because those sources cannot change. */
+  function pollAll(){
+    if(!$('#autoupd').checked) return;
+    tabs.forEach(t=>{
+      if(t.kind==='url' || (t.kind==='file' && t.handle && !t.needsPermission)) pollTab(t);
+    });
   }
 
   $('#open').addEventListener('click', async ()=>{
     if(!('showOpenFilePicker' in window)){ $('#openfile').click(); return; }
     try{
       const [h]=await window.showOpenFilePicker({types:[{description:'Markdown / text',accept:{'text/markdown':['.md','.markdown'],'text/plain':['.txt']}}]});
-      // A newly watched file is a first load, not an update. We drop primed so
-      // its opening render neither flashes nor announces sections.
-      fileHandle=h; fetchUrl=null; lastSig=''; primed=false; closePaste(); startWatch(); toast('Watching '+h.name);
+      openHandleTab(h);
     }catch(e){ /* user cancelled */ }
   });
+  /* Open and a handle-bearing drop share this path. Picking a file that is
+     already open focuses its tab with the fresh handle instead of opening a
+     twin, so a re-pick after a restart also repairs that tab's permission.
+     A new tab boots unprimed, which keeps its first render silent. */
+  async function openHandleTab(h){
+    for(const t of tabs){
+      if(t.kind==='file' && t.handle){
+        try{
+          if(await h.isSameEntry(t.handle)){
+            t.handle=h; t.needsPermission=false; t.lastSig='';
+            idbPut(t.id,h);
+            activateTab(t.id);
+            pollTab(t);
+            toast('Watching '+t.label);
+            return;
+          }
+        }catch(e){ /* comparison unavailable — treat it as a new file */ }
+      }
+    }
+    const t=newTab({kind:'file',handle:h,label:h.name});
+    idbPut(t.id,h);
+    activateTab(t.id);
+    pollTab(t);
+    toast('Watching '+h.name);
+  }
   // Browsers without showOpenFilePicker cannot give us a handle to poll, so Open
-  // falls back to this hidden input. We read one snapshot, the same way the drop
-  // path does when no handle is available.
+  // falls back to this hidden input. We read one snapshot into its own tab, the
+  // same way the drop path does when no handle is available.
   $('#openfile').addEventListener('change', async e=>{
     const f=e.target.files[0]; if(!f) return;
-    const text=await f.text();
-    if(watchTimer){ clearInterval(watchTimer); watchTimer=null; fileHandle=null; fetchUrl=null; }
-    closePaste(); setSource(f.name+' (snapshot)','LOADED'); update(text,false);
+    const t=newTab({kind:'snap',label:f.name+' (snapshot)',text:await f.text()});
+    activateTab(t.id);
     // We reset the input so picking the same file again still fires this handler.
     e.target.value='';
   });
-  $('#reload').addEventListener('click', ()=>{ lastSig=''; pollTick(); toast('Reloaded'); });
+  $('#reload').addEventListener('click', ()=>{ if(!act) return; act.lastSig=''; pollTab(act); toast('Reloaded'); });
 
   // paste mode
-  function closePaste(){ $('#pastedrawer').classList.remove('open'); }
   $('#pastebtn').addEventListener('click', ()=>{
-    const d=$('#pastedrawer'); d.classList.toggle('open');
-    if(d.classList.contains('open')){ $('#pastearea').focus(); }
+    // On a paste tab the button toggles that tab's drawer. Anywhere else it
+    // opens a fresh buffer in its own tab, so pasting never overwrites the
+    // document the reader was on.
+    if(act && act.kind==='paste'){
+      const d=$('#pastedrawer'); d.classList.toggle('open');
+      if(d.classList.contains('open')){ $('#pastearea').focus(); }
+      return;
+    }
+    const t=newTab({kind:'paste',label:'pasted text'});
+    activateTab(t.id);
+    $('#pastearea').focus();
   });
   $('#pastearea').addEventListener('input', e=>{
-    if(watchTimer){ clearInterval(watchTimer); watchTimer=null; fileHandle=null; fetchUrl=null; $('#reload').disabled=true; }
-    setSource('pasted text','PASTED'); update(e.target.value,false);
+    if(!act || act.kind!=='paste') return;
+    update(e.target.value,false);
+    scheduleSave();
   });
 
   // drag & drop (tries to obtain a live handle for watching; else one-shot read)
@@ -385,24 +507,247 @@
     e.preventDefault(); dragDepth=0; mask.classList.remove('show');
     const item=e.dataTransfer.items && e.dataTransfer.items[0];
     if(item && item.getAsFileSystemHandle){
-      try{ const h=await item.getAsFileSystemHandle(); if(h && h.kind==='file'){ fileHandle=h; fetchUrl=null; lastSig=''; primed=false; closePaste(); startWatch(); toast('Watching '+h.name); return; } }catch(_){}
+      try{ const h=await item.getAsFileSystemHandle(); if(h && h.kind==='file'){ openHandleTab(h); return; } }catch(_){}
     }
     const file=e.dataTransfer.files && e.dataTransfer.files[0];
-    if(file){ const text=await file.text(); if(watchTimer){clearInterval(watchTimer);watchTimer=null;fileHandle=null;fetchUrl=null;} setSource(file.name+' (snapshot)','LOADED'); update(text,false); }
+    if(file){ const t=newTab({kind:'snap',label:file.name+' (snapshot)',text:await file.text()}); activateTab(t.id); }
   });
 
-  // Clear returns the viewer to its boot state. The confirm guards a live watch,
-  // which Clear stops along with every other source.
+  // Clear returns the viewer to its boot state: every tab closes and the saved
+  // workspace is wiped from both stores. The confirm guards all of it.
   $('#clear').addEventListener('click', ()=>{
-    if(!confirm('Clear the viewer?')) return;
-    if(watchTimer){ clearInterval(watchTimer); watchTimer=null; }
-    fileHandle=null; fetchUrl=null; lastSig='';
-    $('#reload').disabled=true;
-    $('#pastearea').value=''; closePaste();
-    collapsed.clear(); dlFilter=null; lastHashes=new Map(); primed=false;
-    setSource('','IDLE'); update('',false);
+    if(!confirm('Close every tab and clear the saved workspace?')) return;
+    // Cancel any pending save first. A debounced write landing after the wipe
+    // would resurrect the workspace on the next boot.
+    clearTimeout(saveTimer); saveTimer=null;
+    tabs.length=0; act=null;
+    idbClear();
+    try{ localStorage.removeItem(WS_KEY); }catch(e){}
+    $('#pastearea').value='';
+    renderStrip(); syncSourceUI(); render(false);
     toast('Cleared');
   });
+
+  /* =========================================================
+     AV-010  The tab strip: one rebuild writer, tablist keys
+     ========================================================= */
+  /* Like render(), the strip has one writer that rebuilds the whole row and
+     gives focus back afterwards, so a badge landing mid-keyboard-navigation
+     cannot strand the reader. Tabs follow the manual-activation tablist
+     pattern: arrows move focus, Enter or Space activates, Delete closes. */
+  function renderStrip(){
+    const strip=$('#tabstrip');
+    const ae=document.activeElement;
+    const focusTab=(ae && ae.classList && ae.classList.contains('tab')) ? ae.getAttribute('data-tab') : null;
+    const focusClose=(ae && ae.classList && ae.classList.contains('tab-close')) ? ae.closest('.tab').getAttribute('data-tab') : null;
+    strip.hidden=!tabs.length;
+    strip.innerHTML=tabs.map(t=>{
+      const on=t===act;
+      return `<span class="tab" role="tab" data-tab="${t.id}" aria-selected="${on?'true':'false'}" tabindex="${on?'0':'-1'}">`
+        + `<span class="tab-dot"${t.changed?'':' hidden'} aria-hidden="true"></span>`
+        + `<span class="tab-label">${esc(t.label)}</span>`
+        + `<button type="button" class="tab-close" tabindex="${on?'0':'-1'}" aria-label="Close ${escAttr(t.label)}"><span aria-hidden="true">×</span></button>`
+        + `</span>`;
+    }).join('');
+    if(focusTab){ const el=strip.querySelector('.tab[data-tab="'+focusTab+'"]'); if(el) el.focus(); }
+    if(focusClose){ const el=strip.querySelector('.tab[data-tab="'+focusClose+'"] .tab-close'); if(el) el.focus(); }
+  }
+
+  // Tab must reach the focused tab's own close control without activating the
+  // tab, so the close button's tabindex roves with focus inside the strip.
+  $('#tabstrip').addEventListener('focusin', e=>{
+    const tabEl=e.target.closest('.tab'); if(!tabEl) return;
+    $$('.tab-close',$('#tabstrip')).forEach(b=>{ b.tabIndex=-1; });
+    const c=tabEl.querySelector('.tab-close'); if(c) c.tabIndex=0;
+  });
+
+  $('#tabstrip').addEventListener('click', e=>{
+    const closeBtn=e.target.closest('.tab-close');
+    if(closeBtn){ closeTab(closeBtn.closest('.tab').getAttribute('data-tab')); return; }
+    const tabEl=e.target.closest('.tab');
+    if(tabEl){
+      const t=tabById(tabEl.getAttribute('data-tab'));
+      if(t){ activateTab(t.id); rearmTab(t); }
+    }
+  });
+
+  $('#tabstrip').addEventListener('keydown', e=>{
+    const tabEl=e.target.closest('.tab'); if(!tabEl) return;
+    const els=$$('.tab',$('#tabstrip'));
+    const i=els.indexOf(tabEl);
+    if(e.key==='ArrowRight'||e.key==='ArrowLeft'){
+      e.preventDefault();
+      els[(i+(e.key==='ArrowRight'?1:els.length-1))%els.length].focus();
+    }else if(e.key==='Home'){ e.preventDefault(); els[0].focus(); }
+    else if(e.key==='End'){ e.preventDefault(); els[els.length-1].focus(); }
+    else if((e.key==='Enter'||e.key===' ') && !e.target.closest('.tab-close')){
+      // Manual activation. On the close button we stand back and let the
+      // native button click do the closing.
+      e.preventDefault();
+      const t=tabById(tabEl.getAttribute('data-tab'));
+      if(t){ activateTab(t.id); rearmTab(t); }
+    }else if(e.key==='Delete'||e.key==='Backspace'){
+      e.preventDefault();
+      closeTab(tabEl.getAttribute('data-tab'));
+    }
+  });
+
+  function activateTab(id){
+    const t=tabById(id); if(!t) return;
+    // Saving the outgoing scroll first also covers re-activating the active
+    // tab, where the restore below becomes a no-op instead of a stale jump.
+    if(act) act.scrollY=window.scrollY;
+    const wasChanged=t.changed;
+    act=t; t.changed=false;
+    renderStrip();
+    syncSourceUI();
+    const hadFragment=!!t.pendingFragment;
+    // A badged tab renders live so its accumulated changes flash. Arrivals
+    // stay quiet here; the background delivery already toasted them by name.
+    render(wasChanged, true);
+    // The stored scroll comes back as an explicit jump. When the render just
+    // resolved a boot fragment, the deep link owns the scroll instead.
+    if(!(hadFragment && !t.pendingFragment)) window.scrollTo(0, t.scrollY||0);
+    scrollSpy();
+    scheduleSave();
+  }
+
+  /* requestPermission needs a user gesture, so re-arming runs only from the
+     strip's click and keydown paths, never from boot or the poll loop. The
+     no-gesture path for already-granted profiles lives in restoreWorkspace
+     via queryPermission. */
+  async function rearmTab(t){
+    if(!(t.kind==='file' && t.needsPermission && t.handle)) return;
+    try{
+      if(await t.handle.requestPermission({mode:'read'})!=='granted') return;
+      t.needsPermission=false; t.lastSig='';
+      syncSourceUI();
+      pollTab(t);
+      toast('Watching '+t.label);
+    }catch(e){ /* denied — the cached copy stays readable */ }
+  }
+
+  function closeTab(id){
+    const i=tabs.findIndex(t=>t.id===id); if(i<0) return;
+    const strip=$('#tabstrip');
+    const hadFocus=strip.contains(document.activeElement);
+    const t=tabs.splice(i,1)[0];
+    idbDelete(t.id);
+    if(t===act){
+      act=null;
+      const n=tabs[i]||tabs[i-1];
+      if(n){ activateTab(n.id); }
+      else{ renderStrip(); syncSourceUI(); render(false); }
+    }else{
+      renderStrip();
+    }
+    // A keyboard close must not strand focus on a removed node, so the
+    // nearest surviving tab takes it.
+    if(hadFocus){
+      const n=tabs[i]||tabs[i-1];
+      const el=n && strip.querySelector('.tab[data-tab="'+n.id+'"]');
+      if(el) el.focus();
+    }
+    scheduleSave();
+  }
+
+  /* =========================================================
+     AV-010  Persistence: localStorage for state, IndexedDB for handles
+     ========================================================= */
+  /* The split follows the platform's seam. Everything JSON-serializable —
+     the tab list, per-tab metadata, last-seen text, paste buffers, collapse
+     sets, filters, scroll — goes to one localStorage key under the builder's
+     autosave stance: storage unavailable degrades to no persistence, never
+     to breakage. FileSystemHandles cannot survive JSON, so they
+     structured-clone into IndexedDB, keyed by tab id. */
+  const WS_KEY='adp-av-workspace';
+  const SAVE_DEBOUNCE_MS=400;
+  let saveTimer=null;
+  function saveNow(){
+    saveTimer=null;
+    if(act) act.scrollY=window.scrollY;
+    const data={v:1,seq:tabSeq,active:act?act.id:null,tabs:tabs.map(t=>({
+      id:t.id,kind:t.kind,label:t.label,url:t.url,text:t.text,
+      collapsed:Array.from(t.collapsed),dlFilter:t.dlFilter,scrollY:t.scrollY}))};
+    try{ localStorage.setItem(WS_KEY,JSON.stringify(data)); }catch(e){}
+  }
+  function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveNow,SAVE_DEBOUNCE_MS); }
+  // Scrolling never schedules a save, so the flush on the way out is
+  // unconditional. That is what carries the final scroll positions across a
+  // restart.
+  window.addEventListener('pagehide', ()=>{ clearTimeout(saveTimer); saveNow(); });
+
+  let idbPromise=null;
+  function idbOpen(){
+    if(!idbPromise) idbPromise=new Promise(res=>{
+      try{
+        const req=indexedDB.open('adp-av',1);
+        req.onupgradeneeded=()=>{ req.result.createObjectStore('handles'); };
+        req.onsuccess=()=>res(req.result);
+        req.onerror=()=>res(null);
+      }catch(e){ res(null); }
+    });
+    return idbPromise;
+  }
+  async function idbWrite(fn){
+    const db=await idbOpen(); if(!db) return;
+    try{ fn(db.transaction('handles','readwrite').objectStore('handles')); }catch(e){}
+  }
+  function idbPut(id,h){ idbWrite(st=>st.put(h,id)); }
+  function idbDelete(id){ idbWrite(st=>st.delete(id)); }
+  function idbClear(){ idbWrite(st=>st.clear()); }
+  async function idbHandles(){
+    const db=await idbOpen(); if(!db) return new Map();
+    return new Promise(res=>{
+      const out=new Map();
+      try{
+        const cur=db.transaction('handles').objectStore('handles').openCursor();
+        cur.onsuccess=()=>{ const c=cur.result; if(c){ out.set(c.key,c.value); c.continue(); } else res(out); };
+        cur.onerror=()=>res(out);
+      }catch(e){ res(out); }
+    });
+  }
+
+  /* Rebuilds the tab set from the last save and answers with the tab that
+     should boot active. Every tab renders from its cached text right away.
+     A url tab re-arms by itself, and seeding lastSig with the cached text
+     keeps an unchanged served file from re-delivering on the first poll. A
+     file tab stays CACHED until its handle comes back and a gesture, or an
+     already-granted profile, unlocks it. */
+  function restoreWorkspace(){
+    let data=null;
+    try{ data=JSON.parse(localStorage.getItem(WS_KEY)); }catch(e){ return null; }
+    if(!data || !Array.isArray(data.tabs)) return null;
+    data.tabs.forEach(s=>{
+      if(!s || !s.id) return;
+      const text=(typeof s.text==='string')?s.text:'';
+      newTab({
+        id:String(s.id),
+        kind:['file','url','paste','snap'].includes(s.kind)?s.kind:'snap',
+        label:String(s.label||'untitled'),
+        url:s.url||null, text,
+        collapsed:new Set(Array.isArray(s.collapsed)?s.collapsed:[]),
+        dlFilter:s.dlFilter||null, scrollY:s.scrollY||0,
+        lastSig:s.kind==='url'?text:'',
+        needsPermission:s.kind==='file',
+      });
+    });
+    tabSeq=Math.max(tabSeq, data.seq|0);
+    idbHandles().then(handles=>{
+      tabs.forEach(async t=>{
+        if(t.kind!=='file' || t.handle) return;
+        const h=handles.get(t.id); if(!h) return;
+        t.handle=h;
+        try{
+          if(await h.queryPermission({mode:'read'})==='granted'){
+            t.needsPermission=false; t.lastSig='';
+            if(t===act) syncSourceUI();
+          }
+        }catch(e){ /* stays CACHED until the activation click */ }
+      });
+    });
+    return tabById(data.active)||tabs[0]||null;
+  }
 
   // expand / collapse
   // One writer moves the collapsed class, the collapsed set, and the button's
@@ -410,8 +755,9 @@
   // add collapse behavior, route it through here.
   function setCollapsed(sec,on){
     sec.classList.toggle('collapsed',on);
-    if(on) collapsed.add(sec.id); else collapsed.delete(sec.id);
+    if(on) act.collapsed.add(sec.id); else act.collapsed.delete(sec.id);
     sec.querySelector('.art-toggle').setAttribute('aria-expanded', on?'false':'true');
+    scheduleSave();
   }
   // The one writer for the filter's DOM state, the setCollapsed rule again.
   // render() calls it after every rebuild, so a live update re-applies the
@@ -421,10 +767,10 @@
   const DL_BUCKETS=['open','validated','invalidated','other'];
   function applyDLFilter(){
     $$('.art.spine').forEach(sec=>{
-      DL_BUCKETS.forEach(b=>sec.classList.toggle('dlf-'+b, b===dlFilter));
+      DL_BUCKETS.forEach(b=>sec.classList.toggle('dlf-'+b, b===act.dlFilter));
     });
     $$('.dl-count').forEach(b=>{
-      b.setAttribute('aria-pressed', String((b.getAttribute('data-dl-filter')||null)===dlFilter));
+      b.setAttribute('aria-pressed', String((b.getAttribute('data-dl-filter')||null)===act.dlFilter));
     });
   }
   /* Builds and copies the absolute link for one section. The link is the
@@ -446,8 +792,9 @@
     const fbtn=e.target.closest('.dl-count');
     if(fbtn){
       const f=fbtn.getAttribute('data-dl-filter')||null;
-      dlFilter=(f===dlFilter)?null:f;
+      act.dlFilter=(f===act.dlFilter)?null:f;
       applyDLFilter();
+      scheduleSave();
       return;
     }
     // The permalink sits inside the head, so its click would otherwise fall
@@ -464,7 +811,7 @@
   });
   // Expand all also clears keys of sections absent from the current document,
   // so a section that later returns comes back open.
-  $('#expandall').addEventListener('click', ()=>{ collapsed.clear(); $$('.art').forEach(a=>setCollapsed(a,false)); });
+  $('#expandall').addEventListener('click', ()=>{ act.collapsed.clear(); $$('.art').forEach(a=>setCollapsed(a,false)); });
   $('#collapseall').addEventListener('click', ()=>{ $$('.art').forEach(a=>setCollapsed(a,true)); });
 
   // Smooth-scroll TOC. replaceState keeps the address bar on the section the
@@ -578,9 +925,13 @@ Concurrency and exhaustive international address shapes are not covered by tests
 **Decision Log status:** OPEN — one ticket outstanding.`;
 
   $('#example').addEventListener('click', ()=>{
-    if(watchTimer){ clearInterval(watchTimer); watchTimer=null; fileHandle=null; fetchUrl=null; $('#reload').disabled=true; }
-    closePaste(); primed=false; collapsed.clear(); dlFilter=null; lastHashes=new Map();
-    setSource('example.md','LOADED'); update(EXAMPLE,false); toast('Example loaded');
+    // The example is one snapshot tab, found again by its label, so repeated
+    // clicks focus it instead of piling up copies.
+    let t=tabs.find(x=>x.kind==='snap' && x.label==='example.md');
+    if(t){ t.text=EXAMPLE; }
+    else{ t=newTab({kind:'snap',label:'example.md',text:EXAMPLE}); }
+    activateTab(t.id);
+    toast('Example loaded');
   });
 
   // theme switcher (DL-008) — sun/moon toggle switch on the eyebrow line
@@ -598,12 +949,27 @@ Concurrency and exhaustive international address shapes are not covered by tests
   });
   syncThemeUI();
 
-  // initial paint
-  render(false);
-
-  // zero-click: ?file=<url> fetch-watches a served file, no picker needed (DL-009)
-  fetchUrl=new URLSearchParams(location.search).get('file');
-  if(fetchUrl){ startWatch(); toast('Watching '+(fetchUrl.split('/').pop()||fetchUrl)); }
+  /* Boot order matters: the saved workspace comes back first, then ?file=
+     finds or creates its url tab, and the address-bar fragment attaches to
+     whichever tab the boot lands on, before that tab's first render. */
+  const bootFragment=(function(){ try{ return decodeURIComponent(location.hash.slice(1))||null; }catch(e){ return location.hash.slice(1)||null; } })();
+  let bootTab=restoreWorkspace();
+  const bootUrl=new URLSearchParams(location.search).get('file');
+  if(bootUrl){
+    bootTab=tabs.find(t=>t.kind==='url' && t.url===bootUrl)||null;
+    if(!bootTab){
+      bootTab=newTab({kind:'url',url:bootUrl,label:bootUrl.split('/').pop()||bootUrl});
+      toast('Watching '+bootTab.label);
+    }
+  }
+  if(bootTab){
+    bootTab.pendingFragment=bootFragment;
+    activateTab(bootTab.id);
+    pollAll();
+  }else{
+    renderStrip(); syncSourceUI(); render(false);
+  }
+  setInterval(pollAll,1500);
 })();
 </script>
 </body>

@@ -191,6 +191,27 @@ header.masthead{padding:34px 0 12px;border-bottom:1px solid var(--line)}
 }
 .paste-drawer textarea:focus{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
 
+/* ---------- document tabs (AV-010) ---------- */
+/* The strip sits between the console head and the toolbar: the reader picks
+   the document first, then the toolbar acts on it. It never wraps. Past the
+   viewport it scrolls on its own axis, which keeps the AV-002 rule that no
+   inner run may widen the page. */
+.tabstrip{display:flex;align-items:center;gap:6px;padding:9px 14px;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:thin}
+.tabstrip[hidden]{display:none}
+.tab{display:inline-flex;align-items:center;gap:8px;padding:6px 8px 6px 11px;border:1px solid var(--line);background:var(--inset);color:var(--dim);font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;user-select:none;flex:0 0 auto;transition:.12s}
+.tab:hover{color:var(--ink);border-color:var(--line-bright)}
+.tab[aria-selected="true"]{color:var(--ink);border-color:var(--blue-bright);background:rgba(0,41,222,.12)}
+.tab:focus-visible{outline:2px solid var(--blue-bright);outline-offset:2px}
+/* The dot marks a background tab whose document changed. It takes the accent
+   because that arrival is exactly the rare signal the accent is reserved
+   for. */
+.tab-dot{width:7px;height:7px;background:var(--accent);flex:0 0 auto}
+.tab-dot[hidden]{display:none}
+.tab-label{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tab-close{flex:0 0 auto;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:1px solid transparent;border-radius:0;appearance:none;background:none;color:var(--faint);cursor:pointer;font:inherit;font-size:12px;line-height:1}
+.tab-close:hover{color:var(--warn);border-color:var(--warn)}
+.tab-close:focus-visible{outline:2px solid var(--blue-bright);outline-offset:1px}
+
 /* dropzone overlay */
 .dropmask{
   position:fixed;inset:0;z-index:80;display:none;align-items:center;justify-content:center;
