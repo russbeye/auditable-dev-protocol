@@ -6,7 +6,8 @@
 <title>Auditable Protocol · Artifact Viewer</title>
 <link rel="stylesheet" href="adp-theme.css" />
 <script>
-/* set theme before first paint — stored preference, else system, else dark */
+/* We set the theme before the first paint, so the page never flashes the wrong
+   one. A stored preference wins, then the system preference, then dark. */
 (function(){try{var t=localStorage.getItem('adp-theme');if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
 </script>
 </head>
@@ -118,16 +119,16 @@
       label:'untitled',
       handle:null, url:null,
       text:'', lastSig:'',
-      hashes:new Map(),        // key -> body hash (to flash only true changes)
+      hashes:new Map(),        // section key to body hash, so a flash marks a real change
       collapsed:new Set(),     // keys of collapsed sections
       dlFilter:null,           // active decision-log status bucket, or null for all
-      primed:false,            // first render done? (so a first load doesn't flash)
+      primed:false,            // the first render is done, so a first load never flashes
       // Where a boot URL asked this tab to land. We keep the fragment until
       // the first render that produces sections, then resolve it once and
       // clear it.
       pendingFragment:null,
       scrollY:0,
-      changed:false,           // a background change lit the badge; the flash waits for activation
+      changed:false,           // a background change lit the badge, and the flash waits for activation
       needsPermission:false,   // restored handle that still needs its user gesture
       polling:false,           // a poll for this tab is in flight
     }, props);
@@ -213,9 +214,9 @@
       tocItems.push(`<li><a href="#${key}" data-toc="${key}"><span class="ti-icon">${meta.icon}</span><span class="ti-name">${esc(sec.title)}</span>${meta.tag?`<span class="ti-tag">${meta.tag}</span>`:''}${counts&&counts.open?`<span class="ti-tag ti-open">${counts.open} open</span>`:''}</a></li>`);
     });
 
-    // A live update can empty the active bucket. Keeping the filter would
-    // hide every card, and a pressed OTHER button can even vanish with its
-    // bucket, so we clear the filter and let the honest zeros explain it.
+    // A live update can empty the active bucket. Keeping the filter would hide
+    // every card, and a pressed OTHER button can even vanish with its bucket.
+    // So we clear the filter and let the honest zeros explain it.
     if(act.dlFilter && !filterHits) act.dlFilter=null;
     main.innerHTML=bodyHtml;
     tocList.innerHTML=tocItems.join('');
@@ -240,8 +241,8 @@
       if(sec) sec.querySelector('.art-permalink').focus({preventScroll:true});
     }
 
-    // Activating a badged tab re-renders live so its changes flash, but it
-    // passes quietArrivals: the background delivery already toasted these
+    // Activating a badged tab re-renders live so its changes flash, and it
+    // passes quietArrivals. The background delivery already toasted these
     // arrivals by name, and announcing them twice would cry wolf.
     if(arrived.length && !quietArrivals){
       toast(arrived.length===1 ? 'New section: '+arrived[0]
@@ -255,8 +256,8 @@
     // fragment clears even on a miss. A late landing would yank the page out
     // from under a reader once the section finally arrives.
     // Note: the behavior must stay explicit. A default scroll inherits the
-    // theme's smooth scrolling, and some platforms never run a scripted
-    // smooth scroll, which leaves the deep link sitting at the top.
+    // theme's smooth scrolling. Some platforms never run a scripted smooth
+    // scroll, which leaves the deep link sitting at the top.
     if(act.pendingFragment){
       const target=document.getElementById(act.pendingFragment);
       if(target && target.classList.contains('art')){
@@ -394,7 +395,7 @@
         const sig=f.lastModified+':'+f.size;
         if(sig!==t.lastSig){ t.lastSig=sig; deliver(t, await f.text()); }
       }
-    }catch(e){ /* source gone — leave the tab's last text in place */ }
+    }catch(e){ /* the source went away, so we leave the tab's last text in place */ }
     t.polling=false;
   }
 
@@ -457,7 +458,7 @@
             toast('Watching '+t.label);
             return;
           }
-        }catch(e){ /* comparison unavailable — treat it as a new file */ }
+        }catch(e){ /* comparison unavailable, so we treat it as a new file */ }
       }
     }
     const t=newTab({kind:'file',handle:h,label:h.name});
@@ -478,7 +479,6 @@
   });
   $('#reload').addEventListener('click', ()=>{ if(!act) return; act.lastSig=''; pollTab(act); toast('Reloaded'); });
 
-  // paste mode
   $('#pastebtn').addEventListener('click', ()=>{
     // On a paste tab the button toggles that tab's drawer. Anywhere else it
     // opens a fresh buffer in its own tab, so pasting never overwrites the
@@ -498,7 +498,8 @@
     scheduleSave();
   });
 
-  // drag & drop (tries to obtain a live handle for watching; else one-shot read)
+  // A drop hands us a live handle when the browser supports one, and that tab
+  // watches the file from then on. Otherwise we read a single snapshot.
   const mask=$('#dropmask'); let dragDepth=0;
   window.addEventListener('dragenter',e=>{ e.preventDefault(); dragDepth++; mask.classList.add('show'); });
   window.addEventListener('dragover',e=>{ e.preventDefault(); });
@@ -603,7 +604,8 @@
     syncSourceUI();
     const hadFragment=!!t.pendingFragment;
     // A badged tab renders live so its accumulated changes flash. Arrivals
-    // stay quiet here; the background delivery already toasted them by name.
+    // stay quiet here, because the background delivery already toasted them
+    // by name.
     render(wasChanged, true);
     // The stored scroll comes back as an explicit jump. When the render just
     // resolved a boot fragment, the deep link owns the scroll instead.
@@ -624,7 +626,7 @@
       syncSourceUI();
       pollTab(t);
       toast('Watching '+t.label);
-    }catch(e){ /* denied — the cached copy stays readable */ }
+    }catch(e){ /* denied, so the cached copy stays readable */ }
   }
 
   function closeTab(id){
@@ -654,12 +656,13 @@
   /* =========================================================
      AV-010  Persistence: localStorage for state, IndexedDB for handles
      ========================================================= */
-  /* The split follows the platform's seam. Everything JSON-serializable —
-     the tab list, per-tab metadata, last-seen text, paste buffers, collapse
-     sets, filters, scroll — goes to one localStorage key under the builder's
-     autosave stance: storage unavailable degrades to no persistence, never
-     to breakage. FileSystemHandles cannot survive JSON, so they
-     structured-clone into IndexedDB, keyed by tab id. */
+  /* The split follows the platform's seam. The tab list, the per-tab metadata,
+     the last-seen text, the paste buffers, the collapse sets, the filters, and
+     the scroll positions are all JSON-serializable. Those go to one
+     localStorage key, under the builder's autosave stance. Storage that is
+     unavailable degrades to no persistence, never to breakage. A
+     FileSystemHandle cannot survive JSON, so the handles structured-clone into
+     IndexedDB, keyed by tab id. */
   const WS_KEY='adp-av-workspace';
   const SAVE_DEBOUNCE_MS=400;
   let saveTimer=null;
@@ -749,7 +752,6 @@
     return tabById(data.active)||tabs[0]||null;
   }
 
-  // expand / collapse
   // One writer moves the collapsed class, the collapsed set, and the button's
   // aria-expanded together, the same rule PB-006 set for the builder. If you
   // add collapse behavior, route it through here.
@@ -934,7 +936,7 @@ Concurrency and exhaustive international address shapes are not covered by tests
     toast('Example loaded');
   });
 
-  // theme switcher (DL-008) — sun/moon toggle switch on the eyebrow line
+  // theme switcher (DL-008)
   const themeCb=$('#themetoggle'), themeIcon=$('#tt-icon');
   function syncThemeUI(){
     const t=document.documentElement.getAttribute('data-theme');
@@ -969,6 +971,7 @@ Concurrency and exhaustive international address shapes are not covered by tests
   }else{
     renderStrip(); syncSourceUI(); render(false);
   }
+  // If you change this cadence, update the footer wording in syncSourceUI.
   setInterval(pollAll,1500);
 })();
 </script>

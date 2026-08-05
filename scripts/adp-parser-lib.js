@@ -32,7 +32,10 @@
     return !m || LINK_SCHEMES.includes(m[1].toLowerCase());
   }
 
-  // inline formatting on a single raw text run
+  // We escape the text first, so callers pass raw document text and never
+  // markup we already built. Code spans come out before the other rules run,
+  // because their contents must stay literal. Each one leaves a NUL-wrapped
+  // index behind and goes back in at the end.
   function inline(s){
     let t = esc(s);
     const codes=[];
@@ -48,7 +51,9 @@
     t = t.replace(/\u0000(\d+)\u0000/g,(m,i)=>`<code>${esc(codes[+i])}</code>`);
     return t;
   }
-  // wrap free-standing status keywords as pills (uppercase tokens never collide with html tag names)
+  // We wrap free-standing status keywords in pills. This runs over HTML we
+  // already rendered, so the leading character class holds a match out of a
+  // tag or an attribute. The keywords are uppercase and our markup is not.
   function decorate(html){
     return html.replace(/(^|[^A-Za-z0-9_>"\/])(INVALIDATED|VALIDATED|MEDIUM|HIGH|OPEN|LOW)\b/g,
       (m,pre,w)=>pre+`<span class="pill ${TOK[w]}">${w}</span>`);
@@ -196,8 +201,6 @@
 
   /* =========================================================
      DL-007  Decision Log "ledger card" rendering (the spine)
-     Tournament winner: Design B (header strip + status rail +
-     top-right Confidence/Status pills) wrapping Design A's grid.
      ========================================================= */
   function parseDLFields(lines){
     const fields=[]; let cur=null;
@@ -323,7 +326,9 @@
   }
   function renderDecisionLog(body){
     const {pre,entries}=parseDLEntries(body);
-    if(!entries.length) return renderMarkdown(body);   // no DL entries → generic render
+    // A Decision Log written as prose has no ### entries. Those sections fall
+    // back to the generic renderer instead of showing an empty deck of cards.
+    if(!entries.length) return renderMarkdown(body);
     return (pre?`<div class="md">${renderMarkdown(pre)}</div>`:'')
       + `<div class="dl-cards">${entries.map(renderDLCard).join('')}</div>`;
   }

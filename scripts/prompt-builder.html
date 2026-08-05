@@ -6,7 +6,8 @@
 <title>Auditable Protocol · Prompt Builder</title>
 <link rel="stylesheet" href="adp-theme.css" />
 <script>
-/* set theme before first paint — stored preference, else system, else dark */
+/* We set the theme before the first paint, so the page never flashes the wrong
+   one. A stored preference wins, then the system preference, then dark. */
 (function(){try{var t=localStorage.getItem('adp-theme');if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
 </script>
 <style>
@@ -15,9 +16,10 @@
    .toast, .foot and @keyframes all come from the shared sheet. Only PB-specific
    form/preview components live here, using the shared design tokens. */
 
-/* builder layout — the form leads; the preview gets just enough width to stay legible.
-   The shared .grid is 248px minmax(0,1fr) for the parser's TOC-left order; here the children are
-   reversed (form first, preview second), so the columns are set locally. */
+/* The builder leads with the form and gives the preview only the width it needs
+   to stay legible. The shared .grid sizes its columns for the parser's
+   TOC-on-the-left order, and our children run the other way round, so we set
+   the columns here. */
 .grid{grid-template-columns:minmax(0,1fr) clamp(320px,30%,440px)}
 @media (max-width:980px){ .grid{grid-template-columns:1fr} }
 
@@ -391,7 +393,7 @@
 
   const {ARTIFACTS, FORMATS, DEFAULT_ARTIFACTS, parseYAML, buildYaml, validate, createStatusAnnouncer} = window.ADPPromptLib;
 
-  // ---- row factories (placeholders are template values verbatim) ----
+  // ---- row factories ----
   function simpleRow(name, placeholder, value){
     const div=document.createElement("div"); div.className="lrow";
     div.innerHTML=`<input class="grow" type="text" data-field="${name}" placeholder="${escAttr(placeholder)}">`
@@ -473,7 +475,6 @@
     addRow("references"); addRow("links");
     addRow("lessons_learned");
     addRow("requirements");
-    // artifacts chips
     const wrap=$("#artifacts");
     ARTIFACTS.forEach(a=>{
       const lab=document.createElement("label"); lab.className="chip";
@@ -489,7 +490,6 @@
   function val(sel){ const el=$(sel); return el?el.value.trim():""; }
 
   function gather(){
-    // simple lists
     const priorities = listOf("priorities").map(r=>rowVal(r)).filter(Boolean);
     const out_of_scope = listOf("out_of_scope").map(r=>rowVal(r)).filter(Boolean);
     const must_not = listOf("must_not").map(r=>rowVal(r)).filter(Boolean);
@@ -521,7 +521,8 @@
     };
   }
 
-  // light YAML syntax highlight for display
+  // The highlighting is for the preview only. Copy and Download both send
+  // CURRENT, which is the plain YAML buildYaml returned.
   function highlight(yaml){
     return yaml.split("\n").map(line=>{
       const esc=l=>l.replace(/&/g,"&amp;").replace(/</g,"&lt;");
@@ -563,11 +564,9 @@
     $("#code").innerHTML=highlight(yaml)
     const errs=validate(d);
     announceStatus(errs.length);
-    // status
     const st=$("#status"), txt=$("#status-txt");
     if(errs.length===0){ st.className="status ok"; txt.textContent="VALID"; }
     else { st.className="status warn"; txt.textContent=errs.length+" "+(errs.length===1?"ISSUE":"ISSUES"); }
-    // issues list
     const box=$("#issues"), list=$("#issues-list");
     if(errs.length===0){ box.classList.add("empty"); list.innerHTML=""; }
     else{
@@ -575,14 +574,14 @@
       $("#issues-h").textContent=`⚠ ${errs.length} protocol ${errs.length===1?"check":"checks"} unmet`;
       list.innerHTML=errs.map(([k,m])=>`<li><code>${k}</code> — ${m}</li>`).join("");
     }
-    // per-field check badges
+    // We look each badge up in the issue list by key, so a field's data-ck
+    // must spell the key exactly as validate() emits it.
     $$(".ck[data-ck]").forEach(b=>{
       const key=b.getAttribute("data-ck"); if(!key) return;
       const bad=errs.some(([k])=>k===key);
       b.textContent = bad ? "missing" : "ok";
       b.className = "ck "+(bad?"bad":"good");
     });
-    // select placeholder styling
     const sel=$("#o_fmt"); sel.classList.toggle("unset", !sel.value);
   }
 
@@ -717,7 +716,8 @@
     const TOP=["schema_version","task","preamble","role","prompt","constraints","context","lessons_learned","output","requirements","protocol"];
     Object.keys(obj).forEach(k=>{ if(!TOP.includes(k)) failed.push(k); });
 
-    // replace the form contents (paste loads a document, like the example loader)
+    // An import loads a whole document, the way the example loader does. We
+    // empty the form first instead of merging into what is there.
     $$("main input[type=text],main textarea").forEach(el=>el.value="");
     $("#o_fmt").value="";
     ["#p_apply","#p_stake","#p_log","#p_flag"].forEach(s=>$(s).checked=true);
@@ -811,8 +811,9 @@
   });
 
   // ---------- draft persistence (autosave / restore) ----------
-  // One implicit draft in localStorage, same try/catch stance as the theme
-  // toggle: storage being unavailable degrades to no persistence, not breakage.
+  // We keep one implicit draft in localStorage, under the same try/catch stance
+  // as the theme toggle. Storage that is unavailable degrades to no
+  // persistence, never to breakage.
   const DRAFT_KEY="adp-pb-draft";
   const DRAFT_DEBOUNCE_MS=400;
   let draftTimer=null;
@@ -830,9 +831,10 @@
     try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
   }
 
-  // save triggers: typing/toggles/chips/select via input+change; row add/remove
-  // and the example loader via click. Paste/file import saves from importYaml()
-  // itself (the file path is async, so the change event alone would race it).
+  // Typing, toggles, chips, and the select all save through input and change.
+  // Adding or removing a row and loading the example save through click. An
+  // import saves from importYaml itself, because reading a file is async and
+  // the change event alone would race it.
   document.addEventListener("input", scheduleDraftSave);
   document.addEventListener("change", scheduleDraftSave);
   document.addEventListener("click", e=>{
@@ -841,9 +843,9 @@
   // a refresh or tab close mid-debounce must not lose the pending save
   window.addEventListener("pagehide", ()=>{ if(draftTimer!=null){ clearTimeout(draftTimer); saveDraftNow(); } });
 
-  // restore: replace the seeded placeholders through the same population path
-  // the YAML import uses; then refill any list the draft left with no rows so
-  // the form keeps its seeded shape (a draft never stores empty simple rows).
+  // A restore replaces the seeded placeholders through the same population path
+  // the YAML import uses. A draft never stores an empty row, so any list the
+  // draft left with no rows gets its seeded rows back here.
   function topUpEmptyLists(){
     const SEED_ROWS={priorities:LIST_PLACEHOLDERS.priorities.length,out_of_scope:1,must_not:1,references:1,links:1,lessons_learned:1,requirements:1};
     Object.keys(SEED_ROWS).forEach(list=>{

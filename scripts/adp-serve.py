@@ -5,7 +5,7 @@ Usage: python3 adp-serve.py <audit-log-path> [port]
 
 Serves this script's directory (parser, theme, background) over localhost and
 exposes the audit log at /<its basename>, read fresh from disk on every request.
-Prints one line — the URL to open — then serves until interrupted. Port 0
+Prints one line, the URL to open, and then serves until interrupted. Port 0
 (the default) picks any free port.
 """
 import http.server
@@ -46,7 +46,7 @@ def main():
             super().do_GET()
 
         def log_message(self, *args):
-            pass  # stdout carries only the URL
+            pass  # We keep stdout to the one URL line, so a caller can read it and go.
 
     with http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler) as httpd:
         port = httpd.server_address[1]

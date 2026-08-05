@@ -19,17 +19,18 @@
     return pad+key+": |\n"+lines.map(l=>pad+"  "+l).join("\n");
   }
 
-  // Build YAML in template key order. Omit empty optional blocks.
+  // We emit the keys in the template's order, so a built document reads the
+  // same way the annotated template does. An optional block with nothing in it
+  // is left out. We always emit the task block, even when every field is
+  // blank, and let validate() report what is missing.
   function buildYaml(d){
     const L=[];
     L.push(`schema_version: "1.0"`);
     L.push("");
-    // task (always emit; warnings handle empties) — emit only non-empty keys
     L.push("task:");
     ["id","title","author","date"].forEach(k=>{ if(d.task[k]) L.push(`  ${k}: ${qstr(d.task[k])}`); });
     L.push("");
     if(d.preamble){ L.push(block("preamble", d.preamble, 0)); L.push(""); }
-    // role (optional)
     if(d.role.lens || d.role.priorities.length){
       L.push("role:");
       if(d.role.lens) L.push(`  lens: ${qstr(d.role.lens)}`);
@@ -37,14 +38,12 @@
       L.push("");
     }
     if(d.prompt){ L.push(block("prompt", d.prompt, 0)); L.push(""); }
-    // constraints (optional)
     if(d.constraints.out_of_scope.length || d.constraints.must_not.length){
       L.push("constraints:");
       if(d.constraints.out_of_scope.length){ L.push("  out_of_scope:"); d.constraints.out_of_scope.forEach(x=>L.push(`    - ${qstr(x)}`)); }
       if(d.constraints.must_not.length){ L.push("  must_not:"); d.constraints.must_not.forEach(x=>L.push(`    - ${qstr(x)}`)); }
       L.push("");
     }
-    // context (optional)
     const refs=d.context.references.filter(r=>r.path||r.lines||r.note);
     if(d.context.background || refs.length || d.context.links.length){
       L.push("context:");
@@ -60,20 +59,17 @@
       if(d.context.links.length){ L.push("  links:"); d.context.links.forEach(x=>L.push(`    - ${qstr(x)}`)); }
       L.push("");
     }
-    // lessons (optional)
     const lessons=d.lessons_learned.filter(x=>x.context||x.takeaway);
     if(lessons.length){
       L.push("lessons_learned:");
       lessons.forEach(x=>{ L.push(`  - context: ${qstr(x.context)}`); L.push(`    takeaway: ${qstr(x.takeaway)}`); });
       L.push("");
     }
-    // output
     L.push("output:");
     if(d.output.format) L.push(`  format: ${qstr(d.output.format)}`);
     if(d.output.destination) L.push(`  destination: ${qstr(d.output.destination)}`);
     if(d.output.structure){ L.push(block("structure", d.output.structure, 2)); }
     L.push("");
-    // requirements
     const reqs=d.requirements.filter(r=>r.id||r.statement||r.verify);
     L.push("requirements:");
     reqs.forEach(r=>{
@@ -82,7 +78,6 @@
       L.push(`    verify: ${qstr(r.verify)}`);
     });
     L.push("");
-    // protocol
     L.push("protocol:");
     L.push(`  apply: ${d.protocol.apply}`);
     L.push(`  stake_single_recommendation: ${d.protocol.stake_single_recommendation}`);
