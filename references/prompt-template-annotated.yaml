@@ -91,3 +91,13 @@ protocol:
     #   pr_summary
     #   deployment_risk
     #   obligation_tickets
+  # Optional, repeatable. Phases this run defers, declared up front rather
+  # than skipped mid-run. A deferral never cancels a phase: each one opens a
+  # LOW-confidence Decision Log entry and an obligation ticket at the start
+  # of the run, so the debt is prepaid and visible.
+  defers:
+    - phase: "analysis"   # required within an item
+      # Full set of allowed values:
+      #   observation | literature_review | hypothesis | research_design |
+      #   implementation | analysis | synthesis | communication | the_loop
+      reason: "Manual test pass only this release; the suite lands with the follow-up task"   # required within an item

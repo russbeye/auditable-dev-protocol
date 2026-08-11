@@ -23,6 +23,14 @@ Artifacts can live in any system: files, GitHub, Linear, Notion, Confluence. The
 3. Everything is accessible to anyone who would need to audit a production failure.
 4. Obligation Tickets reference their Decision Log entry by ID in whatever ticket system is used.
 
+Requirements 2 and 4 have a concrete form: `dl_ref`, the DL-XXX back-reference carried by the Test
+Adversary Document, the Deployment Risk Statement, and the Obligation Ticket List (whose "Decision
+Log ref" column is the same reference under its original name). Walking a symptom from the table
+above to its artifact and then through its `dl_ref` lands on the Decision Log entry to re-judge. A
+Pre-Mortem mitigation's "Implemented at" reference works the same way toward the code: search for
+its verbatim anchor by hand, treat any line number as an advisory hint, and read an absent anchor
+as a mitigation that is unverified, not merely moved.
+
 In a Claude Code session the home is `.adp/<task-id>/audit-log.md` at the project root. The model
 creates it in Phase 1 and appends each artifact as it produces it, so the full chain of every phase
 sits in that one file. The run's other artifacts, such as a prompt drafted in session, sit beside it

@@ -165,7 +165,10 @@ function docToModel(doc){
       stake_single_recommendation: doc.protocol.stake_single_recommendation,
       log_assumptions: doc.protocol.log_assumptions,
       flag_low_confidence: doc.protocol.flag_low_confidence,
-      artifacts: "artifacts" in doc.protocol ? doc.protocol.artifacts : []
+      artifacts: "artifacts" in doc.protocol ? doc.protocol.artifacts : [],
+      // defers passes through raw. validate() can judge every wrong shape a
+      // defers block can take, so no structural flag is needed here.
+      defers: "defers" in doc.protocol ? doc.protocol.defers : undefined
     };
   } else {
     flag("protocol", "must be a mapping");
@@ -245,6 +248,8 @@ const BRANCHES = [
   "protocol", "protocol.apply",
   "protocol.stake_single_recommendation", "protocol.log_assumptions", "protocol.flag_low_confidence",
   "protocol.artifacts",
+  "protocol.defers", "protocol.defers[]",
+  "protocol.defers[].phase", "protocol.defers[].reason",
 ];
 
 test("every Python rule family is tripped by at least one fixture", () => {
@@ -260,6 +265,6 @@ test("validate-prompt.py has not grown rules the corpus does not know", () => {
   const src = fs.readFileSync(VALIDATOR, "utf8");
   const requires = (src.match(/require\(/g) || []).length - (src.match(/def require\(/g) || []).length;
   const appends = (src.match(/errors\.append\(/g) || []).length;
-  assert.strictEqual(requires, 24, "require() call sites in validate-prompt.py");
-  assert.strictEqual(appends, 2, "errors.append() sites in validate-prompt.py");
+  assert.strictEqual(requires, 27, "require() call sites in validate-prompt.py");
+  assert.strictEqual(appends, 3, "errors.append() sites in validate-prompt.py");
 });

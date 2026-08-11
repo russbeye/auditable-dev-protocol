@@ -59,3 +59,6 @@ protocol:
   artifacts:
     - decision_log
     - test_adversary
+  defers:
+    - phase: "A phase name this task skips, e.g. analysis"
+      reason: "Why, and what makes that acceptable; each deferral opens a LOW-confidence Decision Log entry and an obligation ticket"

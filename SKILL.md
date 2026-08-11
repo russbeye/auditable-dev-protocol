@@ -230,9 +230,24 @@ design change before Phase 5. Medium and low items are logged. Open HIGH items b
 ```
 ## Pre-Mortem Report
 Assumed: this implementation failed in production. Most likely causes:
-| Failure mode | Likelihood | Impact | Developer response (rebuttal or mitigation) |
-|--------------|------------|--------|---------------------------------------------|
-| ...          | H/M/L      | H/M/L  | ...                                         |
+| Failure mode | Likelihood | Impact | Developer response (rebuttal or mitigation) | Monitoring signal | Implemented at |
+|--------------|------------|--------|---------------------------------------------|-------------------|----------------|
+| ...          | H/M/L      | H/M/L  | ...                                         | [observable] — fires at [threshold] — distinguishes: [nearest benign look-alike], OR UNOBSERVABLE — [justification] | [path § "verbatim anchor" (line N, advisory)] / PENDING / — |
+
+Monitoring signal (required on reports written after 2026-08-10; earlier reports remain valid
+without it): an observable a person can check with no tooling — a log line, a count, an error rate,
+a report channel — the threshold at which this failure mode counts as happening, and what
+distinguishes it from the nearest benign condition that could produce the same reading.
+UNOBSERVABLE requires a justification for why no observable exists, not why nobody got to it; a
+reviewer challenges that claim at this report's gate, before authorization.
+
+Implemented at (mitigations only, "—" on rebuttal rows; same adoption rule): PENDING until the
+mitigation lands, then a verbatim anchor copied exactly from the implementing code — an identifier,
+comment text, or an exact line, unique within its file when written. Any line number is an advisory
+hint. Anchor found where the hint says: the reference holds. Found elsewhere in the file: drifted —
+update the hint. Absent from the file: the reference is dead and the mitigation counts as
+unverified — reopen it as a Decision Log entry or ticket. A PENDING that survives implementation
+reads as a promised, unimplemented mitigation.
 
 ## Implementation Authorization
 All HIGH-likelihood items resolved: [YES / NO — if NO, blocked]
@@ -257,9 +272,23 @@ has a corresponding Decision Log entry.
 - **Alternatives considered:** what else was evaluated
 - **Rationale:** why this and not those
 - **Confidence:** HIGH / MEDIUM / LOW
+- **Confidence basis:** DIRECT EVIDENCE / INFERENCE FROM CONVENTION / DEVELOPER ASSERTION — one line naming the evidence, the convention, or who asserted what
 - **Assumptions:** what must be true for this to be correct
+- **Monitoring signal:** → Pre-Mortem: "[verbatim failure-mode text]", OR [observable] — fires at [threshold] — distinguishes: [nearest benign look-alike], OR UNOBSERVABLE — [justification]
 - **Created:** [date/phase]
-- **Status:** OPEN / VALIDATED / INVALIDATED
+- **Status:** OPEN / VALIDATED / INVALIDATED / UNKNOWN
+
+Confidence basis and Monitoring signal are required on entries written after 2026-08-10; earlier
+logs remain valid without them. Monitoring signal is required only while Status is OPEN and the
+entry holds an assumption. It names what would disprove the assumption, either by pointing at the
+Pre-Mortem row that owns the signal (quote its failure-mode text verbatim) or by declaring one
+inline in the same observable/threshold/distinguishes form. An UNOBSERVABLE signal on an OPEN entry
+is challenged when the log is reviewed at PR time. UNKNOWN is judged at observation time: the
+declared signal was never emitted — the instrumentation was absent or never wired — so nothing can
+be concluded. A wired signal that stayed quiet through its observation window validates instead,
+and not-yet-observed stays OPEN. An UNKNOWN entry closes the log only through a ticket, the same as
+OPEN. A phase deferral declared in the prompt (protocol.defers) opens one LOW-confidence entry
+here, plus an obligation ticket, at the start of the run.
 
 [repeat per non-trivial decision]
 ```
@@ -278,10 +307,13 @@ analysis phase.
 ## Test Adversary Document
 **What passing tests prove:** [explicit scope of coverage]
 **What passing tests do not prove:**
-| Gap | Why untestable / untested | Risk if the assumption is wrong |
-|-----|---------------------------|---------------------------------|
-| ... | ...                       | ...                             |
+| Gap | Why untestable / untested | Risk if the assumption is wrong | dl_ref |
+|-----|---------------------------|---------------------------------|--------|
+| ... | ...                       | ...                             | DL-XXX |
 **Untestable assumptions logged to Decision Log:** [reference DL entries]
+
+dl_ref (required on documents written after 2026-08-10; earlier documents remain valid without it):
+the Decision Log entries this gap tracks, as DL-XXX, comma-separated when there are several.
 ```
 
 ## Phase 7: Synthesis
@@ -323,12 +355,17 @@ wrong" is not a trigger condition; name the observable signal and threshold.
 ## Deployment Risk Statement
 **Known unknowns at ship time:** [→ Decision Log OPEN items]
 **Monitoring targets:**
-| Assumption | Signal that it was wrong | Threshold |
-|------------|--------------------------|-----------|
-| ...        | ...                      | ...       |
+| Assumption | Signal that it was wrong | Threshold | dl_ref |
+|------------|--------------------------|-----------|--------|
+| ...        | ...                      | ...       | DL-XXX |
 **Rollback trigger conditions:**
 - [ ] [specific, observable condition] → rollback
 **Staged rollout:** [YES / NO — if NO, justify]
+
+dl_ref (required on statements written after 2026-08-10; earlier statements remain valid without
+it): the Decision Log entry holding the assumption. The signal and threshold in the row come from
+that entry's Monitoring signal, authored at the Pre-Mortem or on the entry itself — this table
+consumes signals, it does not invent them.
 ```
 
 ## Phase 9: The Loop
@@ -343,9 +380,22 @@ ticketed. No entry stays OPEN without a ticket.
 **Output: Obligation Ticket List**
 ```
 ## Obligation Ticket List
-| Ticket ID | Decision Log ref | Assumption to validate | Priority |
-|-----------|------------------|------------------------|----------|
-| ...       | DL-XXX           | ...                    | ...      |
+| Ticket ID | Decision Log ref | Assumption to validate | Priority | Exit condition | Observation window |
+|-----------|------------------|------------------------|----------|----------------|--------------------|
+| ...       | DL-XXX           | ...                    | ...      | [observable event or date] → [disposition] | [plain time anchored to an event] / — |
+
+Exit condition and Observation window are required on tickets written after 2026-08-10; earlier
+lists remain valid without them. Decision Log ref keeps its meaning and takes the form DL-XXX,
+comma-separated when one ticket covers several entries. Observation window: how long the signal is
+watched, in plain time anchored to an event ("30 days after deploy"); "—" when the ticket has no
+signal to watch. Exit condition: the condition under which the ticket closes with no further
+judgment call. A ticket watching a signal covers three outcomes: the signal fires — close, entry
+INVALIDATED; the window ends with the signal wired and quiet — close, entry VALIDATED; the window
+ends with the signal never emitted — close, entry UNKNOWN, and the closing note names the
+instrumentation gap. For an UNOBSERVABLE assumption the exit condition is a dated re-review whose
+default disposition is recorded acceptance, unless a newly available observable reopens the entry
+with a signal.
+
 **Decision Log status:** CLOSED   **Closed by:** [developer]   **Date:** [date]
 ```
 
