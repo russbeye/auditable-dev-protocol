@@ -5,13 +5,13 @@
 <div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Known</th><th>Inferred (flagged)</th><th>Cannot Determine</th></tr></thead><tbody><tr><td>Signup handler parses the body at <code>src/signup/handler.ts:42</code></td><td>Validation belongs in the handler, not middleware</td><td>Whether downstream relies on bad rows</td></tr><tr><td>No validation exists today</td><td>A parser beats a regex</td><td>Email volume per day</td></tr></tbody></table></div>
 
 <!-- sec-open-questions-resolve-before-phase-3 | P2 | Open Questions (resolve before Phase 3) -->
-<ol class="md-list"><li>Should plus-addressing be allowed? → RESOLVED: yes, use a parser not a regex.</li><li>Reject or sanitize? → ACCEPTED UNKNOWN — logged to Decision Log.</li></ol>
+<ol class="md-list"><li>Should plus-addressing be allowed? → RESOLVED: yes, use a parser not a regex.</li><li>Reject or sanitize? → ACCEPTED <span class="pill p-unk">UNKNOWN</span> — logged to Decision Log.</li></ol>
 
 <!-- sec-recommendation-brief | P3 | Recommendation Brief -->
 <p><strong>Recommended approach:</strong> Validate in the handler with a tolerant RFC-5321 parser, return 422 on failure.<br><strong>Defense:</strong> Smallest reversible change; keeps the rule next to persistence; a parser avoids the plus-address bug a regex caused before.<br><strong>Alternatives considered:</strong></p><div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Alternative</th><th>Reason rejected</th></tr></thead><tbody><tr><td>Regex check</td><td>Rejected valid plus-addressed emails last time</td></tr><tr><td>Middleware layer</td><td>Spreads the rule away from where the row is written</td></tr></tbody></table></div>
 
 <!-- sec-pre-mortem-report | P4 | Pre-Mortem Report -->
-<p>Assumed: this implementation failed in production. Most likely causes:</p><div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Failure mode</th><th>Likelihood</th><th>Impact</th><th>Developer response</th></tr></thead><tbody><tr><td>Parser rejects valid intl addresses</td><td><span class="pill p-med">M</span></td><td><span class="pill p-high">H</span></td><td>Mitigated: use a spec-tolerant parser; add intl test cases</td></tr><tr><td>422 breaks a client expecting 400</td><td><span class="pill p-low">L</span></td><td><span class="pill p-med">M</span></td><td>Rebutted: clients treat 4xx uniformly here</td></tr></tbody></table></div>
+<p>Assumed: this implementation failed in production. Most likely causes:</p><div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Failure mode</th><th>Likelihood</th><th>Impact</th><th>Developer response</th><th>Monitoring signal</th><th>Implemented at</th></tr></thead><tbody><tr><td>Parser rejects valid intl addresses</td><td><span class="pill p-med">M</span></td><td><span class="pill p-high">H</span></td><td>Mitigated: use a spec-tolerant parser; add intl test cases</td><td>422 rate on /signup — fires above 2% in 1h — distinguishes: a spam wave, which spikes raw attempts too</td><td><span class="pill p-open">PENDING</span></td></tr><tr><td>422 breaks a client expecting 400</td><td><span class="pill p-low">L</span></td><td><span class="pill p-med">M</span></td><td>Rebutted: clients treat 4xx uniformly here</td><td><span class="pill p-unk">UNOBSERVABLE</span> — no client telemetry reaches us</td><td>—</td></tr></tbody></table></div>
 
 <!-- sec-implementation-authorization | P4 | Implementation Authorization -->
 <p>All <span class="pill p-high">HIGH</span>-likelihood items resolved: YES<br>Authorized by: rbeye</p>
@@ -31,6 +31,13 @@
         <span class="dl-pills"><span class="pill dl-pill p-high"><i>conf</i>LOW</span><span class="pill dl-pill p-open"><i>status</i>OPEN</span></span>
       </div>
       <div class="dl-grid"><div class="dl-row"><span class="dl-k">Decision</span><span class="dl-v">Return 422 instead of trying to fix the address.</span></div><div class="dl-row"><span class="dl-k">Rationale</span><span class="dl-v">Silent fixes hide client bugs.</span></div><div class="dl-row"><span class="dl-k">Assumptions</span><span class="dl-v">Product wants hard rejection, not best-effort repair.</span></div></div>
+    </div><div class="dl-card rail-unk">
+      <div class="dl-head">
+        <span class="dl-id">DL-003</span>
+        <span class="dl-title">Count rejections with a reason code</span>
+        <span class="dl-pills"><span class="pill dl-pill p-med"><i>conf</i>MEDIUM</span><span class="pill dl-pill p-unk"><i>status</i>UNKNOWN</span></span>
+      </div>
+      <div class="dl-grid"><div class="dl-row"><span class="dl-k">Decision</span><span class="dl-v">Emit a <code>signup_email_rejected</code> counter tagged with the parser's reason.</span></div><div class="dl-row"><span class="dl-k">Rationale</span><span class="dl-v">The rollback trigger reads this counter; without it the 422 rate is invisible.</span></div><div class="dl-row"><span class="dl-k">Assumptions</span><span class="dl-v">The metrics pipeline ships the counter to the signup dashboard.</span></div><div class="dl-row"><span class="dl-k">Monitoring signal</span><span class="dl-v"><code>signup_email_rejected</code> on the signup dashboard — fires above 2% of attempts in 1h — distinguishes: a spam wave, which also spikes raw attempts.</span></div><div class="dl-row"><span class="dl-k">status note</span><span class="dl-v">the counter never appeared on the dashboard by review time.</span></div></div>
     </div></div>
 
 <!-- sec-test-adversary-document | P6 | Test Adversary Document -->
@@ -43,13 +50,13 @@
 <ul class="md-list"><li class="task"><span class="cbx "></span><span>DL-002: reject vs sanitize — confirm product wants hard rejection — reviewer must respond.</span></li></ul>
 
 <!-- sec-residual-risk | P7 | Residual Risk -->
-<p>Reject-not-sanitize is unconfirmed with product; intl coverage is finite.</p>
+<p>Reject-not-sanitize is unconfirmed with product; intl coverage is finite, and APPENDING more fixtures still leaves UNKNOWNS in the corpus.</p>
 
 <!-- sec-test-coverage-gaps | P6 | Test Coverage Gaps -->
-<p>Concurrency and exhaustive international address shapes are not covered by tests.</p>
+<p>Concurrency, exhaustive international address shapes, and the UNOBSERVABLES named above are not covered by tests.</p>
 
 <!-- sec-deployment-risk-statement | P8 | Deployment Risk Statement -->
 <p><strong>Known unknowns at ship time:</strong> DL-002 product intent.<br><strong>Monitoring targets:</strong></p><div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Assumption</th><th>Signal that it was wrong</th><th>Threshold</th></tr></thead><tbody><tr><td>Rejection is rare</td><td>422 rate on /signup</td><td>&gt; 2% of attempts in 1h</td></tr></tbody></table></div><p><strong>Rollback trigger conditions:</strong></p><ul class="md-list"><li class="task"><span class="cbx "></span><span>422 rate on /signup exceeds 2% for 1h → rollback</span></li></ul><p><strong>Staged rollout:</strong> YES — 10% then 100%.</p>
 
 <!-- sec-obligation-ticket-list | P9 | Obligation Ticket List -->
-<div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Ticket ID</th><th>Decision Log ref</th><th>Assumption to validate</th><th>Priority</th></tr></thead><tbody><tr><td>GROW-6701</td><td>DL-002</td><td>Product confirms reject-not-sanitize</td><td><span class="pill p-high">HIGH</span></td></tr></tbody></table></div><p><strong>Decision Log status:</strong> <span class="pill p-open">OPEN</span> — one ticket outstanding.</p>
+<div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Ticket ID</th><th>Decision Log ref</th><th>Assumption to validate</th><th>Priority</th></tr></thead><tbody><tr><td>GROW-6701</td><td>DL-002</td><td>Product confirms reject-not-sanitize</td><td><span class="pill p-high">HIGH</span></td></tr><tr><td>GROW-6702</td><td>DL-003</td><td>The rejection counter reaches the dashboard</td><td><span class="pill p-med">MEDIUM</span></td></tr></tbody></table></div><p><strong>Decision Log status:</strong> <span class="pill p-open">OPEN</span> — two tickets outstanding.</p>

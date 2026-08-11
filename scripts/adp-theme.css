@@ -18,7 +18,7 @@
   --line:#1c2150; --line-bright:#2c3473;
   --ink:#f5f5f5; --dim:#9498c4; --faint:#565b86;
   --blue:#0000f2; --blue-bright:#4d6bff; --blue-deep:#0000c4;
-  --warn:#faca15; --ok:#31c48d; --bad:#f98080;
+  --warn:#faca15; --ok:#31c48d; --bad:#f98080; --unk:#ac94fa;
   --code-fg:#5cd6a0; --code-bg:#181d40;
 }
 /* ---- light theme · paper ground, depth from alpha-tinted blue (no gray ramp) ---- */
@@ -28,7 +28,7 @@
   --line:#d6daff; --line-bright:#b7bdf2;
   --ink:#040217; --dim:#3c4070; --faint:#787ca8;
   --blue:#0000f2; --blue-bright:#0000c4; --blue-deep:#00009c;
-  --warn:#8e4b10; --ok:#046c4e; --bad:#e02424;
+  --warn:#8e4b10; --ok:#046c4e; --bad:#e02424; --unk:#6c2bd9;
   --code-fg:#046c4e; --code-bg:var(--inset);
 }
 
@@ -419,6 +419,7 @@ table.md-tbl tr:hover td{background:rgba(0,41,222,.03)}
 .p-open{color:var(--warn);border-color:rgba(255,180,84,.4);background:rgba(255,180,84,.08)}
 .p-ok{color:var(--ok);border-color:rgba(86,226,168,.35);background:rgba(86,226,168,.06)}
 .p-bad{color:var(--bad);border-color:rgba(255,107,107,.4);background:rgba(255,107,107,.08)}
+.p-unk{color:var(--unk);border-color:rgba(172,148,250,.4);background:rgba(172,148,250,.08)}
 
 /* decision-log ledger cards (DL-007: spine rendering — Design B + A grid) */
 .dl-cards{display:flex;flex-direction:column;gap:12px;margin-top:2px}
@@ -426,6 +427,7 @@ table.md-tbl tr:hover td{background:rgba(0,41,222,.03)}
 .dl-card.rail-ok{border-left-color:var(--ok)}
 .dl-card.rail-open{border-left-color:var(--warn)}
 .dl-card.rail-bad{border-left-color:var(--bad)}
+.dl-card.rail-unk{border-left-color:var(--unk)}
 .dl-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line);background:rgba(0,41,222,.04)}
 .dl-id{font-family:var(--mono);font-size:11px;color:var(--blue-bright);border:1px solid var(--line-bright);background:var(--panel-2);padding:2px 8px;letter-spacing:.04em;flex:0 0 auto}
 .dl-title{font-family:var(--disp);font-weight:600;font-size:13.5px;color:var(--ink)}
@@ -453,13 +455,17 @@ table.md-tbl tr:hover td{background:rgba(0,41,222,.03)}
 .dl-count:focus-visible{outline:2px solid var(--blue-bright);outline-offset:2px}
 /* The filter hides cards through the rail classes the cards already carry,
    so what a bucket shows is exactly what its rail marks. render() stamps
-   the dlf class on the section from module state after every rebuild. */
+   the dlf class on the section from module state after every rebuild. The
+   OTHER bucket is defined by exclusion. If you add a status kind, add its
+   rail to the dlf-other list below, or its cards leak back into OTHER. */
 .art.dlf-open .dl-card:not(.rail-open),
 .art.dlf-validated .dl-card:not(.rail-ok),
 .art.dlf-invalidated .dl-card:not(.rail-bad),
+.art.dlf-unknown .dl-card:not(.rail-unk),
 .art.dlf-other .dl-card.rail-open,
 .art.dlf-other .dl-card.rail-ok,
-.art.dlf-other .dl-card.rail-bad{display:none}
+.art.dlf-other .dl-card.rail-bad,
+.art.dlf-other .dl-card.rail-unk{display:none}
 
 /* empty state */
 .empty-state{border:1px dashed var(--line-bright);background:var(--panel-2);padding:40px 28px;text-align:center}

@@ -55,11 +55,15 @@
   // already rendered, so the leading character class holds a match out of a
   // tag or an attribute. The keywords are uppercase and our markup is not.
   function decorate(html){
-    return html.replace(/(^|[^A-Za-z0-9_>"\/])(INVALIDATED|VALIDATED|MEDIUM|HIGH|OPEN|LOW)\b/g,
+    return html.replace(/(^|[^A-Za-z0-9_>"\/])(INVALIDATED|VALIDATED|UNOBSERVABLE|UNKNOWN|PENDING|MEDIUM|HIGH|OPEN|LOW)\b/g,
       (m,pre,w)=>pre+`<span class="pill ${TOK[w]}">${w}</span>`);
   }
+  // UNKNOWN and UNOBSERVABLE both mean the observability is absent, so they
+  // share one hue. PENDING is a promised mitigation that has not landed, which
+  // is outstanding work, so it reads amber the way OPEN does.
   const TOK={HIGH:'p-high',MEDIUM:'p-med',LOW:'p-low','H':'p-high','M':'p-med','L':'p-low',
-             OPEN:'p-open',VALIDATED:'p-ok',INVALIDATED:'p-bad',YES:'p-ok',NO:'p-bad','N/A':'p-low'};
+             OPEN:'p-open',VALIDATED:'p-ok',INVALIDATED:'p-bad',YES:'p-ok',NO:'p-bad','N/A':'p-low',
+             UNKNOWN:'p-unk',UNOBSERVABLE:'p-unk',PENDING:'p-open'};
 
   function isTableStart(lines,i){
     return lines[i] && lines[i].indexOf('|')>-1 && i+1<lines.length
@@ -248,14 +252,15 @@
     if(t.indexOf('INVALIDATED')===0) return 'invalidated';
     if(t.indexOf('VALIDATED')===0) return 'validated';
     if(t.indexOf('OPEN')===0) return 'open';
+    if(t.indexOf('UNKNOWN')===0) return 'unknown';
     return 'other';
   }
   function dlStatusPill(v){
-    const cls={invalidated:'p-bad',validated:'p-ok',open:'p-open',other:'p-low'}[dlStatusKind(v)];
+    const cls={invalidated:'p-bad',validated:'p-ok',open:'p-open',unknown:'p-unk',other:'p-low'}[dlStatusKind(v)];
     return dlChip('status',cls,cls!=='p-low',v);
   }
   function dlRail(status){
-    return {invalidated:'rail-bad',validated:'rail-ok',open:'rail-open',other:''}[dlStatusKind(status)];
+    return {invalidated:'rail-bad',validated:'rail-ok',open:'rail-open',unknown:'rail-unk',other:''}[dlStatusKind(status)];
   }
   function renderDLCard(entry){
     const hm=entry.head.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
@@ -317,7 +322,7 @@
      once, over the same entries the cards render, through the same
      classifier the rail uses. */
   function dlStatusCounts(body){
-    const counts={open:0,validated:0,invalidated:0,other:0,total:0};
+    const counts={open:0,validated:0,invalidated:0,unknown:0,other:0,total:0};
     for(const e of parseDLEntries(body).entries){
       counts[dlStatusKind(dlEntryStatus(e))]++;
       counts.total++;

@@ -34,10 +34,10 @@ module.exports = `## Problem Statement
 
 ## Pre-Mortem Report
 Assumed: this implementation failed in production. Most likely causes:
-| Failure mode | Likelihood | Impact | Developer response |
-|--------------|------------|--------|--------------------|
-| Parser rejects valid intl addresses | M | H | Mitigated: use a spec-tolerant parser; add intl test cases |
-| 422 breaks a client expecting 400 | L | M | Rebutted: clients treat 4xx uniformly here |
+| Failure mode | Likelihood | Impact | Developer response | Monitoring signal | Implemented at |
+|--------------|------------|--------|--------------------|-------------------|----------------|
+| Parser rejects valid intl addresses | M | H | Mitigated: use a spec-tolerant parser; add intl test cases | 422 rate on /signup — fires above 2% in 1h — distinguishes: a spam wave, which spikes raw attempts too | PENDING |
+| 422 breaks a client expecting 400 | L | M | Rebutted: clients treat 4xx uniformly here | UNOBSERVABLE — no client telemetry reaches us | — |
 
 ## Implementation Authorization
 All HIGH-likelihood items resolved: YES
@@ -60,6 +60,14 @@ Authorized by: rbeye
 - **Assumptions:** Product wants hard rejection, not best-effort repair.
 - **Status:** OPEN
 
+### [DL-003] Count rejections with a reason code
+- **Decision:** Emit a \`signup_email_rejected\` counter tagged with the parser's reason.
+- **Rationale:** The rollback trigger reads this counter; without it the 422 rate is invisible.
+- **Confidence:** MEDIUM
+- **Assumptions:** The metrics pipeline ships the counter to the signup dashboard.
+- **Monitoring signal:** \`signup_email_rejected\` on the signup dashboard — fires above 2% of attempts in 1h — distinguishes: a spam wave, which also spikes raw attempts.
+- **Status:** UNKNOWN — the counter never appeared on the dashboard by review time.
+
 ## Test Adversary Document
 **What passing tests prove:** Malformed addresses get 422 and create no row; valid plus-addresses pass.
 **What passing tests do not prove:**
@@ -77,10 +85,10 @@ Authorized by: rbeye
 - [ ] DL-002: reject vs sanitize — confirm product wants hard rejection — reviewer must respond.
 
 ## Residual Risk
-Reject-not-sanitize is unconfirmed with product; intl coverage is finite.
+Reject-not-sanitize is unconfirmed with product; intl coverage is finite, and APPENDING more fixtures still leaves UNKNOWNS in the corpus.
 
 ## Test Coverage Gaps
-Concurrency and exhaustive international address shapes are not covered by tests.
+Concurrency, exhaustive international address shapes, and the UNOBSERVABLES named above are not covered by tests.
 
 ## Deployment Risk Statement
 **Known unknowns at ship time:** DL-002 product intent.
@@ -96,4 +104,5 @@ Concurrency and exhaustive international address shapes are not covered by tests
 | Ticket ID | Decision Log ref | Assumption to validate | Priority |
 |-----------|------------------|------------------------|----------|
 | GROW-6701 | DL-002 | Product confirms reject-not-sanitize | HIGH |
-**Decision Log status:** OPEN — one ticket outstanding.`;
+| GROW-6702 | DL-003 | The rejection counter reaches the dashboard | MEDIUM |
+**Decision Log status:** OPEN — two tickets outstanding.`;
