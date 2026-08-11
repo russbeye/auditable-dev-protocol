@@ -102,6 +102,17 @@ test("decorate wraps free-standing status keywords and skips longer words", () =
   assert.equal(decorate("HIGHLY"), "HIGHLY");
 });
 
+test("UNKNOWN, UNOBSERVABLE, and PENDING pill free-standing, never inside words", () => {
+  assert.equal(decorate("UNKNOWN"), '<span class="pill p-unk">UNKNOWN</span>');
+  assert.equal(decorate("UNOBSERVABLE"), '<span class="pill p-unk">UNOBSERVABLE</span>');
+  assert.equal(decorate("PENDING"), '<span class="pill p-open">PENDING</span>');
+  // Inside a larger word nothing pills. The leading guard stops APPENDING,
+  // and the trailing boundary stops UNKNOWNS and UNOBSERVABLES.
+  for (const w of ["APPENDING", "UNKNOWNS", "UNOBSERVABLES"]) {
+    assert.equal(decorate(w), w);
+  }
+});
+
 // ---- decision-log cards (AV-003's chip rule, pinned here post-extraction) ----
 
 test("dlChipSplit takes the first word and returns the rest as the tail", () => {
@@ -156,23 +167,50 @@ test("dlStatusKind classifies by the same prefix match the rail shipped with", (
   assert.equal(dlStatusKind("OPEN"), "open");
   assert.equal(dlStatusKind("VALIDATED"), "validated");
   assert.equal(dlStatusKind("INVALIDATED"), "invalidated");
+  assert.equal(dlStatusKind("UNKNOWN"), "unknown");
   assert.equal(dlStatusKind("DEFERRED until Q3"), "other");
   // The match accepts a tail, any letter case, and a longer word that opens
-  // with a keyword. We pin the quirks as they shipped in dlRail.
+  // with a keyword. We pin the quirks as they shipped in dlRail, and UNKNOWN
+  // inherits them unchanged (AV-011).
   assert.equal(dlStatusKind("open — pending review"), "open");
   assert.equal(dlStatusKind("OPENED"), "open");
+  assert.equal(dlStatusKind("unknown — never wired"), "unknown");
+  assert.equal(dlStatusKind("UNKNOWNS"), "unknown");
   assert.equal(dlStatusKind(""), "other");
   assert.equal(dlStatusKind(undefined), "other");
 });
 
 test("rail and chip verdicts agree with dlStatusKind on every bucket", () => {
-  const rail = {open: "rail-open", validated: "rail-ok", invalidated: "rail-bad", other: ""};
-  const pill = {open: "p-open", validated: "p-ok", invalidated: "p-bad", other: "p-low"};
-  for (const v of ["OPEN", "VALIDATED", "INVALIDATED", "DEFERRED", "OPENED", "validated: suite green"]) {
+  const rail = {open: "rail-open", validated: "rail-ok", invalidated: "rail-bad", unknown: "rail-unk", other: ""};
+  const pill = {open: "p-open", validated: "p-ok", invalidated: "p-bad", unknown: "p-unk", other: "p-low"};
+  for (const v of ["OPEN", "VALIDATED", "INVALIDATED", "UNKNOWN", "DEFERRED", "OPENED", "validated: suite green", "UNKNOWN — never emitted"]) {
     const kind = dlStatusKind(v);
     assert.equal(dlRail(v), rail[kind], v);
     assert.ok(dlStatusPill(v).html.includes(pill[kind]), v);
   }
+});
+
+test("an UNKNOWN status chips violet with its own rail and demotes only the tail", () => {
+  const card = renderDLCard({head: "[DL-10] t", lines: ["- **Status:** UNKNOWN — never emitted"]});
+  assert.ok(card.includes("<i>status</i>UNKNOWN</span>"));
+  assert.ok(card.includes("p-unk"));
+  assert.ok(card.includes("rail-unk"));
+  assert.ok(card.includes("never emitted"));
+});
+
+test("all four statuses render distinct rails and a nonsense status stays neutral", () => {
+  const out = renderDecisionLog([
+    "### [A] a", "- **Status:** OPEN",
+    "### [B] b", "- **Status:** VALIDATED",
+    "### [C] c", "- **Status:** INVALIDATED",
+    "### [D] d", "- **Status:** UNKNOWN",
+    "### [E] e", "- **Status:** WAT",
+  ].join("\n"));
+  for (const rail of ["rail-open", "rail-ok", "rail-bad", "rail-unk"]) {
+    assert.ok(out.includes(rail), rail);
+  }
+  // The nonsense card is the one card left with no rail class at all.
+  assert.equal((out.match(/class="dl-card "/g) || []).length, 1);
 });
 
 test("parseDLEntries returns pre-entry prose separately from the entries", () => {
@@ -188,10 +226,11 @@ test("dlStatusCounts counts the same entries the cards render", () => {
     "### [DL-2] b", "- **Status:** VALIDATED — suite green",
     "### [DL-3] c", "- **Status:** DEFERRED",
     "### [DL-4] d", "- **Decision:** no status field at all",
+    "### [DL-5] e", "- **Status:** UNKNOWN — never emitted",
     "```", "### [DL-99] fenced, not an entry", "```",
   ].join("\n");
   assert.deepEqual(dlStatusCounts(body),
-    {open: 1, validated: 1, invalidated: 0, other: 2, total: 4});
+    {open: 1, validated: 1, invalidated: 0, unknown: 1, other: 2, total: 5});
 });
 
 test("a repeated Status field counts by the last one, as the card shows", () => {
@@ -202,12 +241,12 @@ test("a repeated Status field counts by the last one, as the card shows", () => 
 
 test("a body without entries counts all zeros", () => {
   assert.deepEqual(dlStatusCounts("just prose\n"),
-    {open: 0, validated: 0, invalidated: 0, other: 0, total: 0});
+    {open: 0, validated: 0, invalidated: 0, unknown: 0, other: 0, total: 0});
 });
 
-test("the example's decision log counts 1 open and 1 validated", () => {
+test("the example's decision log counts one each of open, validated, unknown", () => {
   const example = require("./fixtures/viewer-example.js");
   const spine = parseSections(example).secs.find(s => metaFor(s.title).spine);
   assert.deepEqual(dlStatusCounts(spine.body.join("\n")),
-    {open: 1, validated: 1, invalidated: 0, other: 0, total: 2});
+    {open: 1, validated: 1, invalidated: 0, unknown: 1, other: 0, total: 3});
 });
