@@ -234,14 +234,13 @@ Assumed: this implementation failed in production. Most likely causes:
 |--------------|------------|--------|---------------------------------------------|-------------------|----------------|
 | ...          | H/M/L      | H/M/L  | ...                                         | [observable] — fires at [threshold] — distinguishes: [nearest benign look-alike], OR UNOBSERVABLE — [justification] | [path § "verbatim anchor" (line N, advisory)] / PENDING / — |
 
-Monitoring signal (required on reports written after 2026-08-10; earlier reports remain valid
-without it): an observable a person can check with no tooling — a log line, a count, an error rate,
+Monitoring signal: an observable a person can check with no tooling — a log line, a count, an error rate,
 a report channel — the threshold at which this failure mode counts as happening, and what
 distinguishes it from the nearest benign condition that could produce the same reading.
 UNOBSERVABLE requires a justification for why no observable exists, not why nobody got to it; a
 reviewer challenges that claim at this report's gate, before authorization.
 
-Implemented at (mitigations only, "—" on rebuttal rows; same adoption rule): PENDING until the
+Implemented at (mitigations only, "—" on rebuttal rows): PENDING until the
 mitigation lands, then a verbatim anchor copied exactly from the implementing code — an identifier,
 comment text, or an exact line, unique within its file when written. Any line number is an advisory
 hint. Anchor found where the hint says: the reference holds. Found elsewhere in the file: drifted —
@@ -278,8 +277,7 @@ has a corresponding Decision Log entry.
 - **Created:** [date/phase]
 - **Status:** OPEN / VALIDATED / INVALIDATED / UNKNOWN
 
-Confidence basis and Monitoring signal are required on entries written after 2026-08-10; earlier
-logs remain valid without them. Monitoring signal is required only while Status is OPEN and the
+Monitoring signal is required only while Status is OPEN and the
 entry holds an assumption. It names what would disprove the assumption, either by pointing at the
 Pre-Mortem row that owns the signal (quote its failure-mode text verbatim) or by declaring one
 inline in the same observable/threshold/distinguishes form. An UNOBSERVABLE signal on an OPEN entry
@@ -312,8 +310,8 @@ analysis phase.
 | ... | ...                       | ...                             | DL-XXX |
 **Untestable assumptions logged to Decision Log:** [reference DL entries]
 
-dl_ref (required on documents written after 2026-08-10; earlier documents remain valid without it):
-the Decision Log entries this gap tracks, as DL-XXX, comma-separated when there are several.
+dl_ref: the Decision Log entries this gap tracks, as DL-XXX, comma-separated when there are
+several.
 ```
 
 ## Phase 7: Synthesis
@@ -362,8 +360,7 @@ wrong" is not a trigger condition; name the observable signal and threshold.
 - [ ] [specific, observable condition] → rollback
 **Staged rollout:** [YES / NO — if NO, justify]
 
-dl_ref (required on statements written after 2026-08-10; earlier statements remain valid without
-it): the Decision Log entry holding the assumption. The signal and threshold in the row come from
+dl_ref: the Decision Log entry holding the assumption. The signal and threshold in the row come from
 that entry's Monitoring signal, authored at the Pre-Mortem or on the entry itself — this table
 consumes signals, it does not invent them.
 ```
@@ -384,9 +381,8 @@ ticketed. No entry stays OPEN without a ticket.
 |-----------|------------------|------------------------|----------|----------------|--------------------|
 | ...       | DL-XXX           | ...                    | ...      | [observable event or date] → [disposition] | [plain time anchored to an event] / — |
 
-Exit condition and Observation window are required on tickets written after 2026-08-10; earlier
-lists remain valid without them. Decision Log ref keeps its meaning and takes the form DL-XXX,
-comma-separated when one ticket covers several entries. Observation window: how long the signal is
+Decision Log ref takes the form DL-XXX, comma-separated when one ticket covers several entries.
+Observation window: how long the signal is
 watched, in plain time anchored to an event ("30 days after deploy"); "—" when the ticket has no
 signal to watch. Exit condition: the condition under which the ticket closes with no further
 judgment call. A ticket watching a signal covers three outcomes: the signal fires — close, entry
