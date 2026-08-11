@@ -6,8 +6,9 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const {lib} = require("./helpers.js");
+const {lib, readFixture} = require("./helpers.js");
 const {parseYAML} = lib;
+const {bootBuilder} = require("./builder-harness.js");
 
 test("a flow sequence is reported at its key path and kept as plain text", () => {
   const issues = [];
@@ -108,4 +109,41 @@ test("block scalar newlines survive into single-line requirement fields", () => 
 test("parseYAML without an issues array still parses and does not throw", () => {
   const doc = parseYAML('role:\n  priorities: ["a"]\n');
   assert.equal(doc.role.priorities, '["a"]');
+});
+
+/* The unknown-key half of the import report lives in applyPromptData, inside
+   the page, so these pins drive the real page script through the vm harness.
+   The wording is contract here too, so we assert the whole paste message. */
+
+test("a defers-bearing import populates rows and stays out of the unknown-key report", () => {
+  const h = bootBuilder();
+  const msg = h.importText(readFixture("parity/valid/protocol-defers-two.yaml"));
+  assert.equal(msg, "Imported all recognized fields.");
+  assert.deepEqual(h.rows("defers"), [
+    {phase: "communication", reason: "No deployment for a docs-only change"},
+    {phase: "the_loop", reason: "Ticketed in the follow-up task instead"}
+  ]);
+});
+
+test("a truly unknown protocol key still lands in the report", () => {
+  const h = bootBuilder();
+  const msg = h.importText(
+    'protocol:\n  apply: true\n  wat: true\n  defers:\n    - phase: "analysis"\n      reason: "Manual pass"\n'
+  );
+  assert.equal(msg, "Imported with 1 issue: protocol.wat");
+  assert.deepEqual(h.rows("defers"), [{phase: "analysis", reason: "Manual pass"}]);
+});
+
+test("an unknown imported phase is named as altered and its reason survives", () => {
+  const h = bootBuilder();
+  const msg = h.importText(readFixture("parity/invalid/protocol-defers-phase-unknown.yaml"));
+  assert.equal(msg, "Imported with 1 issue: protocol.defers[0].phase (not a known phase; selection left empty)");
+  assert.deepEqual(h.rows("defers"), [{phase: "", reason: "We run the suite by hand"}]);
+});
+
+test("a non-map defers item is dropped with its index named", () => {
+  const h = bootBuilder();
+  const msg = h.importText('protocol:\n  apply: true\n  defers:\n    - "soon"\n');
+  assert.equal(msg, "Imported with 1 issue: protocol.defers[0] (not a map; skipped)");
+  assert.deepEqual(h.rows("defers"), []);
 });

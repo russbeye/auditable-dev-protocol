@@ -40,6 +40,9 @@
 .lesson-row,.req-row{border:1px dashed var(--line-bright);padding:10px;background:rgba(0,41,222,.03);display:flex;flex-direction:column;gap:8px}
 .req-row .req-top{display:grid;grid-template-columns:90px 1fr;gap:8px}
 @media(max-width:520px){.req-row .req-top{grid-template-columns:1fr}}
+.defer-row{border:1px dashed var(--line-bright);padding:10px;background:rgba(0,41,222,.03)}
+.defer-grid{display:grid;grid-template-columns:minmax(150px,220px) 1fr;gap:8px}
+@media(max-width:520px){.defer-grid{grid-template-columns:1fr}}
 
 /* labelled toggles (the knob switch .sw is shared) */
 .toggle{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px dotted var(--line)}
@@ -350,6 +353,11 @@
             <div class="sub-lbl">artifacts · any subset to produce</div>
             <div class="chips" id="artifacts"></div>
           </div>
+          <div class="field field-gap-top">
+            <div class="sub-lbl">defers · phases this task defers, with a reason each</div>
+            <div class="list-rows" data-list="defers"></div>
+            <button class="add" data-add="defers">+ add deferral</button>
+          </div>
         </div>
       </section>
 
@@ -391,7 +399,7 @@
   const $ = (s,r=document)=>r.querySelector(s);
   const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
 
-  const {ARTIFACTS, FORMATS, DEFAULT_ARTIFACTS, parseYAML, buildYaml, validate, createStatusAnnouncer} = window.ADPPromptLib;
+  const {ARTIFACTS, FORMATS, DEFAULT_ARTIFACTS, PHASES, parseYAML, buildYaml, validate, createStatusAnnouncer} = window.ADPPromptLib;
 
   // ---- row factories ----
   function simpleRow(name, placeholder, value){
@@ -442,6 +450,19 @@
     if(v.verify) div.querySelector('[data-field=verify]').value=v.verify;
     return div;
   }
+  function deferRow(v){
+    v=v||{};
+    const div=document.createElement("div"); div.className="defer-row";
+    div.innerHTML=`
+      <div class="defer-grid">
+        <div><div class="sub-lbl">phase · required</div><select data-field="phase" aria-label="phase" class="unset"><option value="" disabled selected>pick a phase</option>${PHASES.map(p=>`<option value="${p}">${p}</option>`).join("")}</select></div>
+        <div><div class="sub-lbl">reason · required</div><input type="text" data-field="reason" aria-label="reason" placeholder="Why this phase does not run"></div>
+      </div>
+      <div class="action-row"><button class="rm wide" type="button" aria-label="remove">× remove deferral</button></div>`;
+    if(v.phase) div.querySelector('[data-field=phase]').value=v.phase;
+    if(v.reason) div.querySelector('[data-field=reason]').value=v.reason;
+    return div;
+  }
 
   const LIST_PLACEHOLDERS = {
     priorities:["What this lens optimizes for, most important first","The next priority"],
@@ -456,6 +477,7 @@
     if(list==="references") row=refRow(value);
     else if(list==="lessons_learned") row=lessonRow(value);
     else if(list==="requirements") row=reqRow(value);
+    else if(list==="defers") row=deferRow(value);
     else {
       const ph = (LIST_PLACEHOLDERS[list]||[""]);
       const idx = container.children.length;
@@ -498,6 +520,20 @@
     const lessons = listOf("lessons_learned").map(r=>({context:rowVal(r,"context"),takeaway:rowVal(r,"takeaway")}));
     const requirements = listOf("requirements").map(r=>({id:rowVal(r,"id"),statement:rowVal(r,"statement"),verify:rowVal(r,"verify")}));
     const artifacts = $$("#artifacts input:checked").map(i=>i.value);
+    // We map every defers row, incomplete ones included, so the badge judges
+    // exactly what the form holds.
+    const defers = listOf("defers").map(r=>({phase:rowVal(r,"phase"),reason:rowVal(r,"reason")}));
+    const protocol = {
+      apply:$("#p_apply").checked,
+      stake_single_recommendation:$("#p_stake").checked,
+      log_assumptions:$("#p_log").checked,
+      flag_low_confidence:$("#p_flag").checked,
+      artifacts
+    };
+    // An absent defers key means that nothing is deferred, so an empty editor
+    // must not add the key. The omission keeps every pre-editor export
+    // byte-identical.
+    if(defers.length) protocol.defers=defers;
     return {
       // The builder only writes 1.0 documents. validate() checks the version
       // so an imported foreign version cannot show a VALID badge.
@@ -511,13 +547,7 @@
       lessons_learned:lessons,
       output:{format:val("#o_fmt"),destination:val("#o_dest"),structure:val("#o_struct")},
       requirements,
-      protocol:{
-        apply:$("#p_apply").checked,
-        stake_single_recommendation:$("#p_stake").checked,
-        log_assumptions:$("#p_log").checked,
-        flag_low_confidence:$("#p_flag").checked,
-        artifacts
-      }
+      protocol
     };
   }
 
@@ -583,6 +613,7 @@
       b.className = "ck "+(bad?"bad":"good");
     });
     const sel=$("#o_fmt"); sel.classList.toggle("unset", !sel.value);
+    $$('select[data-field="phase"]').forEach(s=>s.classList.toggle("unset", !s.value));
   }
 
   // ---------- events ----------
@@ -627,6 +658,7 @@
     $$("input[type=text],textarea").forEach(el=>el.value="");
     $("#t_date").value=todayISO();
     $("#o_fmt").value="";
+    $$('select[data-field="phase"]').forEach(s=>s.value="");
     ["#p_apply","#p_stake","#p_log","#p_flag"].forEach(s=>$(s).checked=true);
     $$("#artifacts input").forEach(i=>i.checked=DEFAULT_ARTIFACTS.includes(i.value));
     render(); toast("Cleared");
@@ -646,7 +678,11 @@
     lessons:[{context:"A regex-only check was tried before",takeaway:"It rejected valid plus-addressed emails; use a parser, not a regex"}],
     format:"patch",destination:"Edit files in place",
     structure:"A minimal diff to src/signup/handler.ts plus one test file.\nName each file and the functions touched.",
-    requirements:[{id:"R1",statement:"A malformed email returns 422 and is not persisted",verify:"Integration test posts a bad address and asserts 422 plus no new row"}]
+    requirements:[{id:"R1",statement:"A malformed email returns 422 and is not persisted",verify:"Integration test posts a bad address and asserts 422 plus no new row"}],
+    defers:[
+      {phase:"communication",reason:"Ships behind the existing signup flag, so no deploy note goes out"},
+      {phase:"the_loop",reason:"Follow-up obligations ride the GROW-6688 cleanup ticket"}
+    ]
   };
   $("#example").addEventListener("click", ()=>{
     const E=EXAMPLE;
@@ -661,6 +697,7 @@
     refill("references",E.references,(r,v)=>{ r.querySelector('[data-field=path]').value=v.path; r.querySelector('[data-field=lines]').value=v.lines; r.querySelector('[data-field=note]').value=v.note; });
     refill("lessons_learned",E.lessons,(r,v)=>{ r.querySelector('[data-field=context]').value=v.context; r.querySelector('[data-field=takeaway]').value=v.takeaway; });
     refill("requirements",E.requirements,(r,v)=>{ r.querySelector('[data-field=id]').value=v.id; r.querySelector('[data-field=statement]').value=v.statement; r.querySelector('[data-field=verify]').value=v.verify; });
+    refill("defers",E.defers,(r,v)=>{ r.querySelector('[data-field=phase]').value=v.phase; r.querySelector('[data-field=reason]').value=v.reason; });
     $$("#artifacts input").forEach(i=>i.checked=DEFAULT_ARTIFACTS.includes(i.value));
     render(); toast("Example loaded");
   });
@@ -776,7 +813,7 @@
     else if("requirements" in obj){ failed.push("requirements"); }
 
     if(isObj(obj.protocol)){
-      unk(obj.protocol,["apply","stake_single_recommendation","log_assumptions","flag_low_confidence","artifacts"],"protocol.",failed);
+      unk(obj.protocol,["apply","stake_single_recommendation","log_assumptions","flag_low_confidence","artifacts","defers"],"protocol.",failed);
       // A checkbox can only hold a real boolean. Anything else keeps the
       // default, and we name the alteration so the import report stays honest.
       [["apply","#p_apply"],["stake_single_recommendation","#p_stake"],["log_assumptions","#p_log"],["flag_low_confidence","#p_flag"]].forEach(([k,sel])=>{
@@ -788,6 +825,15 @@
         $$("#artifacts input").forEach(i=>i.checked=set.has(i.value));
         obj.protocol.artifacts.filter(a=>!ARTIFACTS.includes(a)).forEach(a=>failed.push("protocol.artifacts: "+a));
       }
+      // A select can only hold one of its option values. We follow the
+      // checkbox stance above for a phase outside the nine. The selection
+      // keeps its empty default, the report names the alteration, and the
+      // reason still applies.
+      if(Array.isArray(obj.protocol.defers)) refillList("defers",keepReported(obj.protocol.defers,"protocol.defers",isObj,"not a map; skipped",failed),(r,v,ix)=>{
+        if(v.phase!=null){ if(PHASES.includes(v.phase)) r.querySelector('[data-field=phase]').value=v.phase; else failed.push(`protocol.defers[${ix}].phase (not a known phase; selection left empty)`); }
+        setLine(r.querySelector("[data-field=reason]"),v.reason,`protocol.defers[${ix}].reason`,failed);
+      });
+      else if("defers" in obj.protocol){ failed.push("protocol.defers"); }
     } else if("protocol" in obj){ failed.push("protocol"); }
 
     render();
