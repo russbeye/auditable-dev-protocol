@@ -30,6 +30,17 @@ ARTIFACTS = {
     "deployment_risk",
     "obligation_tickets",
 }
+PHASES = {
+    "observation",
+    "literature_review",
+    "hypothesis",
+    "research_design",
+    "implementation",
+    "analysis",
+    "synthesis",
+    "communication",
+    "the_loop",
+}
 
 
 # We check the shape of the date, not the calendar. Four digits, a month from
@@ -108,6 +119,19 @@ def validate(doc):
         if isinstance(artifacts, list):
             for value in artifacts:
                 require(value in ARTIFACTS, f"protocol.artifacts has unknown value: {value!r}")
+        # A deferral prepays the cost of a skipped phase, so the declaration
+        # must be checkable. We hold each item to a known phase name and a
+        # written reason. An absent defers key means that nothing is deferred.
+        if "defers" in proto:
+            defers = proto["defers"]
+            require(isinstance(defers, list), "protocol.defers must be a list")
+            if isinstance(defers, list):
+                for i, item in enumerate(defers):
+                    if not isinstance(item, dict):
+                        errors.append(f"protocol.defers[{i}] must be a mapping")
+                        continue
+                    require(item.get("phase") in PHASES, f"protocol.defers[{i}].phase must be one of {sorted(PHASES)}")
+                    require(nonempty_str(item.get("reason")), f"protocol.defers[{i}].reason must be a non-empty string")
 
     if "preamble" in doc:
         require(isinstance(doc["preamble"], str), "preamble must be a string")

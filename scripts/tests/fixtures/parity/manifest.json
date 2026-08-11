@@ -42,6 +42,18 @@
   "invalid/protocol-artifacts-not-list.yaml": [
     "protocol.artifacts"
   ],
+  "invalid/protocol-defers-item-scalar.yaml": [
+    "protocol.defers[0]"
+  ],
+  "invalid/protocol-defers-not-list.yaml": [
+    "protocol.defers"
+  ],
+  "invalid/protocol-defers-phase-unknown.yaml": [
+    "protocol.defers[0].phase"
+  ],
+  "invalid/protocol-defers-reason-empty.yaml": [
+    "protocol.defers[0].reason"
+  ],
   "invalid/protocol-flags-quoted.yaml": [
     "protocol.flag_low_confidence",
     "protocol.log_assumptions",
@@ -116,6 +128,8 @@
   ],
   "valid/full.yaml": [],
   "valid/minimal.yaml": [],
+  "valid/protocol-defers-two.yaml": [],
+  "valid/protocol-defers.yaml": [],
   "valid/protocol-false.yaml": [],
   "valid/reference-path-only.yaml": [],
   "valid/task-date-iso.yaml": [],

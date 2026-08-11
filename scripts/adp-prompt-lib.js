@@ -11,6 +11,9 @@
   const ARTIFACTS = ["problem_statement","knowledge_gap","recommendation_brief","premortem","decision_log","test_adversary","pr_summary","deployment_risk","obligation_tickets"];
   const FORMATS = ["code","patch","json","yaml","markdown","prose"];
   const DEFAULT_ARTIFACTS = ["decision_log","test_adversary"];
+  // The nine protocol phases, as protocol.defers names them. Keep this list
+  // in step with PHASES in validate-prompt.py, which is the authoritative side.
+  const PHASES = ["observation","literature_review","hypothesis","research_design","implementation","analysis","synthesis","communication","the_loop"];
 
   function qstr(s){ return '"'+String(s).replace(/\\/g,"\\\\").replace(/"/g,'\\"')+'"'; }
   function block(key, val, indent){
@@ -84,6 +87,13 @@
     L.push(`  log_assumptions: ${d.protocol.log_assumptions}`);
     L.push(`  flag_low_confidence: ${d.protocol.flag_low_confidence}`);
     if(d.protocol.artifacts.length){ L.push("  artifacts:"); d.protocol.artifacts.forEach(a=>L.push(`    - ${a}`)); }
+    // gather() never produces defers, so this branch serves parsed documents.
+    // Without it a round trip would silently drop a declared deferral, which
+    // is the exact quiet loss the field exists to prevent.
+    if(Array.isArray(d.protocol.defers)&&d.protocol.defers.length){
+      L.push("  defers:");
+      d.protocol.defers.forEach(x=>{ L.push(`    - phase: ${qstr(x.phase)}`); L.push(`      reason: ${qstr(x.reason)}`); });
+    }
     return L.join("\n").replace(/\n{3,}/g,"\n\n").replace(/\s+$/,"")+"\n";
   }
 
@@ -123,6 +133,18 @@
     ["stake_single_recommendation","log_assumptions","flag_low_confidence"].forEach(k=>{ if(d.protocol[k]!==undefined && typeof d.protocol[k]!=="boolean") e.push([`protocol.${k}`,"must be true or false"]); });
     if(!Array.isArray(d.protocol.artifacts)) e.push(["protocol.artifacts","must be a list"]);
     else d.protocol.artifacts.forEach(a=>{ if(!ARTIFACTS.includes(a)) e.push(["protocol.artifacts","unknown artifact: "+a]); });
+    // The builder has no defers editor, so this only judges imported
+    // documents; gather() never sets the key. We mirror the Python side: a
+    // known phase name and a written reason per item, and an absent key
+    // means that nothing is deferred.
+    if(d.protocol.defers!==undefined){
+      if(!Array.isArray(d.protocol.defers)) e.push(["protocol.defers","must be a list"]);
+      else d.protocol.defers.forEach((x,i)=>{
+        if(!x||typeof x!=="object"||Array.isArray(x)){ e.push([`protocol.defers[${i}]`,"must be a mapping"]); return; }
+        if(!PHASES.includes(x.phase)) e.push([`protocol.defers[${i}].phase`,"pick one of "+PHASES.join("|")]);
+        if(!nonemptyStr(x.reason)) e.push([`protocol.defers[${i}].reason`,"required within item"]);
+      });
+    }
     return e;
   }
 
@@ -320,7 +342,7 @@
     };
   }
 
-  const ADPPromptLib={parseYAML,buildYaml,validate,createStatusAnnouncer,ARTIFACTS,FORMATS,DEFAULT_ARTIFACTS};
+  const ADPPromptLib={parseYAML,buildYaml,validate,createStatusAnnouncer,ARTIFACTS,FORMATS,DEFAULT_ARTIFACTS,PHASES};
   if(typeof module!=="undefined"&&module.exports){ module.exports=ADPPromptLib; }
   else{ global.ADPPromptLib=ADPPromptLib; }
 })(typeof globalThis!=="undefined"?globalThis:this);
