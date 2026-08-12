@@ -87,9 +87,10 @@
     L.push(`  log_assumptions: ${d.protocol.log_assumptions}`);
     L.push(`  flag_low_confidence: ${d.protocol.flag_low_confidence}`);
     if(d.protocol.artifacts.length){ L.push("  artifacts:"); d.protocol.artifacts.forEach(a=>L.push(`    - ${a}`)); }
-    // gather() never produces defers, so this branch serves parsed documents.
-    // Without it a round trip would silently drop a declared deferral, which
-    // is the exact quiet loss the field exists to prevent.
+    // The builder's gather() omits the key when its defers editor is empty,
+    // so this branch only fires when a document declares a deferral. Without
+    // it a round trip would silently drop the block, which is the exact quiet
+    // loss the field exists to prevent.
     if(Array.isArray(d.protocol.defers)&&d.protocol.defers.length){
       L.push("  defers:");
       d.protocol.defers.forEach(x=>{ L.push(`    - phase: ${qstr(x.phase)}`); L.push(`      reason: ${qstr(x.reason)}`); });
@@ -133,10 +134,10 @@
     ["stake_single_recommendation","log_assumptions","flag_low_confidence"].forEach(k=>{ if(d.protocol[k]!==undefined && typeof d.protocol[k]!=="boolean") e.push([`protocol.${k}`,"must be true or false"]); });
     if(!Array.isArray(d.protocol.artifacts)) e.push(["protocol.artifacts","must be a list"]);
     else d.protocol.artifacts.forEach(a=>{ if(!ARTIFACTS.includes(a)) e.push(["protocol.artifacts","unknown artifact: "+a]); });
-    // The builder has no defers editor, so this only judges imported
-    // documents; gather() never sets the key. We mirror the Python side: a
-    // known phase name and a written reason per item, and an absent key
-    // means that nothing is deferred.
+    // The builder's defers editor feeds this through gather(), which omits
+    // the key when the editor is empty. We mirror the Python side: a known
+    // phase name and a written reason per item, and an absent key means
+    // that nothing is deferred.
     if(d.protocol.defers!==undefined){
       if(!Array.isArray(d.protocol.defers)) e.push(["protocol.defers","must be a list"]);
       else d.protocol.defers.forEach((x,i)=>{

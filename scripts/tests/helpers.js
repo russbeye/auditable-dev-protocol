@@ -29,7 +29,10 @@ function readReference(name){
 // buildYaml expects the full state shape the builder's gather() produces, and
 // it throws on a parsed document that omits an optional group. We fill the
 // builder's default empty state first, mirroring what applyPromptData in
-// prompt-builder.html guarantees. If that contract moves, move this with it.
+// prompt-builder.html guarantees. protocol.defers stays optional even here,
+// because gather() adds that key only when the defers editor holds rows, and
+// the Object.assign below carries a parsed one through untouched. If that
+// contract moves, move this with it.
 function normalize(doc){
   const d = doc || {};
   return {
