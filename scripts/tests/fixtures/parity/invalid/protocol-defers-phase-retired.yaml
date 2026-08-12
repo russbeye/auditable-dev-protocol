@@ -1,10 +1,10 @@
 schema_version: "1.0"
 
 task:
-  id: "ADP-014-fixture"
+  id: "ADP-015-fixture"
   title: "Parity fixture"
   author: "rbeye"
-  date: "2026-08-10"
+  date: "2026-08-11"
 
 prompt: |
   A minimal but complete prompt body.
@@ -21,7 +21,5 @@ requirements:
 protocol:
   apply: true
   defers:
-    - phase: "communication"
-      reason: "No deployment for a docs-only change"
-    - phase: "obligations"
+    - phase: "the_loop"
       reason: "Ticketed in the follow-up task instead"

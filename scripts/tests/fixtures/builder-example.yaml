@@ -64,5 +64,5 @@ protocol:
   defers:
     - phase: "communication"
       reason: "Ships behind the existing signup flag, so no deploy note goes out"
-    - phase: "the_loop"
+    - phase: "obligations"
       reason: "Follow-up obligations ride the GROW-6688 cleanup ticket"

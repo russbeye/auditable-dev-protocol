@@ -99,5 +99,5 @@ protocol:
     - phase: "analysis"   # required within an item
       # Full set of allowed values:
       #   observation | literature_review | hypothesis | research_design |
-      #   implementation | analysis | synthesis | communication | the_loop
+      #   implementation | analysis | synthesis | communication | obligations
       reason: "Manual test pass only this release; the suite lands with the follow-up task"   # required within an item

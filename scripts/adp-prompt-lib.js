@@ -13,7 +13,7 @@
   const DEFAULT_ARTIFACTS = ["decision_log","test_adversary"];
   // The nine protocol phases, as protocol.defers names them. Keep this list
   // in step with PHASES in validate-prompt.py, which is the authoritative side.
-  const PHASES = ["observation","literature_review","hypothesis","research_design","implementation","analysis","synthesis","communication","the_loop"];
+  const PHASES = ["observation","literature_review","hypothesis","research_design","implementation","analysis","synthesis","communication","obligations"];
 
   function qstr(s){ return '"'+String(s).replace(/\\/g,"\\\\").replace(/"/g,'\\"')+'"'; }
   function block(key, val, indent){

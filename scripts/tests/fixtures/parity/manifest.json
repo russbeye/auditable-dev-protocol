@@ -48,6 +48,9 @@
   "invalid/protocol-defers-not-list.yaml": [
     "protocol.defers"
   ],
+  "invalid/protocol-defers-phase-retired.yaml": [
+    "protocol.defers[0].phase"
+  ],
   "invalid/protocol-defers-phase-unknown.yaml": [
     "protocol.defers[0].phase"
   ],
