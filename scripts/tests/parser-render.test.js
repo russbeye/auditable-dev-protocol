@@ -69,7 +69,7 @@ test("metaFor routes titles to the registry and defaults unknown ones", () => {
   assert.deepEqual(metaFor("Anything Else"), {icon: "§", tag: ""});
 });
 
-// ---- link scheme allowlist (AV-005's rule, pinned here post-extraction) ----
+// ---- link scheme allowlist (pinned here post-extraction) ----
 
 test("http, https, mailto, relative, and fragment urls stay clickable", () => {
   for (const url of ["https://x.y", "http://x.y", "mailto:a@b.c", "/relative/path", "#sec-decision-log"]) {
@@ -113,7 +113,7 @@ test("UNKNOWN, UNOBSERVABLE, and PENDING pill free-standing, never inside words"
   }
 });
 
-// ---- decision-log cards (AV-003's chip rule, pinned here post-extraction) ----
+// ---- decision-log cards (the chip rule, pinned here post-extraction) ----
 
 test("dlChipSplit takes the first word and returns the rest as the tail", () => {
   assert.deepEqual(dlChipSplit("HIGH - because the suite pins it"),
@@ -161,7 +161,7 @@ test("a decision log without entries falls back to the generic renderer", () => 
   assert.ok(!out.includes("dl-cards"));
 });
 
-// ---- decision-log audit counts (AV-008) ----
+// ---- decision-log audit counts ----
 
 test("dlStatusKind classifies by the same prefix match the rail shipped with", () => {
   assert.equal(dlStatusKind("OPEN"), "open");
@@ -171,7 +171,7 @@ test("dlStatusKind classifies by the same prefix match the rail shipped with", (
   assert.equal(dlStatusKind("DEFERRED until Q3"), "other");
   // The match accepts a tail, any letter case, and a longer word that opens
   // with a keyword. We pin the quirks as they shipped in dlRail, and UNKNOWN
-  // inherits them unchanged (AV-011).
+  // inherits them unchanged.
   assert.equal(dlStatusKind("open — pending review"), "open");
   assert.equal(dlStatusKind("OPENED"), "open");
   assert.equal(dlStatusKind("unknown — never wired"), "unknown");

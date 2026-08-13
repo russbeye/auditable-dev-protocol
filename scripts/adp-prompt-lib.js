@@ -1,10 +1,9 @@
 /* adp-prompt-lib.js — shared pure logic for the ADP prompt builder.
    parseYAML, buildYaml, validate and the shared constants, extracted from
-   prompt-builder.html (PB-002-extract-prompt-lib) and extended with import
-   reporting and folded scalars (PB-003-import-fidelity). Exposed as one
-   namespace: the browser global `ADPPromptLib` via a plain <script> tag, or
-   `module.exports` under Node (`require("./adp-prompt-lib.js")`).
-   No dependencies, no build step. */
+   prompt-builder.html and later extended with import reporting and folded
+   scalars. Exposed as one namespace: the browser global `ADPPromptLib` via a
+   plain <script> tag, or `module.exports` under Node
+   (`require("./adp-prompt-lib.js")`). No dependencies, no build step. */
 (function(global){
   "use strict";
 
@@ -100,8 +99,8 @@
 
   // Validation mirrors validate-prompt.py (surfaced as warnings). The Python
   // side is the authoritative rule set, and the parity suite under
-  // scripts/tests/ holds the two to the same verdicts and flagged keys
-  // (PB-005-validator-parity). Align that side first when the rules change.
+  // scripts/tests/ holds the two to the same verdicts and flagged keys.
+  // Align that side first when the rules change.
   // Mirror of the Python side's nonempty_str. Only a real string with visible
   // content passes, so booleans and whitespace-only values fail.
   function nonemptyStr(v){ return typeof v==="string" && v.trim()!==""; }

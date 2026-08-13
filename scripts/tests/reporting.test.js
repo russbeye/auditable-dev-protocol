@@ -1,7 +1,7 @@
-/* Regression tests for the import report. The contract from
-   PB-003-import-fidelity is that nothing is dropped or altered without being
-   named, so each test pins both the report entry and the value left behind.
-   The report wording is part of that contract, so we assert it verbatim. */
+/* Regression tests for the import report. The import contract is that
+   nothing is dropped or altered without being named, so each test pins both
+   the report entry and the value left behind. The report wording is part of
+   that contract, so we assert it verbatim. */
 "use strict";
 
 const test = require("node:test");

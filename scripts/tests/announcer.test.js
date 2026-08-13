@@ -1,4 +1,4 @@
-/* Announcer suite (PB-007-a11y-live-status). The live region must speak state
+/* Announcer suite. The live region must speak state
    transitions after input settles and stay silent otherwise. We drive the
    factory with a hand-rolled scheduler, so the tests never touch the global
    timers and run on stock Node.
@@ -99,9 +99,9 @@ test("each transition after a settle announces again", () => {
   assert.deepStrictEqual(spoken, ["3 issues", "Valid"]);
 });
 
-/* AV-006 generalizes the factory. A format option lets the viewer speak its
-   source states through the same settle-then-compare rule. The tests above
-   pin the default wording, and these pin the hook. */
+/* The factory also serves the viewer. A format option lets the viewer speak
+   its source states through the same settle-then-compare rule. The tests
+   above pin the default wording, and these pin the hook. */
 
 test("a format option controls the wording without touching the discipline", () => {
   const {clock, spoken, report} = makeAnnouncer({format: s => "now " + s});
