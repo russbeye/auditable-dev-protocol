@@ -1,7 +1,7 @@
 /* Page pins that drive the real main IIFE through the vm harness in
    builder-harness.js, so they cover the wiring the lib tests cannot reach:
-   the defers editor's badge, draft, add, clear, and example paths (PB-009),
-   and the checks panel's rendered row text (PB-010). */
+   the defers editor's badge, draft, add, clear, and example paths, and the
+   checks panel's rendered row text. */
 "use strict";
 
 const test = require("node:test");
