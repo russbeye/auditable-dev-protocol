@@ -1,7 +1,7 @@
-/* Page pins for the defers editor (PB-009). These drive the real main IIFE
-   through the vm harness in builder-harness.js, so they cover the wiring the
-   lib tests cannot reach: the badge, the draft, and the editor's add, clear,
-   and example paths. */
+/* Page pins that drive the real main IIFE through the vm harness in
+   builder-harness.js, so they cover the wiring the lib tests cannot reach:
+   the defers editor's badge, draft, add, clear, and example paths (PB-009),
+   and the checks panel's rendered row text (PB-010). */
 "use strict";
 
 const test = require("node:test");
@@ -102,4 +102,17 @@ test("the editor adds no live region and keeps a real add button", () => {
   const html = fs.readFileSync(path.join(__dirname, "..", "prompt-builder.html"), "utf8");
   assert.equal((html.match(/aria-live/g) || []).length, 1);
   assert.match(html, /<button class="add" data-add="defers">\+ add deferral<\/button>/);
+});
+
+test("every unmet check row prints its key and the fixed word required", async () => {
+  const h = bootBuilder();
+  await h.addRow("defers");
+  const rows = [...h.$("#issues-list").innerHTML.matchAll(/<li>([\s\S]*?)<\/li>/g)].map(m => m[1]);
+  // An empty form plus one defers row flags six required fields, the
+  // requirements aggregate, and the new row's phase and reason.
+  assert.equal(rows.length, 9);
+  for (const row of rows) assert.match(row, /^<code>[^<]+<\/code> — required$/);
+  const keys = h.issueKeys();
+  assert.ok(keys.includes("output.format"));
+  assert.ok(keys.includes("protocol.defers[0].phase"));
 });

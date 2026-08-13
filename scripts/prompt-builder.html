@@ -78,11 +78,13 @@
 .paste-msg.warn{color:var(--warn)}
 
 /* validation issues list */
-.issues{border:1px solid var(--line);border-top:none;background:var(--panel-2);padding:0 14px}
+/* We keep the top space on the container. A heading margin collapses out through the borderless top edge and lands outside the panel. */
+.issues{border:1px solid var(--line);border-top:none;background:var(--panel-2);padding:14px 14px 0}
 .issues.empty{display:none}
-.issues h4{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--warn);margin:14px 0 8px;display:flex;align-items:center;gap:8px}
+.issues h4{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--warn);margin:0 0 8px;display:flex;align-items:center;gap:8px}
 .issues ul{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-direction:column;gap:5px}
-.issues li{font-size:12px;color:var(--dim);display:flex;gap:9px;align-items:baseline}
+/* We wrap long unbroken tokens at the row, so no future message can escape the panel (AV-002). */
+.issues li{font-size:12px;color:var(--dim);display:flex;gap:9px;align-items:baseline;overflow-wrap:anywhere}
 .issues li::before{content:"!";color:var(--warn);font-weight:700;flex:0 0 auto}
 .issues li code{color:var(--ink);background:var(--inset);padding:0 5px;border:1px solid var(--line)}
 </style>
@@ -602,7 +604,10 @@
     else{
       box.classList.remove("empty");
       $("#issues-h").textContent=`⚠ ${errs.length} protocol ${errs.length===1?"check":"checks"} unmet`;
-      list.innerHTML=errs.map(([k,m])=>`<li><code>${k}</code> — ${m}</li>`).join("");
+      // We print the fixed word "required" on every row, so no message can
+      // outgrow the panel (issue #4). The key still names the field, and the
+      // richer wording stays with the validators.
+      list.innerHTML=errs.map(([k])=>`<li><code>${k}</code> — required</li>`).join("");
     }
     // We look each badge up in the issue list by key, so a field's data-ck
     // must spell the key exactly as validate() emits it.
