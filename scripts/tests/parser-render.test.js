@@ -11,8 +11,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {parserLib} = require("./helpers.js");
 const {esc, escAttr, inline, decorate, parseSections, sectionKeys, slug, metaFor,
-       dlChipSplit, dlConfPill, dlStatusPill, dlRail, renderDLCard, renderDecisionLog,
-       dlStatusKind, parseDLEntries, dlEntryStatus, dlStatusCounts} = parserLib;
+       renderMarkdown, dlChipSplit, dlConfPill, dlStatusPill, dlRail, renderDLCard,
+       renderDecisionLog, dlStatusKind, parseDLEntries, dlEntryStatus, dlStatusCounts} = parserLib;
 
 // ---- dual export (R2) ----
 
@@ -111,6 +111,53 @@ test("UNKNOWN, UNOBSERVABLE, and PENDING pill free-standing, never inside words"
   for (const w of ["APPENDING", "UNKNOWNS", "UNOBSERVABLES"]) {
     assert.equal(decorate(w), w);
   }
+});
+
+// ---- table cell splitting ----
+
+test("a pipe inside a code span is cell content, not a boundary", () => {
+  const html = renderMarkdown("| A | B | C |\n|---|---|---|\n| `a || b` | x | y |");
+  assert.equal((html.match(/<td>/g) || []).length, 3);
+  assert.ok(html.includes("<code>a || b</code>"));
+});
+
+test("the header row gets the same span-aware split as the body", () => {
+  const html = renderMarkdown("| `x || y` | B |\n|---|---|\n| a | b |");
+  assert.equal((html.match(/<th>/g) || []).length, 2);
+  assert.ok(html.includes("<code>x || y</code>"));
+});
+
+test("a lone unpaired backtick pairs with nothing, so its pipe still splits", () => {
+  const html = renderMarkdown("| H1 | H2 |\n|----|----|\n| a `b | c |");
+  assert.ok(html.includes("<td>a `b</td><td>c</td>"));
+});
+
+test("adjacent double backticks hold no content, so they do not protect a pipe", () => {
+  const html = renderMarkdown("| H1 | H2 |\n|----|----|\n| a `` b | c |");
+  assert.ok(html.includes("<td>a `` b</td><td>c</td>"));
+});
+
+test("a knowledge-gap row with pipes in a span renders as the three authored cells", () => {
+  const row = "| The noise guard (`slackCheckRequirements.ts:250-262`): a thread reply " +
+    "passes when `mentioned`, or `engaged && (fromRequester || approves)`. The " +
+    "`fromRequester` arm admits any text, including filler. | — | — |";
+  const html = renderMarkdown(
+    "| Known | Inferred (flagged) | Cannot Determine |\n" +
+    "|-------|--------------------|------------------|\n" + row);
+  assert.equal((html.match(/<td>/g) || []).length, 3);
+  // We assert on the span's tail, past the ampersands. How inline() escapes
+  // the & is its own concern, and this test only owns the cell boundaries.
+  assert.ok(html.includes("(fromRequester || approves)</code>"));
+  assert.equal((html.match(/<td>—<\/td>/g) || []).length, 2);
+  // The old naive split severed the spans and the halves re-paired across
+  // fragments, which rendered stray prose as code.
+  assert.ok(!html.includes("<code>. The</code>"));
+});
+
+test("a literal NUL inside a table code span survives the split byte-for-byte", () => {
+  const html = renderMarkdown("| A | B |\n|---|---|\n| `\u0000` | x |");
+  assert.equal((html.match(/<td>/g) || []).length, 2);
+  assert.ok(html.includes("<code>\u0000</code>"));
 });
 
 // ---- decision-log cards (the chip rule, pinned here post-extraction) ----
