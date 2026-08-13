@@ -82,8 +82,23 @@
     return false;
   }
 
+  // A pipe inside a paired code span is cell content, not a boundary. We
+  // find the spans with the same pattern that inline() pairs with, so the
+  // split and the rendering agree on which backticks pair. We slice each
+  // cell out of the original row and rewrite nothing, which keeps every
+  // byte intact. Note: the edge trims may run before the span scan. A
+  // character inside a span has a backtick on each side, so the row never
+  // starts or ends inside one.
   function splitRow(r){
-    return r.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(c=>c.trim());
+    const t=r.trim().replace(/^\|/,'').replace(/\|$/,'');
+    const spans=[]; const re=/`[^`]+`/g; let m;
+    while((m=re.exec(t))) spans.push([m.index,m.index+m[0].length]);
+    const cells=[]; let start=0;
+    for(let i=0;i<t.length;i++){
+      if(t[i]==='|' && !spans.some(([a,b])=>a<i&&i<b)){cells.push(t.slice(start,i));start=i+1;}
+    }
+    cells.push(t.slice(start));
+    return cells.map(c=>c.trim());
   }
   function cell(c){
     const key=c.trim().toUpperCase();
