@@ -67,7 +67,7 @@ module.exports = {
     artifacts: ["decision_log", "test_adversary"],
     defers: [
       {phase: "communication", reason: "Ships behind the existing signup flag, so no deploy note goes out"},
-      {phase: "the_loop", reason: "Follow-up obligations ride the GROW-6688 cleanup ticket"}
+      {phase: "obligations", reason: "Follow-up obligations ride the GROW-6688 cleanup ticket"}
     ]
   }
 };

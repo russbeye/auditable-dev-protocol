@@ -39,7 +39,7 @@ PHASES = {
     "analysis",
     "synthesis",
     "communication",
-    "the_loop",
+    "obligations",
 }
 
 

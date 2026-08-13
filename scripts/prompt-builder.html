@@ -681,7 +681,7 @@
     requirements:[{id:"R1",statement:"A malformed email returns 422 and is not persisted",verify:"Integration test posts a bad address and asserts 422 plus no new row"}],
     defers:[
       {phase:"communication",reason:"Ships behind the existing signup flag, so no deploy note goes out"},
-      {phase:"the_loop",reason:"Follow-up obligations ride the GROW-6688 cleanup ticket"}
+      {phase:"obligations",reason:"Follow-up obligations ride the GROW-6688 cleanup ticket"}
     ]
   };
   $("#example").addEventListener("click", ()=>{

@@ -121,7 +121,7 @@ test("a defers-bearing import populates rows and stays out of the unknown-key re
   assert.equal(msg, "Imported all recognized fields.");
   assert.deepEqual(h.rows("defers"), [
     {phase: "communication", reason: "No deployment for a docs-only change"},
-    {phase: "the_loop", reason: "Ticketed in the follow-up task instead"}
+    {phase: "obligations", reason: "Ticketed in the follow-up task instead"}
   ]);
 });
 

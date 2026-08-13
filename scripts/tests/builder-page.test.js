@@ -79,7 +79,7 @@ test("loading the example fills the defers editor from the example document", as
   await h.click(h.$("#example"));
   assert.deepEqual(h.rows("defers"), [
     {phase: "communication", reason: "Ships behind the existing signup flag, so no deploy note goes out"},
-    {phase: "the_loop", reason: "Follow-up obligations ride the GROW-6688 cleanup ticket"}
+    {phase: "obligations", reason: "Follow-up obligations ride the GROW-6688 cleanup ticket"}
   ]);
   // The loaded example must serialize to the same bytes as its fixture twin,
   // which build-yaml.test.js pins to the golden.

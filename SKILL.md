@@ -89,7 +89,7 @@ Phase 5  Implementation     → Annotated Decision Log   (live — the spine)
 Phase 6  Analysis           → Test Adversary Document
 Phase 7  Synthesis          → Confidence-Weighted PR Summary
 Phase 8  Communication      → Deployment Risk Statement
-Phase 9  The Loop           → Obligation Ticket List
+Phase 9  Obligations        → Obligation Ticket List
 ```
 
 Each artifact feeds the next, and no artifact starts while the prior one has open items. The Decision
@@ -365,7 +365,7 @@ that entry's Monitoring signal, authored at the Pre-Mortem or on the entry itsel
 consumes signals, it does not invent them.
 ```
 
-## Phase 9: The Loop
+## Phase 9: Obligations
 
 **Do:** After deployment, review every OPEN or UNVALIDATED Decision Log assumption. Each one not
 resolved during implementation becomes an Obligation Ticket: a first-class work item that traces back
@@ -409,7 +409,7 @@ with a signal.
 | No hedged recommendations | Commit to a position. Options without a defense are a hedge and get sent back. |
 | No PR without a Test Adversary Document | Analysis completes before synthesis. |
 | No open HIGH-likelihood failure modes | The Pre-Mortem must show every HIGH item resolved before implementation starts. |
-| No open Decision Log entries without tickets | The loop closes the log. OPEN entries without tickets are protocol violations. |
+| No open Decision Log entries without tickets | The Obligations phase closes the log. OPEN entries without tickets are protocol violations. |
 
 ## Solo vs. team
 
