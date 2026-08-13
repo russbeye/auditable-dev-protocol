@@ -1,4 +1,4 @@
-/* Validator parity suite (PB-005-validator-parity). One fixture corpus, two
+/* Validator parity suite. One fixture corpus, two
    validators, zero tolerated drift.
 
    Every fixture under fixtures/parity/ is judged three ways. The manifest

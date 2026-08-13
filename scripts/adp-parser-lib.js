@@ -1,14 +1,14 @@
 /* adp-parser-lib.js — shared pure rendering logic for the ADP artifact
    viewer. The markdown renderer, the section splitter with its key dedupe,
-   and the decision-log card pipeline, extracted from ADP-Parser.html
-   (AV-007-parser-lib-extraction). Exposed as one namespace: the browser
-   global `ADPParserLib` via a plain <script> tag, or `module.exports` under
-   Node (`require("./adp-parser-lib.js")`). No dependencies, no build step. */
+   and the decision-log card pipeline, extracted from ADP-Parser.html.
+   Exposed as one namespace: the browser global `ADPParserLib` via a plain
+   <script> tag, or `module.exports` under Node
+   (`require("./adp-parser-lib.js")`). No dependencies, no build step. */
 (function(global){
   "use strict";
 
   /* =========================================================
-     DL-001  Hand-rolled markdown renderer (artifact subset)
+     Hand-rolled markdown renderer (artifact subset)
      ========================================================= */
   function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
   // esc leaves double quotes alone, which is fine for element content. A
@@ -204,7 +204,7 @@
   }
 
   /* =========================================================
-     DL-007  Decision Log "ledger card" rendering (the spine)
+     Decision Log "ledger card" rendering (the spine)
      ========================================================= */
   function parseDLFields(lines){
     const fields=[]; let cur=null;

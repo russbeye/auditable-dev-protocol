@@ -191,11 +191,11 @@ header.masthead{padding:34px 0 12px;border-bottom:1px solid var(--line)}
 }
 .paste-drawer textarea:focus{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
 
-/* ---------- document tabs (AV-010) ---------- */
+/* ---------- document tabs ---------- */
 /* The strip sits between the console head and the toolbar: the reader picks
    the document first, then the toolbar acts on it. It never wraps. Past the
-   viewport it scrolls on its own axis, which keeps the AV-002 rule that no
-   inner run may widen the page. */
+   viewport it scrolls on its own axis, which keeps the rule that no inner
+   run may widen the page. */
 .tabstrip{display:flex;align-items:center;gap:6px;padding:9px 14px;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:thin}
 .tabstrip[hidden]{display:none}
 .tab{display:inline-flex;align-items:center;gap:8px;padding:6px 8px 6px 11px;border:1px solid var(--line);background:var(--inset);color:var(--dim);font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;user-select:none;flex:0 0 auto;transition:.12s}
@@ -421,7 +421,7 @@ table.md-tbl tr:hover td{background:rgba(0,41,222,.03)}
 .p-bad{color:var(--bad);border-color:rgba(255,107,107,.4);background:rgba(255,107,107,.08)}
 .p-unk{color:var(--unk);border-color:rgba(172,148,250,.4);background:rgba(172,148,250,.08)}
 
-/* decision-log ledger cards (DL-007: spine rendering — Design B + A grid) */
+/* decision-log ledger cards (the spine) */
 .dl-cards{display:flex;flex-direction:column;gap:12px;margin-top:2px}
 .dl-card{border:1px solid var(--line-bright);border-left:3px solid var(--faint);background:var(--inset)}
 .dl-card.rail-ok{border-left-color:var(--ok)}
@@ -446,7 +446,7 @@ table.md-tbl tr:hover td{background:rgba(0,41,222,.03)}
 .dl-v code{font-size:12px}
 @media(max-width:560px){.dl-grid{grid-template-columns:minmax(0,1fr)}.dl-k{padding-bottom:2px}.dl-v{padding-top:2px}}
 
-/* decision-log audit strip (AV-008: status counts, click-to-filter) */
+/* decision-log audit strip (status counts, click-to-filter) */
 .dl-strip{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 14px}
 .dl-count{cursor:pointer;font-family:inherit;appearance:none;border-radius:0}
 .dl-count b{font-weight:700;margin-left:2px}

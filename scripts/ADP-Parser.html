@@ -101,7 +101,7 @@
   const {esc, escAttr, parseSections, sectionKeys, metaFor, renderMarkdown, renderDecisionLog, dlStatusCounts} = window.ADPParserLib;
 
   /* =========================================================
-     AV-010  Tabs: a tab object owns all per-document state
+     Tabs: a tab object owns all per-document state
      ========================================================= */
   /* Everything that used to be a per-document module global lives on the tab
      now, and the globals are gone rather than aliased. We did that on purpose.
@@ -318,7 +318,7 @@
   window.addEventListener('scroll',()=>{ if(spyTick)return; spyTick=true; requestAnimationFrame(()=>{scrollSpy();spyTick=false;}); },{passive:true});
 
   /* =========================================================
-     AV-010  Sources: one shared poll loop over every watchable tab
+     Sources: one shared poll loop over every watchable tab
      ========================================================= */
 
   /* The status pill's spoken twin. We reuse the lib's settle-then-compare
@@ -533,7 +533,7 @@
   });
 
   /* =========================================================
-     AV-010  The tab strip: one rebuild writer, tablist keys
+     The tab strip: one rebuild writer, tablist keys
      ========================================================= */
   /* Like render(), the strip has one writer that rebuilds the whole row and
      gives focus back afterwards, so a badge landing mid-keyboard-navigation
@@ -657,7 +657,7 @@
   }
 
   /* =========================================================
-     AV-010  Persistence: localStorage for state, IndexedDB for handles
+     Persistence: localStorage for state, IndexedDB for handles
      ========================================================= */
   /* The split follows the platform's seam. The tab list, the per-tab metadata,
      the last-seen text, the paste buffers, the collapse sets, the filters, and
@@ -756,8 +756,8 @@
   }
 
   // One writer moves the collapsed class, the collapsed set, and the button's
-  // aria-expanded together, the same rule PB-006 set for the builder. If you
-  // add collapse behavior, route it through here.
+  // aria-expanded together, the same rule the builder uses. If you add
+  // collapse behavior, route it through here.
   function setCollapsed(sec,on){
     sec.classList.toggle('collapsed',on);
     if(on) act.collapsed.add(sec.id); else act.collapsed.delete(sec.id);
@@ -948,7 +948,7 @@ Concurrency, exhaustive international address shapes, and the UNOBSERVABLES name
     toast('Example loaded');
   });
 
-  // theme switcher (DL-008)
+  // theme switcher
   const themeCb=$('#themetoggle'), themeIcon=$('#tt-icon');
   function syncThemeUI(){
     const t=document.documentElement.getAttribute('data-theme');
