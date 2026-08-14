@@ -113,6 +113,32 @@ test("UNKNOWN, UNOBSERVABLE, and PENDING pill free-standing, never inside words"
   }
 });
 
+test("MED pills like MEDIUM, and neither leaks into longer words", () => {
+  assert.equal(decorate("MED"), '<span class="pill p-med">MED</span>');
+  assert.equal(decorate("MEDIUM"), '<span class="pill p-med">MEDIUM</span>');
+  assert.equal(decorate("MEDIC"), "MEDIC");
+});
+
+test("a slash-joined keyword pair pills both words", () => {
+  assert.equal(decorate("VALIDATED/INVALIDATED"),
+    '<span class="pill p-ok">VALIDATED</span>/<span class="pill p-bad">INVALIDATED</span>');
+});
+
+test("a keyword inside a link href leaves the anchor untouched", () => {
+  const a = '<a href="https://example.com/HIGH" target="_blank" rel="noopener noreferrer">go</a>';
+  assert.equal(decorate(inline("[go](https://example.com/HIGH)")), a);
+});
+
+test("after a tag and inside double quotes a keyword stays plain", () => {
+  assert.equal(decorate("<strong>HIGH</strong>"), "<strong>HIGH</strong>");
+  assert.equal(decorate('"HIGH"'), '"HIGH"');
+});
+
+test("a MED table cell gets the whole-cell pill", () => {
+  const html = renderMarkdown("| P |\n|---|\n| MED |");
+  assert.ok(html.includes('<td><span class="pill p-med">MED</span></td>'));
+});
+
 // ---- table cell splitting ----
 
 test("a pipe inside a code span is cell content, not a boundary", () => {

@@ -51,17 +51,24 @@
     t = t.replace(/\u0000(\d+)\u0000/g,(m,i)=>`<code>${esc(codes[+i])}</code>`);
     return t;
   }
-  // We wrap free-standing status keywords in pills. This runs over HTML we
-  // already rendered, so the leading character class holds a match out of a
-  // tag or an attribute. The keywords are uppercase and our markup is not.
+  // We wrap free-standing status keywords in pills. The input is HTML we
+  // already rendered, so we lift each tag into a placeholder before the
+  // scan and restore it after. That keeps pills out of attribute text,
+  // where an href can carry a path segment like /HIGH. The guard leaves a
+  // keyword plain inside a word, directly after a tag, and inside double
+  // quotes. A slash is prose, so VALIDATED/INVALIDATED pills both words.
   function decorate(html){
-    return html.replace(/(^|[^A-Za-z0-9_>"\/])(INVALIDATED|VALIDATED|UNOBSERVABLE|UNKNOWN|PENDING|MEDIUM|HIGH|OPEN|LOW)\b/g,
+    const tags=[];
+    let t = html.replace(/<[^>]*>/g,m=>{tags.push(m);return '\u0000'+(tags.length-1)+'\u0000';});
+    t = t.replace(/(^|[^A-Za-z0-9_"\u0000])(INVALIDATED|VALIDATED|UNOBSERVABLE|UNKNOWN|PENDING|MEDIUM|MED|HIGH|OPEN|LOW)\b/g,
       (m,pre,w)=>pre+`<span class="pill ${TOK[w]}">${w}</span>`);
+    return t.replace(/\u0000(\d+)\u0000/g,(m,i)=>tags[+i]);
   }
   // UNKNOWN and UNOBSERVABLE both mean the observability is absent, so they
   // share one hue. PENDING is a promised mitigation that has not landed, which
-  // is outstanding work, so it reads amber the way OPEN does.
-  const TOK={HIGH:'p-high',MEDIUM:'p-med',LOW:'p-low','H':'p-high','M':'p-med','L':'p-low',
+  // is outstanding work, so it reads amber the way OPEN does. The corpus
+  // abbreviates MEDIUM to MED, so both spell the same hue.
+  const TOK={HIGH:'p-high',MEDIUM:'p-med',MED:'p-med',LOW:'p-low','H':'p-high','M':'p-med','L':'p-low',
              OPEN:'p-open',VALIDATED:'p-ok',INVALIDATED:'p-bad',YES:'p-ok',NO:'p-bad','N/A':'p-low',
              UNKNOWN:'p-unk',UNOBSERVABLE:'p-unk',PENDING:'p-open'};
 
