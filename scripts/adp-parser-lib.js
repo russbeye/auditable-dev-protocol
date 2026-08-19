@@ -122,12 +122,18 @@
 
   function renderList(lines,start){
     let i=start; const ordered=/^\s*\d+\.\s/.test(lines[i]); const items=[];
+    const startNum=ordered?parseInt(lines[start].match(/^\s*(\d+)\./)[1],10):1;
     while(i<lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])){
       let content=lines[i].replace(/^\s*([-*+]|\d+\.)\s+/,''); i++;
       while(i<lines.length && /^\s{2,}\S/.test(lines[i]) && !/^\s*([-*+]|\d+\.)\s+/.test(lines[i])){
         content+=' '+lines[i].trim(); i++;
       }
       items.push(content);
+      // A blank line inside a list separates items, the way authors write
+      // multi-sentence lists. We continue past the blanks only into an item
+      // of the same kind, because a kind change or prose starts a new block.
+      let j=i; while(j<lines.length && /^\s*$/.test(lines[j])) j++;
+      if(j>i && j<lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[j]) && /^\s*\d+\.\s/.test(lines[j])===ordered) i=j;
     }
     const lis=items.map(c=>{
       const cb=c.match(/^\[([ xX])\]\s+([\s\S]*)$/);
@@ -135,7 +141,11 @@
         return `<li class="task"><span class="cbx ${on?'on':''}">${on?'✓':''}</span><span>${decorate(inline(cb[2]))}</span></li>`;}
       return `<li>${decorate(inline(c))}</li>`;
     }).join('');
-    return {html:`<${ordered?'ol':'ul'} class="md-list">${lis}</${ordered?'ol':'ul'}>`,next:i};
+    // The theme numbers items with a CSS counter, not native markers, so a
+    // start attribute would do nothing. An inline reset is the one override
+    // the counter honors, and only a list that opens past 1 needs it.
+    const startStyle=startNum>1?` style="counter-reset:li ${startNum-1}"`:'';
+    return {html:`<${ordered?'ol':'ul'} class="md-list"${startStyle}>${lis}</${ordered?'ol':'ul'}>`,next:i};
   }
 
   function subHead(s){

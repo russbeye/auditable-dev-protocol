@@ -186,6 +186,66 @@ test("a literal NUL inside a table code span survives the split byte-for-byte", 
   assert.ok(html.includes("<code>\u0000</code>"));
 });
 
+// ---- list grouping (loose lists stay one list) ----
+
+test("a loose ordered list renders as one ol, so markers count 1..N", () => {
+  const html = renderMarkdown("1. a\n\n2. b\n\n3. c");
+  assert.equal((html.match(/<ol/g) || []).length, 1);
+  assert.equal((html.match(/<li>/g) || []).length, 3);
+});
+
+test("an all-1 loose ordered list is one ol with no counter override", () => {
+  const html = renderMarkdown("1. a\n\n1. b\n\n1. c");
+  assert.equal((html.match(/<ol/g) || []).length, 1);
+  assert.equal((html.match(/<li>/g) || []).length, 3);
+  assert.ok(!html.includes("counter-reset"));
+});
+
+test("a loose bulleted list renders as one ul", () => {
+  const html = renderMarkdown("- a\n\n- b");
+  assert.equal((html.match(/<ul/g) || []).length, 1);
+  assert.equal((html.match(/<li>/g) || []).length, 2);
+});
+
+test("a blank line before prose still ends the list", () => {
+  const html = renderMarkdown("1. a\n\nprose");
+  assert.equal((html.match(/<ol/g) || []).length, 1);
+  assert.ok(html.includes("<p>prose</p>"));
+});
+
+test("a blank line before an item of the other kind starts a new list", () => {
+  const html = renderMarkdown("1. a\n\n- b");
+  assert.equal((html.match(/<ol/g) || []).length, 1);
+  assert.equal((html.match(/<ul/g) || []).length, 1);
+});
+
+test("an ordered list opening past 1 carries its start into the counter", () => {
+  const html = renderMarkdown("5. c\n6. d");
+  assert.ok(html.includes('<ol class="md-list" style="counter-reset:li 4">'));
+});
+
+test("a continuation line still joins its item across the loose gap", () => {
+  const html = renderMarkdown("1. a\n   more a\n\n2. b");
+  assert.equal((html.match(/<ol/g) || []).length, 1);
+  assert.ok(html.includes("<li>a more a</li>"));
+});
+
+test("a loose checkbox list keeps per-item task markup in one list", () => {
+  const html = renderMarkdown("- [x] done\n\n- [ ] open");
+  assert.equal((html.match(/<ul/g) || []).length, 1);
+  assert.equal((html.match(/class="task"/g) || []).length, 2);
+});
+
+test("a tight mixed-kind run stays one list, as shipped", () => {
+  // CommonMark starts a new list when the marker kind changes. This renderer
+  // glues consecutive items into one list on purpose, so the kind decides
+  // continuation only across a blank gap.
+  const html = renderMarkdown("- a\n1. b");
+  assert.equal((html.match(/<ul/g) || []).length, 1);
+  assert.equal((html.match(/<ol/g) || []).length, 0);
+  assert.equal((html.match(/<li>/g) || []).length, 2);
+});
+
 // ---- decision-log cards (the chip rule, pinned here post-extraction) ----
 
 test("dlChipSplit takes the first word and returns the rest as the tail", () => {
