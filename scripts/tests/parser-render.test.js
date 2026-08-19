@@ -237,9 +237,9 @@ test("a loose checkbox list keeps per-item task markup in one list", () => {
 });
 
 test("a tight mixed-kind run stays one list, as shipped", () => {
-  // The AV-007 rule pins shipped behavior. Splitting a tight run on a kind
-  // change is CommonMark-correct, but it is a behavior change and needs its
-  // own ticket. Only a blank gap checks the kind.
+  // CommonMark starts a new list when the marker kind changes. This renderer
+  // glues consecutive items into one list on purpose, so the kind decides
+  // continuation only across a blank gap.
   const html = renderMarkdown("- a\n1. b");
   assert.equal((html.match(/<ul/g) || []).length, 1);
   assert.equal((html.match(/<ol/g) || []).length, 0);

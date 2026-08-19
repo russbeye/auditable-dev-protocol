@@ -130,10 +130,8 @@
       }
       items.push(content);
       // A blank line inside a list separates items, the way authors write
-      // multi-sentence lists. We look past the blanks and continue only when
-      // the next item is the same kind, because a kind change or prose starts
-      // a new block. Splitting instead would restart the ordered-marker
-      // counter, so every item of a loose list would show the marker 1.
+      // multi-sentence lists. We continue past the blanks only into an item
+      // of the same kind, because a kind change or prose starts a new block.
       let j=i; while(j<lines.length && /^\s*$/.test(lines[j])) j++;
       if(j>i && j<lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[j]) && /^\s*\d+\.\s/.test(lines[j])===ordered) i=j;
     }
