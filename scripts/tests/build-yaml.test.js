@@ -80,3 +80,36 @@ test("protocol booleans are emitted bare and artifacts as a list", () => {
   assert.ok(y.includes("  apply: false"));
   assert.ok(y.includes("  artifacts:\n    - decision_log\n    - test_adversary"));
 });
+
+test("raw parsed documents serialize without the builder's fill", () => {
+  // buildYaml fills toward the blank shape itself, so a document straight
+  // from parseYAML must serialize whether or not its optional groups exist.
+  const docs = [
+    "",
+    'schema_version: "1.0"\ntask:\n  id: "T-1"\n',
+    readFixture("parity/valid/minimal.yaml"),
+    readFixture("parity/valid/hand-written-linkless.yaml"),
+  ];
+  for (const text of docs){
+    const y = buildYaml(lib.parseYAML(text));
+    assert.equal(typeof y, "string");
+    assert.ok(y.endsWith("\n"));
+  }
+});
+
+test("wrong-typed artifacts and empty defers items serialize instead of throwing", () => {
+  // The fill leaves both values alone for validate() to judge, so the
+  // serializer itself must skip what it cannot emit.
+  const text = [
+    'schema_version: "1.0"',
+    "protocol:",
+    "  apply: true",
+    '  artifacts: "not-a-list"',
+    "  defers:",
+    "    -",
+    "",
+  ].join("\n");
+  const y = buildYaml(lib.parseYAML(text));
+  assert.ok(!y.includes("artifacts:"));
+  assert.ok(!y.includes("defers:"));
+});

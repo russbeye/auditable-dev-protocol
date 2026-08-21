@@ -1,0 +1,159 @@
+---
+schema_version: "1.0"
+
+task:
+  id: "20260820-MC001-mission-control-shell"
+  title: "Mission control: one shell for the audit corpus, viewer, and builder"
+  author: "rbeye"
+  date: "2026-08-20"
+
+preamble: |
+  Umbrella ticket for the mission-control refactor. Work lands as one staged PR per build stage
+  from the background's ordered list; each stage opens its own decision-log entries under this
+  one audit log. The approved mockup in references/ is the acceptance reference throughout.
+
+role:
+  lens: "Senior front-end architect accountable for a read-only audit-trail dashboard that stays vanilla, pinned by tests, and identical over adp-serve and GitHub Pages"
+  priorities:
+    - "Derivations are pure functions over the index, tested in Node without a browser"
+    - "The shell consumes adp-parser-lib and adp-prompt-lib unchanged; one renderer, one validator"
+    - "No build step and no dependencies; the PR diff is the shipped artifact"
+    - "The standalone viewer and builder keep working untouched until the shell reaches parity"
+
+prompt: |
+  Build the ADP mission control: a single-page shell that presents the .adp/ corpus as an
+  audit-trail dashboard and absorbs the viewer and builder as screens. The approved interactive
+  mockup at references/adp-mission-control-v7.html is the design source of truth — its embedded
+  INDEX object is the draft of the data contract, and it already renders real audit logs through
+  the real adp-parser-lib, so every screen below has a working reference implementation.
+
+  The shell reads one artifact, data/index.json (schema adp-index/1), built from .adp/** by a
+  Node index builder. Offline, adp-serve.py rebuilds it from the working tree on request; online,
+  GitHub Pages ships the builder/viewer/dashboard as a showcase with a checked-in demo snapshot.
+  Same fetch path both ways.
+
+  Screens: a collapsible rail ordered needs-attention first (reason vocabulary in fixed priority,
+  top two shown plus overflow count); an inspector with prev/dropdown/next section navigation in
+  audit-log order, a document pane rendered by adp-parser-lib, phase-scoped relational tables
+  (a phase shows the decisions and watches its section cites, items link back to citing phases),
+  and viewer file operations (open-and-watch, paste, drag-drop — opened documents join the rail
+  unindexed); a corpus-wide watchboard; assumption and obligation ledgers; a calibration screen
+  over decision outcomes by stated confidence; deterministic resume packs loaded from the skill's
+  packs/ directory; and a New Task builder screen with full prompt-builder field parity. Hash
+  deep links (#t=…&ph=…&item=…) address any view.
+
+  Work the staged order from the background — contract first, index builder second, screens
+  after — each stage an independently shippable PR with its own tests.
+
+constraints:
+  out_of_scope:
+    - "Framework adoption; the recorded escape hatch (vendored Preact+htm) has trigger conditions that have not fired"
+    - "Headless or API-driven Claude integration; the dashboard is read-only and packs are copy-paste"
+    - "Deleting or modifying the standalone viewer and builder pages"
+    - "Codifying non-canonical section order in the contract; that is its own ticket"
+    - "A GitHub Actions index build; the online snapshot is checked in by hand"
+  must_not:
+    - "Break any existing test; the golden fixtures stay byte-identical"
+    - "Introduce a build step, bundler, or external dependency"
+    - "Filter or drop non-canonical phases, sections, or statuses; they pass through verbatim with markers"
+    - "Admit relative watch windows into the new contract; a watch records an absolute due date at creation"
+
+context:
+  background: |
+    Corpus facts the contract freeze must honor. A ticket is one audit-log.md plus prompt.yaml;
+    the nine artifacts are H2 sections inside it, mapping 1:1 to phases. Lifecycle state (shipped,
+    PR merged) exists today only as prose, so the contract adds a declared front-matter block and
+    the index builder infers from section presence on legacy logs, labeling which ("declared" vs
+    "inferred"). Real watch windows are relative ("60 days after merge") with no machine-readable
+    merge date — the watchboard cannot exist until due dates are absolute. Real logs title
+    sections both by artifact name and as "Phase N: <name>"; the contract enumerates accepted
+    heading aliases. Confidence vocabulary is HIGH/MEDIUM/LOW with MED as an accepted alias.
+    Sections cite decisions and watches by id token (DL-NNN, OT-…), which is what makes the
+    relational refs harvestable.
+
+    Ticket directories adopt yyyymmdd-TASKID-slug with the task-id dash collapsed (MC001, not
+    MC-001) so splitting on "-" is deterministic: date, id, slug. Legacy names parse via
+    fallback. This ticket's own directory is the first use.
+
+    Staged build order settled in design review: (1) contract ADR + adp-index/1 spec with
+    valid/invalid fixtures, (2) index builder as a pure Node consumer of adp-parser-lib plus an
+    adp-serve.py route, (3) shell chrome extraction shared with the standalones, (4) rail and
+    inspector, (5) watchboard, (6) ledgers, (7) resume packs, (8) calibration, (9) builder
+    screen. The mockup carries staged demo states for every derived condition: overdue and
+    unanchored watches, missing sections, unwatched open decisions, non-canonical sections,
+    duplicate-phase demotion.
+  references:
+    - path: ".adp/20260820-MC001-mission-control-shell/references/adp-mission-control-v7.html"
+      note: "The approved mockup: design source of truth, draft contract, and reference implementation; embeds adp-parser-lib verbatim"
+    - path: "scripts/adp-parser-lib.js"
+      note: "The renderer and section splitter the shell consumes unchanged; parseSections/renderMarkdown/renderDecisionLog"
+    - path: "scripts/adp-prompt-lib.js"
+      note: "parseYAML/buildYaml/validate for the builder screen; the round-trip and parity suites pin it"
+    - path: "scripts/adp-serve.py"
+      note: "Grows the /data/index.json route that rebuilds from the working tree"
+    - path: "scripts/adp-theme.css"
+      note: "The custom properties and light/dark palettes the shell inherits; theme persists under the shared adp-theme key"
+    - path: "scripts/tests/builder-harness.js"
+      note: "The whole-IIFE vm harness pattern for page event paths; the shell's page tests follow it"
+    - path: "prompts/prompt-template.yaml"
+      note: "The nine observability fields (ADP-014) the contract's status surface builds on"
+
+lessons_learned:
+  - context: "AV-007 and PB-002 extracted the libs so pages stayed thin; the mockup then consumed adp-parser-lib with zero changes"
+    takeaway: "Build the index builder as another lib consumer, not a second parser; section splitting already has one owner"
+  - context: "Mockup handlers attached with direct onclick died silently whenever a re-render replaced the element"
+    takeaway: "Every dynamic control goes through event delegation from day one"
+  - context: "The linear phase strip looked right on staged demo data and collapsed into a wall of boxes on the first real sixty-section log"
+    takeaway: "Exercise every screen against the real corpus before calling it done; staged fixtures flatter the design"
+
+output:
+  format: "code"
+  destination: "New shell page plus its libs under scripts/; contract spec and fixtures; adp-serve.py route; standalone pages untouched"
+  structure: |
+    One PR per build stage, smallest first, each green on its own. The contract ADR and spec land
+    before any consumer. The index builder ships with golden fixtures (real corpus in, expected
+    JSON out) exercised by both the serve route and the checked-in showcase snapshot. Shell
+    screens land with vm-harness page tests plus pure derivation tests. The mockup file is the
+    acceptance reference for layout and interaction, not a source file to import from.
+
+requirements:
+  - id: "R1"
+    statement: "The adp-index/1 contract is specified with valid and invalid fixtures, covering declared and inferred lifecycle, heading aliases, absolute watch dates, and non-canonical passthrough"
+    verify: "A contract test suite in scripts/tests/ runs the fixtures and is green; invalid fixtures each name the violated rule"
+  - id: "R2"
+    statement: "The index builder emits schema-valid index.json from .adp/**, handling legacy-named and new-convention directories"
+    verify: "Golden fixture test: the repo's own .adp/ in, expected JSON out, byte-compared"
+  - id: "R3"
+    statement: "adp-serve.py serves /data/index.json rebuilt from the working tree on each request"
+    verify: "Integration test or documented curl check: response parses and passes the contract suite"
+  - id: "R4"
+    statement: "The shell renders rail, inspector, and section navigation from index.json, with section bodies rendered by adp-parser-lib"
+    verify: "vm-harness page test in the builder-harness pattern drives selection and asserts rendered output"
+  - id: "R5"
+    statement: "The watchboard lists every open watch corpus-wide, overdue first, with unanchored watches flagged rather than dated"
+    verify: "Derivation unit test over a staged index fixture with overdue, upcoming, and unanchored watches"
+  - id: "R6"
+    statement: "Resume packs load from packs/*.pack.md and fill deterministically — same index in, same bytes out"
+    verify: "Golden pack fixtures byte-compare filled output for each shipped pack"
+  - id: "R7"
+    statement: "Hash deep links restore ticket, section, and item selection with the item highlighted"
+    verify: "vm-harness test sets location.hash before init and asserts the landed view"
+  - id: "R8"
+    statement: "Every existing suite still passes and the standalone pages are byte-identical"
+    verify: "node --test scripts/tests/*.test.js green; git diff shows no change to ADP-Parser.html or prompt-builder.html"
+
+protocol:
+  apply: true
+  stake_single_recommendation: true
+  log_assumptions: true
+  flag_low_confidence: true
+  artifacts:
+    - problem_statement
+    - knowledge_gap
+    - recommendation_brief
+    - premortem
+    - decision_log
+    - test_adversary
+    - pr_summary
+    - deployment_risk
+    - obligation_tickets

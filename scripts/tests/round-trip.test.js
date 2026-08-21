@@ -64,6 +64,15 @@ test("a defers-bearing document round-trips to a byte fixpoint once normalized",
   assert.deepEqual(parseYAML(y1).protocol.defers, doc.protocol.defers);
 });
 
+test("a hand-written linkless document validates clean and round-trips clean", () => {
+  const doc = parseYAML(readFixture("parity/valid/hand-written-linkless.yaml"));
+  assert.deepEqual(lib.validate(doc), []);
+  const y1 = buildYaml(doc);
+  const reparsed = parseYAML(y1);
+  assert.deepEqual(lib.validate(reparsed), []);
+  assert.equal(buildYaml(reparsed), y1);
+});
+
 // The importer names a defers block it cannot map, but naming a drop still
 // loses the data. This drives the real page through the vm harness and pins
 // the full contract: import, form state, and re-export in canonical bytes.

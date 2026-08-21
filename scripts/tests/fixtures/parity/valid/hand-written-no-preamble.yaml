@@ -1,0 +1,124 @@
+---
+schema_version: "1.0"
+
+task:
+  id: "AV-014-loose-list-numbering"
+  title: "Loose lists stay one list, so ordered markers count 1..N"
+  author: "rbeye"
+  date: "2026-08-18"
+
+role:
+  lens: "Renderer engineer accountable for markdown list semantics matching what an author meant"
+  priorities:
+    - "A numbered list reads 1..N in the viewer no matter how the author spaced or numbered it"
+    - "Renderer changes land with a pinned test (the AV-007 rule)"
+    - "No behavior change outside list grouping and ordered-marker numbering"
+
+prompt: |
+  Fix the viewer so an ordered list whose items are separated by blank lines numbers 1..N instead
+  of repeating 1. In issue #12's screenshot, the Problem Statement's four numbered findings each
+  render the boxed marker "1", because renderList() in scripts/adp-parser-lib.js stops collecting
+  items at the first blank line. A loose list (blank lines between items — valid CommonMark, and
+  the natural way to write multi-sentence items) splits into one single-item <ol> per item, and
+  the CSS marker counter (.md ol.md-list resets counter li per <ol>) restarts at 1 each time.
+
+  Make renderList treat a blank line as an item separator, not a list terminator, when the next
+  non-blank line is another item of the same kind (ordered with ordered, bulleted with bulleted).
+  A blank line followed by anything else — prose, a heading, an item of the other kind — still
+  ends the list, so surrounding paragraphs keep their current shape.
+
+  Also carry a non-1 first number into the markers: a list that opens at "5." renders 5..N, via an
+  inline counter-reset on the <ol>. This is the same bug seen from the other side — an author who
+  continues a numbered list after an interrupting paragraph gets "1" today.
+
+constraints:
+  out_of_scope:
+    - "Nested list structure; the renderer flattens indented items today and keeps doing so"
+    - "Multi-paragraph list items (a blank line then indented prose inside one item)"
+    - "The unordered marker glyph and all other markdown block types"
+  must_not:
+    - "Change the rendered output of any tight list (no blank lines), the golden fixture included"
+    - "Renumber by literal source digits; after the first item, numbering auto-increments as CommonMark does"
+
+context:
+  background: |
+    Since AV-007 the renderer lives in adp-parser-lib.js with a pinned suite; ADP-Parser.html
+    loads it via script tag, so there is one renderList() to fix. Markers are not native list
+    markers: adp-theme.css hides list-style and draws a ::before box from a CSS counter that
+    counter-reset:li starts at zero on every <ol class="md-list">. That is why the HTML start
+    attribute alone cannot fix numbering here — the counter, not the browser, numbers the items.
+    An inline style="counter-reset:li N-1" on the <ol> overrides the class rule and is the one
+    mechanism the existing CSS honors without a stylesheet change.
+
+    The golden fixture (scripts/tests/fixtures/viewer-example.js) contains no loose lists, so the
+    byte-identical golden test must pass unchanged. Line references are as of 2026-08-18; trust
+    the notes over the numbers.
+  references:
+    - path: "scripts/adp-parser-lib.js"
+      lines: "123-139"
+      note: "renderList() - the while loop that ends at the first blank line"
+    - path: "scripts/adp-parser-lib.js"
+      lines: "147-175"
+      note: "renderMarkdown() - the block loop that skips blank lines and re-enters renderList"
+    - path: "scripts/adp-theme.css"
+      lines: "392-397"
+      note: "the md-list counter: counter-reset:li per <ol>, ::before draws counter(li)"
+    - path: "scripts/tests/parser-render.test.js"
+      note: "Where the pinning tests land"
+    - path: "scripts/tests/parser-golden.test.js"
+      note: "The EXAMPLE fixpoint that must stay byte-identical"
+  links:
+    - "https://github.com/russbeye/auditable-dev-protocol/issues/12"
+
+lessons_learned:
+  - context: "AV-007 extracted the renderer so every change to it could be pinned"
+    takeaway: "A renderer fix without a test is half a fix; the new list grouping gets its own cases"
+  - context: "AV-013 fixed decorate() by reusing inline()'s one lift idiom instead of adding guards"
+    takeaway: "Fix the grouping rule in the one place that owns it; do not patch numbering downstream in CSS or per-item"
+
+output:
+  format: "code"
+  destination: "Edit scripts/adp-parser-lib.js in place; add cases to scripts/tests/parser-render.test.js"
+  structure: |
+    renderList() gains a blank-line lookahead: after each item (and its continuation lines), skip
+    blank lines and keep collecting only when the next non-blank line is an item of the same kind.
+    Ordered lists whose first number is not 1 emit style="counter-reset:li N-1" on the <ol>. New
+    tests cover: a loose ordered list as one <ol>, an all-"1." loose list, a loose bulleted list
+    as one <ul>, a kind change across a blank line splitting into two lists, prose after a blank
+    line ending the list, a non-1 start carrying into the counter, and tight lists unchanged.
+
+requirements:
+  - id: "R1"
+    statement: "A loose ordered list renders as one <ol class=\"md-list\"> with one <li> per item"
+    verify: "New parser-render.test.js case: renderMarkdown('1. a\\n\\n2. b\\n\\n3. c') contains exactly one <ol and three <li>"
+  - id: "R2"
+    statement: "An ordered list written with every marker as \"1.\" still yields one <ol>, so markers count 1..N"
+    verify: "New case: renderMarkdown('1. a\\n\\n1. b\\n\\n1. c') contains exactly one <ol and three <li>, no counter-reset override"
+  - id: "R3"
+    statement: "A loose bulleted list renders as one <ul>"
+    verify: "New case: renderMarkdown('- a\\n\\n- b') contains exactly one <ul and two <li>"
+  - id: "R4"
+    statement: "A blank line still ends the list when what follows is prose or an item of the other kind"
+    verify: "New cases: '1. a\\n\\nprose' yields one <ol> then one <p>; '1. a\\n\\n- b' yields one <ol> and one <ul>"
+  - id: "R5"
+    statement: "An ordered list opening at a number other than 1 carries that start into the markers"
+    verify: "New case: renderMarkdown('5. c\\n6. d') renders <ol class=\"md-list\" style=\"counter-reset:li 4\">"
+  - id: "R6"
+    statement: "Nothing else in the renderer moves"
+    verify: "node --test scripts/tests/*.test.js is green, including the parser golden fixpoint"
+
+protocol:
+  apply: true
+  stake_single_recommendation: true
+  log_assumptions: true
+  flag_low_confidence: true
+  artifacts:
+    - problem_statement
+    - knowledge_gap
+    - recommendation_brief
+    - premortem
+    - decision_log
+    - test_adversary
+    - pr_summary
+    - deployment_risk
+    - obligation_tickets

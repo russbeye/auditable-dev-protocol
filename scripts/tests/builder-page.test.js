@@ -104,6 +104,16 @@ test("the editor adds no live region and keeps a real add button", () => {
   assert.match(html, /<button class="add" data-add="defers">\+ add deferral<\/button>/);
 });
 
+test("the page's blank state matches the lib's blank document", async () => {
+  const h = bootBuilder();
+  // The seeded date is the page's one deliberate non-blank default. We clear
+  // it so the export shows only the shape both sides share.
+  h.$("#t_date").value = "";
+  h.fireInput(h.$("#t_date"));
+  const y = await h.exportYaml();
+  assert.equal(y, lib.buildYaml(lib.blankDocument()));
+});
+
 test("every unmet check row prints its key and the fixed word required", async () => {
   const h = bootBuilder();
   await h.addRow("defers");
