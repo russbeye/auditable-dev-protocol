@@ -114,6 +114,67 @@ test("the page's blank state matches the lib's blank document", async () => {
   assert.equal(y, lib.buildYaml(lib.blankDocument()));
 });
 
+/* The badge validates the export image of the form, and these pins hold the
+   canonical states to their exact issue keys. issueKeys() reads the panel in
+   document order, so a reordered emission fails the same pin. */
+
+const BLANK_KEYS = ["task.id", "task.title", "task.author", "prompt",
+  "output.format", "output.destination", "requirements"];
+
+test("the blank form pins its exact issue keys", () => {
+  const h = bootBuilder();
+  assert.deepEqual(h.issueKeys(), BLANK_KEYS);
+});
+
+test("a blank form plus one defers row pins its exact issue keys", async () => {
+  const h = bootBuilder();
+  await h.addRow("defers");
+  assert.deepEqual(h.issueKeys(),
+    BLANK_KEYS.concat(["protocol.defers[0].phase", "protocol.defers[0].reason"]));
+});
+
+test("the loaded example pins a VALID badge with no issues", async () => {
+  const h = bootBuilder();
+  await h.click(h.$("#example"));
+  assert.deepEqual(h.issueKeys(), []);
+  assert.equal(h.$("#status-txt").textContent, "VALID");
+});
+
+test("a priorities row without a lens adds exactly the role.lens issue", async () => {
+  const h = bootBuilder();
+  await h.addRow("priorities");
+  const inp = h.listEls("priorities")[0].querySelector("input");
+  inp.value = "ship it";
+  h.fireInput(inp);
+  assert.deepEqual(h.issueKeys(), ["task.id", "task.title", "task.author",
+    "role.lens", "prompt", "output.format", "output.destination", "requirements"]);
+});
+
+test("an all-empty lessons row keeps a later flagged row on its own index", async () => {
+  const h = bootBuilder();
+  await h.addRow("lessons_learned");
+  await h.addRow("lessons_learned");
+  const ctx = h.listEls("lessons_learned")[1].querySelector('[data-field="context"]');
+  ctx.value = "only context";
+  h.fireInput(ctx);
+  const keys = h.issueKeys();
+  assert.ok(keys.includes("lessons_learned[1]"));
+  assert.ok(!keys.includes("lessons_learned[0]"));
+});
+
+test("an all-empty requirement row before a partial one keeps the filtered index", async () => {
+  const h = bootBuilder();
+  await h.addRow("requirements");
+  await h.addRow("requirements");
+  const rid = h.listEls("requirements")[1].querySelector('[data-field="id"]');
+  rid.value = "R9";
+  h.fireInput(rid);
+  const keys = h.issueKeys();
+  assert.ok(keys.includes("requirements[0].statement"));
+  assert.ok(keys.includes("requirements[0].verify"));
+  assert.ok(!keys.includes("requirements"));
+});
+
 test("every unmet check row prints its key and the fixed word required", async () => {
   const h = bootBuilder();
   await h.addRow("defers");

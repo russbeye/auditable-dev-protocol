@@ -1,0 +1,16 @@
+schema_version: "1.0"
+
+task:
+
+output:
+
+requirements:
+
+protocol:
+  apply: true
+  stake_single_recommendation: true
+  log_assumptions: true
+  flag_low_confidence: true
+  artifacts:
+    - decision_log
+    - test_adversary
