@@ -26,35 +26,9 @@ function readReference(name){
   return fs.readFileSync(path.join(__dirname, "..", "..", "references", name), "utf8");
 }
 
-// buildYaml expects the full state shape the builder's gather() produces, and
-// it throws on a parsed document that omits an optional group. We fill the
-// builder's default empty state first, mirroring what applyPromptData in
-// prompt-builder.html guarantees. protocol.defers stays optional even here,
-// because gather() adds that key only when the defers editor holds rows, and
-// the Object.assign below carries a parsed one through untouched. If that
-// contract moves, move this with it.
-function normalize(doc){
-  const d = doc || {};
-  return {
-    schema_version: "1.0",
-    task: Object.assign({id: "", title: "", author: "", date: ""}, d.task),
-    preamble: d.preamble || "",
-    role: Object.assign({lens: "", priorities: []}, d.role),
-    prompt: d.prompt || "",
-    constraints: Object.assign({out_of_scope: [], must_not: []}, d.constraints),
-    context: Object.assign({background: "", references: [], links: []}, d.context),
-    lessons_learned: Array.isArray(d.lessons_learned) ? d.lessons_learned : [],
-    output: Object.assign({format: "", destination: "", structure: ""}, d.output),
-    requirements: Array.isArray(d.requirements) ? d.requirements : [],
-    protocol: Object.assign({
-      apply: true,
-      stake_single_recommendation: true,
-      log_assumptions: true,
-      flag_low_confidence: true,
-      artifacts: lib.DEFAULT_ARTIFACTS.slice()
-    }, d.protocol)
-  };
-}
+// The lib owns the blank document shape and the fill toward it. We re-export
+// normalize so the suites keep one import site for it.
+const normalize = lib.normalize;
 
 /* We compose the viewer golden the same way render() in ADP-Parser.html
    routes sections, minus the DOM. Each section becomes a marker comment with

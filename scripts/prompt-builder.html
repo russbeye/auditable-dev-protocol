@@ -401,7 +401,15 @@
   const $ = (s,r=document)=>r.querySelector(s);
   const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
 
-  const {ARTIFACTS, FORMATS, DEFAULT_ARTIFACTS, PHASES, parseYAML, buildYaml, validate, createStatusAnnouncer} = window.ADPPromptLib;
+  const {ARTIFACTS, FORMATS, PHASES, parseYAML, buildYaml, validate, blankDocument, createStatusAnnouncer} = window.ADPPromptLib;
+
+  // The lib's blank document is the one authority on defaults. Every reset
+  // path below reads this instead of keeping its own copy, so the page and
+  // the lib cannot drift on what a blank form means.
+  const BLANK = blankDocument();
+  // Each protocol switch paired with its checkbox, so the reset paths and the
+  // import path walk the same list.
+  const PROTO_SWITCHES = [["apply","#p_apply"],["stake_single_recommendation","#p_stake"],["log_assumptions","#p_log"],["flag_low_confidence","#p_flag"]];
 
   // ---- row factories ----
   function simpleRow(name, placeholder, value){
@@ -502,7 +510,7 @@
     const wrap=$("#artifacts");
     ARTIFACTS.forEach(a=>{
       const lab=document.createElement("label"); lab.className="chip";
-      lab.innerHTML=`<input type="checkbox" value="${a}" ${DEFAULT_ARTIFACTS.includes(a)?"checked":""}><span class="box">${a}</span>`;
+      lab.innerHTML=`<input type="checkbox" value="${a}" ${BLANK.protocol.artifacts.includes(a)?"checked":""}><span class="box">${a}</span>`;
       wrap.appendChild(lab);
     });
   }
@@ -514,43 +522,37 @@
   function val(sel){ const el=$(sel); return el?el.value.trim():""; }
 
   function gather(){
-    const priorities = listOf("priorities").map(r=>rowVal(r)).filter(Boolean);
-    const out_of_scope = listOf("out_of_scope").map(r=>rowVal(r)).filter(Boolean);
-    const must_not = listOf("must_not").map(r=>rowVal(r)).filter(Boolean);
-    const links = listOf("links").map(r=>rowVal(r)).filter(Boolean);
-    const references = listOf("references").map(r=>({path:rowVal(r,"path"),lines:rowVal(r,"lines"),note:rowVal(r,"note")}));
-    const lessons = listOf("lessons_learned").map(r=>({context:rowVal(r,"context"),takeaway:rowVal(r,"takeaway")}));
-    const requirements = listOf("requirements").map(r=>({id:rowVal(r,"id"),statement:rowVal(r,"statement"),verify:rowVal(r,"verify")}));
-    const artifacts = $$("#artifacts input:checked").map(i=>i.value);
+    // We start from the lib's blank document and write the form over it, so
+    // the document shape has one owner and the form only supplies values.
+    // The factory's schema_version rides along: the builder only writes 1.0
+    // documents, and validate() checks the version so an imported foreign
+    // version cannot show a VALID badge.
+    const d = blankDocument();
+    d.task={id:val("#t_id"),title:val("#t_title"),author:val("#t_author"),date:val("#t_date")};
+    d.preamble=val("#preamble");
+    d.role={lens:val("#r_lens"),priorities:listOf("priorities").map(r=>rowVal(r)).filter(Boolean)};
+    d.prompt=val("#prompt");
+    d.constraints={
+      out_of_scope:listOf("out_of_scope").map(r=>rowVal(r)).filter(Boolean),
+      must_not:listOf("must_not").map(r=>rowVal(r)).filter(Boolean)
+    };
+    d.context={
+      background:val("#c_bg"),
+      references:listOf("references").map(r=>({path:rowVal(r,"path"),lines:rowVal(r,"lines"),note:rowVal(r,"note")})),
+      links:listOf("links").map(r=>rowVal(r)).filter(Boolean)
+    };
+    d.lessons_learned=listOf("lessons_learned").map(r=>({context:rowVal(r,"context"),takeaway:rowVal(r,"takeaway")}));
+    d.output={format:val("#o_fmt"),destination:val("#o_dest"),structure:val("#o_struct")};
+    d.requirements=listOf("requirements").map(r=>({id:rowVal(r,"id"),statement:rowVal(r,"statement"),verify:rowVal(r,"verify")}));
+    PROTO_SWITCHES.forEach(([k,sel])=>{ d.protocol[k]=$(sel).checked; });
+    d.protocol.artifacts=$$("#artifacts input:checked").map(i=>i.value);
     // We map every defers row, incomplete ones included, so the badge judges
-    // exactly what the form holds.
+    // exactly what the form holds. An absent defers key means that nothing is
+    // deferred, so an empty editor must not add the key. The omission keeps
+    // every pre-editor export byte-identical.
     const defers = listOf("defers").map(r=>({phase:rowVal(r,"phase"),reason:rowVal(r,"reason")}));
-    const protocol = {
-      apply:$("#p_apply").checked,
-      stake_single_recommendation:$("#p_stake").checked,
-      log_assumptions:$("#p_log").checked,
-      flag_low_confidence:$("#p_flag").checked,
-      artifacts
-    };
-    // An absent defers key means that nothing is deferred, so an empty editor
-    // must not add the key. The omission keeps every pre-editor export
-    // byte-identical.
-    if(defers.length) protocol.defers=defers;
-    return {
-      // The builder only writes 1.0 documents. validate() checks the version
-      // so an imported foreign version cannot show a VALID badge.
-      schema_version:"1.0",
-      task:{id:val("#t_id"),title:val("#t_title"),author:val("#t_author"),date:val("#t_date")},
-      preamble:val("#preamble"),
-      role:{lens:val("#r_lens"),priorities},
-      prompt:val("#prompt"),
-      constraints:{out_of_scope,must_not},
-      context:{background:val("#c_bg"),references,links},
-      lessons_learned:lessons,
-      output:{format:val("#o_fmt"),destination:val("#o_dest"),structure:val("#o_struct")},
-      requirements,
-      protocol
-    };
+    if(defers.length) d.protocol.defers=defers;
+    return d;
   }
 
   // The highlighting is for the preview only. Copy and Download both send
@@ -664,8 +666,8 @@
     $("#t_date").value=todayISO();
     $("#o_fmt").value="";
     $$('select[data-field="phase"]').forEach(s=>s.value="");
-    ["#p_apply","#p_stake","#p_log","#p_flag"].forEach(s=>$(s).checked=true);
-    $$("#artifacts input").forEach(i=>i.checked=DEFAULT_ARTIFACTS.includes(i.value));
+    PROTO_SWITCHES.forEach(([k,sel])=>{ $(sel).checked=BLANK.protocol[k]; });
+    $$("#artifacts input").forEach(i=>i.checked=BLANK.protocol.artifacts.includes(i.value));
     render(); toast("Cleared");
   });
 
@@ -703,7 +705,7 @@
     refill("lessons_learned",E.lessons,(r,v)=>{ r.querySelector('[data-field=context]').value=v.context; r.querySelector('[data-field=takeaway]').value=v.takeaway; });
     refill("requirements",E.requirements,(r,v)=>{ r.querySelector('[data-field=id]').value=v.id; r.querySelector('[data-field=statement]').value=v.statement; r.querySelector('[data-field=verify]').value=v.verify; });
     refill("defers",E.defers,(r,v)=>{ r.querySelector('[data-field=phase]').value=v.phase; r.querySelector('[data-field=reason]').value=v.reason; });
-    $$("#artifacts input").forEach(i=>i.checked=DEFAULT_ARTIFACTS.includes(i.value));
+    $$("#artifacts input").forEach(i=>i.checked=BLANK.protocol.artifacts.includes(i.value));
     render(); toast("Example loaded");
   });
 
@@ -762,8 +764,8 @@
     // empty the form first instead of merging into what is there.
     $$("main input[type=text],main textarea").forEach(el=>el.value="");
     $("#o_fmt").value="";
-    ["#p_apply","#p_stake","#p_log","#p_flag"].forEach(s=>$(s).checked=true);
-    $$("#artifacts input").forEach(i=>i.checked=DEFAULT_ARTIFACTS.includes(i.value));
+    PROTO_SWITCHES.forEach(([k,sel])=>{ $(sel).checked=BLANK.protocol[k]; });
+    $$("#artifacts input").forEach(i=>i.checked=BLANK.protocol.artifacts.includes(i.value));
     $$(".list-rows").forEach(c=>c.innerHTML="");
 
     if(isObj(obj.task)){
@@ -821,7 +823,7 @@
       unk(obj.protocol,["apply","stake_single_recommendation","log_assumptions","flag_low_confidence","artifacts","defers"],"protocol.",failed);
       // A checkbox can only hold a real boolean. Anything else keeps the
       // default, and we name the alteration so the import report stays honest.
-      [["apply","#p_apply"],["stake_single_recommendation","#p_stake"],["log_assumptions","#p_log"],["flag_low_confidence","#p_flag"]].forEach(([k,sel])=>{
+      PROTO_SWITCHES.forEach(([k,sel])=>{
         if(typeof obj.protocol[k]==="boolean") $(sel).checked=obj.protocol[k];
         else if(k in obj.protocol) failed.push(`protocol.${k} (not true/false; kept as ${$(sel).checked})`);
       });

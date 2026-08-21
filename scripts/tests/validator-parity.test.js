@@ -268,3 +268,75 @@ test("validate-prompt.py has not grown rules the corpus does not know", () => {
   assert.strictEqual(requires, 27, "require() call sites in validate-prompt.py");
   assert.strictEqual(appends, 3, "errors.append() sites in validate-prompt.py");
 });
+
+/* Totality over raw parsed documents. The parity tests above judge fixtures
+   through docToModel, the way the badge sees form state. A standalone
+   consumer skips that adapter and hands parseYAML output straight to
+   validate(). These cases pin that path: a report always comes back, never a
+   throw, and the fill toward the blank shape never hides a required field. */
+
+const RAW_DOCS = {
+  "an empty document": "",
+  "a task-only document": [
+    'schema_version: "1.0"',
+    "task:",
+    '  id: "T-1"',
+    '  title: "Task only"',
+    '  author: "a"',
+    '  date: "2026-01-01"',
+    "",
+  ].join("\n"),
+  "a document with no role": fs.readFileSync(path.join(CORPUS, "valid", "minimal.yaml"), "utf8"),
+  "a hand-written linkless document": fs.readFileSync(path.join(CORPUS, "valid", "hand-written-linkless.yaml"), "utf8"),
+};
+
+for (const [name, text] of Object.entries(RAW_DOCS)){
+  test(`raw validate returns a report for ${name}`, () => {
+    assert.ok(Array.isArray(lib.validate(lib.parseYAML(text))));
+  });
+}
+
+test("the bare document's report names every required field", () => {
+  const keys = sortedKeys(lib.validate(lib.parseYAML("")));
+  for (const k of ["schema_version", "task.id", "task.title", "task.author", "task.date",
+                   "prompt", "output.format", "output.destination", "requirements"]){
+    assert.ok(keys.includes(k), `${k} is reported`);
+  }
+});
+
+test("dropping one required field keeps its exact flag", () => {
+  const minimal = fs.readFileSync(path.join(CORPUS, "valid", "minimal.yaml"), "utf8");
+  const noId = lib.parseYAML(minimal);
+  delete noId.task.id;
+  assert.ok(sortedKeys(lib.validate(noId)).includes("task.id"));
+  const noPrompt = lib.parseYAML(minimal);
+  delete noPrompt.prompt;
+  assert.ok(sortedKeys(lib.validate(noPrompt)).includes("prompt"));
+  const noReqs = lib.parseYAML(minimal);
+  noReqs.requirements = [];
+  assert.ok(sortedKeys(lib.validate(noReqs)).includes("requirements"));
+});
+
+test("a hand-written document with no preamble validates clean", () => {
+  const text = fs.readFileSync(path.join(CORPUS, "valid", "hand-written-no-preamble.yaml"), "utf8");
+  assert.deepStrictEqual(lib.validate(lib.parseYAML(text)), []);
+});
+
+test("normalize fills a bare document to the blank shape, except schema_version", () => {
+  const n = lib.normalize({});
+  assert.strictEqual(n.schema_version, undefined);
+  const b = lib.blankDocument();
+  n.schema_version = b.schema_version;
+  assert.deepStrictEqual(n, b);
+});
+
+test("normalize never rewrites a present value", () => {
+  const n = lib.normalize({preamble: false, protocol: {artifacts: "not-a-list"}});
+  assert.strictEqual(n.preamble, false);
+  assert.strictEqual(n.protocol.artifacts, "not-a-list");
+});
+
+test("a present protocol block without apply still fails on protocol.apply", () => {
+  const keys = sortedKeys(lib.validate({schema_version: "1.0", protocol: {}}));
+  assert.ok(keys.includes("protocol.apply"));
+});

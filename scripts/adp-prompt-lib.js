@@ -1,9 +1,9 @@
 /* adp-prompt-lib.js — shared pure logic for the ADP prompt builder.
-   parseYAML, buildYaml, validate and the shared constants, extracted from
-   prompt-builder.html and later extended with import reporting and folded
-   scalars. Exposed as one namespace: the browser global `ADPPromptLib` via a
-   plain <script> tag, or `module.exports` under Node
-   (`require("./adp-prompt-lib.js")`). No dependencies, no build step. */
+   parseYAML, buildYaml, validate, the blank-document shape and the shared
+   constants, extracted from prompt-builder.html and later extended with
+   import reporting and folded scalars. Exposed as one namespace: the browser
+   global `ADPPromptLib` via a plain <script> tag, or `module.exports` under
+   Node (`require("./adp-prompt-lib.js")`). No dependencies, no build step. */
 (function(global){
   "use strict";
 
@@ -21,11 +21,80 @@
     return pad+key+": |\n"+lines.map(l=>pad+"  "+l).join("\n");
   }
 
+  const isObj=x=>x&&typeof x==="object"&&!Array.isArray(x);
+  const asList=v=>Array.isArray(v)?v:[];
+
+  /* The one definition of a blank document. The builder page seeds its form
+     from this shape, and normalize() fills a parsed document toward it, so
+     the page and the lib cannot disagree about defaults. The switches and the
+     artifact set mirror the page's untouched checkboxes. */
+  function blankDocument(){
+    return {
+      schema_version:"1.0",
+      task:{id:"",title:"",author:"",date:""},
+      preamble:"",
+      role:{lens:"",priorities:[]},
+      prompt:"",
+      constraints:{out_of_scope:[],must_not:[]},
+      context:{background:"",references:[],links:[]},
+      lessons_learned:[],
+      output:{format:"",destination:"",structure:""},
+      requirements:[],
+      protocol:{apply:true,stake_single_recommendation:true,log_assumptions:true,flag_low_confidence:true,artifacts:DEFAULT_ARTIFACTS.slice()}
+    };
+  }
+
+  /* parseYAML returns only the keys the text holds, while validate() and
+     buildYaml() read the full builder shape. We fill the gaps from
+     blankDocument() here, so both stay total over any parsed document. The
+     fill is presence-based and never overwrites a present key, because
+     validate() must keep judging wrong-typed values the author wrote.
+
+     Two keys stay out of the fill on purpose. A filled schema_version would
+     hide a missing required field from validate(). protocol.apply gets a
+     default only when the whole protocol block is absent, because
+     validate-prompt.py requires apply inside a present block, and a filled
+     default would hide that error too. protocol.defers passes through whole,
+     since an absent defers key means that nothing is deferred. */
+  function normalize(doc){
+    const d=isObj(doc)?doc:{};
+    const B=blankDocument();
+    const fillItem=blank=>v=>Object.assign(blank(),isObj(v)?v:{});
+    const out={
+      schema_version:d.schema_version,
+      task:Object.assign(B.task,d.task),
+      preamble:"preamble" in d?d.preamble:"",
+      role:Object.assign(B.role,d.role),
+      prompt:"prompt" in d?d.prompt:"",
+      constraints:Object.assign(B.constraints,d.constraints),
+      context:Object.assign(B.context,d.context),
+      lessons_learned:asList(d.lessons_learned).map(fillItem(()=>({context:"",takeaway:""}))),
+      output:Object.assign(B.output,d.output),
+      requirements:asList(d.requirements).map(fillItem(()=>({id:"",statement:"",verify:""}))),
+      protocol:B.protocol
+    };
+    out.role.priorities=asList(out.role.priorities);
+    out.constraints.out_of_scope=asList(out.constraints.out_of_scope);
+    out.constraints.must_not=asList(out.constraints.must_not);
+    out.context.references=asList(out.context.references).map(fillItem(()=>({path:"",lines:"",note:""})));
+    out.context.links=asList(out.context.links);
+    if(isObj(d.protocol)){
+      out.protocol=Object.assign({
+        stake_single_recommendation:true,
+        log_assumptions:true,
+        flag_low_confidence:true,
+        artifacts:DEFAULT_ARTIFACTS.slice()
+      },d.protocol);
+    }
+    return out;
+  }
+
   // We emit the keys in the template's order, so a built document reads the
   // same way the annotated template does. An optional block with nothing in it
   // is left out. We always emit the task block, even when every field is
   // blank, and let validate() report what is missing.
   function buildYaml(d){
+    d=normalize(d);
     const L=[];
     L.push(`schema_version: "1.0"`);
     L.push("");
@@ -85,14 +154,20 @@
     L.push(`  stake_single_recommendation: ${d.protocol.stake_single_recommendation}`);
     L.push(`  log_assumptions: ${d.protocol.log_assumptions}`);
     L.push(`  flag_low_confidence: ${d.protocol.flag_low_confidence}`);
-    if(d.protocol.artifacts.length){ L.push("  artifacts:"); d.protocol.artifacts.forEach(a=>L.push(`    - ${a}`)); }
+    // normalize() leaves a wrong-typed artifacts value alone for validate()
+    // to flag, so we type-check before we emit.
+    if(Array.isArray(d.protocol.artifacts)&&d.protocol.artifacts.length){ L.push("  artifacts:"); d.protocol.artifacts.forEach(a=>L.push(`    - ${a}`)); }
     // The builder's gather() omits the key when its defers editor is empty,
     // so this branch only fires when a document declares a deferral. Without
     // it a round trip would silently drop the block, which is the exact quiet
-    // loss the field exists to prevent.
-    if(Array.isArray(d.protocol.defers)&&d.protocol.defers.length){
+    // loss the field exists to prevent. normalize() passes defers through
+    // whole, so a hand-written list can still hold a scalar or null item. We
+    // emit only the mapping items, the same items validate() judges for phase
+    // and reason.
+    const defers=Array.isArray(d.protocol.defers)?d.protocol.defers.filter(isObj):[];
+    if(defers.length){
       L.push("  defers:");
-      d.protocol.defers.forEach(x=>{ L.push(`    - phase: ${qstr(x.phase)}`); L.push(`      reason: ${qstr(x.reason)}`); });
+      defers.forEach(x=>{ L.push(`    - phase: ${qstr(x.phase)}`); L.push(`      reason: ${qstr(x.reason)}`); });
     }
     return L.join("\n").replace(/\n{3,}/g,"\n\n").replace(/\s+$/,"")+"\n";
   }
@@ -110,6 +185,7 @@
   // validators must reject the same strings.
   const DATE_RE=/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
   function validate(d){
+    d=normalize(d);
     const e=[];
     // The builder only ever writes 1.0, so this check judges imported documents.
     if(d.schema_version!=="1.0") e.push(["schema_version",'must be the string "1.0"']);
@@ -342,7 +418,7 @@
     };
   }
 
-  const ADPPromptLib={parseYAML,buildYaml,validate,createStatusAnnouncer,ARTIFACTS,FORMATS,DEFAULT_ARTIFACTS,PHASES};
+  const ADPPromptLib={parseYAML,buildYaml,validate,blankDocument,normalize,createStatusAnnouncer,ARTIFACTS,FORMATS,DEFAULT_ARTIFACTS,PHASES};
   if(typeof module!=="undefined"&&module.exports){ module.exports=ADPPromptLib; }
   else{ global.ADPPromptLib=ADPPromptLib; }
 })(typeof globalThis!=="undefined"?globalThis:this);

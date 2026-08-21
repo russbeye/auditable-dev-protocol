@@ -130,6 +130,8 @@
     "task"
   ],
   "valid/full.yaml": [],
+  "valid/hand-written-linkless.yaml": [],
+  "valid/hand-written-no-preamble.yaml": [],
   "valid/minimal.yaml": [],
   "valid/protocol-defers-two.yaml": [],
   "valid/protocol-defers.yaml": [],
