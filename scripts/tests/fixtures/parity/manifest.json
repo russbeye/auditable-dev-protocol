@@ -1,6 +1,15 @@
 {
+  "invalid/blank-form-export.yaml": [
+    "output",
+    "prompt",
+    "requirements",
+    "task"
+  ],
   "invalid/constraints-not-mapping.yaml": [
     "constraints"
+  ],
+  "invalid/empty.yaml": [
+    "root"
   ],
   "invalid/context-not-mapping.yaml": [
     "context"

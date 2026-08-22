@@ -184,43 +184,80 @@
   // both sides. Python's \d also matches non-ASCII digits, and the two
   // validators must reject the same strings.
   const DATE_RE=/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
-  function validate(d){
-    d=normalize(d);
+  function validate(raw){
+    // We judge presence and structure on the raw argument, because the fill
+    // toward the blank shape would hide an absent or wrong-typed block. The
+    // per-field checks still read the filled document, which keeps them
+    // total. When a block fails its shape check, we flag the block and keep
+    // its field checks quiet, the way Python's isinstance guards do.
+    // parseYAML collapses an empty or unrecognized text to {}. PyYAML reads
+    // those same texts as a non-mapping root, so we give the same verdict.
+    if(!isObj(raw)||Object.keys(raw).length===0) return [["root","must be a mapping"]];
+    const d=normalize(raw);
     const e=[];
     // The builder only ever writes 1.0, so this check judges imported documents.
     if(d.schema_version!=="1.0") e.push(["schema_version",'must be the string "1.0"']);
-    ["id","title","author","date"].forEach(k=>{ if(!nonemptyStr(d.task[k])) e.push([`task.${k}`,"required"]); });
-    // We judge the shape only once the field is present, so one document
-    // never flags task.date twice.
-    if(nonemptyStr(d.task.date) && !DATE_RE.test(d.task.date)) e.push(["task.date","must match YYYY-MM-DD"]);
-    if(d.role.priorities.length && !nonemptyStr(d.role.lens)) e.push(["role.lens","required when role is used"]);
+    if(isObj(raw.task)){
+      ["id","title","author","date"].forEach(k=>{ if(!nonemptyStr(d.task[k])) e.push([`task.${k}`,"required"]); });
+      // We judge the shape only once the field is present, so one document
+      // never flags task.date twice.
+      if(nonemptyStr(d.task.date) && !DATE_RE.test(d.task.date)) e.push(["task.date","must match YYYY-MM-DD"]);
+    } else e.push(["task","must be a mapping"]);
+    // Python flags the lens whenever the role key exists. The page never
+    // trips this rule on a blank form. Its badge validates the export image
+    // of the form, and serialization omits an all-blank role.
+    if("role" in raw){
+      if(!isObj(raw.role)) e.push(["role","must be a mapping"]);
+      else{
+        if(!nonemptyStr(raw.role.lens)) e.push(["role.lens","required when role is used"]);
+        if("priorities" in raw.role && !Array.isArray(raw.role.priorities)) e.push(["role.priorities","must be a list"]);
+      }
+    }
     if(!nonemptyStr(d.prompt)) e.push(["prompt","required"]);
     if(typeof d.preamble!=="string") e.push(["preamble","must be plain text"]);
-    if(!FORMATS.includes(d.output.format)) e.push(["output.format","pick one of code|patch|json|yaml|markdown|prose"]);
-    if(!nonemptyStr(d.output.destination)) e.push(["output.destination","required"]);
-    const reqs=d.requirements.filter(r=>r.id||r.statement||r.verify);
-    if(reqs.length===0) e.push(["requirements","at least one complete requirement"]);
-    reqs.forEach((r,i)=>{ ["id","statement","verify"].forEach(k=>{ if(!nonemptyStr(r[k])) e.push([`requirements[${i}].${k}`,"required within item"]); }); });
+    if(isObj(raw.output)){
+      if(!FORMATS.includes(d.output.format)) e.push(["output.format","pick one of code|patch|json|yaml|markdown|prose"]);
+      if(!nonemptyStr(d.output.destination)) e.push(["output.destination","required"]);
+    } else e.push(["output","must be a mapping"]);
+    // We judge requirements on the raw list. The fill would turn a
+    // non-mapping item into a blank row, and a wrong shape must not read
+    // as missing fields. Python flags every field of an all-empty item,
+    // so we do the same.
+    if(!Array.isArray(raw.requirements)||raw.requirements.length===0) e.push(["requirements","at least one complete requirement"]);
+    else raw.requirements.forEach((r,i)=>{
+      if(!isObj(r)){ e.push([`requirements[${i}]`,"must be a mapping"]); return; }
+      ["id","statement","verify"].forEach(k=>{ if(!nonemptyStr(r[k])) e.push([`requirements[${i}].${k}`,"required within item"]); });
+    });
     // We index against the full list, not the in-use subset. A filtered index
     // can name the wrong row when a path-only reference sits before the bad one.
     d.context.references.forEach((r,i)=>{ if((nonemptyStr(r.lines)||nonemptyStr(r.note)) && !nonemptyStr(r.path)) e.push([`context.references[${i}].path`,"required when reference is used"]); });
-    d.lessons_learned.forEach((x,i)=>{ const any=x.context||x.takeaway; if(any && (!nonemptyStr(x.context)||!nonemptyStr(x.takeaway))) e.push([`lessons_learned[${i}]`,"needs context and takeaway"]); });
-    if(typeof d.protocol.apply!=="boolean") e.push(["protocol.apply","must be true or false"]);
-    ["stake_single_recommendation","log_assumptions","flag_low_confidence"].forEach(k=>{ if(d.protocol[k]!==undefined && typeof d.protocol[k]!=="boolean") e.push([`protocol.${k}`,"must be true or false"]); });
-    if(!Array.isArray(d.protocol.artifacts)) e.push(["protocol.artifacts","must be a list"]);
-    else d.protocol.artifacts.forEach(a=>{ if(!ARTIFACTS.includes(a)) e.push(["protocol.artifacts","unknown artifact: "+a]); });
-    // The builder's defers editor feeds this through gather(), which omits
-    // the key when the editor is empty. We mirror the Python side: a known
-    // phase name and a written reason per item, and an absent key means
-    // that nothing is deferred.
-    if(d.protocol.defers!==undefined){
-      if(!Array.isArray(d.protocol.defers)) e.push(["protocol.defers","must be a list"]);
-      else d.protocol.defers.forEach((x,i)=>{
-        if(!x||typeof x!=="object"||Array.isArray(x)){ e.push([`protocol.defers[${i}]`,"must be a mapping"]); return; }
-        if(!PHASES.includes(x.phase)) e.push([`protocol.defers[${i}].phase`,"pick one of "+PHASES.join("|")]);
-        if(!nonemptyStr(x.reason)) e.push([`protocol.defers[${i}].reason`,"required within item"]);
-      });
+    if("constraints" in raw && !isObj(raw.constraints)) e.push(["constraints","must be a mapping"]);
+    if("context" in raw && !isObj(raw.context)) e.push(["context","must be a mapping"]);
+    if("lessons_learned" in raw){
+      if(!Array.isArray(raw.lessons_learned)) e.push(["lessons_learned","must be a list"]);
+      // We judge every raw item, all-empty ones included, because Python
+      // flags an item that lacks both fields. The builder's badge strips
+      // its all-empty rows before it calls us.
+      else raw.lessons_learned.forEach((x,i)=>{ if(!isObj(x)||!nonemptyStr(x.context)||!nonemptyStr(x.takeaway)) e.push([`lessons_learned[${i}]`,"needs context and takeaway"]); });
     }
+    if(isObj(raw.protocol)){
+      if(typeof d.protocol.apply!=="boolean") e.push(["protocol.apply","must be true or false"]);
+      ["stake_single_recommendation","log_assumptions","flag_low_confidence"].forEach(k=>{ if(d.protocol[k]!==undefined && typeof d.protocol[k]!=="boolean") e.push([`protocol.${k}`,"must be true or false"]); });
+      if(!Array.isArray(d.protocol.artifacts)) e.push(["protocol.artifacts","must be a list"]);
+      else d.protocol.artifacts.forEach(a=>{ if(!ARTIFACTS.includes(a)) e.push(["protocol.artifacts","unknown artifact: "+a]); });
+      // The builder's defers editor feeds this through gather(), which omits
+      // the key when the editor is empty. We mirror the Python side: a known
+      // phase name and a written reason per item, and an absent key means
+      // that nothing is deferred.
+      if(d.protocol.defers!==undefined){
+        if(!Array.isArray(d.protocol.defers)) e.push(["protocol.defers","must be a list"]);
+        else d.protocol.defers.forEach((x,i)=>{
+          if(!x||typeof x!=="object"||Array.isArray(x)){ e.push([`protocol.defers[${i}]`,"must be a mapping"]); return; }
+          if(!PHASES.includes(x.phase)) e.push([`protocol.defers[${i}].phase`,"pick one of "+PHASES.join("|")]);
+          if(!nonemptyStr(x.reason)) e.push([`protocol.defers[${i}].reason`,"required within item"]);
+        });
+      }
+    } else e.push(["protocol","must be a mapping"]);
     return e;
   }
 

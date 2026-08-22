@@ -3,9 +3,9 @@
 
    Every fixture under fixtures/parity/ is judged three ways. The manifest
    states the expected flagged keys, scripts/validate-prompt.py runs on the
-   file, and the lib's validate() runs on the parsed document through the
-   docToModel adapter below. All three must produce the same key set. The
-   manifest is the contract, so flipping one expectation must fail the run.
+   file, and the lib's validate() runs directly on the parsed document. All
+   three must produce the same key set. The manifest is the contract, so
+   flipping one expectation must fail the run.
 
    The corpus stays inside the builder's YAML dialect. Use quoted strings and
    real booleans. A typed plain scalar, for example an unquoted date, parses
@@ -28,161 +28,10 @@ const CORPUS = path.join(__dirname, "fixtures", "parity");
 const VALIDATOR = path.join(__dirname, "..", "validate-prompt.py");
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(CORPUS, "manifest.json"), "utf8"));
 
-// Mirror of nonempty_str in validate-prompt.py.
-const ne = v => typeof v === "string" && v.trim() !== "";
-const isObj = x => x && typeof x === "object" && !Array.isArray(x);
 const sortedKeys = errs => [...new Set(errs.map(e => e[0]))].sort();
 
-/* docToModel maps a parsed document onto the gather()-shaped state that
-   validate() expects. Unlike the browser import, it never repairs. Raw values
-   pass through wherever validate() type-checks them, so a quoted "true" or a
-   foreign schema_version is judged, not healed.
-
-   The model cannot represent every wrong shape a document can take. For those
-   shapes we emit a structural error that carries the exact key the Python
-   validator uses, and we substitute a neutral placeholder that validate()
-   accepts. That reproduces Python's control flow, where a failed isinstance
-   guard skips the per-field checks inside the group.
-
-   Keep semantic rules out of this adapter. If a rule can be expressed on the
-   model, it belongs in validate(), where the browser badge also enforces it. */
-
-// The date placeholder must be a well-formed date. validate() judges the
-// date's shape, and a placeholder that fails it would leak a task.date flag
-// into every structurally-broken task fixture.
-const OK_TASK = {id: "-", title: "-", author: "-", date: "2026-01-01"};
-const OK_REQ = {id: "-", statement: "-", verify: "-"};
-const OK_LESSON = {context: "-", takeaway: "-"};
-const OK_PROTOCOL = {apply: true, stake_single_recommendation: true, log_assumptions: true, flag_low_confidence: true, artifacts: []};
-
-function docToModel(doc){
-  const structural = [];
-  const flag = (key, why) => structural.push([key, why]);
-
-  // parseYAML can only return a mapping. A root sequence, a root scalar, and
-  // an empty file all collapse to an empty object with every line reported as
-  // skipped. Python reads those same documents as a non-mapping root, so
-  // "nothing recognized" maps to that verdict.
-  if (!isObj(doc) || Object.keys(doc).length === 0){
-    return {model: null, structural: [["root", "must be a mapping"]]};
-  }
-
-  const model = {schema_version: doc.schema_version};
-
-  if (isObj(doc.task)){
-    model.task = {id: doc.task.id, title: doc.task.title, author: doc.task.author, date: doc.task.date};
-  } else {
-    flag("task", "must be a mapping");
-    model.task = {...OK_TASK};
-  }
-
-  model.role = {lens: "", priorities: []};
-  if (isObj(doc.role)){
-    model.role.lens = doc.role.lens;
-    // The builder cannot hold "role present but empty", because its
-    // serializer omits an empty role group. Python flags the lens whenever
-    // the role key exists, so the guard lives here.
-    if (!ne(doc.role.lens)) flag("role.lens", "must be a non-empty string");
-    if ("priorities" in doc.role){
-      if (Array.isArray(doc.role.priorities)) model.role.priorities = doc.role.priorities;
-      else flag("role.priorities", "must be a list");
-    }
-  } else if ("role" in doc){
-    flag("role", "must be a mapping");
-  }
-
-  model.preamble = "preamble" in doc ? doc.preamble : "";
-  model.prompt = doc.prompt;
-
-  // Python only checks that these two groups are mappings and never looks
-  // inside them, so a neutral model shape is enough.
-  model.constraints = {out_of_scope: [], must_not: []};
-  if ("constraints" in doc && !isObj(doc.constraints)) flag("constraints", "must be a mapping");
-
-  model.context = {background: "", references: [], links: []};
-  if (isObj(doc.context)){
-    if (Array.isArray(doc.context.references)){
-      // Python's isinstance guard skips a non-mapping reference item, so we
-      // substitute an empty reference to keep the later indexes aligned.
-      model.context.references = doc.context.references.map(r =>
-        isObj(r) ? {path: r.path, lines: r.lines, note: r.note} : {path: "", lines: "", note: ""});
-    }
-  } else if ("context" in doc){
-    flag("context", "must be a mapping");
-  }
-
-  if (Array.isArray(doc.lessons_learned)){
-    model.lessons_learned = doc.lessons_learned.map((x, i) => {
-      if (!isObj(x)){
-        flag(`lessons_learned[${i}]`, "must be a mapping");
-        return {...OK_LESSON};
-      }
-      // An item with both fields empty is invisible to validate(), because
-      // the builder treats an all-empty row as an absent row and never emits
-      // one. Python still flags the item, so the guard lives here.
-      if (!ne(x.context) && !ne(x.takeaway)){
-        flag(`lessons_learned[${i}]`, "must have non-empty context and takeaway");
-        return {...OK_LESSON};
-      }
-      return {context: x.context, takeaway: x.takeaway};
-    });
-  } else {
-    model.lessons_learned = [];
-    if ("lessons_learned" in doc) flag("lessons_learned", "must be a list");
-  }
-
-  if (isObj(doc.output)){
-    model.output = {format: doc.output.format, destination: doc.output.destination, structure: ""};
-  } else {
-    flag("output", "must be a mapping");
-    model.output = {format: "code", destination: "-", structure: ""};
-  }
-
-  if (Array.isArray(doc.requirements)){
-    model.requirements = doc.requirements.map((r, i) => {
-      if (!isObj(r)){
-        flag(`requirements[${i}]`, "must be a mapping");
-        return {...OK_REQ};
-      }
-      // Same builder blind spot as lessons. An all-empty requirement row
-      // never survives serialization, so validate() filters it out. Python
-      // flags all three fields, and so do we.
-      if (!ne(r.id) && !ne(r.statement) && !ne(r.verify)){
-        for (const k of ["id", "statement", "verify"]) flag(`requirements[${i}].${k}`, "must be a non-empty string");
-        return {...OK_REQ};
-      }
-      return {id: r.id, statement: r.statement, verify: r.verify};
-    });
-  } else {
-    // Absent and non-list both land on the "requirements" key, because
-    // validate() flags an empty requirements list itself.
-    model.requirements = [];
-  }
-
-  if (isObj(doc.protocol)){
-    model.protocol = {
-      apply: doc.protocol.apply,
-      stake_single_recommendation: doc.protocol.stake_single_recommendation,
-      log_assumptions: doc.protocol.log_assumptions,
-      flag_low_confidence: doc.protocol.flag_low_confidence,
-      artifacts: "artifacts" in doc.protocol ? doc.protocol.artifacts : [],
-      // defers passes through raw. validate() can judge every wrong shape a
-      // defers block can take, so no structural flag is needed here.
-      defers: "defers" in doc.protocol ? doc.protocol.defers : undefined
-    };
-  } else {
-    flag("protocol", "must be a mapping");
-    model.protocol = {...OK_PROTOCOL};
-  }
-
-  return {model, structural};
-}
-
 function jsKeys(text){
-  const doc = lib.parseYAML(text);
-  const {model, structural} = docToModel(doc);
-  const errs = model === null ? structural : structural.concat(lib.validate(model));
-  return sortedKeys(errs);
+  return sortedKeys(lib.validate(lib.parseYAML(text)));
 }
 
 function pyKeys(relPath){
@@ -269,11 +118,9 @@ test("validate-prompt.py has not grown rules the corpus does not know", () => {
   assert.strictEqual(appends, 3, "errors.append() sites in validate-prompt.py");
 });
 
-/* Totality over raw parsed documents. The parity tests above judge fixtures
-   through docToModel, the way the badge sees form state. A standalone
-   consumer skips that adapter and hands parseYAML output straight to
-   validate(). These cases pin that path: a report always comes back, never a
-   throw, and the fill toward the blank shape never hides a required field. */
+/* Totality over raw parsed documents. These cases pin the direct path: a
+   report always comes back, never a throw, and once the root is a real
+   mapping the fill toward the blank shape never hides a required field. */
 
 const RAW_DOCS = {
   "an empty document": "",
@@ -296,12 +143,10 @@ for (const [name, text] of Object.entries(RAW_DOCS)){
   });
 }
 
-test("the bare document's report names every required field", () => {
-  const keys = sortedKeys(lib.validate(lib.parseYAML("")));
-  for (const k of ["schema_version", "task.id", "task.title", "task.author", "task.date",
-                   "prompt", "output.format", "output.destination", "requirements"]){
-    assert.ok(keys.includes(k), `${k} is reported`);
-  }
+test("an empty parse gets the root verdict Python gives an empty file", () => {
+  // parseYAML collapses an empty text to {}, and PyYAML reads the same text
+  // as None, so both sides must answer with the root flag alone.
+  assert.deepStrictEqual(sortedKeys(lib.validate(lib.parseYAML(""))), ["root"]);
 });
 
 test("dropping one required field keeps its exact flag", () => {

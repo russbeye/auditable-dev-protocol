@@ -590,13 +590,32 @@
     debounceMs:ANNOUNCE_DEBOUNCE_MS
   });
 
+  // The badge judges the document the form will export, not the saturated
+  // form state. gather() emits every key on every render, and validate()
+  // flags presence, so a blank role group would flag its lens on an empty
+  // form. We apply the same omissions buildYaml applies when it serializes.
+  // If you change an emission guard in buildYaml, change its rule here too.
+  function asExported(d){
+    // buildYaml omits an all-blank role group, so the lens presence rule
+    // must not see one.
+    if(!d.role.lens && !d.role.priorities.length) delete d.role;
+    // buildYaml drops all-empty requirement rows. Filtering here keeps the
+    // remaining rows on the same indexes the export gives them.
+    d.requirements=d.requirements.filter(r=>r.id||r.statement||r.verify);
+    // buildYaml drops all-empty lesson rows too, but filtering would shift
+    // the index of a flagged row behind an empty one. A placeholder that
+    // passes validation keeps every index where the panel already points.
+    d.lessons_learned=d.lessons_learned.map(x=>x.context||x.takeaway?x:{context:"-",takeaway:"-"});
+    return d;
+  }
+
   let CURRENT="";
   function render(){
     const d=gather();
     const yaml=buildYaml(d);
     CURRENT=yaml;
     $("#code").innerHTML=highlight(yaml)
-    const errs=validate(d);
+    const errs=validate(asExported(d));
     announceStatus(errs.length);
     const st=$("#status"), txt=$("#status-txt");
     if(errs.length===0){ st.className="status ok"; txt.textContent="VALID"; }
