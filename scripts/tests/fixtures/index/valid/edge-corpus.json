@@ -1,0 +1,124 @@
+{
+  "schema": "adp-index/1",
+  "project": "auditable-dev-protocol",
+  "generated": "2026-08-24",
+  "source": "snapshot",
+  "tickets": [
+    {
+      "id": "AV007",
+      "dir": "AV-007-parser-lib-extraction",
+      "slug": "parser-lib-extraction",
+      "date": null,
+      "title": "AV-007-parser-lib-extraction — audit log",
+      "state": "shipped",
+      "state_source": "inferred",
+      "pr": "#2 merged",
+      "merged": null,
+      "phase": 9,
+      "sections": [
+        {
+          "key": "sec-problem-statement",
+          "title": "Problem Statement",
+          "phase": 1,
+          "canonical": true
+        },
+        {
+          "key": "sec-decision-log",
+          "title": "Decision Log",
+          "phase": 5,
+          "canonical": true
+        },
+        {
+          "key": "sec-decision-log-1",
+          "title": "Decision Log",
+          "phase": null,
+          "canonical": false
+        },
+        {
+          "key": "sec-obligation-ticket-list",
+          "title": "Obligation Ticket List",
+          "phase": 9,
+          "canonical": true
+        },
+        {
+          "key": "sec-post-run-amendment-2026-07-31",
+          "title": "Post-run amendment (2026-07-31)",
+          "phase": null,
+          "canonical": false
+        }
+      ],
+      "refs": {
+        "sec-post-run-amendment-2026-07-31": [
+          "DL-004",
+          "OT-hue"
+        ]
+      },
+      "decisions": [
+        {
+          "id": "DL-004",
+          "title": "The lib exports one namespace",
+          "confidence": "MED",
+          "basis": null,
+          "status": "SUPERSEDED",
+          "created": null
+        }
+      ],
+      "watches": [
+        {
+          "wid": "OT-1",
+          "dl": [
+            "DL-004"
+          ],
+          "what": "No consumer re-splits sections",
+          "due": null,
+          "anchored": false,
+          "window": "60 days after merge"
+        },
+        {
+          "wid": "OT-hue",
+          "dl": [],
+          "what": "Accent hue reads correctly on both palettes",
+          "due": "2026-09-30",
+          "anchored": true,
+          "window": null
+        }
+      ],
+      "missing": [
+        "Knowledge Gap Document",
+        "Recommendation Brief",
+        "Pre-Mortem Report",
+        "Test Adversary Document",
+        "PR Summary",
+        "Deployment Risk Statement"
+      ],
+      "zz_notes": "additive keys trail known keys"
+    },
+    {
+      "id": "AV015",
+      "dir": "AV-015-commonmark-adherence",
+      "slug": "commonmark-adherence",
+      "date": null,
+      "title": null,
+      "state": "open",
+      "state_source": "inferred",
+      "pr": null,
+      "merged": null,
+      "phase": 0,
+      "sections": [],
+      "refs": {},
+      "decisions": [],
+      "watches": [],
+      "missing": [
+        "Problem Statement",
+        "Knowledge Gap Document",
+        "Recommendation Brief",
+        "Pre-Mortem Report",
+        "Decision Log",
+        "Test Adversary Document",
+        "PR Summary",
+        "Deployment Risk Statement",
+        "Obligation Ticket List"
+      ]
+    }
+  ]
+}
