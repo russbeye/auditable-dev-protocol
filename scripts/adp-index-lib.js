@@ -13,18 +13,20 @@
   const STATE_SOURCES = ["declared", "inferred"];
   const CANONICAL_ARTIFACTS = [
     "Problem Statement",
-    "Knowledge Gap Document",
+    "Knowledge Gap",
     "Recommendation Brief",
     "Pre-Mortem Report",
     "Decision Log",
-    "Test Adversary Document",
+    "Test Adversary",
     "PR Summary",
-    "Deployment Risk Statement",
-    "Obligation Ticket List"
+    "Deployment Risk",
+    "Obligation Tickets"
   ];
-  /* Known tokens exist for chit rendering only. IDX-023: an unknown token is
-     data, never a validity error, so validateIndex must not consult these. */
-  const CONFIDENCE_TOKENS = ["HIGH", "MEDIUM", "MED", "LOW"];
+  /* Known tokens exist for chit rendering only, one form per meaning; MED in
+     a legacy log is an unknown token, rendered marked, never normalized.
+     IDX-023: an unknown token is data, never a validity error, so
+     validateIndex must not consult these. */
+  const CONFIDENCE_TOKENS = ["HIGH", "MEDIUM", "LOW"];
   const STATUS_TOKENS = ["OPEN", "VALIDATED", "INVALIDATED", "UNKNOWN"];
 
   /* The normative key order per object type (IDX-002). Additive fields from
@@ -45,15 +47,16 @@
   function isObj(v){ return v !== null && typeof v === "object" && !Array.isArray(v); }
   function ne(v){ return typeof v === "string" && v.length > 0; }
 
-  /* IDX-004 wants a calendar-plausible date, not a real-calendar check. We
-     accept day 31 in every month; the corpus writes dates by hand and the
-     failure we guard against is 2026-13-45, not leap-year arithmetic. */
+  /* IDX-004 wants calendar truth without a date library. We rebuild the date
+     through Date.UTC and check the components survive the round trip, which
+     rejects rollovers like 2026-02-30 and handles leap years for free. */
   function isDate(v){
     if (typeof v !== "string") return false;
     const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!m) return false;
-    const mo = Number(m[2]), da = Number(m[3]);
-    return mo >= 1 && mo <= 12 && da >= 1 && da <= 31;
+    const y = Number(m[1]), mo = Number(m[2]), da = Number(m[3]);
+    const d = new Date(Date.UTC(y, mo - 1, da));
+    return d.getUTCFullYear() === y && d.getUTCMonth() === mo - 1 && d.getUTCDate() === da;
   }
 
   /* A DL-prefixed token with anything but digits in its tail is template

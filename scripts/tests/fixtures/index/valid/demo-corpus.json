@@ -23,8 +23,8 @@
           "canonical": true
         },
         {
-          "key": "sec-knowledge-gap-document",
-          "title": "Knowledge Gap Document",
+          "key": "sec-knowledge-gap",
+          "title": "Knowledge Gap",
           "phase": 2,
           "canonical": true
         },
@@ -53,8 +53,8 @@
           "canonical": true
         },
         {
-          "key": "sec-test-adversary-document",
-          "title": "Test Adversary Document",
+          "key": "sec-test-adversary",
+          "title": "Test Adversary",
           "phase": 6,
           "canonical": true
         },
@@ -71,14 +71,14 @@
           "canonical": true
         },
         {
-          "key": "sec-deployment-risk-statement",
-          "title": "Deployment Risk Statement",
+          "key": "sec-deployment-risk",
+          "title": "Deployment Risk",
           "phase": 8,
           "canonical": true
         },
         {
-          "key": "sec-obligation-ticket-list",
-          "title": "Obligation Ticket List",
+          "key": "sec-obligation-tickets",
+          "title": "Obligation Tickets",
           "phase": 9,
           "canonical": true
         },
@@ -97,7 +97,7 @@
           "DL-002",
           "DL-003"
         ],
-        "sec-deployment-risk-statement": [
+        "sec-deployment-risk": [
           "DL-002",
           "OT-AV014-1"
         ],

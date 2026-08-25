@@ -121,19 +121,22 @@ spec documents it and adds one form, and no other component may grow its own mat
 | Attributed phase | Titles that match |
 |------------------|-------------------|
 | 1 | Problem Statement |
-| 2 | Knowledge Gap Document; Open Questions |
+| 2 | Knowledge Gap; Open Questions |
 | 3 | Recommendation Brief |
 | 4 | Pre-Mortem Report; Implementation Authorization |
 | 5 | Decision Log |
-| 6 | Test Adversary Document; Test Coverage Gaps |
+| 6 | Test Adversary; Test Coverage Gaps |
 | 7 | PR Summary; Mandatory Review Items; Residual Risk |
-| 8 | Deployment Risk Statement |
-| 9 | Obligation Ticket List |
+| 8 | Deployment Risk |
+| 9 | Obligation Tickets |
 | N | `Phase N: <anything>` — the numeric prefix form used by other corpora |
 
+Matching is substring-based, so the longer heading forms the legacy corpus writes (for
+example "Knowledge Gap Document") attribute to the same rows.
+
 `missing` lists the canonical artifact names absent from the log, in canonical order: Problem
-Statement, Knowledge Gap Document, Recommendation Brief, Pre-Mortem Report, Decision Log, Test
-Adversary Document, PR Summary, Deployment Risk Statement, Obligation Ticket List. Companion
+Statement, Knowledge Gap, Recommendation Brief, Pre-Mortem Report, Decision Log, Test
+Adversary, PR Summary, Deployment Risk, Obligation Tickets. Companion
 headings (Open Questions and kin) attribute to a phase but are never "missing" — only the nine
 artifacts are.
 
@@ -164,7 +167,7 @@ template text, not citations, and appear nowhere in an index.
 
 One entry per `### [DL-NNN]` heading in the Decision Log section. `id` is unique within the
 ticket. `title`, `confidence`, and `status` are nonempty; `confidence` and `status` carry the
-source token verbatim — the known vocabularies (HIGH/MEDIUM/LOW with MED as an alias;
+source token verbatim — the known vocabularies (HIGH/MEDIUM/LOW, fully qualified with no aliases;
 OPEN/VALIDATED/INVALIDATED/UNKNOWN) exist for rendering, and an unknown token is data, not an
 error. That is the open-vocabulary principle: the index reports what the log says, and the
 shell marks unknown tokens instead of normalizing them. `basis` is the one-line confidence
@@ -177,7 +180,7 @@ basis or null; `created` is the entry's date or null.
   "due": "2026-10-17", "anchored": true, "window": "60 days after merge" }
 ```
 
-One entry per row of the Obligation Ticket List. `wid` is the ticket-local id verbatim, unique
+One entry per row of the Obligation Tickets section. `wid` is the ticket-local id verbatim, unique
 within the ticket. `dl` is the list of Decision Log ids the row covers (the source column is
 comma-separated when one ticket covers several entries). `what` is the assumption under watch.
 `window` preserves the source phrasing verbatim or is null.

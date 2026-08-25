@@ -84,12 +84,12 @@
         }
       ],
       "missing": [
-        "Knowledge Gap Document",
+        "Knowledge Gap",
         "Recommendation Brief",
         "Pre-Mortem Report",
-        "Test Adversary Document",
+        "Test Adversary",
         "PR Summary",
-        "Deployment Risk Statement"
+        "Deployment Risk"
       ],
       "zz_notes": "additive keys trail known keys"
     },
@@ -110,14 +110,14 @@
       "watches": [],
       "missing": [
         "Problem Statement",
-        "Knowledge Gap Document",
+        "Knowledge Gap",
         "Recommendation Brief",
         "Pre-Mortem Report",
         "Decision Log",
-        "Test Adversary Document",
+        "Test Adversary",
         "PR Summary",
-        "Deployment Risk Statement",
-        "Obligation Ticket List"
+        "Deployment Risk",
+        "Obligation Tickets"
       ]
     }
   ]

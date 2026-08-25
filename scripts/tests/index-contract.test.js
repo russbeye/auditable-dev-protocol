@@ -87,7 +87,7 @@ test("fixture files use the contract serialization", () => {
 });
 
 test("known token vocabularies stay in step with the corpus conventions", () => {
-  assert.deepEqual(lib.CONFIDENCE_TOKENS, ["HIGH", "MEDIUM", "MED", "LOW"]);
+  assert.deepEqual(lib.CONFIDENCE_TOKENS, ["HIGH", "MEDIUM", "LOW"]);
   assert.deepEqual(lib.STATUS_TOKENS, ["OPEN", "VALIDATED", "INVALIDATED", "UNKNOWN"]);
   assert.equal(lib.CANONICAL_ARTIFACTS.length, 9);
 });

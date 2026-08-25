@@ -51,14 +51,14 @@
         }
       ],
       "missing": [
-        "Knowledge Gap Document",
+        "Knowledge Gap",
         "Recommendation Brief",
         "Pre-Mortem Report",
         "Decision Log",
-        "Test Adversary Document",
+        "Test Adversary",
         "PR Summary",
-        "Deployment Risk Statement",
-        "Obligation Ticket List"
+        "Deployment Risk",
+        "Obligation Tickets"
       ]
     }
   ]
