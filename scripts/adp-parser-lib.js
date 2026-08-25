@@ -201,12 +201,45 @@
     {re:/test coverage gaps/i,           icon:'▤', tag:'P6'},
     {re:/pr summary/i,                   icon:'⇡', tag:'P7'},
     {re:/deployment risk/i,              icon:'⟲', tag:'P8'},
-    {re:/obligation ticket/i,            icon:'✓', tag:'P9'}
+    {re:/obligation ticket/i,            icon:'✓', tag:'P9'},
+    // Other corpora title their sections "Phase N: <name>" instead of using
+    // the artifact names. These rows sit after the artifact rows, so an
+    // artifact name inside such a title still wins the tie on the same phase.
+    {re:/^phase\s*1\s*:/i,               icon:'◎', tag:'P1'},
+    {re:/^phase\s*2\s*:/i,               icon:'◫', tag:'P2'},
+    {re:/^phase\s*3\s*:/i,               icon:'◆', tag:'P3'},
+    {re:/^phase\s*4\s*:/i,               icon:'⚠', tag:'P4'},
+    {re:/^phase\s*5\s*:/i,               icon:'⎇', tag:'P5', spine:true},
+    {re:/^phase\s*6\s*:/i,               icon:'⊗', tag:'P6'},
+    {re:/^phase\s*7\s*:/i,               icon:'⇡', tag:'P7'},
+    {re:/^phase\s*8\s*:/i,               icon:'⟲', tag:'P8'},
+    {re:/^phase\s*9\s*:/i,               icon:'✓', tag:'P9'}
   ];
   function metaFor(title){ for(const a of ART) if(a.re.test(title)) return a; return {icon:'§',tag:''}; }
 
+  /* A declared lifecycle block is YAML front matter at byte 0. We only strip
+     the opener when a closing bare --- line exists and every interior line is
+     blank or a key: value pair. Anything else stays document content, so a
+     file that opens with a horizontal rule keeps its text. */
+  function splitFrontMatter(md){
+    const text=String(md).replace(/\r\n/g,'\n');
+    if(text.slice(0,4)!=='---\n') return {front:null, rest:text};
+    const lines=text.split('\n');
+    for(let i=1;i<lines.length;i++){
+      if(lines[i]==='---'){
+        const inner=lines.slice(1,i);
+        if(inner.every(l=>/^\s*$/.test(l)||/^[A-Za-z_][A-Za-z0-9_-]*\s*:/.test(l))){
+          return {front:inner.join('\n'), rest:lines.slice(i+1).join('\n')};
+        }
+        return {front:null, rest:text};
+      }
+    }
+    return {front:null, rest:text};
+  }
+
   function parseSections(md){
-    const lines=String(md).replace(/\r\n/g,'\n').split('\n');
+    const fm=splitFrontMatter(md);
+    const lines=fm.rest.split('\n');
     const secs=[]; let cur=null; const intro=[];
     let inFence=false;
     for(const line of lines){
@@ -217,7 +250,7 @@
       else intro.push(line);
     }
     if(cur) secs.push(cur);
-    return {intro:intro.join('\n').trim(), secs};
+    return {front:fm.front, intro:intro.join('\n').trim(), secs};
   }
 
   function slug(s){return 'sec-'+(s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,42)||'x');}
@@ -370,7 +403,7 @@
       + `<div class="dl-cards">${entries.map(renderDLCard).join('')}</div>`;
   }
 
-  const ADPParserLib={esc,escAttr,safeLinkUrl,inline,decorate,TOK,renderMarkdown,ART,metaFor,parseSections,slug,sectionKeys,parseDLFields,dlChipSplit,dlConfPill,dlStatusPill,dlStatusKind,dlRail,parseDLEntries,dlEntryStatus,dlStatusCounts,renderDLCard,renderDecisionLog};
+  const ADPParserLib={esc,escAttr,safeLinkUrl,inline,decorate,TOK,renderMarkdown,ART,metaFor,splitFrontMatter,parseSections,slug,sectionKeys,isTableStart,splitRow,parseDLFields,dlChipSplit,dlConfPill,dlStatusPill,dlStatusKind,dlRail,parseDLEntries,dlEntryStatus,dlStatusCounts,renderDLCard,renderDecisionLog};
   if(typeof module!=="undefined"&&module.exports){ module.exports=ADPParserLib; }
   else{ global.ADPParserLib=ADPParserLib; }
 })(typeof globalThis!=="undefined"?globalThis:this);

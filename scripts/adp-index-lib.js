@@ -283,7 +283,10 @@
     return JSON.stringify(doc, null, 2) + "\n";
   }
 
-  const ADPIndexLib = {SCHEMA, SOURCES, STATES, STATE_SOURCES, CANONICAL_ARTIFACTS, CONFIDENCE_TOKENS, STATUS_TOKENS, KEY_ORDER, validateIndex, serializeIndex};
+  /* The builder shares the date and token grammars through these exports, so
+     the contract keeps one owner for what counts as a date, an id, and a
+     placeholder. */
+  const ADPIndexLib = {SCHEMA, SOURCES, STATES, STATE_SOURCES, CANONICAL_ARTIFACTS, CONFIDENCE_TOKENS, STATUS_TOKENS, KEY_ORDER, RE_DL, RE_OT, isDate, isPlaceholder, validateIndex, serializeIndex};
   if (typeof module !== "undefined" && module.exports){ module.exports = ADPIndexLib; }
   else { global.ADPIndexLib = ADPIndexLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

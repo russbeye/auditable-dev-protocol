@@ -10,22 +10,24 @@ under `scripts/tests/fixtures/index/` against them.
 
 **Context.** A ticket directory holds one `audit-log.md` and one `prompt.yaml`; the nine protocol
 artifacts are H2 sections of the log. The mission-control shell (MC-001) needs corpus-wide state
-— watches, decisions, lifecycle — as data, and three different producers must agree on it: a
-Node builder invoked by tests and by `adp-serve.py`, the same builder running in a browser over
-a user-picked directory, and a checked-in demo snapshot. Nothing agreed on the shape until now;
-the corpus conventions existed only as habits of the existing logs.
+— watches, decisions, lifecycle — as data, and every environment must agree on it: one builder
+library running under Node in the test suite and in the browser over corpus files served by
+`adp-serve.py`. The index is never a stored artifact; it exists only in memory where it is
+built. Nothing agreed on the shape until now; the corpus conventions existed only as habits of
+the existing logs.
 
 **Decision.** We freeze the conventions as `adp-index/1`, specified here as numbered rules with
 a validator and fixtures. The index is metadata-only: it carries derived facts and verbatim
 tokens, never section bodies and never rendered HTML. Consumers load a ticket's raw
-`audit-log.md` through the same source seam that produced the index (serve route, checked-in
-file, or picked FileList) when they need content. The index is a pure function of
-(path, text) pairs, so every producer yields identical bytes for the same corpus.
+`audit-log.md` through the same source seam that produced the index (the adp-serve corpus
+routes today; any future seam supplies the same shape) when they need content. The index is a
+pure function of (path, text) pairs, so every producer yields identical bytes for the same
+corpus.
 
 **Consequences.** Corpus edits invalidate only the index's derived facts, not embedded copies of
-content. The builder can run anywhere strings exist, which is what the no-build-step online mode
-requires. The cost is a second fetch when the inspector opens a ticket, and a spec that must be
-versioned with care — hence the evolution rule.
+content. The builder can run anywhere strings exist, and the no-build-artifact rule keeps the
+index in memory in every mode. The cost is a second fetch when the inspector opens a ticket, and
+a spec that must be versioned with care — hence the evolution rule.
 
 **Evolution rule.** Consumers ignore keys they do not know. A new optional field may join
 `adp-index/1`. Any removal, rename, retype, or change to the meaning of an existing field bumps
@@ -54,8 +56,9 @@ always means the `YYYY-MM-DD` form of rule IDX-004.
 - `schema` — the literal string `adp-index/1`.
 - `project` — the corpus name. Caller-supplied.
 - `generated` — the build date. Caller-supplied: the builder never reads a clock.
-- `source` — which seam produced the index: `working-tree` (adp-serve.py, live),
-  `snapshot` (the checked-in demo file), or `picked` (a browser directory selection).
+- `source` — which seam produced the index: `working-tree` (the adp-serve corpus routes,
+  live), `snapshot` (a stored corpus copy; none ships today), or `picked` (a browser directory
+  selection; reserved). The token set is frozen, and an unused token stays.
 - `tickets` — one entry per ticket directory, sorted ascending by `dir`. Attention ordering,
   overdue-first sorting, and every other presentation order is derived by the shell, never
   baked into the artifact.
@@ -71,7 +74,7 @@ always means the `YYYY-MM-DD` form of rule IDX-004.
   "title": "AV-014 — Loose list numbering · audit log",
   "state": "shipped",
   "state_source": "inferred",
-  "pr": "#13",
+  "pr": null,
   "merged": null,
   "phase": 9,
   "sections": [],
@@ -94,9 +97,12 @@ tickets by `id`, falling back to `dir` when `id` is null.
 
 Lifecycle. `state` is one of `open`, `in-review`, `shipped`, `closed`. The declared mechanism is
 YAML front matter at the top of `audit-log.md` (rule IDX-032); a log without it gets its state
-inferred from section presence and prose, and the index labels which happened via
-`state_source: "declared" | "inferred"`. `pr` carries the pull-request reference verbatim;
-`merged` is the absolute merge date when one is known.
+inferred, and the index labels which happened via `state_source: "declared" | "inferred"`.
+Inference is a fixed ladder: `closed` when the log carries a `Decision Log status: CLOSED`
+line, else `shipped` when an Obligation Tickets section is present, else `in-review` when a
+PR Summary is present, else `open`. `pr` carries the pull-request reference verbatim; `merged`
+is the absolute merge date when one is known. Only the declared block fills them: an inferred
+ticket always carries null `pr` and `merged`.
 
 `phase` is the highest canonical phase with a section present in the log, 1 through 9, or 0 for
 a ticket with no attributable sections (a prompt-only ticket is a valid ticket).
@@ -112,8 +118,9 @@ computed by adp-parser-lib's `sectionKeys` (slug of the title, with a numeric su
 repeats). `title` is verbatim. `phase` is the attributed protocol phase or null; `canonical` is
 true exactly when `phase` is non-null. Attribution follows the alias table below. A duplicate
 canonical heading demotes to non-canonical rather than overwriting the first (its `phase` is
-null and its `key` carries the dedupe suffix). Non-canonical sections pass through verbatim —
-they are never filtered, renamed, or dropped.
+null and its `key` carries the dedupe suffix); two headings matching the same alias row are
+duplicates, whatever their exact text. Non-canonical sections pass through verbatim — they are
+never filtered, renamed, or dropped.
 
 The alias table. adp-parser-lib's `ART` registry is the single owner of title matching; this
 spec documents it and adds one form, and no other component may grow its own matcher.
@@ -165,7 +172,9 @@ template text, not citations, and appear nowhere in an index.
   "created": "2026-08-17" }
 ```
 
-One entry per `### [DL-NNN]` heading in the Decision Log section. `id` is unique within the
+One entry per `### [DL-NNN]` heading in any section of the log, in document order; the first
+card wins a repeated id, and a head whose bracket is not `DL-` plus digits is template text
+that harvests nothing. `id` is unique within the
 ticket. `title`, `confidence`, and `status` are nonempty; `confidence` and `status` carry the
 source token verbatim — the known vocabularies (HIGH/MEDIUM/LOW, fully qualified with no aliases;
 OPEN/VALIDATED/INVALIDATED/UNKNOWN) exist for rendering, and an unknown token is data, not an
@@ -180,7 +189,9 @@ basis or null; `created` is the entry's date or null.
   "due": "2026-10-17", "anchored": true, "window": "60 days after merge" }
 ```
 
-One entry per row of the Obligation Tickets section. `wid` is the ticket-local id verbatim, unique
+One entry per row of any table whose header opens with `Ticket ID`, wherever the table sits, in
+document order; the first row wins a repeated wid, and a row whose id cell is the `—` no-value
+marker harvests nothing. `wid` is the ticket-local id verbatim, unique
 within the ticket. `dl` is the list of Decision Log ids the row covers (the source column is
 comma-separated when one ticket covers several entries). `what` is the assumption under watch.
 `window` preserves the source phrasing verbatim or is null.

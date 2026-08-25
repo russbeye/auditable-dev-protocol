@@ -1,0 +1,5 @@
+schema_version: "1.0"
+
+task:
+  id: "FX-091"
+  title: "Prompt-only ticket: a valid ticket with no audit log"
