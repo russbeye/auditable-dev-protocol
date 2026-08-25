@@ -1,0 +1,149 @@
+{
+  "schema": "adp-index/1",
+  "project": "auditable-dev-protocol",
+  "generated": "2026-08-24",
+  "source": "snapshot",
+  "tickets": [
+    {
+      "id": "AV014",
+      "dir": "20260817-AV014-loose-list-numbering",
+      "slug": "loose-list-numbering",
+      "date": "2026-08-17",
+      "title": "AV-014 — Loose list numbering · audit log",
+      "state": "shipped",
+      "state_source": "inferred",
+      "pr": "#13",
+      "merged": null,
+      "phase": 9,
+      "sections": [
+        {
+          "key": "sec-problem-statement",
+          "title": "Problem Statement",
+          "phase": 1,
+          "canonical": true
+        },
+        {
+          "key": "sec-knowledge-gap",
+          "title": "Knowledge Gap",
+          "phase": 2,
+          "canonical": true
+        },
+        {
+          "key": "sec-open-questions-resolve-before-phase-3",
+          "title": "Open Questions (resolve before Phase 3)",
+          "phase": 2,
+          "canonical": true
+        },
+        {
+          "key": "sec-recommendation-brief",
+          "title": "Recommendation Brief",
+          "phase": 3,
+          "canonical": true
+        },
+        {
+          "key": "sec-pre-mortem-report",
+          "title": "Pre-Mortem Report",
+          "phase": 4,
+          "canonical": true
+        },
+        {
+          "key": "sec-decision-log",
+          "title": "Decision Log",
+          "phase": 5,
+          "canonical": true
+        },
+        {
+          "key": "sec-test-adversary",
+          "title": "Test Adversary",
+          "phase": 6,
+          "canonical": true
+        },
+        {
+          "key": "sec-pr-summary",
+          "title": "PR Summary",
+          "phase": 7,
+          "canonical": true
+        },
+        {
+          "key": "sec-mandatory-review-items-low-confidence-decis",
+          "title": "🚩 Mandatory Review Items (LOW-confidence decisions)",
+          "phase": 7,
+          "canonical": true
+        },
+        {
+          "key": "sec-deployment-risk",
+          "title": "Deployment Risk",
+          "phase": 8,
+          "canonical": true
+        },
+        {
+          "key": "sec-obligation-tickets",
+          "title": "Obligation Tickets",
+          "phase": 9,
+          "canonical": true
+        },
+        {
+          "key": "sec-review-addendum-2026-08-18",
+          "title": "Review addendum — 2026-08-18",
+          "phase": null,
+          "canonical": false
+        }
+      ],
+      "refs": {
+        "sec-pre-mortem-report": [
+          "DL-002"
+        ],
+        "sec-pr-summary": [
+          "DL-002",
+          "DL-003"
+        ],
+        "sec-deployment-risk": [
+          "DL-002",
+          "OT-AV014-1"
+        ],
+        "sec-review-addendum-2026-08-18": [
+          "DL-002"
+        ]
+      },
+      "decisions": [
+        {
+          "id": "DL-001",
+          "title": "The screenshot's list is taken as blank-separated",
+          "confidence": "HIGH",
+          "basis": "DIRECT EVIDENCE — traced renderList()",
+          "status": "VALIDATED",
+          "created": "2026-08-17"
+        },
+        {
+          "id": "DL-002",
+          "title": "Blank lines extend a list only toward a same-kind item",
+          "confidence": "MEDIUM",
+          "basis": "INFERENCE FROM CONVENTION — CommonMark",
+          "status": "OPEN",
+          "created": "2026-08-17"
+        },
+        {
+          "id": "DL-003",
+          "title": "Ordered markers renumber 1..N",
+          "confidence": "HIGH",
+          "basis": "DIRECT EVIDENCE — golden fixture",
+          "status": "VALIDATED",
+          "created": "2026-08-17"
+        }
+      ],
+      "watches": [
+        {
+          "wid": "OT-AV014-1",
+          "dl": [
+            "DL-002"
+          ],
+          "what": "Blank-gap same-kind continuation matches author intent",
+          "due": "2026-10-17",
+          "anchored": true,
+          "window": "60 days after merge, recorded absolute"
+        }
+      ],
+      "missing": []
+    }
+  ]
+}

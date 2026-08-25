@@ -1,0 +1,65 @@
+{
+  "schema": "adp-index/1",
+  "project": "auditable-dev-protocol",
+  "generated": "2026-08-24",
+  "source": "snapshot",
+  "tickets": [
+    {
+      "id": "MC001",
+      "dir": "20260820-MC001-mission-control-shell",
+      "slug": "mission-control-shell",
+      "date": "2026-08-20",
+      "title": "Audit Log — 20260820-MC001-mission-control-shell",
+      "state": "open",
+      "state_source": "inferred",
+      "pr": null,
+      "merged": null,
+      "phase": 1,
+      "sections": [
+        {
+          "key": "sec-problem-statement",
+          "title": "",
+          "phase": 1,
+          "canonical": true
+        }
+      ],
+      "refs": {
+        "sec-problem-statement": [
+          "DL-001"
+        ]
+      },
+      "decisions": [
+        {
+          "id": "DL-001",
+          "title": "A staked decision",
+          "confidence": "HIGH",
+          "basis": "DIRECT EVIDENCE — measured",
+          "status": "OPEN",
+          "created": "2026-08-20"
+        }
+      ],
+      "watches": [
+        {
+          "wid": "OT-1",
+          "dl": [
+            "DL-001"
+          ],
+          "what": "An assumption under watch",
+          "due": "2026-10-01",
+          "anchored": true,
+          "window": "until 2026-10-01"
+        }
+      ],
+      "missing": [
+        "Knowledge Gap",
+        "Recommendation Brief",
+        "Pre-Mortem Report",
+        "Decision Log",
+        "Test Adversary",
+        "PR Summary",
+        "Deployment Risk",
+        "Obligation Tickets"
+      ]
+    }
+  ]
+}
