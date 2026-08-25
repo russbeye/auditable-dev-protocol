@@ -202,8 +202,8 @@ lacks a fixture.
 - **IDX-002** [fixture] Every object carries all of its core keys in the normative order, and
   unknown keys follow all known keys in ascending order.
 - **IDX-003** [fixture] `project` is a nonempty string.
-- **IDX-004** [fixture] Every date field holds `YYYY-MM-DD` with a month of 01–12 and a day of
-  01–31; `generated` is such a date.
+- **IDX-004** [fixture] Every date field holds `YYYY-MM-DD` naming a real calendar date, so
+  rollovers like `2026-02-30` are invalid; `generated` is such a date.
 - **IDX-005** [fixture] `source` is one of `"working-tree"`, `"snapshot"`, `"picked"`.
 - **IDX-006** [fixture] `tickets` is an array sorted ascending by `dir` with no duplicate
   `dir`.
