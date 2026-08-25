@@ -63,6 +63,17 @@ test("directory names split into date, id, and slug", () => {
     {id: null, date: null, slug: "20260230-XX01-rollover"});
 });
 
+test("a declared block without a valid state falls back to inference", () => {
+  const doc = builder.buildIndex([{
+    path: "T-1-x/audit-log.md",
+    text: "---\nstate: finished\npr: \"#9\"\n---\n# T\n\n## PR Summary\nprose\n"
+  }], OPTS);
+  const t = doc.tickets[0];
+  assert.equal(t.state_source, "inferred");
+  assert.equal(t.state, "in-review");
+  assert.equal(t.pr, null);
+});
+
 test("declared front matter wins the lifecycle and fills pr and merged", () => {
   const t = ticket(fixtureDoc(), "FX001");
   assert.equal(t.state, "shipped");

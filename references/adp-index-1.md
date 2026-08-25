@@ -259,6 +259,7 @@ lacks a fixture.
 - **IDX-031** [prose] Title-to-phase attribution follows adp-parser-lib's `ART` registry plus
   the `Phase N:` prefix form; no other matcher may exist.
 - **IDX-032** [prose] The declared lifecycle block is YAML front matter at the top of
-  audit-log.md with keys `state`, `pr`, and `merged`; when present, `state_source` is
-  `"declared"`. Corpus logs do not adopt the block until adp-parser-lib strips front matter
-  before rendering, so the untouched standalone viewer never shows it as prose.
+  audit-log.md with keys `state`, `pr`, and `merged`; when it declares a valid state token,
+  `state_source` is `"declared"`, and a block without one falls back to inference with null
+  `pr` and `merged`. Corpus logs do not adopt the block until adp-parser-lib strips front
+  matter before rendering, so the untouched standalone viewer never shows it as prose.
