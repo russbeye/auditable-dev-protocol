@@ -109,7 +109,7 @@ function buildTree(){
   const shell = add("div", {class: "shell"}, root);
   const header = add("header", {}, shell);
   add("span", {class: "chit", id: "projChit"}, header);
-  const themeBtn = add("span", {class: "chit click", id: "themeBtn"}, header);
+  const themeBtn = add("button", {class: "chit click", id: "themeBtn"}, header);
   add("span", {id: "ttIcon"}, themeBtn);
   add("nav", {class: "tabs", id: "tabs"}, header);
   add("button", {class: "newtask", id: "newTaskBtn"}, header);
@@ -168,12 +168,15 @@ function bootShell(opts){
     }
   };
 
+  // The seam warns to the console when a load fails. We capture those lines,
+  // so a test can assert the trace instead of spilling it into the runner.
+  const warns = [];
   const sandbox = {
     document,
     localStorage,
     window: {matchMedia: () => ({matches: !!opts.matchMediaLight})},
     fetch: opts.fetch || (() => Promise.reject(new Error("no network"))),
-    console
+    console: {warn: (...args) => { warns.push(args.map(String).join(" ")); }}
   };
   vm.createContext(sandbox);
 
@@ -202,7 +205,7 @@ function bootShell(opts){
     await new Promise(r => setImmediate(r));
   }
 
-  return {document, documentElement, $, storage, click, settle};
+  return {document, documentElement, $, storage, click, settle, warns};
 }
 
 module.exports = {bootShell};

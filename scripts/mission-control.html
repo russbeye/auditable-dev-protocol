@@ -18,8 +18,8 @@
   <header>
     <span class="brand">ADP · <b>MISSION CONTROL</b></span>
     <span class="chit" id="projChit"></span>
-    <span class="chit click" id="themeBtn" title="Toggle light / dark"><span id="ttIcon" aria-hidden="true">☾</span> theme</span>
-    <nav class="tabs" id="tabs"></nav>
+    <button type="button" class="chit click" id="themeBtn" title="Toggle light / dark"><span id="ttIcon" aria-hidden="true">☾</span> theme</button>
+    <nav class="tabs" id="tabs" role="tablist"></nav>
     <button class="newtask" id="newTaskBtn">+ new task</button>
   </header>
   <div class="main">
@@ -49,12 +49,20 @@
   let selScreen = "inspector";
   let index = null;
 
+  // The tab strip is built once. Renders flip state on the buttons in place,
+  // so a focused tab keeps its focus across every switch.
+  $("#tabs").innerHTML = S.tabsHtml(selScreen);
+
   /* One render path serves the boot, every tab switch, and the corpus
      arriving. The seam is async, so the first paint is the complete
      no-corpus chrome and the same render fills the counts in when the
      index resolves. */
   function render(){
-    $("#tabs").innerHTML = S.tabsHtml(selScreen);
+    document.querySelectorAll(".mtab").forEach(tab => {
+      const on = tab.getAttribute("data-s") === selScreen;
+      tab.classList.toggle("is-on", on);
+      tab.setAttribute("aria-selected", on ? "true" : "false");
+    });
     $("#newTaskBtn").classList.toggle("is-on", selScreen === "new task");
     document.querySelectorAll(".screen").forEach(sec =>
       sec.classList.toggle("is-on", sec.getAttribute("data-s") === selScreen));
@@ -64,8 +72,7 @@
     $("#foot").textContent = S.footerText(index);
   }
 
-  // The tab strip re-renders on every switch, so it listens on its container
-  // and a rebuilt button never loses its handler.
+  // One listener on the strip serves every tab.
   $("#tabs").addEventListener("click", e => {
     const tab = e.target.closest(".mtab");
     if (!tab) return;

@@ -255,6 +255,16 @@
     };
   }
 
+  /* A ticket's text lives in its top-level audit-log.md alone. Every other
+     path contributes only its directory name. We export this rule, so a seam
+     that fetches text on demand asks us which paths need it instead of
+     keeping a copy of the rule that could drift. */
+  function isLogPath(p){
+    const path = String(p).replace(/^\.\//, "");
+    const cut = path.indexOf("/");
+    return cut > 0 && path.slice(cut + 1) === "audit-log.md";
+  }
+
   /* files is an array of {path, text} with /-separated paths relative to the
      corpus root. Ticket order and every derived fact come from content, never
      from array position, so any enumeration order of the same corpus yields
@@ -271,7 +281,7 @@
       if (cut <= 0) continue;
       const dir = path.slice(0, cut);
       if (!byDir.has(dir)) byDir.set(dir, null);
-      if (path.slice(cut + 1) === "audit-log.md" && typeof f.text === "string"){
+      if (isLogPath(path) && typeof f.text === "string"){
         byDir.set(dir, f.text);
       }
     }
@@ -285,7 +295,7 @@
     };
   }
 
-  const ADPIndexBuilder = {buildIndex, parseDirName};
+  const ADPIndexBuilder = {buildIndex, parseDirName, isLogPath};
   if (isNode){ module.exports = ADPIndexBuilder; }
   else { global.ADPIndexBuilder = ADPIndexBuilder; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

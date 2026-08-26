@@ -27,11 +27,13 @@ const LISTING = {
 };
 const TEXTS = {"20260101-AA1-alpha/audit-log.md": LOG};
 
+// The stub decodes each segment the way the server unquotes its route, so an
+// unencoded fetch of a path with reserved characters misses here too.
 function corpusFetch(listing, texts){
   return u => {
     if (u === "corpus.json") return Promise.resolve({ok: true, json: async () => listing});
     if (u.startsWith("corpus/")) {
-      const p = u.slice("corpus/".length);
+      const p = u.slice("corpus/".length).split("/").map(decodeURIComponent).join("/");
       if (p in texts) return Promise.resolve({ok: true, text: async () => texts[p]});
       return Promise.resolve({ok: false});
     }
@@ -49,10 +51,12 @@ test("localDate composes the local calendar day and satisfies IDX-004", () => {
 
 // ---- lib: logPaths ----
 
-test("logPaths keeps only top-level audit logs", () => {
+test("logPaths keeps exactly the paths the builder reads text from", () => {
   const files = ["A-1-x/audit-log.md", "A-1-x/prompt.yaml", "A-1-x/references/audit-log.md",
-                 "audit-log.md", "B-2-y/audit-log.md"];
-  assert.deepEqual(S.logPaths(files), ["A-1-x/audit-log.md", "B-2-y/audit-log.md"]);
+                 "audit-log.md", "./C-3-z/audit-log.md", "B-2-y/audit-log.md"];
+  assert.deepEqual(S.logPaths(files),
+    ["A-1-x/audit-log.md", "./C-3-z/audit-log.md", "B-2-y/audit-log.md"]);
+  assert.deepEqual(S.logPaths(files), files.filter(p => B.isLogPath(p)));
 });
 
 // ---- lib: the seam ----
@@ -69,15 +73,39 @@ test("loadCorpus builds the same bytes as a direct Node build", async () => {
   assert.equal(got.source, "working-tree");
 });
 
-test("loadCorpus resolves null on every failure shape", async () => {
+test("loadCorpus resolves null on every failure shape", async t => {
+  const warn = t.mock.method(console, "warn", () => {});
   assert.equal(await S.loadCorpus(() => Promise.reject(new Error("down"))), null);
   assert.equal(await S.loadCorpus(() => Promise.resolve({ok: false})), null);
   assert.equal(await S.loadCorpus(() => Promise.resolve({ok: true, json: async () => ({})})), null);
+  // The not-ok probe is the quiet offline mode. The other two shapes warn.
+  assert.equal(warn.mock.callCount(), 2);
 });
 
-test("loadCorpus is all-or-null when one log is unreadable", async () => {
+test("loadCorpus is all-or-null when one log is unreadable, and says which", async t => {
+  const warn = t.mock.method(console, "warn", () => {});
   const got = await S.loadCorpus(corpusFetch(LISTING, {}));
   assert.equal(got, null);
+  assert.equal(warn.mock.callCount(), 1);
+  assert.match(String(warn.mock.calls[0].arguments.join(" ")), /unreadable corpus file/);
+});
+
+test("loadCorpus percent-encodes each path segment of a fetch", async () => {
+  const listing = {root: "demo", files: ["T-1-a b#c/audit-log.md"]};
+  const texts = {"T-1-a b#c/audit-log.md": LOG};
+  const urls = [];
+  const fetchFn = u => { urls.push(u); return corpusFetch(listing, texts)(u); };
+  const got = await S.loadCorpus(fetchFn, {now: new Date(2026, 7, 25)});
+  assert.ok(urls.includes("corpus/T-1-a%20b%23c/audit-log.md"));
+  assert.equal(got.tickets.length, 1);
+});
+
+// ---- lib: the chit ----
+
+test("projectChitText separates a missing corpus from a nameless project", () => {
+  assert.equal(S.projectChitText(null), "no corpus");
+  assert.equal(S.projectChitText({project: null}), "project: —");
+  assert.equal(S.projectChitText({project: "demo"}), "project: demo");
 });
 
 // ---- the real markup ----
@@ -85,6 +113,8 @@ test("loadCorpus is all-or-null when one log is unreadable", async () => {
 test("mission-control.html carries the frame the harness models", () => {
   assert.match(HTML, /<link rel="stylesheet" href="adp-theme\.css" \/>/);
   assert.match(HTML, /<link rel="stylesheet" href="adp-shell\.css" \/>/);
+  assert.match(HTML, /<button [^>]*id="themeBtn"/);
+  assert.match(HTML, /<nav [^>]*role="tablist"/);
   const srcs = [...HTML.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
   assert.deepEqual(srcs,
     ["adp-parser-lib.js", "adp-index-lib.js", "adp-index-builder-lib.js", "adp-shell-lib.js"]);
@@ -120,6 +150,8 @@ test("the boot paints the no-corpus chrome synchronously", () => {
   const tabs = h.document.querySelectorAll(".mtab");
   assert.deepEqual(tabs.map(t => t.getAttribute("data-s")), S.TAB_SCREENS);
   assert.equal(tabs[0].classList.contains("is-on"), true);
+  assert.equal(tabs[0].getAttribute("aria-selected"), "true");
+  assert.equal(tabs[1].getAttribute("aria-selected"), "false");
   assert.equal(h.$("#scrInspector").classList.contains("is-on"), true);
   assert.equal(h.$("#scrWatch").classList.contains("is-on"), false);
   assert.equal(h.$("#projChit").textContent, "no corpus");
@@ -135,6 +167,17 @@ test("a tab click lands even while the seam is still pending", async () => {
   assert.equal(h.$("#scrWatch").classList.contains("is-on"), true);
   assert.equal(h.$("#scrInspector").classList.contains("is-on"), false);
   assert.equal(h.document.querySelectorAll(".mtab")[1].classList.contains("is-on"), true);
+});
+
+test("a tab switch keeps the same buttons, so focus survives the render", () => {
+  const h = bootShell({stored: "dark"});
+  const before = h.document.querySelectorAll(".mtab");
+  h.click(before[1]);
+  const after = h.document.querySelectorAll(".mtab");
+  assert.equal(after.length, before.length);
+  before.forEach((tab, i) => assert.equal(after[i], tab));
+  assert.equal(before[1].getAttribute("aria-selected"), "true");
+  assert.equal(before[0].getAttribute("aria-selected"), "false");
 });
 
 test("new task lights the accent button and clears the tab strip", () => {
@@ -164,9 +207,11 @@ test("a served corpus fills the chit and the footer counts in", async () => {
   assert.match(h.$("#foot").textContent, /2 tickets/);
 });
 
-test("a dead network leaves the no-corpus chrome standing", async () => {
+test("a dead network leaves the no-corpus chrome standing, with a console trace", async () => {
   const h = bootShell({stored: "dark"});
   await h.settle();
   assert.equal(h.$("#projChit").textContent, "no corpus");
   assert.match(h.$("#foot").textContent, /^no corpus/);
+  assert.equal(h.warns.length, 1);
+  assert.match(h.warns[0], /corpus load failed/);
 });

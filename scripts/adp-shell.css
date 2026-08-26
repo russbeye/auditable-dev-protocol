@@ -16,7 +16,7 @@
 /* The mockup places the footer after a 100vh shell, which pushes the status
    line below the viewport. We make the footer the grid's third row instead,
    so the status line stays visible while the stage scrolls internally. */
-.shell{display:grid;grid-template-rows:auto 1fr auto;height:100vh}
+.shell{display:grid;grid-template-rows:auto 1fr auto;height:100vh;height:100dvh}
 
 .shell header{display:flex;align-items:center;gap:14px;padding:10px 16px;
   border-bottom:1px solid var(--line);background:var(--panel)}
@@ -25,7 +25,9 @@
 .chit{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
   border:1px solid var(--line);padding:3px 8px;color:var(--dim);white-space:nowrap}
 .chit.src{border-color:var(--line-bright);color:var(--accent)}
-.chit.click{cursor:pointer}
+/* A clickable chit can be a real button, so we clear the button fill the
+   browser would paint under it. */
+.chit.click{cursor:pointer;background:none}
 .chit.click:hover{color:var(--ink);border-color:var(--line-bright)}
 
 .tabs{display:flex;gap:2px;margin-left:auto}
@@ -48,6 +50,9 @@
 .shell footer{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
   color:var(--faint);padding:10px 24px;border-top:1px solid var(--line)}
 
-.shellmask{position:fixed;inset:0;background:rgba(5,6,12,.85);display:none;place-items:center;z-index:9}
+/* The scrim takes the theme's own background at partial opacity, so both
+   palettes dim to a veil of themselves instead of a fixed dark. */
+.shellmask{position:fixed;inset:0;background:color-mix(in srgb, var(--bg) 85%, transparent);
+  display:none;place-items:center;z-index:9}
 .shellmask.is-on{display:grid}
 .shellmask .maskmsg{font-family:var(--mono);font-size:18px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}

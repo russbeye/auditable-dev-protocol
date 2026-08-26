@@ -26,9 +26,10 @@
   }
 
   function tabsHtml(selScreen){
-    return TAB_SCREENS.map(s =>
-      `<button class="mtab${s === selScreen ? " is-on" : ""}" data-s="${s}">${s}</button>`
-    ).join("");
+    return TAB_SCREENS.map(s => {
+      const on = s === selScreen;
+      return `<button class="mtab${on ? " is-on" : ""}" role="tab" aria-selected="${on}" data-s="${s}">${s}</button>`;
+    }).join("");
   }
 
   function footerText(index){
@@ -36,8 +37,11 @@
     return `schema ${index.schema} · ${index.tickets.length} tickets · read-only · rebuilt in-memory from the working tree`;
   }
 
+  // An index can build from a listing whose root never named the project. The
+  // chit then shows a placeholder, so "no corpus" stays true to its words.
   function projectChitText(index){
-    return index && index.project ? "project: " + index.project : "no corpus";
+    if (!index) return "no corpus";
+    return index.project ? "project: " + index.project : "project: —";
   }
 
   function applyTheme(doc, storage, t){
@@ -47,14 +51,17 @@
     try{ storage.setItem("adp-theme", t); }catch(e){}
   }
 
-  // Only a top-level audit-log.md carries text the builder reads. Every other
-  // listed path establishes its ticket directory by name alone, so we never
-  // fetch it.
+  // The builder owns the rule for which paths carry text it reads. We ask it
+  // here, so the seam fetches exactly those files and the two never drift.
   function logPaths(files){
-    return (files || []).filter(p => {
-      const cut = String(p).indexOf("/");
-      return cut > 0 && p.slice(cut + 1) === "audit-log.md";
-    });
+    return (files || []).filter(p => B.isLogPath(p));
+  }
+
+  // The server decodes percent escapes, so a raw path with a hash or a
+  // percent sign would come out as a different file. We encode each segment
+  // and keep the slashes as route separators.
+  function corpusUrl(p){
+    return "corpus/" + String(p).split("/").map(encodeURIComponent).join("/");
   }
 
   /* The corpus seam. One probe of corpus.json decides the mode: a listing
@@ -67,11 +74,12 @@
     opts = opts || {};
     try{
       const probe = await fetchFn("corpus.json");
+      // A missing corpus.json is the normal offline mode, so it stays quiet.
       if (!probe || !probe.ok) return null;
       const listing = await probe.json();
-      if (!listing || !Array.isArray(listing.files)) return null;
+      if (!listing || !Array.isArray(listing.files)) throw new Error("corpus.json carries no files array");
       const logs = await Promise.all(logPaths(listing.files).map(async p => {
-        const res = await fetchFn("corpus/" + p);
+        const res = await fetchFn(corpusUrl(p));
         if (!res || !res.ok) throw new Error("unreadable corpus file: " + p);
         return {path: p, text: await res.text()};
       }));
@@ -83,12 +91,15 @@
         source: "working-tree"
       });
     }catch(e){
+      // The chrome renders every failure as no-corpus, so the console keeps
+      // the one trace that says which file or shape broke the load.
+      console.warn("corpus load failed:", e);
       return null;
     }
   }
 
   const ADPShellLib = {SCREENS, TAB_SCREENS, localDate, tabsHtml, footerText,
-    projectChitText, applyTheme, logPaths, loadCorpus};
+    projectChitText, applyTheme, logPaths, corpusUrl, loadCorpus};
   if (isNode){ module.exports = ADPShellLib; }
   else { global.ADPShellLib = ADPShellLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);
