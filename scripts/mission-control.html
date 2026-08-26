@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADP · Mission Control</title>
+<link rel="stylesheet" href="adp-theme.css" />
+<link rel="stylesheet" href="adp-shell.css" />
+<script>
+/* We set the theme before the first paint, so the page never flashes the wrong
+   one. A stored preference wins, then the system preference, then dark. */
+(function(){try{var t=localStorage.getItem('adp-theme');if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
+</script>
+</head>
+<body>
+<div class="shellmask" id="shellmask"><div class="maskmsg">▾ drop an audit log to open it</div></div>
+<div class="shell">
+  <header>
+    <span class="brand">ADP · <b>MISSION CONTROL</b></span>
+    <span class="chit" id="projChit"></span>
+    <button type="button" class="chit click" id="themeBtn" title="Toggle light / dark"><span id="ttIcon" aria-hidden="true">☾</span> theme</button>
+    <nav class="tabs" id="tabs" role="tablist"></nav>
+    <button class="newtask" id="newTaskBtn">+ new task</button>
+  </header>
+  <div class="main">
+    <aside class="rail" id="rail"></aside>
+    <main class="stage">
+      <section class="screen" data-s="inspector" id="scrInspector"></section>
+      <section class="screen" data-s="watchboard" id="scrWatch"></section>
+      <section class="screen" data-s="ledgers" id="scrLedgers"></section>
+      <section class="screen" data-s="calibration" id="scrCalib"></section>
+      <section class="screen" data-s="resume pack" id="scrPack"></section>
+      <section class="screen" data-s="new task" id="scrNew"></section>
+    </main>
+  </div>
+  <footer id="foot"></footer>
+</div>
+<input type="file" id="openDoc" accept=".md,.markdown,.txt" hidden>
+<input type="file" id="openYaml" accept=".yaml,.yml" hidden>
+<script src="adp-parser-lib.js"></script>
+<script src="adp-index-lib.js"></script>
+<script src="adp-index-builder-lib.js"></script>
+<script src="adp-shell-lib.js"></script>
+<script>
+(function(){
+  "use strict";
+  const S = ADPShellLib;
+  const $ = sel => document.querySelector(sel);
+  let selScreen = "inspector";
+  let index = null;
+
+  // The tab strip is built once. Renders flip state on the buttons in place,
+  // so a focused tab keeps its focus across every switch.
+  $("#tabs").innerHTML = S.tabsHtml(selScreen);
+
+  /* One render path serves the boot, every tab switch, and the corpus
+     arriving. The seam is async, so the first paint is the complete
+     no-corpus chrome and the same render fills the counts in when the
+     index resolves. */
+  function render(){
+    document.querySelectorAll(".mtab").forEach(tab => {
+      const on = tab.getAttribute("data-s") === selScreen;
+      tab.classList.toggle("is-on", on);
+      tab.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    $("#newTaskBtn").classList.toggle("is-on", selScreen === "new task");
+    document.querySelectorAll(".screen").forEach(sec =>
+      sec.classList.toggle("is-on", sec.getAttribute("data-s") === selScreen));
+    const theme = document.documentElement.getAttribute("data-theme");
+    $("#ttIcon").textContent = theme === "dark" ? "☾" : "☀";
+    $("#projChit").textContent = S.projectChitText(index);
+    $("#foot").textContent = S.footerText(index);
+  }
+
+  // One listener on the strip serves every tab.
+  $("#tabs").addEventListener("click", e => {
+    const tab = e.target.closest(".mtab");
+    if (!tab) return;
+    selScreen = tab.getAttribute("data-s");
+    render();
+  });
+  $("#newTaskBtn").addEventListener("click", () => { selScreen = "new task"; render(); });
+  $("#themeBtn").addEventListener("click", () => {
+    const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+    S.applyTheme(document, localStorage, next);
+  });
+
+  render();
+  S.loadCorpus(u => fetch(u)).then(ix => { index = ix; render(); });
+})();
+</script>
+</body>
+</html>
