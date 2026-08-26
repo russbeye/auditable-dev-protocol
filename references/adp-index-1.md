@@ -182,6 +182,13 @@ error. That is the open-vocabulary principle: the index reports what the log say
 shell marks unknown tokens instead of normalizing them. `basis` is the one-line confidence
 basis or null; `created` is the entry's date or null.
 
+Additive since 2026-08-25: an optional `supersedes` key — a nonempty array of decision ids this
+entry replaces, harvested from a `Supersedes` field on the card and emitted only when that
+field names at least one real id. As an additive field it trails the core keys per the
+unknown-key rule. The authoring convention behind it: an entry is never rewritten; a changed or
+reversed decision is a new entry whose `Supersedes` field names its predecessor, so the chain
+of choices stays traceable.
+
 ### Watch
 
 ```json
@@ -236,7 +243,7 @@ lacks a fixture.
 - **IDX-019** [fixture] Every `refs` value is an array of well-formed id tokens with no
   duplicates.
 - **IDX-020** [fixture] Placeholder tokens appear nowhere: not in `refs`, not as decision ids,
-  not in watch `dl` lists.
+  not in watch `dl` lists, not in `supersedes` lists.
 - **IDX-021** [fixture] Every decision `id` is `DL-` followed by digits and is unique within
   the ticket.
 - **IDX-022** [fixture] Every decision's `title`, `confidence`, and `status` are nonempty
@@ -263,3 +270,5 @@ lacks a fixture.
   `state_source` is `"declared"`, and a block without one falls back to inference with null
   `pr` and `merged`. Corpus logs do not adopt the block until adp-parser-lib strips front
   matter before rendering, so the untouched standalone viewer never shows it as prose.
+- **IDX-033** [fixture] When a decision carries a `supersedes` key, it is a nonempty array of
+  `DL-`digit tokens.

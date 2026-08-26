@@ -63,7 +63,10 @@
           "confidence": "MEDIUM",
           "basis": null,
           "status": "OPEN",
-          "created": null
+          "created": null,
+          "supersedes": [
+            "DL-001"
+          ]
         }
       ],
       "watches": [

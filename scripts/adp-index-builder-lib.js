@@ -97,15 +97,16 @@
         const id = hm[1].trim();
         if (!I.RE_DL.test(id) || ids.has(id)) continue;
         ids.add(id);
-        let confidence = "", basis = "", status = "", created = "";
-        for (const f of P.parseDLFields(entry.lines)){
+        let confidence = "", basis = "", status = "", created = "", supersedes = "";
+        for (const f of P.parseDLFields(P.dlSplitBody(entry.lines).fieldLines)){
           const k = f.label.toLowerCase();
           if (k === "confidence") confidence = f.value;
           else if (k === "confidence basis") basis = f.value;
           else if (k === "status") status = f.value;
           else if (k === "created") created = f.value;
+          else if (k === "supersedes") supersedes = f.value;
         }
-        decisions.push({
+        const dec = {
           id: id,
           // A headless card still needs an address in the ledger, so the id
           // stands in when the title text is empty.
@@ -114,7 +115,12 @@
           basis: basis.trim() ? basis.trim() : null,
           status: status,
           created: firstDate(created)
-        });
+        };
+        // supersedes is an additive optional key, so it appears only when the
+        // card's field names at least one real decision id.
+        const sup = harvestTokens(supersedes, true);
+        if (sup.length) dec.supersedes = sup;
+        decisions.push(dec);
       }
     }
     return decisions;

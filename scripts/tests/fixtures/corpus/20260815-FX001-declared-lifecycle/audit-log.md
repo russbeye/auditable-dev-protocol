@@ -20,7 +20,10 @@ The fixture proves the declared path. The statement cites DL-001 before its card
 - **Created:** 2026-08-15 / Phase 5
 - **Status:** VALIDATED
 
+> **Gate quote.** A blockquote after the fields is card material and never rides into the Status value.
+
 ### [DL-002] Fixture decision two
+- **Supersedes:** DL-001
 - **Decision:** We keep the second option open.
 - **Confidence:** MEDIUM
 - **Status:** OPEN

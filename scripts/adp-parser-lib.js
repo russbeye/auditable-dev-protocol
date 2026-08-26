@@ -327,10 +327,25 @@
   function dlRail(status){
     return {invalidated:'rail-bad',validated:'rail-ok',open:'rail-open',unknown:'rail-unk',other:''}[dlStatusKind(status)];
   }
+  /* Field values are plain wrapped prose. A blockquote or fenced block inside
+     an entry is card material, not part of the field above it, so we cut the
+     field region at the first block line and hand the rest back separately.
+     Without the cut, a gate confirmation quoted after the last field rides
+     into that field's value. */
+  function dlSplitBody(lines){
+    for(let i=0;i<lines.length;i++){
+      if(/^\s*(```|>)/.test(lines[i])){
+        return {fieldLines:lines.slice(0,i), trailing:lines.slice(i).join('\n').trim()};
+      }
+    }
+    return {fieldLines:lines, trailing:''};
+  }
+
   function renderDLCard(entry){
     const hm=entry.head.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
     const id=hm?hm[1].trim():''; const title=hm?hm[2].trim():entry.head;
-    const fields=parseDLFields(entry.lines);
+    const split=dlSplitBody(entry.lines);
+    const fields=parseDLFields(split.fieldLines);
     let confidence='', status=''; const body=[];
     for(const f of fields){
       const k=f.label.toLowerCase();
@@ -348,13 +363,16 @@
     const grid=body.map(f=>
       `<div class="dl-row"><span class="dl-k">${esc(f.label)}</span><span class="dl-v">${decorate(inline(f.value))}</span></div>`
     ).join('');
+    // Trailing block material renders as markdown below the grid, so a quote
+    // or code block stays readable instead of flattening into a field row.
+    const trail=split.trailing?`<div class="md dl-trail">${renderMarkdown(split.trailing)}</div>`:'';
     return `<div class="dl-card ${dlRail(status)}">
       <div class="dl-head">
         <span class="dl-id">${id?esc(id):'—'}</span>
         <span class="dl-title">${decorate(inline(title))}</span>
         <span class="dl-pills">${pills}</span>
       </div>
-      ${grid?`<div class="dl-grid">${grid}</div>`:''}
+      ${grid?`<div class="dl-grid">${grid}</div>`:''}${trail}
     </div>`;
   }
   /* We split a section body into pre-entry prose and ### entries in one
@@ -378,7 +396,7 @@
      chip on the card it counted. */
   function dlEntryStatus(entry){
     let status='';
-    for(const f of parseDLFields(entry.lines)){
+    for(const f of parseDLFields(dlSplitBody(entry.lines).fieldLines)){
       if(f.label.toLowerCase()==='status') status=f.value;
     }
     return status;
@@ -403,7 +421,7 @@
       + `<div class="dl-cards">${entries.map(renderDLCard).join('')}</div>`;
   }
 
-  const ADPParserLib={esc,escAttr,safeLinkUrl,inline,decorate,TOK,renderMarkdown,ART,metaFor,splitFrontMatter,parseSections,slug,sectionKeys,isTableStart,splitRow,parseDLFields,dlChipSplit,dlConfPill,dlStatusPill,dlStatusKind,dlRail,parseDLEntries,dlEntryStatus,dlStatusCounts,renderDLCard,renderDecisionLog};
+  const ADPParserLib={esc,escAttr,safeLinkUrl,inline,decorate,TOK,renderMarkdown,ART,metaFor,splitFrontMatter,parseSections,slug,sectionKeys,isTableStart,splitRow,parseDLFields,dlSplitBody,dlChipSplit,dlConfPill,dlStatusPill,dlStatusKind,dlRail,parseDLEntries,dlEntryStatus,dlStatusCounts,renderDLCard,renderDecisionLog};
   if(typeof module!=="undefined"&&module.exports){ module.exports=ADPParserLib; }
   else{ global.ADPParserLib=ADPParserLib; }
 })(typeof globalThis!=="undefined"?globalThis:this);

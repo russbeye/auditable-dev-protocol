@@ -267,6 +267,7 @@ has a corresponding Decision Log entry.
 ## Decision Log
 
 ### [DL-001] [short title]
+- **Supersedes:** [DL-XXX when this entry replaces an earlier decision; omit the line otherwise]
 - **Decision:** what was chosen
 - **Alternatives considered:** what else was evaluated
 - **Rationale:** why this and not those
@@ -287,6 +288,12 @@ be concluded. A wired signal that stayed quiet through its observation window va
 and not-yet-observed stays OPEN. An UNKNOWN entry closes the log only through a ticket, the same as
 OPEN. A phase deferral declared in the prompt (protocol.defers) opens one LOW-confidence entry
 here, plus an obligation ticket, at the start of the run.
+
+An entry is immutable once written, apart from its Status line and a dated status note. Never
+rewrite a decision: a changed or reversed decision is a new entry whose Supersedes field names
+the entry it replaces, so the full chain of choices stays on the record. Gate confirmations and
+any other block material — blockquotes, fenced code, tables — go before the section's first
+entry, never inside one; within an entry, nothing follows the fields.
 
 [repeat per non-trivial decision]
 ```

@@ -12,6 +12,7 @@ DL-055 sits inside a fence and never becomes a citation.
 ```
 
 ### [DL-001] Only decision
+- **Supersedes:** DL-XXX stays template text, so no key is emitted.
 - **Decision:** We record one decision.
 - **Confidence:** LOW
 - **Confidence basis:** DEVELOPER ASSERTION — fixture data.

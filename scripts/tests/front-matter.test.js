@@ -54,6 +54,24 @@ test("Phase N titles attribute to their phase", () => {
   assert.equal(lib.metaFor("Phase 10: Extra").tag, "");
 });
 
+test("dlSplitBody cuts the field region at the first block line", () => {
+  const lines = ["- **Status:** OPEN", "", "> **Gate.** Quoted after the fields."];
+  const s = lib.dlSplitBody(lines);
+  assert.deepEqual(s.fieldLines, ["- **Status:** OPEN", ""]);
+  assert.equal(s.trailing, "> **Gate.** Quoted after the fields.");
+  const entry = {head: "[DL-001] t", lines};
+  assert.equal(lib.dlEntryStatus(entry), "OPEN");
+  assert.ok(lib.renderDLCard(entry).includes("dl-trail"));
+});
+
+test("an entry without block material splits to itself", () => {
+  const lines = ["- **Status:** OPEN", "  continues as plain prose"];
+  const s = lib.dlSplitBody(lines);
+  assert.deepEqual(s.fieldLines, lines);
+  assert.equal(s.trailing, "");
+  assert.equal(lib.dlEntryStatus({head: "[DL-001] t", lines}), "OPEN continues as plain prose");
+});
+
 test("splitRow and isTableStart are exported for the builder", () => {
   assert.deepEqual(lib.splitRow("| a | `b|c` | d |"), ["a", "`b|c`", "d"]);
   assert.equal(lib.isTableStart(["| a | b |", "|---|---|"], 0), true);

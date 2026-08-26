@@ -133,6 +133,18 @@ test("a watch anchors exactly when its window holds a date", () => {
   assert.equal(ticket(doc, "FX002").watches[0].due, "2026-12-01");
 });
 
+test("a supersedes field harvests as a backlink, and a placeholder drops the key", () => {
+  const doc = fixtureDoc();
+  const fx = ticket(doc, "FX001");
+  assert.equal("supersedes" in fx.decisions[0], false);
+  assert.deepEqual(fx.decisions[1].supersedes, ["DL-001"]);
+  assert.equal("supersedes" in ticket(doc, "AV090").decisions[0], false);
+});
+
+test("block material after a card's fields never rides into a field value", () => {
+  assert.equal(ticket(fixtureDoc(), "FX001").decisions[0].status, "VALIDATED");
+});
+
 test("created keeps the leading date and drops the phase suffix", () => {
   const dls = ticket(fixtureDoc(), "FX001").decisions;
   assert.equal(dls[0].created, "2026-08-15");
