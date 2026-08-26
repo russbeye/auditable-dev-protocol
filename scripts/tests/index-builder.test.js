@@ -142,7 +142,12 @@ test("a supersedes field harvests as a backlink, and a placeholder drops the key
 });
 
 test("block material after a card's fields never rides into a field value", () => {
-  assert.equal(ticket(fixtureDoc(), "FX001").decisions[0].status, "VALIDATED");
+  const doc = fixtureDoc();
+  assert.equal(ticket(doc, "FX001").decisions[0].status, "VALIDATED");
+  assert.equal(ticket(doc, "AV090").decisions[0].status, "OPEN");
+  // The fenced token stays out of fields and refs alike, so it appears
+  // nowhere in the serialized index.
+  assert.equal(indexLib.serializeIndex(doc).includes("DL-777"), false);
 });
 
 test("created keeps the leading date and drops the phase suffix", () => {

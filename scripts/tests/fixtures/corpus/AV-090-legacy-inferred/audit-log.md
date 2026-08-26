@@ -19,6 +19,10 @@ DL-055 sits inside a fence and never becomes a citation.
 - **Created:** 2026-07-01 / Phase 5
 - **Status:** OPEN
 
+```
+An in-card fence: DL-777 stays out of every field, every ref, and the whole index.
+```
+
 ## Decision Log
 
 The duplicate heading demotes to non-canonical. Its prose cites DL-001.
