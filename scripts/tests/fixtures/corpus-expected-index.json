@@ -1,0 +1,330 @@
+{
+  "schema": "adp-index/1",
+  "project": "fixture-corpus",
+  "generated": "2026-08-20",
+  "source": "snapshot",
+  "tickets": [
+    {
+      "id": "FX001",
+      "dir": "20260815-FX001-declared-lifecycle",
+      "slug": "declared-lifecycle",
+      "date": "2026-08-15",
+      "title": "Audit Log — FX-001 declared lifecycle",
+      "state": "shipped",
+      "state_source": "declared",
+      "pr": "#42",
+      "merged": "2026-08-20",
+      "phase": 9,
+      "sections": [
+        {
+          "key": "sec-problem-statement",
+          "title": "Problem Statement",
+          "phase": 1,
+          "canonical": true
+        },
+        {
+          "key": "sec-decision-log",
+          "title": "Decision Log",
+          "phase": 5,
+          "canonical": true
+        },
+        {
+          "key": "sec-obligation-ticket-list",
+          "title": "Obligation Ticket List",
+          "phase": 9,
+          "canonical": true
+        }
+      ],
+      "refs": {
+        "sec-problem-statement": [
+          "DL-001"
+        ],
+        "sec-decision-log": [
+          "DL-001",
+          "DL-002"
+        ],
+        "sec-obligation-ticket-list": [
+          "OT-FX001-1",
+          "DL-002"
+        ]
+      },
+      "decisions": [
+        {
+          "id": "DL-001",
+          "title": "Fixture decision one",
+          "confidence": "HIGH",
+          "basis": "DIRECT EVIDENCE — measured in the fixture.",
+          "status": "VALIDATED",
+          "created": "2026-08-15"
+        },
+        {
+          "id": "DL-002",
+          "title": "Fixture decision two",
+          "confidence": "MEDIUM",
+          "basis": null,
+          "status": "OPEN",
+          "created": null,
+          "supersedes": [
+            "DL-001"
+          ]
+        }
+      ],
+      "watches": [
+        {
+          "wid": "OT-FX001-1",
+          "dl": [
+            "DL-002"
+          ],
+          "what": "The second option holds",
+          "due": "2026-10-15",
+          "anchored": true,
+          "window": "Until the next release, or 2026-10-15, whichever comes first"
+        }
+      ],
+      "missing": [
+        "Knowledge Gap",
+        "Recommendation Brief",
+        "Pre-Mortem Report",
+        "Test Adversary",
+        "PR Summary",
+        "Deployment Risk"
+      ]
+    },
+    {
+      "id": "FX002",
+      "dir": "20260816-FX002-phase-titled",
+      "slug": "phase-titled",
+      "date": "2026-08-16",
+      "title": "Phase-titled foreign log",
+      "state": "shipped",
+      "state_source": "inferred",
+      "pr": null,
+      "merged": null,
+      "phase": 9,
+      "sections": [
+        {
+          "key": "sec-phase-1-observation",
+          "title": "Phase 1: Observation",
+          "phase": 1,
+          "canonical": true
+        },
+        {
+          "key": "sec-open-questions",
+          "title": "Open Questions",
+          "phase": 2,
+          "canonical": true
+        },
+        {
+          "key": "sec-phase-5-implementation",
+          "title": "Phase 5: Implementation",
+          "phase": 5,
+          "canonical": true
+        },
+        {
+          "key": "sec-phase-9-obligations",
+          "title": "Phase 9: Obligations",
+          "phase": 9,
+          "canonical": true
+        },
+        {
+          "key": "sec-appendix-raw-notes",
+          "title": "Appendix — raw notes",
+          "phase": null,
+          "canonical": false
+        }
+      ],
+      "refs": {
+        "sec-phase-5-implementation": [
+          "DL-003"
+        ],
+        "sec-phase-9-obligations": [
+          "OT-FX002-1",
+          "DL-003"
+        ],
+        "sec-appendix-raw-notes": [
+          "OT-FX002-1"
+        ]
+      },
+      "decisions": [
+        {
+          "id": "DL-003",
+          "title": "Foreign decision",
+          "confidence": "HIGH",
+          "basis": null,
+          "status": "VALIDATED",
+          "created": null
+        }
+      ],
+      "watches": [
+        {
+          "wid": "OT-FX002-1",
+          "dl": [
+            "DL-003"
+          ],
+          "what": "Prefix headings attribute truly",
+          "due": "2026-12-01",
+          "anchored": true,
+          "window": "Re-review 2026-12-01"
+        }
+      ],
+      "missing": [
+        "Knowledge Gap",
+        "Recommendation Brief",
+        "Pre-Mortem Report",
+        "Test Adversary",
+        "PR Summary",
+        "Deployment Risk"
+      ]
+    },
+    {
+      "id": "AV090",
+      "dir": "AV-090-legacy-inferred",
+      "slug": "legacy-inferred",
+      "date": null,
+      "title": "AV-090 — legacy inferred fixture",
+      "state": "closed",
+      "state_source": "inferred",
+      "pr": null,
+      "merged": null,
+      "phase": 9,
+      "sections": [
+        {
+          "key": "sec-problem-statement",
+          "title": "Problem Statement",
+          "phase": 1,
+          "canonical": true
+        },
+        {
+          "key": "sec-decision-log",
+          "title": "Decision Log",
+          "phase": 5,
+          "canonical": true
+        },
+        {
+          "key": "sec-decision-log-1",
+          "title": "Decision Log",
+          "phase": null,
+          "canonical": false
+        },
+        {
+          "key": "sec-obligation-ticket-list",
+          "title": "Obligation Ticket List",
+          "phase": 9,
+          "canonical": true
+        }
+      ],
+      "refs": {
+        "sec-decision-log": [
+          "DL-001"
+        ],
+        "sec-decision-log-1": [
+          "DL-001"
+        ],
+        "sec-obligation-ticket-list": [
+          "OT-1",
+          "DL-001",
+          "OT-2"
+        ]
+      },
+      "decisions": [
+        {
+          "id": "DL-001",
+          "title": "Only decision",
+          "confidence": "LOW",
+          "basis": "DEVELOPER ASSERTION — fixture data.",
+          "status": "OPEN",
+          "created": "2026-07-01"
+        }
+      ],
+      "watches": [
+        {
+          "wid": "OT-1",
+          "dl": [
+            "DL-001"
+          ],
+          "what": "The fixture stays legacy",
+          "due": null,
+          "anchored": false,
+          "window": "60 days after merge"
+        },
+        {
+          "wid": "OT-2",
+          "dl": [],
+          "what": "Placeholders never reach a dl list",
+          "due": null,
+          "anchored": false,
+          "window": null
+        }
+      ],
+      "missing": [
+        "Knowledge Gap",
+        "Recommendation Brief",
+        "Pre-Mortem Report",
+        "Test Adversary",
+        "PR Summary",
+        "Deployment Risk"
+      ]
+    },
+    {
+      "id": "FX091",
+      "dir": "FX-091-prompt-only",
+      "slug": "prompt-only",
+      "date": null,
+      "title": null,
+      "state": "open",
+      "state_source": "inferred",
+      "pr": null,
+      "merged": null,
+      "phase": 0,
+      "sections": [],
+      "refs": {},
+      "decisions": [],
+      "watches": [],
+      "missing": [
+        "Problem Statement",
+        "Knowledge Gap",
+        "Recommendation Brief",
+        "Pre-Mortem Report",
+        "Decision Log",
+        "Test Adversary",
+        "PR Summary",
+        "Deployment Risk",
+        "Obligation Tickets"
+      ]
+    },
+    {
+      "id": null,
+      "dir": "misc-notes",
+      "slug": "misc-notes",
+      "date": null,
+      "title": null,
+      "state": "open",
+      "state_source": "inferred",
+      "pr": null,
+      "merged": null,
+      "phase": 0,
+      "sections": [
+        {
+          "key": "sec-scratch",
+          "title": "Scratch",
+          "phase": null,
+          "canonical": false
+        }
+      ],
+      "refs": {},
+      "decisions": [],
+      "watches": [],
+      "missing": [
+        "Problem Statement",
+        "Knowledge Gap",
+        "Recommendation Brief",
+        "Pre-Mortem Report",
+        "Decision Log",
+        "Test Adversary",
+        "PR Summary",
+        "Deployment Risk",
+        "Obligation Tickets"
+      ]
+    }
+  ]
+}

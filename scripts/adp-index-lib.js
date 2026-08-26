@@ -134,6 +134,22 @@
         !(d.basis === null || ne(d.basis)) || !(d.created === null || isDate(d.created))){
       flag("IDX-022", p, "decision fields must be nonempty, with basis null-or-nonempty and created null-or-date");
     }
+    /* supersedes is additive-optional, so absence is never a finding; when
+       the key exists it must carry at least one real decision id. */
+    if ("supersedes" in d){
+      const ps = p + ".supersedes";
+      if (!Array.isArray(d.supersedes) || d.supersedes.length === 0){
+        flag("IDX-033", ps, "supersedes must be a nonempty array when present");
+      } else {
+        d.supersedes.forEach((tok, j) => {
+          if (isPlaceholder(tok)){
+            flag("IDX-020", ps + "[" + j + "]", "placeholder token \"" + tok + "\"");
+          } else if (!(typeof tok === "string" && RE_DL.test(tok))){
+            flag("IDX-033", ps + "[" + j + "]", "supersedes entries must be DL- followed by digits");
+          }
+        });
+      }
+    }
   }
 
   function validateWatch(w, i, path, seenWids, flag){
@@ -283,7 +299,10 @@
     return JSON.stringify(doc, null, 2) + "\n";
   }
 
-  const ADPIndexLib = {SCHEMA, SOURCES, STATES, STATE_SOURCES, CANONICAL_ARTIFACTS, CONFIDENCE_TOKENS, STATUS_TOKENS, KEY_ORDER, validateIndex, serializeIndex};
+  /* The builder shares the date and token grammars through these exports, so
+     the contract keeps one owner for what counts as a date, an id, and a
+     placeholder. */
+  const ADPIndexLib = {SCHEMA, SOURCES, STATES, STATE_SOURCES, CANONICAL_ARTIFACTS, CONFIDENCE_TOKENS, STATUS_TOKENS, KEY_ORDER, RE_DL, RE_OT, isDate, isPlaceholder, validateIndex, serializeIndex};
   if (typeof module !== "undefined" && module.exports){ module.exports = ADPIndexLib; }
   else { global.ADPIndexLib = ADPIndexLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

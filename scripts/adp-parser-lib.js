@@ -201,12 +201,45 @@
     {re:/test coverage gaps/i,           icon:'▤', tag:'P6'},
     {re:/pr summary/i,                   icon:'⇡', tag:'P7'},
     {re:/deployment risk/i,              icon:'⟲', tag:'P8'},
-    {re:/obligation ticket/i,            icon:'✓', tag:'P9'}
+    {re:/obligation ticket/i,            icon:'✓', tag:'P9'},
+    // Other corpora title their sections "Phase N: <name>" instead of using
+    // the artifact names. These rows sit after the artifact rows, so an
+    // artifact name inside such a title still wins the tie on the same phase.
+    {re:/^phase\s*1\s*:/i,               icon:'◎', tag:'P1'},
+    {re:/^phase\s*2\s*:/i,               icon:'◫', tag:'P2'},
+    {re:/^phase\s*3\s*:/i,               icon:'◆', tag:'P3'},
+    {re:/^phase\s*4\s*:/i,               icon:'⚠', tag:'P4'},
+    {re:/^phase\s*5\s*:/i,               icon:'⎇', tag:'P5', spine:true},
+    {re:/^phase\s*6\s*:/i,               icon:'⊗', tag:'P6'},
+    {re:/^phase\s*7\s*:/i,               icon:'⇡', tag:'P7'},
+    {re:/^phase\s*8\s*:/i,               icon:'⟲', tag:'P8'},
+    {re:/^phase\s*9\s*:/i,               icon:'✓', tag:'P9'}
   ];
   function metaFor(title){ for(const a of ART) if(a.re.test(title)) return a; return {icon:'§',tag:''}; }
 
+  /* A declared lifecycle block is YAML front matter at byte 0. We only strip
+     the opener when a closing bare --- line exists and every interior line is
+     blank or a key: value pair. Anything else stays document content, so a
+     file that opens with a horizontal rule keeps its text. */
+  function splitFrontMatter(md){
+    const text=String(md).replace(/\r\n/g,'\n');
+    if(text.slice(0,4)!=='---\n') return {front:null, rest:text};
+    const lines=text.split('\n');
+    for(let i=1;i<lines.length;i++){
+      if(lines[i]==='---'){
+        const inner=lines.slice(1,i);
+        if(inner.every(l=>/^\s*$/.test(l)||/^[A-Za-z_][A-Za-z0-9_-]*\s*:/.test(l))){
+          return {front:inner.join('\n'), rest:lines.slice(i+1).join('\n')};
+        }
+        return {front:null, rest:text};
+      }
+    }
+    return {front:null, rest:text};
+  }
+
   function parseSections(md){
-    const lines=String(md).replace(/\r\n/g,'\n').split('\n');
+    const fm=splitFrontMatter(md);
+    const lines=fm.rest.split('\n');
     const secs=[]; let cur=null; const intro=[];
     let inFence=false;
     for(const line of lines){
@@ -217,7 +250,7 @@
       else intro.push(line);
     }
     if(cur) secs.push(cur);
-    return {intro:intro.join('\n').trim(), secs};
+    return {front:fm.front, intro:intro.join('\n').trim(), secs};
   }
 
   function slug(s){return 'sec-'+(s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,42)||'x');}
@@ -294,10 +327,25 @@
   function dlRail(status){
     return {invalidated:'rail-bad',validated:'rail-ok',open:'rail-open',unknown:'rail-unk',other:''}[dlStatusKind(status)];
   }
+  /* Field values are plain wrapped prose. A blockquote or fenced block inside
+     an entry is card material, not part of the field above it, so we cut the
+     field region at the first block line and hand the rest back separately.
+     Without the cut, a gate confirmation quoted after the last field rides
+     into that field's value. */
+  function dlSplitBody(lines){
+    for(let i=0;i<lines.length;i++){
+      if(/^\s*(```|>)/.test(lines[i])){
+        return {fieldLines:lines.slice(0,i), trailing:lines.slice(i).join('\n').trim()};
+      }
+    }
+    return {fieldLines:lines, trailing:''};
+  }
+
   function renderDLCard(entry){
     const hm=entry.head.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
     const id=hm?hm[1].trim():''; const title=hm?hm[2].trim():entry.head;
-    const fields=parseDLFields(entry.lines);
+    const split=dlSplitBody(entry.lines);
+    const fields=parseDLFields(split.fieldLines);
     let confidence='', status=''; const body=[];
     for(const f of fields){
       const k=f.label.toLowerCase();
@@ -315,13 +363,16 @@
     const grid=body.map(f=>
       `<div class="dl-row"><span class="dl-k">${esc(f.label)}</span><span class="dl-v">${decorate(inline(f.value))}</span></div>`
     ).join('');
+    // Trailing block material renders as markdown below the grid, so a quote
+    // or code block stays readable instead of flattening into a field row.
+    const trail=split.trailing?`<div class="md dl-trail">${renderMarkdown(split.trailing)}</div>`:'';
     return `<div class="dl-card ${dlRail(status)}">
       <div class="dl-head">
         <span class="dl-id">${id?esc(id):'—'}</span>
         <span class="dl-title">${decorate(inline(title))}</span>
         <span class="dl-pills">${pills}</span>
       </div>
-      ${grid?`<div class="dl-grid">${grid}</div>`:''}
+      ${grid?`<div class="dl-grid">${grid}</div>`:''}${trail}
     </div>`;
   }
   /* We split a section body into pre-entry prose and ### entries in one
@@ -345,7 +396,7 @@
      chip on the card it counted. */
   function dlEntryStatus(entry){
     let status='';
-    for(const f of parseDLFields(entry.lines)){
+    for(const f of parseDLFields(dlSplitBody(entry.lines).fieldLines)){
       if(f.label.toLowerCase()==='status') status=f.value;
     }
     return status;
@@ -370,7 +421,7 @@
       + `<div class="dl-cards">${entries.map(renderDLCard).join('')}</div>`;
   }
 
-  const ADPParserLib={esc,escAttr,safeLinkUrl,inline,decorate,TOK,renderMarkdown,ART,metaFor,parseSections,slug,sectionKeys,parseDLFields,dlChipSplit,dlConfPill,dlStatusPill,dlStatusKind,dlRail,parseDLEntries,dlEntryStatus,dlStatusCounts,renderDLCard,renderDecisionLog};
+  const ADPParserLib={esc,escAttr,safeLinkUrl,inline,decorate,TOK,renderMarkdown,ART,metaFor,splitFrontMatter,parseSections,slug,sectionKeys,isTableStart,splitRow,parseDLFields,dlSplitBody,dlChipSplit,dlConfPill,dlStatusPill,dlStatusKind,dlRail,parseDLEntries,dlEntryStatus,dlStatusCounts,renderDLCard,renderDecisionLog};
   if(typeof module!=="undefined"&&module.exports){ module.exports=ADPParserLib; }
   else{ global.ADPParserLib=ADPParserLib; }
 })(typeof globalThis!=="undefined"?globalThis:this);
