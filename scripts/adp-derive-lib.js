@@ -82,6 +82,20 @@
     return {reasons: [{txt: up.length ? st + " · WATCH " + up[0].due : st + " · LOOP CLOSED", tone: "ok"}], more: 0};
   }
 
+  /* Which reasons pull a ticket into the needs-attention group. The ribbon
+     reports every reason in every state; the group takes only what someone
+     can act on now: an overdue watch, an open decision with no covering
+     watch, or canonical sections missing from a log that claims to be done.
+     Unanchored watches stay ribbon-only — they are the legacy debt the sweep
+     tickets pay down, not today's action — and missing sections on a ticket
+     still in flight just mean the work is not there yet. */
+  function needsAttention(t, today){
+    if (t.watches.some(w => dueState(w, today) === "overdue")) return true;
+    if (unwatchedOpen(t).length) return true;
+    if ((t.state === "shipped" || t.state === "closed") && (t.missing || []).length) return true;
+    return false;
+  }
+
   // Needs-attention first, then the live states, then the settled ones.
   // Within a group the newest directory sorts first, because dir names lead
   // with the date under the naming convention.
@@ -89,7 +103,7 @@
   function railGroups(tickets, today){
     const g = {"needs attention": [], "in progress": [], "shipped": [], "closed": []};
     for (const t of tickets){
-      if (attentionReasons(t, today).length) g["needs attention"].push(t);
+      if (needsAttention(t, today)) g["needs attention"].push(t);
       else if (t.state === "shipped") g["shipped"].push(t);
       else if (t.state === "closed") g["closed"].push(t);
       else g["in progress"].push(t);
@@ -170,8 +184,8 @@
   }
 
   const ADPDeriveLib = {GROUPS, daysUntil, dueState, dueLabel, statusKind,
-    unwatchedOpen, attentionReasons, ribbonModel, railGroups, sectionEntries,
-    sectionState, sectionItems, citingSections, sortRows};
+    unwatchedOpen, attentionReasons, needsAttention, ribbonModel, railGroups,
+    sectionEntries, sectionState, sectionItems, citingSections, sortRows};
   if (isNode){ module.exports = ADPDeriveLib; }
   else { global.ADPDeriveLib = ADPDeriveLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

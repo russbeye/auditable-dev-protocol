@@ -124,13 +124,30 @@ test("a quiet shipped ticket names its next watch date, or the closed loop", () 
 
 // ---- rail groups ----
 
-test("railGroups puts attention first and sorts newest dir first inside", () => {
-  const attn = ticket({id: "A", dir: "20260810-A-x", watches: [watch()]});
-  const attn2 = ticket({id: "B", dir: "20260820-B-y", watches: [watch()]});
+test("needsAttention takes only what someone can act on now", () => {
+  // An overdue watch pulls a ticket in, whatever its state.
+  assert.equal(D.needsAttention(ticket({watches: [watch({anchored: true, due: "2026-08-01"})]}), TODAY), true);
+  // So does an open decision with no covering watch.
+  assert.equal(D.needsAttention(ticket({decisions: [decision({id: "DL-009", status: "OPEN"})]}), TODAY), true);
+  // Missing sections matter on a log that claims to be done, not one in flight.
+  assert.equal(D.needsAttention(ticket({state: "shipped", missing: ["PR Summary"]}), TODAY), true);
+  assert.equal(D.needsAttention(ticket({state: "open", missing: ["PR Summary"]}), TODAY), false);
+  // Unanchored watches stay ribbon-only: the reason reports, the group passes.
+  const legacy = ticket({state: "closed", watches: [watch()]});
+  assert.equal(D.attentionReasons(legacy, TODAY).length, 1);
+  assert.equal(D.needsAttention(legacy, TODAY), false);
+});
+
+test("railGroups puts actionable attention first and sorts newest dir first inside", () => {
+  const attn = ticket({id: "A", dir: "20260810-A-x",
+    watches: [watch({anchored: true, due: "2026-08-01"})]});
+  const attn2 = ticket({id: "B", dir: "20260820-B-y",
+    decisions: [decision({id: "DL-009", status: "OPEN"})]});
   const open = ticket({id: "C", dir: "20260815-C-z", state: "open"});
   const rev = ticket({id: "D", dir: "20260816-D-w", state: "in-review"});
   const ship = ticket({id: "E", dir: "20260817-E-v", state: "shipped"});
-  const done = ticket({id: "F", dir: "20260818-F-u", state: "closed"});
+  // Unanchored-only debt sits in its lifecycle group, ribbon intact.
+  const done = ticket({id: "F", dir: "20260818-F-u", state: "closed", watches: [watch()]});
   const g = D.railGroups([attn, open, rev, ship, done, attn2], TODAY);
   assert.deepEqual(g.map(x => x[0]), ["needs attention", "in progress", "shipped", "closed"]);
   assert.deepEqual(g[0][1].map(t => t.id), ["B", "A"]);

@@ -285,11 +285,12 @@ test("a dead network leaves the no-corpus chrome standing, with a console trace"
 test("the corpus boot selects the first rail entry; a full ticket renders its spine", async () => {
   const h = bootCorpus();
   await h.settle();
-  // Both fixture tickets carry attention reasons, and AV002's dir sorts
-  // first. A ticket with no audit log says so instead of faking sections.
-  assert.equal(h.hashes[h.hashes.length - 1], "#t=AV002");
-  assert.match(h.$("#scrInspector").innerHTML, /no audit log yet/);
-  pick(h, "AA1");
+  // AA1 (shipped with missing sections) is actionable attention; AV002 is a
+  // prompt-only ticket still in flight, so it sits in progress with its
+  // missing-sections ribbon intact.
+  const rail = h.$("#rail").innerHTML;
+  assert.match(rail, /in progress[\s\S]*AV002/);
+  assert.match(rail, /9 SECTIONS MISSING/);
   const scr = h.$("#scrInspector").innerHTML;
   // The section body went through adp-parser-lib's Decision Log renderer.
   assert.match(scr, /dl-card/);
@@ -415,11 +416,10 @@ test("the full-log view renders every real section as a collapsible", async () =
 test("the rail collapses a group and a ticket click selects it", async () => {
   const h = bootCorpus();
   await h.settle();
-  // Both fixture tickets sit in needs attention, so collapsing it empties
-  // the rail and expanding brings them back.
+  // Collapsing needs attention hides AA1; AV002 stays visible in progress.
   const sec = h.$$(".railsec").find(s => s.getAttribute("data-sec") === "needs attention");
   h.click(sec);
-  assert.equal(h.$$(".rentry").length, 0);
+  assert.equal(h.$$(".rentry").length, 1);
   h.click(h.$$(".railsec").find(s => s.getAttribute("data-sec") === "needs attention"));
   assert.equal(h.$$(".rentry").length, 2);
   pick(h, "AV002");
