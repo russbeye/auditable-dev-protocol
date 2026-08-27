@@ -637,3 +637,40 @@ test("an entry housed outside the spine still opens as a card", async () => {
   assert.match(scr, /dl-card|dl-grid/);
   assert.ok(!scr.includes("not present in the loaded text"));
 });
+
+test("in the full log, the section selector jumps to the section and opens it", async () => {
+  const h = bootCorpus();
+  await h.settle();
+  pick(h, "AA1");
+  h.click(h.$$(".op").find(o => o.getAttribute("data-view") === "full"));
+  h.click(h.$$(".op").find(o => o.getAttribute("data-exp") === "close"));
+  assert.ok(h.$$(".fsec").every(s => s.open === false));
+  h.change(h.$("#secSel"), "sec-pr-summary");
+  const secs = h.$$(".fsec");
+  const target = secs.find(s => s.getAttribute("data-key") === "sec-pr-summary");
+  assert.equal(target.open, true);
+  assert.equal(target._scrolled, 1);
+  // The jump opens its target alone; the rest keep their collapsed state.
+  assert.ok(secs.filter(s => s !== target).every(s => s.open === false));
+  assert.equal(h.hashes[h.hashes.length - 1], "#t=AA1&s=sec-pr-summary");
+});
+
+test("prev/next in the full log jump too, and manual toggles survive renders", async () => {
+  const h = bootCorpus();
+  await h.settle();
+  pick(h, "AA1");
+  h.click(h.$$(".op").find(o => o.getAttribute("data-view") === "full"));
+  // A summary click collapses just that section, page-managed.
+  const ps = h.$$(".fsec").find(s => s.getAttribute("data-key") === "sec-problem-statement");
+  h.click(ps.children.find(c => c.classList.contains("fsum")));
+  assert.equal(ps.open, false);
+  // Stepping from the spine to the next section re-renders; the bystander's
+  // manual collapse holds and the step target opens and scrolls into view.
+  h.click(h.$$(".op").find(o => o.getAttribute("data-secstep") === "1"));
+  const after = h.$$(".fsec");
+  assert.equal(h.$("#secSel").value, "sec-aside-notes");
+  assert.equal(after.find(s => s.getAttribute("data-key") === "sec-problem-statement").open, false);
+  const target = after.find(s => s.getAttribute("data-key") === "sec-aside-notes");
+  assert.equal(target.open, true);
+  assert.equal(target._scrolled, 1);
+});

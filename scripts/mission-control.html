@@ -55,6 +55,11 @@
   let sel = {t: null, s: null, item: null};
   let viewMode = "section", dlFilter = "all", pasteOpen = false;
   let missNotice = null, bootNotice = null;
+  // Collapse state for the full-log view, keyed by section key and scoped to
+  // the current selection. fullJump names a section the next full-log render
+  // must open and scroll to.
+  const fullClosed = new Set();
+  let fullJump = null;
   const railCollapsed = new Set();
   const sortState = {dec: {k: "id", d: 1}, iw: {k: "wid", d: 1}};
   const parsed = new Map();
@@ -221,10 +226,12 @@
 
     let panels = "";
     if (viewMode === "full"){
+      // A jump target always opens, whatever its collapse state was.
+      if (fullJump) fullClosed.delete(fullJump);
       pane = S.fullLogHtml(entries.filter(en => !en.missing).map(en => {
         const sec = pd.byKey[en.key];
         const body = sec ? sec.body.join("\n") : "";
-        return {key: en.key,
+        return {key: en.key, open: !fullClosed.has(en.key),
           heading: en.phase != null ? "phase " + en.phase + " · " + en.title : en.title,
           badge: en.canonical ? null : "non-canonical",
           bodyHtml: sec ? `<div class="md">${P.metaFor(sec.title).spine
@@ -273,6 +280,11 @@
       + S.secNavHtml(entries, states, sel.s)
       + pane + panels;
     if (keepSel){ const s2 = $("#secSel"); if (s2 && s2.focus) try{ s2.focus(); }catch(e){} }
+    if (fullJump){
+      for (const d of document.querySelectorAll(".fsec"))
+        if (d.getAttribute("data-key") === fullJump && d.scrollIntoView) d.scrollIntoView();
+      fullJump = null;
+    }
   }
 
   // ---- chrome ----
@@ -321,7 +333,7 @@
     docs.push({key, name: dir, text: String(text), ticket: harvest(dir, text),
       watching: !!watching, handle: handle || null, polling: false});
     sel = {t: key, s: null, item: null};
-    dlFilter = "all"; missNotice = null; pasteOpen = false;
+    dlFilter = "all"; missNotice = null; pasteOpen = false; fullClosed.clear();
     selScreen = "inspector";
     renderAll();
   }
@@ -336,7 +348,7 @@
   function closeDoc(key){
     const i = docs.findIndex(d => d.key === key);
     if (i >= 0) docs.splice(i, 1);
-    if (sel.t === key) sel = {t: null, s: null, item: null};
+    if (sel.t === key){ sel = {t: null, s: null, item: null}; fullClosed.clear(); }
     renderAll();
   }
 
@@ -415,7 +427,7 @@
     const rentry = hit(".rentry");
     if (rentry){
       sel = {t: rentry.getAttribute("data-key"), s: null, item: null};
-      dlFilter = "all"; missNotice = null;
+      dlFilter = "all"; missNotice = null; fullClosed.clear();
       if (selScreen !== "resume pack") selScreen = "inspector";
       renderAll();
       return;
@@ -451,6 +463,19 @@
       renderInspector(); syncHash();
       return;
     }
+    const fsum = hit(".fsum");
+    if (fsum){
+      // We toggle the details ourselves, so the collapse state survives the
+      // next re-render instead of resetting with the markup.
+      if (e.preventDefault) e.preventDefault();
+      const d = fsum.closest(".fsec");
+      if (d){
+        d.open = !d.open;
+        const k = d.getAttribute("data-key");
+        if (d.open) fullClosed.delete(k); else fullClosed.add(k);
+      }
+      return;
+    }
     const sth = hit(".sth");
     if (sth){
       const st = sortState[sth.getAttribute("data-t")], k = sth.getAttribute("data-k");
@@ -468,6 +493,7 @@
         const i = entries.findIndex(en => en.key === sel.s) + Number(op.getAttribute("data-secstep"));
         if (i >= 0 && i < entries.length){
           sel.s = entries[i].key; sel.item = null; missNotice = null;
+          if (viewMode === "full") fullJump = sel.s;
           renderInspector(); syncHash();
         }
       } else if (op.getAttribute("data-view")){
@@ -475,7 +501,11 @@
         renderInspector();
       } else if (op.getAttribute("data-exp")){
         const open = op.getAttribute("data-exp") === "open";
-        document.querySelectorAll(".fsec").forEach(d => { d.open = open; });
+        document.querySelectorAll(".fsec").forEach(d => {
+          d.open = open;
+          const k = d.getAttribute("data-key");
+          if (open) fullClosed.delete(k); else fullClosed.add(k);
+        });
       } else if (op.getAttribute("data-op") === "paste"){
         pasteOpen = !pasteOpen; renderInspector();
       } else if (op.getAttribute("data-op") === "openwatch"){
@@ -490,6 +520,7 @@
   document.addEventListener("change", e => {
     if (e.target.id === "secSel"){
       sel.s = e.target.value; sel.item = null; missNotice = null;
+      if (viewMode === "full") fullJump = sel.s;
       renderInspector(); syncHash();
       return;
     }

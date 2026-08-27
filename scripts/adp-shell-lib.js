@@ -258,8 +258,8 @@
   function fullLogHtml(list){
     return `<div class="mops"><button type="button" class="op" data-exp="open">expand all</button>`
       + `<button type="button" class="op" data-exp="close">collapse all</button></div>`
-      + list.map(s => `<details class="fsec" data-key="${escAttr(s.key)}" open>`
-        + `<summary>${esc(s.heading)}${s.badge ? ` <span class="ncbadge">${esc(s.badge)}</span>` : ""}</summary>`
+      + list.map(s => `<details class="fsec" data-key="${escAttr(s.key)}"${s.open ? " open" : ""}>`
+        + `<summary class="fsum">${esc(s.heading)}${s.badge ? ` <span class="ncbadge">${esc(s.badge)}</span>` : ""}</summary>`
         + `<div class="fbody">${s.bodyHtml}</div></details>`).join("");
   }
 

@@ -72,6 +72,8 @@ function makeEl(tag, attrs){
   };
   el.click = () => {};
   el.focus = () => {};
+  // The page scrolls a jumped-to section into view; tests read the counter.
+  el.scrollIntoView = () => { el._scrolled = (el._scrolled || 0) + 1; };
   el.closest = sel => {
     let n = el;
     while (n && n.classList) {
@@ -305,21 +307,23 @@ function bootShell(opts){
   function click(el){
     if (!el) throw new Error("click target not found");
     if (el.attrs && "disabled" in el.attrs) return;
+    const ev = {target: el, preventDefault(){}};
     let n = el, reachedRoot = false;
     while (n) {
-      (n.listeners && n.listeners.click || []).forEach(fn => fn({target: el}));
+      (n.listeners && n.listeners.click || []).forEach(fn => fn(ev));
       if (n === root) reachedRoot = true;
       n = n.parent;
     }
-    if (!reachedRoot) (root.listeners.click || []).forEach(fn => fn({target: el}));
+    if (!reachedRoot) (root.listeners.click || []).forEach(fn => fn(ev));
   }
 
   // change fires on the element then reaches the document's delegated
   // listener, which is the only place the page listens for it.
   function change(el, value){
     if (value !== undefined) el.value = value;
-    (el.listeners.change || []).forEach(fn => fn({target: el}));
-    (root.listeners.change || []).forEach(fn => fn({target: el}));
+    const ev = {target: el, preventDefault(){}};
+    (el.listeners.change || []).forEach(fn => fn(ev));
+    (root.listeners.change || []).forEach(fn => fn(ev));
   }
 
   function fireWindow(type, ev){
