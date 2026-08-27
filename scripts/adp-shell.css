@@ -151,7 +151,11 @@
 .mono{font-family:var(--mono);white-space:nowrap}
 .dlrow{cursor:pointer}
 .dlrow:hover td{background:var(--inset)}
-.is-hl td{background:var(--inset);box-shadow:inset 2px 0 0 var(--accent)}
+/* The row is the unit of highlight. The background may repeat per cell, since
+   abutting cells read as one band, but the accent bar goes on the first cell
+   only — on every cell it reads as a border around each one. */
+.is-hl td{background:var(--inset)}
+.is-hl td:first-child{box-shadow:inset 2px 0 0 var(--accent)}
 .wl{font-family:var(--mono);color:var(--accent);cursor:pointer;white-space:nowrap}
 .pc{font-family:var(--mono);font-size:10px;border:1px solid var(--line);color:var(--dim);
   padding:1px 5px;margin-right:3px;cursor:pointer;white-space:nowrap}
