@@ -351,6 +351,8 @@ test("a decision row opens its card and the back link returns", async () => {
   let scr = h.$("#scrInspector").innerHTML;
   assert.match(scr, /\[DL-002\]/);
   assert.match(scr, /back to Decision Log/);
+  // The link scrolls the reader back to the nav and the content it changed.
+  assert.equal(h.$(".secnav")._scrolled, 1);
   assert.equal(h.hashes[h.hashes.length - 1], "#t=AA1&s=sec-decision-log&item=DL-002");
   h.click(h.$(".backlink"));
   scr = h.$("#scrInspector").innerHTML;
@@ -367,6 +369,7 @@ test("a watch link jumps to the obligation section with the row highlighted", as
   const scr = h.$("#scrInspector").innerHTML;
   assert.equal(h.$("#secSel").value, "sec-obligation-ticket-list");
   assert.match(scr, /is-hl/);
+  assert.equal(h.$(".secnav")._scrolled, 1);
   assert.match(scr, /UNANCHORED/);
   assert.equal(h.hashes[h.hashes.length - 1], "#t=AA1&s=sec-obligation-ticket-list&item=OT-AA1-1");
 });

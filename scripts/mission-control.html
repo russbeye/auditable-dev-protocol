@@ -60,6 +60,10 @@
   // must open and scroll to.
   const fullClosed = new Set();
   let fullJump = null;
+  // Set by any link that changes what the doc pane shows, so the next render
+  // scrolls back up to the nav and the content instead of leaving the reader
+  // parked at the tables.
+  let paneJump = false;
   const railCollapsed = new Set();
   const sortState = {dec: {k: "id", d: 1}, iw: {k: "wid", d: 1}};
   const parsed = new Map();
@@ -285,6 +289,11 @@
         if (d.getAttribute("data-key") === fullJump && d.scrollIntoView) d.scrollIntoView();
       fullJump = null;
     }
+    if (paneJump){
+      const nav = document.querySelector(".secnav");
+      if (nav && nav.scrollIntoView) nav.scrollIntoView();
+      paneJump = false;
+    }
   }
 
   // ---- chrome ----
@@ -440,7 +449,7 @@
       return;
     }
     const back = hit(".backlink");
-    if (back){ sel.item = null; renderInspector(); syncHash(); return; }
+    if (back){ sel.item = null; paneJump = true; renderInspector(); syncHash(); return; }
     const lnk = hit(".lnk");
     if (lnk){
       try{ navigator.clipboard.writeText(location.href); }catch(err){}
@@ -451,7 +460,7 @@
     const pill = hit(".fpill");
     if (pill){ dlFilter = pill.getAttribute("data-dlf"); renderInspector(); return; }
     const pc = hit(".pc");
-    if (pc){ sel.s = pc.getAttribute("data-key"); sel.item = null; missNotice = null; renderInspector(); syncHash(); return; }
+    if (pc){ sel.s = pc.getAttribute("data-key"); sel.item = null; missNotice = null; paneJump = true; renderInspector(); syncHash(); return; }
     const wl = hit(".wl");
     if (wl){
       sel.item = wl.getAttribute("data-item");
@@ -460,6 +469,7 @@
         const own = tgt && tgt.ticket.sections.find(s => s.canonical && s.phase === 9);
         if (own) sel.s = own.key;
       }
+      paneJump = true;
       renderInspector(); syncHash();
       return;
     }
@@ -483,7 +493,7 @@
       return;
     }
     const dlrow = hit(".dlrow");
-    if (dlrow){ sel.item = dlrow.getAttribute("data-dl"); renderInspector(); syncHash(); return; }
+    if (dlrow){ sel.item = dlrow.getAttribute("data-dl"); paneJump = true; renderInspector(); syncHash(); return; }
     const op = hit(".op");
     if (op){
       if (op.getAttribute("data-secstep")){
