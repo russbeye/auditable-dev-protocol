@@ -35,28 +35,252 @@
   </div>
   <footer id="foot"></footer>
 </div>
-<input type="file" id="openDoc" accept=".md,.markdown,.txt" hidden>
+<input type="file" id="openDoc" accept=".md,.markdown,.txt" multiple hidden>
 <input type="file" id="openYaml" accept=".yaml,.yml" hidden>
 <script src="adp-parser-lib.js"></script>
 <script src="adp-index-lib.js"></script>
 <script src="adp-index-builder-lib.js"></script>
+<script src="adp-derive-lib.js"></script>
 <script src="adp-shell-lib.js"></script>
 <script>
 (function(){
   "use strict";
-  const S = ADPShellLib;
+  const S = ADPShellLib, D = ADPDeriveLib, P = ADPParserLib, B = ADPIndexBuilder, I = ADPIndexLib;
   const $ = sel => document.querySelector(sel);
+
   let selScreen = "inspector";
-  let index = null;
+  let corpus = null;                 // {index, texts} from the seam, or null
+  const docs = [];                   // opened documents, session-local
+  let docSeq = 0;
+  let sel = {t: null, s: null, item: null};
+  let viewMode = "section", dlFilter = "all", pasteOpen = false;
+  let missNotice = null, bootNotice = null;
+  const railCollapsed = new Set();
+  const sortState = {dec: {k: "id", d: 1}, iw: {k: "wid", d: 1}};
+  const parsed = new Map();
+
+  // The hash is read before the corpus exists, so the selection it names
+  // waits as pending until the seam resolves.
+  let pendingSel = null;
+  try{ pendingSel = S.hashRead(location.hash); }catch(e){}
+
+  // Derivations date against the index's own build day, so a tab left open
+  // overnight keeps reporting the day the data is from.
+  const today = () => corpus ? corpus.index.generated : S.localDate();
+  const tokenOf = t => t.id || t.dir;
+
+  function findTarget(tok){
+    if (!tok) return null;
+    const doc = docs.find(d => d.key === tok);
+    if (doc) return {kind: "doc", key: doc.key, ticket: doc.ticket, text: doc.text, doc};
+    if (!corpus) return null;
+    const t = corpus.index.tickets.find(x => x.id === tok || x.dir === tok);
+    return t ? {kind: "ticket", key: tokenOf(t), ticket: t, text: corpus.texts[t.dir] || ""} : null;
+  }
+
+  /* One parse per document text. The cache holds the split sections keyed by
+     the contract's section keys, plus every DL entry found in a spine
+     section, first id wins — the same first-occurrence rule the harvest
+     uses. */
+  function parsedOf(key, text){
+    const c = parsed.get(key);
+    if (c && c.sig === text) return c;
+    const secs = P.parseSections(text || "").secs;
+    const keys = P.sectionKeys(secs);
+    const byKey = {};
+    secs.forEach((s, i) => { byKey[keys[i]] = s; });
+    // Cards harvest from every section, not only the spine — the builder
+    // does the same, and real logs keep entries in review-response sections.
+    const cards = {};
+    secs.forEach(s => {
+      for (const e of P.parseDLEntries(s.body.join("\n")).entries){
+        const hm = e.head.match(/^\[([^\]]+)\]/);
+        if (hm && !(hm[1] in cards)) cards[hm[1]] = e;
+      }
+    });
+    const out = {sig: text, byKey, cards};
+    parsed.set(key, out);
+    return out;
+  }
+
+  // ---- rail ----
+
+  function railModel(){
+    const groups = [];
+    if (docs.length) groups.push(["opened documents", docs.map(d => ({
+      key: d.key, id: d.ticket.id || d.name, date: d.ticket.date, slug: d.name,
+      ribbon: {reasons: [{txt: (d.watching ? "WATCHING FILE" : "OPENED") + " · UNINDEXED", tone: "warn"}], more: 0},
+      closable: true
+    }))]);
+    if (corpus)
+      for (const [name, list] of D.railGroups(corpus.index.tickets, today()))
+        groups.push([name, list.map(t => ({
+          key: tokenOf(t), id: t.id || t.dir, date: t.date, slug: t.slug,
+          ribbon: D.ribbonModel(t, today()), closable: false
+        }))]);
+    return groups;
+  }
+
+  function renderRail(){
+    $("#rail").innerHTML = S.railHtml(railModel(), sel.t, railCollapsed);
+  }
+
+  // ---- inspector ----
+
+  // A canonical section's chip carries its phase. A non-canonical one still
+  // gets the artifact family's tag when ART recognizes the title ("Decision
+  // Log — Stage 2" reads P5), and § only when nothing does.
+  function chipModel(t, key){
+    const s = t.sections.find(x => x.key === key);
+    const label = !s ? "§"
+      : s.phase != null ? "P" + s.phase
+      : P.metaFor(s.title).tag || "§";
+    return {key, label, title: s ? s.title : key};
+  }
+
+  function defaultKey(t){
+    if (t.state === "open" || t.state === "in-review"){
+      const cur = t.sections.find(s => s.canonical && s.phase === t.phase);
+      if (cur) return cur.key;
+    }
+    const spine = t.sections.find(s => s.canonical && s.phase === 5);
+    return (spine || t.sections[0] || {key: null}).key;
+  }
+
+  function renderInspector(){
+    const scr = $("#scrInspector");
+    const act = document.activeElement;
+    const keepSel = !!(act && act.id === "secSel");
+    const tgt = findTarget(sel.t);
+    const ops = S.opsRowHtml({fsa: "showOpenFilePicker" in window,
+      canReload: !!(tgt && tgt.kind === "doc" && tgt.doc.handle), viewMode, pasteOpen});
+
+    if (!tgt){
+      scr.innerHTML = "<h2>inspector</h2>" + ops
+        + `<div class="ipanel"><p class="dnotice">${P.esc(bootNotice || (corpus
+          ? "select a ticket from the rail, or open a document"
+          : "no corpus behind this page — open, paste, or drop audit logs to inspect them"))}</p></div>`;
+      return;
+    }
+    const t = tgt.ticket;
+    const pd = parsedOf(tgt.kind === "doc" ? tgt.key : t.dir, tgt.text);
+
+    if (!t.sections.length){
+      scr.innerHTML = `<h2>inspector <span class="isub">${P.esc(t.dir)}</span></h2>` + ops
+        + S.tickheadHtml({title: t.id || t.dir, chits: tgt.kind === "doc"
+          ? [{txt: tgt.doc.watching ? "watching · live" : "opened · one-shot"}, {txt: "unindexed"}]
+          : [{txt: t.state + " · " + t.state_source}]})
+        + (tgt.kind === "doc"
+          ? S.rawPaneHtml({heading: t.dir, raw: (tgt.text || "").slice(0, 4000)})
+          : `<div class="ipanel"><p class="dnotice">this ticket has no audit log yet — only its prompt or other files sit in the directory.</p></div>`);
+      return;
+    }
+
+    // An item-only deep link lands on the item's owning section, so key
+    // drift in the s token never strands a link that names a real item.
+    if (sel.item && !sel.s){
+      const cs = D.citingSections(t, sel.item);
+      if (cs.length) sel.s = cs[0];
+    }
+    if (!sel.s && !sel.item) sel.s = defaultKey(t);
+    const entries = D.sectionEntries(t);
+    const states = {};
+    entries.forEach(en => { states[en.key] = D.sectionState(t, en, today()); });
+    if (sel.s && !states[sel.s]){
+      missNotice = `section "${sel.s}" was not found in this log — the link may predate a retitle.`;
+      sel.s = defaultKey(t);
+    }
+
+    const chits = [{txt: t.state + " · " + t.state_source,
+      title: "lifecycle state — declared in front matter, or inferred from section presence on legacy logs"}];
+    if (tgt.kind === "doc"){
+      chits.push({txt: tgt.doc.watching ? "watching · live" : tgt.doc.handle ? "cached · reload to resume" : "opened · one-shot"});
+      chits.push({txt: "unindexed"});
+    }
+    if (t.pr) chits.push({txt: "pr " + t.pr});
+
+    let pane;
+    if (sel.item && I.RE_DL.test(sel.item)){
+      const en = entries.find(x => x.key === sel.s);
+      pane = S.docPaneHtml({back: en ? en.title : "sections", heading: "[" + sel.item + "]",
+        notice: pd.cards[sel.item] ? null : "this entry is cited here but not present in the loaded text.",
+        bodyHtml: pd.cards[sel.item] ? `<div class="md">${P.renderDLCard(pd.cards[sel.item])}</div>` : ""});
+    } else {
+      const en = entries.find(x => x.key === sel.s) || entries[0];
+      const sec = en && !en.missing ? pd.byKey[en.key] : null;
+      const body = sec ? sec.body.join("\n") : "";
+      pane = S.docPaneHtml({
+        heading: en ? (en.phase != null ? "phase " + en.phase + " · " + en.title : en.title) : "—",
+        badge: en && en.missing ? "missing" : en && !en.canonical ? "non-canonical" : null,
+        notice: missNotice || (en && en.missing
+          ? "this section was never written. A missing canonical section is an attention reason on the rail." : null),
+        bodyHtml: sec ? `<div class="md">${P.metaFor(sec.title).spine
+          ? P.renderDecisionLog(body) : P.renderMarkdown(body)}</div>` : ""
+      });
+    }
+
+    let panels = "";
+    if (viewMode === "full"){
+      pane = S.fullLogHtml(entries.filter(en => !en.missing).map(en => {
+        const sec = pd.byKey[en.key];
+        const body = sec ? sec.body.join("\n") : "";
+        return {key: en.key,
+          heading: en.phase != null ? "phase " + en.phase + " · " + en.title : en.title,
+          badge: en.canonical ? null : "non-canonical",
+          bodyHtml: sec ? `<div class="md">${P.metaFor(sec.title).spine
+            ? P.renderDecisionLog(body) : P.renderMarkdown(body)}</div>` : ""};
+      }));
+    } else {
+      const items = D.sectionItems(t, sel.s);
+      const kindOf = d => D.statusKind(d.status);
+      const counts = {all: items.decisions.length,
+        open: items.decisions.filter(d => kindOf(d) === "open").length,
+        validated: items.decisions.filter(d => kindOf(d) === "validated").length,
+        invalidated: items.decisions.filter(d => kindOf(d) === "invalidated").length};
+      const shown = dlFilter === "all" ? items.decisions
+        : items.decisions.filter(d => kindOf(d) === dlFilter);
+      const confRank = {HIGH: 3, MEDIUM: 2, LOW: 1};
+      const decRows = D.sortRows(shown, sortState.dec.k, sortState.dec.d, {
+        id: d => d.id, title: d => d.title, conf: d => confRank[d.confidence] || 0,
+        status: d => kindOf(d), watch: d => (t.watches.find(w => (w.dl || []).includes(d.id)) || {wid: ""}).wid,
+        cited: d => D.citingSections(t, d.id).length
+      }).map(d => ({id: d.id, title: d.title, conf: d.confidence,
+        confKind: String(d.confidence || "").toLowerCase() || "other",
+        statusKind: kindOf(d),
+        watch: (t.watches.find(w => (w.dl || []).includes(d.id)) || {wid: null}).wid,
+        chips: D.citingSections(t, d.id).map(k => chipModel(t, k)),
+        hl: sel.item === d.id}));
+      const en = entries.find(x => x.key === sel.s);
+      const label = en ? en.title : "this section";
+      if (items.decisions.length)
+        panels += S.decisionsPanelHtml({label, sort: sortState.dec,
+          pills: S.pillsHtml(counts, dlFilter), rows: decRows});
+      const wRows = D.sortRows(items.watches, sortState.iw.k, sortState.iw.d, {
+        wid: w => w.wid, what: w => w.what, dl: w => (w.dl || []).join(","),
+        due: w => w.anchored ? D.daysUntil(w.due, today()) : Infinity,
+        state: w => D.dueState(w, today()), cited: w => D.citingSections(t, w.wid).length
+      }).map(w => ({wid: w.wid, what: w.what, dls: w.dl || [],
+        dueText: w.anchored ? w.due : (w.window || "relative"),
+        state: D.dueState(w, today()), stateLabel: D.dueLabel(w, today()),
+        chips: D.citingSections(t, w.wid).map(k => chipModel(t, k)),
+        hl: sel.item === w.wid}));
+      if (items.watches.length)
+        panels += S.watchesPanelHtml({label, sort: sortState.iw, rows: wRows});
+    }
+
+    scr.innerHTML = `<h2>inspector <span class="isub">${P.esc(t.dir)}</span></h2>` + ops
+      + S.tickheadHtml({title: t.id || t.dir, chits})
+      + S.secNavHtml(entries, states, sel.s)
+      + pane + panels;
+    if (keepSel){ const s2 = $("#secSel"); if (s2 && s2.focus) try{ s2.focus(); }catch(e){} }
+  }
+
+  // ---- chrome ----
 
   // The tab strip is built once. Renders flip state on the buttons in place,
   // so a focused tab keeps its focus across every switch.
   $("#tabs").innerHTML = S.tabsHtml(selScreen);
 
-  /* One render path serves the boot, every tab switch, and the corpus
-     arriving. The seam is async, so the first paint is the complete
-     no-corpus chrome and the same render fills the counts in when the
-     index resolves. */
   function render(){
     document.querySelectorAll(".mtab").forEach(tab => {
       const on = tab.getAttribute("data-s") === selScreen;
@@ -68,25 +292,272 @@
       sec.classList.toggle("is-on", sec.getAttribute("data-s") === selScreen));
     const theme = document.documentElement.getAttribute("data-theme");
     $("#ttIcon").textContent = theme === "dark" ? "☾" : "☀";
-    $("#projChit").textContent = S.projectChitText(index);
-    $("#foot").textContent = S.footerText(index);
+    $("#projChit").textContent = S.projectChitText(corpus ? corpus.index : null);
+    $("#foot").textContent = S.footerText(corpus ? corpus.index : null);
   }
 
-  // One listener on the strip serves every tab.
-  $("#tabs").addEventListener("click", e => {
-    const tab = e.target.closest(".mtab");
-    if (!tab) return;
-    selScreen = tab.getAttribute("data-s");
-    render();
-  });
-  $("#newTaskBtn").addEventListener("click", () => { selScreen = "new task"; render(); });
+  function syncHash(){
+    if (selScreen !== "inspector" || !sel.t) return;
+    try{ history.replaceState(null, "", S.hashWrite(sel)); }catch(e){}
+  }
+
+  function renderAll(){
+    render(); renderRail(); renderInspector(); syncHash();
+  }
+
+  // ---- opened documents ----
+
+  /* An opened file runs through the same builder the corpus uses, as its own
+     one-ticket corpus. The harvest is display metadata only: the document
+     stays unindexed and never joins the corpus index. */
+  function harvest(dir, text){
+    return B.buildIndex([{path: dir + "/audit-log.md", text: String(text)}],
+      {project: null, generated: today(), source: "picked"}).tickets[0];
+  }
+
+  function addDoc(name, text, watching, handle){
+    const key = "doc-" + (++docSeq);
+    const dir = String(name || "document").replace(/\//g, "-") || "document";
+    docs.push({key, name: dir, text: String(text), ticket: harvest(dir, text),
+      watching: !!watching, handle: handle || null, polling: false});
+    sel = {t: key, s: null, item: null};
+    dlFilter = "all"; missNotice = null; pasteOpen = false;
+    selScreen = "inspector";
+    renderAll();
+  }
+
+  function updateDoc(doc, text){
+    if (text === doc.text) return false;
+    doc.text = String(text);
+    doc.ticket = harvest(doc.name, text);
+    return true;
+  }
+
+  function closeDoc(key){
+    const i = docs.findIndex(d => d.key === key);
+    if (i >= 0) docs.splice(i, 1);
+    if (sel.t === key) sel = {t: null, s: null, item: null};
+    renderAll();
+  }
+
+  async function openDocs(){
+    if (!("showOpenFilePicker" in window)){ $("#openDoc").click(); return; }
+    let handles;
+    try{
+      handles = await window.showOpenFilePicker({multiple: true,
+        types: [{description: "Markdown / text", accept: {"text/markdown": [".md", ".markdown"], "text/plain": [".txt"]}}]});
+    }catch(e){ return; }
+    for (const h of handles){
+      try{
+        const f = await h.getFile();
+        addDoc(f.name, await f.text(), true, h);
+      }catch(e){ console.warn("open failed:", e); }
+    }
+  }
+
+  async function reloadDoc(doc){
+    if (!doc || !doc.handle) return;
+    try{
+      // The reload click is a user gesture, so a lapsed read permission can
+      // be re-requested here; the poll loop never can.
+      if (doc.handle.requestPermission &&
+          (await doc.handle.requestPermission({mode: "read"})) !== "granted") return;
+      const f = await doc.handle.getFile();
+      updateDoc(doc, await f.text());
+      doc.watching = true;
+    }catch(e){ console.warn("reload failed:", e); }
+    renderAll();
+  }
+
+  /* The shared poll, in the viewer's pattern: one loop over every watched
+     document, an in-flight guard per document, and any failure flips the
+     document to its cached state instead of leaving a stale "watching" chit
+     standing. */
+  async function pollDoc(doc){
+    if (doc.polling || !doc.watching || !doc.handle) return;
+    doc.polling = true;
+    try{
+      if (doc.handle.queryPermission &&
+          (await doc.handle.queryPermission({mode: "read"})) !== "granted")
+        throw new Error("read permission lapsed");
+      const f = await doc.handle.getFile();
+      if (updateDoc(doc, await f.text())) renderAll();
+    }catch(e){
+      doc.watching = false;
+      console.warn("watch stopped:", e);
+      renderAll();
+    }
+    doc.polling = false;
+  }
+  setInterval(() => { docs.forEach(pollDoc); }, 1500);
+
+  // ---- events ----
+
   $("#themeBtn").addEventListener("click", () => {
     const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
     S.applyTheme(document, localStorage, next);
   });
+  $("#newTaskBtn").addEventListener("click", () => { selScreen = "new task"; render(); });
 
-  render();
-  S.loadCorpus(u => fetch(u)).then(ix => { index = ix; render(); });
+  // One delegated listener serves every dynamic control. Inner targets are
+  // checked before the containers that hold them.
+  document.addEventListener("click", e => {
+    const hit = cls => e.target.closest ? e.target.closest(cls) : null;
+    const tab = hit(".mtab");
+    if (tab){ selScreen = tab.getAttribute("data-s"); render(); return; }
+    if (e.target.id === "pasteImport"){
+      const v = ($("#pasteArea") || {value: ""}).value;
+      addDoc("pasted.md", v, false);
+      return;
+    }
+    const rclose = hit(".rclose");
+    if (rclose){ closeDoc(rclose.getAttribute("data-close")); return; }
+    const rentry = hit(".rentry");
+    if (rentry){
+      sel = {t: rentry.getAttribute("data-key"), s: null, item: null};
+      dlFilter = "all"; missNotice = null;
+      if (selScreen !== "resume pack") selScreen = "inspector";
+      renderAll();
+      return;
+    }
+    const railsec = hit(".railsec");
+    if (railsec){
+      const name = railsec.getAttribute("data-sec");
+      railCollapsed.has(name) ? railCollapsed.delete(name) : railCollapsed.add(name);
+      renderRail();
+      return;
+    }
+    const back = hit(".backlink");
+    if (back){ sel.item = null; renderInspector(); syncHash(); return; }
+    const lnk = hit(".lnk");
+    if (lnk){
+      try{ navigator.clipboard.writeText(location.href); }catch(err){}
+      lnk.textContent = "copied";
+      setTimeout(() => renderInspector(), 900);
+      return;
+    }
+    const pill = hit(".fpill");
+    if (pill){ dlFilter = pill.getAttribute("data-dlf"); renderInspector(); return; }
+    const pc = hit(".pc");
+    if (pc){ sel.s = pc.getAttribute("data-key"); sel.item = null; missNotice = null; renderInspector(); syncHash(); return; }
+    const wl = hit(".wl");
+    if (wl){
+      sel.item = wl.getAttribute("data-item");
+      if (I.RE_OT.test(sel.item)){
+        const tgt = findTarget(sel.t);
+        const own = tgt && tgt.ticket.sections.find(s => s.canonical && s.phase === 9);
+        if (own) sel.s = own.key;
+      }
+      renderInspector(); syncHash();
+      return;
+    }
+    const sth = hit(".sth");
+    if (sth){
+      const st = sortState[sth.getAttribute("data-t")], k = sth.getAttribute("data-k");
+      if (st){ st.d = st.k === k ? -st.d : 1; st.k = k; renderInspector(); }
+      return;
+    }
+    const dlrow = hit(".dlrow");
+    if (dlrow){ sel.item = dlrow.getAttribute("data-dl"); renderInspector(); syncHash(); return; }
+    const op = hit(".op");
+    if (op){
+      if (op.getAttribute("data-secstep")){
+        const tgt = findTarget(sel.t);
+        if (!tgt) return;
+        const entries = D.sectionEntries(tgt.ticket);
+        const i = entries.findIndex(en => en.key === sel.s) + Number(op.getAttribute("data-secstep"));
+        if (i >= 0 && i < entries.length){
+          sel.s = entries[i].key; sel.item = null; missNotice = null;
+          renderInspector(); syncHash();
+        }
+      } else if (op.getAttribute("data-view")){
+        viewMode = op.getAttribute("data-view");
+        renderInspector();
+      } else if (op.getAttribute("data-exp")){
+        const open = op.getAttribute("data-exp") === "open";
+        document.querySelectorAll(".fsec").forEach(d => { d.open = open; });
+      } else if (op.getAttribute("data-op") === "paste"){
+        pasteOpen = !pasteOpen; renderInspector();
+      } else if (op.getAttribute("data-op") === "openwatch"){
+        openDocs();
+      } else if (op.getAttribute("data-op") === "reload"){
+        const tgt = findTarget(sel.t);
+        if (tgt && tgt.kind === "doc") reloadDoc(tgt.doc);
+      }
+    }
+  });
+
+  document.addEventListener("change", e => {
+    if (e.target.id === "secSel"){
+      sel.s = e.target.value; sel.item = null; missNotice = null;
+      renderInspector(); syncHash();
+      return;
+    }
+    if (e.target.id === "openDoc"){
+      for (const f of Array.from(e.target.files || [])){
+        const rd = new FileReader();
+        rd.onload = () => addDoc(f.name, String(rd.result), false);
+        rd.readAsText(f);
+      }
+      e.target.value = "";
+    }
+  });
+
+  // Drop anywhere opens the files as unindexed documents, viewer-style. A
+  // drop that can hand us filesystem handles is watched from then on.
+  let dragDepth = 0;
+  window.addEventListener("dragover", e => e.preventDefault());
+  window.addEventListener("dragenter", () => { dragDepth++; $("#shellmask").classList.add("is-on"); });
+  window.addEventListener("dragleave", () => { if (--dragDepth <= 0) $("#shellmask").classList.remove("is-on"); });
+  window.addEventListener("drop", e => {
+    e.preventDefault(); dragDepth = 0; $("#shellmask").classList.remove("is-on");
+    const items = e.dataTransfer && e.dataTransfer.items;
+    if (items && items.length && items[0].getAsFileSystemHandle){
+      Array.from(items).forEach(async it => {
+        try{
+          const h = await it.getAsFileSystemHandle();
+          if (h && h.kind === "file"){
+            const f = await h.getFile();
+            addDoc(f.name, await f.text(), true, h);
+          }
+        }catch(err){ console.warn("drop failed:", err); }
+      });
+      return;
+    }
+    Array.from(e.dataTransfer && e.dataTransfer.files || []).forEach(f => {
+      const rd = new FileReader();
+      rd.onload = () => addDoc(f.name, String(rd.result), false);
+      rd.readAsText(f);
+    });
+  });
+
+  // ---- boot ----
+
+  /* One render path serves the boot, every tab switch, and the corpus
+     arriving. The seam is async, so the first paint is the complete
+     no-corpus chrome and the same render fills everything in when the
+     index resolves. */
+  renderAll();
+  S.loadCorpus(u => fetch(u)).then(c => {
+    corpus = c;
+    if (pendingSel && pendingSel.t){
+      const tgt = findTarget(pendingSel.t);
+      if (tgt){
+        sel = {t: pendingSel.t, s: pendingSel.s, item: pendingSel.item};
+        selScreen = "inspector";
+      } else {
+        bootNotice = `ticket "${pendingSel.t}" is not in this corpus.`;
+      }
+      pendingSel = null;
+    }
+    // A dead deep link keeps its notice visible instead of being papered
+    // over by the default selection.
+    if (!sel.t && corpus && !bootNotice){
+      const first = railModel().find(g => g[1].length);
+      if (first) sel = {t: first[1][0].key, s: null, item: null};
+    }
+    renderAll();
+  });
 })();
 </script>
 </body>
