@@ -677,3 +677,13 @@ test("prev/next in the full log jump too, and manual toggles survive renders", a
   assert.equal(target.open, true);
   assert.equal(target._scrolled, 1);
 });
+
+test("the closed group starts collapsed, and a click opens it", async () => {
+  const h = bootCorpus();
+  await h.settle();
+  const closed = h.$$(".railsec").find(s => s.getAttribute("data-sec") === "closed");
+  assert.match(closed.innerHTML, /▸/);
+  h.click(closed);
+  const after = h.$$(".railsec").find(s => s.getAttribute("data-sec") === "closed");
+  assert.match(after.innerHTML, /▾/);
+});

@@ -59,11 +59,15 @@
 
 /* ---- rail ---- */
 
-.railsec{display:flex;justify-content:space-between;align-items:center;padding:9px 12px 5px;
+/* The mockup keeps these headers faint; rbeye asked for more contrast, so
+   each group gets an inset band with the name in full ink — a visible
+   delimiter in both palettes without shouting over the entries. */
+.railsec{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;
   font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--faint);cursor:pointer;user-select:none}
-.railsec:hover{color:var(--dim)}
-.rcv{display:inline-block;width:12px;color:var(--faint)}
+  color:var(--ink);background:var(--inset);border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
+.railsec:hover .rname{color:var(--accent)}
+.rcv{display:inline-block;width:12px;color:var(--dim)}
 .rcount{color:var(--dim);font-weight:400}
 /* The whole entry is a button, so the keyboard reaches it; we clear the
    browser's button paint and keep the card look. */

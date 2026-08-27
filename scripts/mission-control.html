@@ -64,7 +64,9 @@
   // scrolls back up to the nav and the content instead of leaving the reader
   // parked at the tables.
   let paneJump = false;
-  const railCollapsed = new Set();
+  // The closed group starts collapsed: it is the archive, and its count on
+  // the header says how much sits inside.
+  const railCollapsed = new Set(["closed"]);
   const sortState = {dec: {k: "id", d: 1}, iw: {k: "wid", d: 1}};
   const parsed = new Map();
 
