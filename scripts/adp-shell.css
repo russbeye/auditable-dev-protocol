@@ -60,12 +60,14 @@
 /* ---- rail ---- */
 
 /* The mockup keeps these headers faint; rbeye asked for more contrast, so
-   each group gets an inset band with the name in full ink — a visible
-   delimiter in both palettes without shouting over the entries. */
+   each group gets a banded header with the name in full ink. The band mixes
+   ink into the panel, which lands darker than the rail in the light palette
+   and lighter in the dark one, so the delimiter reads in both. */
 .railsec{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;
   font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--ink);background:var(--inset);border-top:1px solid var(--line);
-  border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
+  color:var(--ink);background:color-mix(in srgb, var(--ink) 10%, var(--panel));
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  cursor:pointer;user-select:none}
 .railsec:hover .rname{color:var(--accent)}
 .rcv{display:inline-block;width:12px;color:var(--dim)}
 .rcount{color:var(--dim);font-weight:400}
