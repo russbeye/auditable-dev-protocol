@@ -132,8 +132,44 @@
     return groups;
   }
 
+  /* The tab strip keeps focus by never rebuilding; everything else swaps out
+     through innerHTML, which drops the keyboard on the floor. We remember the
+     focused control by its stable identity — its id, or the data marks the
+     delegated handler itself keys on — and hand focus to the rebuilt twin.
+     Matching walks candidates and compares attributes instead of composing a
+     selector, so a harvested value in a mark never turns into query syntax.
+     A control that did not survive the rebuild simply stays unfocused. */
+  const FOCUS_MARKS = ["data-op", "data-view", "data-secstep", "data-dlf",
+    "data-exp", "data-permalink", "data-t", "data-k", "data-key"];
+  function focusMark(el){
+    if (!el || !el.getAttribute) return null;
+    if (el.id) return {id: el.id};
+    const marks = {};
+    let any = false;
+    for (const a of FOCUS_MARKS){
+      const v = el.getAttribute(a);
+      if (v != null){ marks[a] = v; any = true; }
+    }
+    return any ? {marks} : null;
+  }
+  function refocus(mark){
+    if (!mark) return;
+    let el = null;
+    if (mark.id) el = document.getElementById(mark.id);
+    else {
+      const cand = [];
+      for (const tag of ["button", "th"])
+        cand.push.apply(cand, document.querySelectorAll(tag));
+      el = cand.find(c =>
+        Object.keys(mark.marks).every(a => c.getAttribute(a) === mark.marks[a]));
+    }
+    if (el && el.focus) try{ el.focus(); }catch(e){}
+  }
+
   function renderRail(){
+    const keep = focusMark(document.activeElement);
     $("#rail").innerHTML = S.railHtml(railModel(), sel.t, railCollapsed);
+    refocus(keep);
   }
 
   // ---- inspector ----
@@ -160,20 +196,16 @@
 
   function renderInspector(){
     const scr = $("#scrInspector");
-    const act = document.activeElement;
-    const keepSel = !!(act && act.id === "secSel");
+    const keep = focusMark(document.activeElement);
     /* A paste draft lives only in the textarea, so any rebuild — a watched
        file's poll tick included — would erase it mid-composition. We carry
-       the text and its focus across the innerHTML swap, the same move the
-       section dropdown makes for its focus. */
+       the text across the innerHTML swap; refocus carries the keyboard. */
     const pa0 = $("#pasteArea");
-    const draft = pa0 ? {text: pa0.value || "", focus: !!(act && act.id === "pasteArea")} : null;
+    const draft = pa0 ? pa0.value || "" : null;
     const keepDraft = () => {
-      if (!draft) return;
+      if (draft == null) return;
       const pa = $("#pasteArea");
-      if (!pa) return;
-      pa.value = draft.text;
-      if (draft.focus && pa.focus) try{ pa.focus(); }catch(e){}
+      if (pa) pa.value = draft;
     };
     const tgt = findTarget(sel.t);
     const ops = S.opsRowHtml({fsa: "showOpenFilePicker" in window,
@@ -184,7 +216,7 @@
         + `<div class="ipanel"><p class="dnotice">${P.esc(bootNotice || (corpus
           ? "select a ticket from the rail, or open a document"
           : "no corpus behind this page — open, paste, or drop audit logs to inspect them"))}</p></div>`;
-      keepDraft();
+      keepDraft(); refocus(keep);
       return;
     }
     const t = tgt.ticket;
@@ -198,7 +230,7 @@
         + (tgt.kind === "doc"
           ? S.rawPaneHtml({heading: t.dir, raw: (tgt.text || "").slice(0, 4000)})
           : `<div class="ipanel"><p class="dnotice">this ticket has no audit log yet — only its prompt or other files sit in the directory.</p></div>`);
-      keepDraft();
+      keepDraft(); refocus(keep);
       return;
     }
 
@@ -300,8 +332,7 @@
       + S.tickheadHtml({title: t.id || t.dir, chits})
       + S.secNavHtml(entries, states, sel.s)
       + pane + panels;
-    if (keepSel){ const s2 = $("#secSel"); if (s2 && s2.focus) try{ s2.focus(); }catch(e){} }
-    keepDraft();
+    keepDraft(); refocus(keep);
     if (fullJump){
       for (const d of document.querySelectorAll(".fsec"))
         if (d.getAttribute("data-key") === fullJump && d.scrollIntoView) d.scrollIntoView();

@@ -13,6 +13,11 @@ const vm = require("node:vm");
 
 // ---- element stubs ----
 
+// Focus is one slot, like a browser's. focus() claims it, and the document
+// stub reads it back as activeElement, so tests can pin who holds the
+// keyboard across a rebuild. Each boot starts with nothing focused.
+let lastFocused = null;
+
 function parseAttrs(str){
   const attrs = {};
   const re = /([a-zA-Z-]+)="([^"]*)"|([a-zA-Z-]+)/g;
@@ -71,7 +76,7 @@ function makeEl(tag, attrs){
     (el.listeners[type] = el.listeners[type] || []).push(fn);
   };
   el.click = () => {};
-  el.focus = () => {};
+  el.focus = () => { lastFocused = el; };
   // The page scrolls a jumped-to section into view; tests read the counter.
   el.scrollIntoView = () => { el._scrolled = (el._scrolled || 0) + 1; };
   el.closest = sel => {
@@ -210,9 +215,10 @@ function bootShell(opts){
   const root = buildTree();
   const documentElement = makeEl("html");
 
+  lastFocused = null;
   const document = {
     documentElement,
-    activeElement: null,
+    get activeElement(){ return lastFocused; },
     getElementById: id => findAll(root, "#" + id)[0] || null,
     querySelector: sel => findAll(root, sel)[0] || null,
     querySelectorAll: sel => findAll(root, sel),

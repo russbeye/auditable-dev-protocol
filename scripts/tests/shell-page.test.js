@@ -386,6 +386,44 @@ test("the status pills filter the decisions table", async () => {
   assert.ok(!scr.includes(`data-dl="DL-001"`));
 });
 
+// ---- focus across rebuilds ----
+
+test("a filter pill keeps the keyboard through its own re-render", async () => {
+  const h = bootCorpus();
+  await h.settle();
+  pick(h, "AA1");
+  const pill = h.$$(".fpill").find(p => p.getAttribute("data-dlf") === "open");
+  pill.focus();
+  h.click(pill);
+  // The click rebuilt the panel, so the focused element must be the fresh
+  // twin — same mark, attached to the page — not the detached original.
+  const now = h.document.activeElement;
+  assert.notEqual(now, pill);
+  assert.equal(now.getAttribute("data-dlf"), "open");
+  assert.ok(h.$$(".fpill").includes(now));
+});
+
+test("the section dropdown keeps focus across its change re-render", async () => {
+  const h = bootCorpus();
+  await h.settle();
+  pick(h, "AA1");
+  h.$("#secSel").focus();
+  h.change(h.$("#secSel"), "sec-pr-summary");
+  assert.equal(h.document.activeElement, h.$("#secSel"));
+});
+
+test("a rail selection keeps the keyboard on the rebuilt entry", async () => {
+  const h = bootCorpus();
+  await h.settle();
+  const entry = h.$$(".rentry").find(r => r.getAttribute("data-key") === "AA1");
+  entry.focus();
+  h.click(entry);
+  const now = h.document.activeElement;
+  assert.notEqual(now, entry);
+  assert.equal(now.getAttribute("data-key"), "AA1");
+  assert.ok(now.classList.contains("is-sel"));
+});
+
 test("a header click sorts the decisions table and flips on repeat", async () => {
   const h = bootCorpus();
   await h.settle();
@@ -579,13 +617,16 @@ test("a poll re-render keeps a paste draft in composition", async () => {
   await h.settle();
   h.click(h.$$(".op").find(o => o.getAttribute("data-op") === "paste"));
   h.$("#pasteArea").value = "half-typed amendment";
+  h.$("#pasteArea").focus();
   // The watched file changes under the open drawer. The rebuild must land —
-  // the new section proves it did — with the draft still in the textarea.
+  // the new section proves it did — with the draft still in the textarea
+  // and the keyboard still in the field.
   handle._text = LOG + "\n## Amendment Notes\n\nlate news.\n";
   h.tick();
   await h.settle();
   assert.match(h.$("#secSel").innerHTML, /Amendment Notes/);
   assert.equal(h.$("#pasteArea").value, "half-typed amendment");
+  assert.equal(h.document.activeElement, h.$("#pasteArea"));
 });
 
 test("a lapsed permission flips the watch to its cached state", async () => {
