@@ -41,9 +41,23 @@
     return P.dlStatusKind(status);
   }
 
+  // The one covering-watch lookup. The watch column, the unwatched-open
+  // filter, and any future board read a decision's coverage through it, so
+  // they can never disagree about what "covered" means.
+  function coveringWatch(t, dlId){
+    return t.watches.find(w => (w.dl || []).includes(dlId)) || null;
+  }
+
+  // The canonical section for a phase, or null. Ownership, the default
+  // landing key, and watch-link routing all resolve a phase through this one
+  // lookup, and first-wins is its single rule.
+  function canonicalSection(t, phase){
+    return t.sections.find(s => s.canonical && s.phase === phase) || null;
+  }
+
   function unwatchedOpen(t){
     return t.decisions.filter(d => statusKind(d.status) === "open" &&
-      !t.watches.some(w => (w.dl || []).includes(d.id)));
+      !coveringWatch(t, d.id));
   }
 
   /* Attention reasons in fixed priority: overdue watches, unanchored watches,
@@ -152,7 +166,7 @@
      other section shows exactly what its body cites by id token. */
   function sectionItems(t, key){
     const sec = t.sections.find(s => s.key === key);
-    const owns = ph => !!sec && sec.canonical && sec.phase === ph;
+    const owns = ph => !!sec && canonicalSection(t, ph) === sec;
     const ref = (t.refs || {})[key] || [];
     return {
       decisions: owns(5) ? t.decisions : t.decisions.filter(d => ref.includes(d.id)),
@@ -165,7 +179,7 @@
   function citingSections(t, id){
     const ownerPhase = I.RE_DL.test(id) ? 5 : 9;
     const out = [];
-    const own = t.sections.find(s => s.canonical && s.phase === ownerPhase);
+    const own = canonicalSection(t, ownerPhase);
     if (own) out.push(own.key);
     for (const key of Object.keys(t.refs || {}))
       if ((t.refs[key] || []).includes(id) && !out.includes(key)) out.push(key);
@@ -184,6 +198,7 @@
   }
 
   const ADPDeriveLib = {GROUPS, daysUntil, dueState, dueLabel, statusKind,
+    coveringWatch, canonicalSection,
     unwatchedOpen, attentionReasons, needsAttention, ribbonModel, railGroups,
     sectionEntries, sectionState, sectionItems, citingSections, sortRows};
   if (isNode){ module.exports = ADPDeriveLib; }

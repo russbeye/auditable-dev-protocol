@@ -187,11 +187,19 @@
 
   function defaultKey(t){
     if (t.state === "open" || t.state === "in-review"){
-      const cur = t.sections.find(s => s.canonical && s.phase === t.phase);
+      const cur = D.canonicalSection(t, t.phase);
       if (cur) return cur.key;
     }
-    const spine = t.sections.find(s => s.canonical && s.phase === 5);
+    const spine = D.canonicalSection(t, 5);
     return (spine || t.sections[0] || {key: null}).key;
+  }
+
+  // A section body renders as the decision-log card list when its title is
+  // the spine, and as markdown otherwise — the one rule the pane, the full
+  // log, and any future screen read.
+  function sectionBodyHtml(sec, body){
+    return sec ? `<div class="md">${P.metaFor(sec.title).spine
+      ? P.renderDecisionLog(body) : P.renderMarkdown(body)}</div>` : "";
   }
 
   function renderInspector(){
@@ -272,8 +280,7 @@
         badge: en && en.missing ? "missing" : en && !en.canonical ? "non-canonical" : null,
         notice: missNotice || (en && en.missing
           ? "this section was never written. A missing canonical section is an attention reason on the rail." : null),
-        bodyHtml: sec ? `<div class="md">${P.metaFor(sec.title).spine
-          ? P.renderDecisionLog(body) : P.renderMarkdown(body)}</div>` : ""
+        bodyHtml: sectionBodyHtml(sec, body)
       });
     }
 
@@ -287,8 +294,7 @@
         return {key: en.key, open: !fullClosed.has(en.key),
           heading: en.phase != null ? "phase " + en.phase + " · " + en.title : en.title,
           badge: en.canonical ? null : "non-canonical",
-          bodyHtml: sec ? `<div class="md">${P.metaFor(sec.title).spine
-            ? P.renderDecisionLog(body) : P.renderMarkdown(body)}</div>` : ""};
+          bodyHtml: sectionBodyHtml(sec, body)};
       }));
     } else {
       const items = D.sectionItems(t, sel.s);
@@ -302,12 +308,12 @@
       const confRank = {high: 3, medium: 2, low: 1};
       const decRows = D.sortRows(shown, sortState.dec.k, sortState.dec.d, {
         id: d => d.id, title: d => d.title, conf: d => confRank[P.dlConfKind(d.confidence)] || 0,
-        status: d => kindOf(d), watch: d => (t.watches.find(w => (w.dl || []).includes(d.id)) || {wid: ""}).wid,
+        status: d => kindOf(d), watch: d => (D.coveringWatch(t, d.id) || {wid: ""}).wid,
         cited: d => D.citingSections(t, d.id).length
       }).map(d => ({id: d.id, title: d.title, conf: d.confidence,
         confKind: P.dlConfKind(d.confidence),
         statusKind: kindOf(d),
-        watch: (t.watches.find(w => (w.dl || []).includes(d.id)) || {wid: null}).wid,
+        watch: (D.coveringWatch(t, d.id) || {wid: null}).wid,
         chips: D.citingSections(t, d.id).map(k => chipModel(t, k)),
         hl: sel.item === d.id}));
       const en = entries.find(x => x.key === sel.s);
@@ -394,6 +400,14 @@
     dlFilter = "all"; missNotice = null; pasteOpen = false; fullClosed.clear();
     selScreen = "inspector";
     renderAll();
+  }
+
+  // A File with no filesystem handle reads once and opens as a one-shot
+  // document; the input path and the handle-less drop path share it.
+  function readDocFile(f){
+    const rd = new FileReader();
+    rd.onload = () => addDoc(f.name, String(rd.result), false);
+    rd.readAsText(f);
   }
 
   function updateDoc(doc, text){
@@ -515,7 +529,7 @@
       sel.item = wl.getAttribute("data-item");
       if (I.RE_OT.test(sel.item)){
         const tgt = findTarget(sel.t);
-        const own = tgt && tgt.ticket.sections.find(s => s.canonical && s.phase === 9);
+        const own = tgt && D.canonicalSection(tgt.ticket, 9);
         if (own) sel.s = own.key;
       }
       paneJump = true;
@@ -584,11 +598,7 @@
       return;
     }
     if (e.target.id === "openDoc"){
-      for (const f of Array.from(e.target.files || [])){
-        const rd = new FileReader();
-        rd.onload = () => addDoc(f.name, String(rd.result), false);
-        rd.readAsText(f);
-      }
+      Array.from(e.target.files || []).forEach(readDocFile);
       e.target.value = "";
     }
   });
@@ -614,11 +624,7 @@
       });
       return;
     }
-    Array.from(e.dataTransfer && e.dataTransfer.files || []).forEach(f => {
-      const rd = new FileReader();
-      rd.onload = () => addDoc(f.name, String(rd.result), false);
-      rd.readAsText(f);
-    });
+    Array.from(e.dataTransfer && e.dataTransfer.files || []).forEach(readDocFile);
   });
 
   // ---- boot ----

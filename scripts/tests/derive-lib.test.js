@@ -95,6 +95,24 @@ test("an open decision covered by a watch raises nothing", () => {
   assert.deepEqual(D.attentionReasons(t, TODAY), []);
 });
 
+test("coveringWatch resolves a decision's watch, first match, else null", () => {
+  const w1 = watch({wid: "OT-T1-1", dl: ["DL-001", "DL-002"]});
+  const w2 = watch({wid: "OT-T1-2", dl: ["DL-002"]});
+  const t = ticket({watches: [w1, w2]});
+  assert.equal(D.coveringWatch(t, "DL-001"), w1);
+  assert.equal(D.coveringWatch(t, "DL-002"), w1);
+  assert.equal(D.coveringWatch(t, "DL-009"), null);
+  assert.equal(D.coveringWatch(ticket({watches: [watch({dl: null})]}), "DL-001"), null);
+});
+
+test("canonicalSection resolves a phase's canonical section, else null", () => {
+  const spine = section({key: "sec-dl", title: "Decision Log", phase: 5, canonical: true});
+  const stray = section({key: "sec-note", title: "Decision Log — notes", phase: 5, canonical: false});
+  const t = ticket({sections: [stray, spine]});
+  assert.equal(D.canonicalSection(t, 5), spine);
+  assert.equal(D.canonicalSection(t, 9), null);
+});
+
 // ---- ribbon ----
 
 test("the ribbon carries the top two reasons and the overflow count", () => {
