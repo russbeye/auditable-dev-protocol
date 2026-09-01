@@ -270,3 +270,51 @@ test("sortRows orders by accessor without mutating the input", () => {
   assert.deepEqual(rows.map(r => r.n), [2, 3, 1]);
   assert.deepEqual(D.sortRows(rows, "missing", 1, {}).map(r => r.n), [2, 3, 1]);
 });
+
+// ---- closed watches ----
+
+test("a closed watch classifies as closed before anything else", () => {
+  const w = watch({anchored: true, due: "2026-08-01", closed: "2026-08-20", outcome: "VALIDATED"});
+  assert.equal(D.dueState(w, TODAY), "closed");
+  assert.equal(D.dueLabel(w, TODAY), "CLOSED");
+  const un = watch({closed: "2026-08-20", outcome: "UNKNOWN"});
+  assert.equal(D.dueState(un, TODAY), "closed");
+});
+
+test("a closed-overdue watch raises nothing, an open one still does", () => {
+  const closed = ticket({watches: [
+    watch({anchored: true, due: "2026-08-01", closed: "2026-08-20", outcome: "VALIDATED"}),
+    watch({wid: "OT-T1-2", closed: "2026-08-20", outcome: "INVALIDATED"})]});
+  assert.deepEqual(D.attentionReasons(closed, TODAY), []);
+  assert.equal(D.needsAttention(closed, TODAY), false);
+  const open = ticket({watches: [watch({anchored: true, due: "2026-08-01"})]});
+  assert.equal(D.attentionReasons(open, TODAY)[0].txt, "WATCH OVERDUE 26D");
+  assert.equal(D.needsAttention(open, TODAY), true);
+});
+
+test("a closed watch covers nothing, so its open decision is unwatched again", () => {
+  const t = ticket({decisions: [decision()],
+    watches: [watch({closed: "2026-08-20", outcome: "VALIDATED"})]});
+  assert.equal(D.coveringWatch(t, "DL-001"), null);
+  assert.equal(D.unwatchedOpen(t).length, 1);
+  const live = ticket({decisions: [decision()], watches: [watch()]});
+  assert.equal(D.coveringWatch(live, "DL-001"), live.watches[0]);
+});
+
+test("the quiet-ticket ribbon skips closed watches when naming the next date", () => {
+  const t = ticket({watches: [
+    watch({anchored: true, due: "2026-09-01", closed: "2026-08-20", outcome: "VALIDATED"}),
+    watch({wid: "OT-T1-2", anchored: true, due: "2026-10-01"})]});
+  assert.equal(D.ribbonModel(t, TODAY).reasons[0].txt, "CLOSED · WATCH 2026-10-01");
+  const all = ticket({watches: [
+    watch({anchored: true, due: "2026-09-01", closed: "2026-08-20", outcome: "VALIDATED"})]});
+  assert.equal(D.ribbonModel(all, TODAY).reasons[0].txt, "CLOSED · LOOP CLOSED");
+});
+
+test("the obligation section reads complete once its watches close", () => {
+  const en = {key: "sec-o", title: "O", phase: 9, canonical: true, missing: false};
+  const t = ticket({watches: [
+    watch({anchored: true, due: "2026-08-01", closed: "2026-08-20", outcome: "VALIDATED"}),
+    watch({wid: "OT-T1-2", closed: "2026-08-20", outcome: "UNKNOWN"})]});
+  assert.deepEqual(D.sectionState(t, en, TODAY), {label: "complete", tone: "ok"});
+});

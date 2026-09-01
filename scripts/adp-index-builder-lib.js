@@ -178,6 +178,33 @@
     return watches;
   }
 
+  /* The closure ledger: one line closes or re-anchors a watch, appended
+     anywhere a section exists. The grammar demands a calendar-true date right
+     after the verb, which is the one thing the corpus's legacy closure prose
+     never wrote, so old logs harvest nothing and stay byte-identical. A line
+     missing any part of the form is prose. */
+  const RE_LEDGER = /^\s*(?:[-*]\s+)?(?:\*\*)?(OT-[A-Za-z0-9-]+)\s+(CLOSED|RE-ANCHORED)\s+(\d{4}-\d{2}-\d{2})\s+→\s+([A-Za-z0-9-]+)/;
+
+  /* First occurrence wins for both record kinds, the same resolution every
+     repeated id in the contract gets. A wrong ruling is corrected by fixing
+     its line in place, never by appending a contradiction. */
+  function harvestLedger(secs){
+    const closures = new Map();
+    const anchors = new Map();
+    for (const sec of secs){
+      for (const line of withoutFences(sec.body.join("\n")).split("\n")){
+        const m = line.match(RE_LEDGER);
+        if (!m || !I.isDate(m[3])) continue;
+        if (m[2] === "CLOSED"){
+          if (!closures.has(m[1])) closures.set(m[1], {closed: m[3], outcome: m[4]});
+        } else if (I.isDate(m[4]) && !anchors.has(m[1])){
+          anchors.set(m[1], m[4]);
+        }
+      }
+    }
+    return {closures: closures, anchors: anchors};
+  }
+
   /* The nine artifacts map one to one onto phases 1 through 9. A phase counts
      as present only through its artifact row or its "Phase N:" row, so a
      companion heading alone never clears its phase from missing. */
@@ -224,6 +251,17 @@
       });
       decisions = harvestDecisions(parsed.secs);
       watches = harvestWatches(parsed.secs);
+      /* Ledger records land on their table row. The row's own window date is
+         the anchor of record, so a re-anchor fills only a null due; closed
+         and outcome trail the core keys as paired additive fields. A record
+         naming a wid with no row harvests nothing. */
+      const ledger = harvestLedger(parsed.secs);
+      for (const w of watches){
+        const a = ledger.anchors.get(w.wid);
+        if (a && !w.anchored){ w.due = a; w.anchored = true; }
+        const c = ledger.closures.get(w.wid);
+        if (c){ w.closed = c.closed; w.outcome = c.outcome; }
+      }
 
       const scanText = withoutFences(fm.rest);
       const h1 = scanText.match(/^#\s+(.+)$/m);

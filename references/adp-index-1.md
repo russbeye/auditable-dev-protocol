@@ -208,6 +208,24 @@ relative windows ("60 days after merge") with no machine-readable merge date; th
 `anchored: false` with a null `due` and surface as a warn state — the builder must never guess
 a date. New logs record an absolute due date at creation, per the MC-001 constraints.
 
+Additive since 2026-08-31: two optional keys, `closed` (the closure date) and `outcome` (the
+disposition token, verbatim), trailing the core keys per the unknown-key rule and emitted
+together exactly when the log records a closure. The source is the closure ledger, the
+append-only record form SKILL.md's Phase 9 documents: a line in any section body, outside
+fences, reading `<wid> CLOSED <date> → <token>` after an optional `-` or `*` list bullet and
+an optional `**` bold marker, with the date calendar-true and free prose allowed after the
+token. The companion form `<wid> RE-ANCHORED <date> → <date>` gives an unanchored watch its
+absolute due date (the first date is the day of the ruling, the second the new `due`). First
+occurrence in document order wins for both record kinds; the row's own window date is the
+anchor of record, so a re-anchor line fills only a null `due` and never moves an existing
+anchor; a record naming a wid with no table row harvests nothing; a line missing any part of
+the form — the date especially — is prose, which is what keeps every legacy closure sentence
+unharvested. The protocol's outcome vocabulary is VALIDATED, INVALIDATED, and UNKNOWN, and per
+the open-vocabulary principle the index carries the token verbatim: an unknown token is data.
+A closed watch stays in the index — closure is a fact on the entry, never a deletion — and the
+derivations, not the index, decide that closed watches leave the due math and the attention
+reasons.
+
 ## Rules
 
 Each rule is one testable sentence. The marker names its proof: `[fixture]` rules have at least
@@ -272,3 +290,7 @@ lacks a fixture.
   matter before rendering, so the untouched standalone viewer never shows it as prose.
 - **IDX-033** [fixture] When a decision carries a `supersedes` key, it is a nonempty array of
   `DL-`digit tokens.
+- **IDX-034** [fixture] A watch carries `closed` exactly when it carries `outcome`; a present
+  `closed` is a date and a present `outcome` is a nonempty string.
+- **IDX-035** [valid] `outcome` is a verbatim source token; membership in the outcome
+  vocabulary is never a validity requirement.

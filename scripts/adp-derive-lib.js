@@ -24,12 +24,17 @@
     return Math.round((utcOf(due) - utcOf(today)) / 86400000);
   }
 
+  /* A closed watch classifies as closed before anything else, so it can
+     never read as overdue or unanchored however stale its due date is. The
+     due math below applies to live watches only. */
   function dueState(w, today){
+    if (w.closed) return "closed";
     if (!w.anchored) return "unanchored";
     const n = daysUntil(w.due, today);
     return n < 0 ? "overdue" : n <= 14 ? "soon" : "upcoming";
   }
   function dueLabel(w, today){
+    if (w.closed) return "CLOSED";
     if (!w.anchored) return "UNANCHORED";
     const n = daysUntil(w.due, today);
     return n < 0 ? "OVERDUE " + (-n) + "D" : n + "D LEFT";
@@ -43,9 +48,11 @@
 
   // The one covering-watch lookup. The watch column, the unwatched-open
   // filter, and any future board read a decision's coverage through it, so
-  // they can never disagree about what "covered" means.
+  // they can never disagree about what "covered" means. Coverage means live
+  // coverage: a closed watch protects nothing now, so an OPEN decision whose
+  // only watch has closed counts as unwatched again.
   function coveringWatch(t, dlId){
-    return t.watches.find(w => (w.dl || []).includes(dlId)) || null;
+    return t.watches.find(w => !w.closed && (w.dl || []).includes(dlId)) || null;
   }
 
   // The canonical section for a phase, or null. Ownership, the default
@@ -72,7 +79,7 @@
       r.push({txt: "WATCH OVERDUE " + (-daysUntil(overdue[0].due, today)) + "D", tone: "bad"});
     else if (overdue.length)
       r.push({txt: overdue.length + " WATCHES OVERDUE", tone: "bad"});
-    const un = t.watches.filter(w => !w.anchored).length;
+    const un = t.watches.filter(w => !w.anchored && !w.closed).length;
     if (un) r.push({txt: un === 1 ? "WATCH UNANCHORED" : un + " WATCHES UNANCHORED", tone: "warn"});
     const miss = (t.missing || []).length;
     if (miss) r.push({txt: miss + " SECTION" + (miss > 1 ? "S" : "") + " MISSING", tone: "warn"});
@@ -90,7 +97,7 @@
       return {reasons: reasons.slice(0, 2), more: Math.max(0, reasons.length - 2)};
     if (t.state === "open" || t.state === "in-review")
       return {reasons: [{txt: "PHASE " + t.phase + " · " + t.state.toUpperCase(), tone: "warn"}], more: 0};
-    const up = t.watches.filter(w => w.anchored && daysUntil(w.due, today) >= 0)
+    const up = t.watches.filter(w => !w.closed && w.anchored && daysUntil(w.due, today) >= 0)
       .sort((a, b) => daysUntil(a.due, today) - daysUntil(b.due, today));
     const st = t.state.toUpperCase();
     return {reasons: [{txt: up.length ? st + " · WATCH " + up[0].due : st + " · LOOP CLOSED", tone: "ok"}], more: 0};
@@ -153,7 +160,7 @@
     if (en.phase === 9){
       if (t.watches.some(w => dueState(w, today) === "overdue"))
         return {label: "overdue watches", tone: "bad"};
-      if (t.watches.some(w => !w.anchored))
+      if (t.watches.some(w => !w.anchored && !w.closed))
         return {label: "unanchored watches", tone: "warn"};
     }
     if ((t.state === "open" || t.state === "in-review") && en.phase === t.phase)

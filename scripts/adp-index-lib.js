@@ -28,6 +28,10 @@
      validateIndex must not consult these. */
   const CONFIDENCE_TOKENS = ["HIGH", "MEDIUM", "LOW"];
   const STATUS_TOKENS = ["OPEN", "VALIDATED", "INVALIDATED", "UNKNOWN"];
+  // A closing watch has no OPEN: the ticket either validated, invalidated, or
+  // ended with its signal never wired. Same rendering-only role as the two
+  // vocabularies above, and IDX-035 keeps it out of validity.
+  const OUTCOME_TOKENS = ["VALIDATED", "INVALIDATED", "UNKNOWN"];
 
   /* The normative key order per object type (IDX-002). Additive fields from
      later revisions join these lists at their specced slot; until specced,
@@ -180,6 +184,13 @@
         !(w.window === null || ne(w.window))){
       flag("IDX-026", p, "anchored must be true exactly when due holds a date; window is null or nonempty");
     }
+    /* closed and outcome are additive-optional and paired, so absence is
+       never a finding; a closure record always carries both facts. */
+    if ("closed" in w || "outcome" in w){
+      if (!("closed" in w && "outcome" in w) || !isDate(w.closed) || !ne(w.outcome)){
+        flag("IDX-034", p, "closed and outcome appear together, with closed a date and outcome nonempty");
+      }
+    }
   }
 
   function validateRefs(refs, path, sectionKeys, flag){
@@ -302,7 +313,7 @@
   /* The builder shares the date and token grammars through these exports, so
      the contract keeps one owner for what counts as a date, an id, and a
      placeholder. */
-  const ADPIndexLib = {SCHEMA, SOURCES, STATES, STATE_SOURCES, CANONICAL_ARTIFACTS, CONFIDENCE_TOKENS, STATUS_TOKENS, KEY_ORDER, RE_DL, RE_OT, isDate, isPlaceholder, validateIndex, serializeIndex};
+  const ADPIndexLib = {SCHEMA, SOURCES, STATES, STATE_SOURCES, CANONICAL_ARTIFACTS, CONFIDENCE_TOKENS, STATUS_TOKENS, OUTCOME_TOKENS, KEY_ORDER, RE_DL, RE_OT, isDate, isPlaceholder, validateIndex, serializeIndex};
   if (typeof module !== "undefined" && module.exports){ module.exports = ADPIndexLib; }
   else { global.ADPIndexLib = ADPIndexLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

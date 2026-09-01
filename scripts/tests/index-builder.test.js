@@ -133,6 +133,40 @@ test("a watch anchors exactly when its window holds a date", () => {
   assert.equal(ticket(doc, "FX002").watches[0].due, "2026-12-01");
 });
 
+test("a closure record lands on its row, and the first ruling wins", () => {
+  // The fixture carries a second, contradictory CLOSED line for this wid;
+  // pinning the first ruling's date and outcome proves it lost.
+  const w = ticket(fixtureDoc(), "FX003").watches[0];
+  assert.equal(w.closed, "2026-09-10");
+  assert.equal(w.outcome, "VALIDATED");
+});
+
+test("a re-anchor fills only a null anchor", () => {
+  const ws = ticket(fixtureDoc(), "FX003").watches;
+  assert.equal(ws[1].due, "2026-12-24");
+  assert.equal(ws[1].anchored, true);
+  assert.equal(ws[1].window, "45 days after merge");
+  // The row's own window date is the anchor of record, so the re-anchor
+  // line aimed at this watch lands nowhere.
+  assert.equal(ws[2].due, "2026-12-01");
+});
+
+test("phantom, dateless, and fenced ledger lines harvest nothing", () => {
+  const t = ticket(fixtureDoc(), "FX003");
+  assert.equal(t.watches.some(w => w.wid === "OT-FX003-9"), false);
+  assert.equal("closed" in t.watches[2], false);
+  assert.equal("outcome" in t.watches[2], false);
+});
+
+test("legacy logs carry no closure keys at all", () => {
+  const doc = fixtureDoc();
+  for (const id of ["FX001", "FX002", "AV090"]){
+    for (const w of ticket(doc, id).watches){
+      assert.equal("closed" in w, false, id + " should stay ledger-free");
+    }
+  }
+});
+
 test("a supersedes field harvests as a backlink, and a placeholder drops the key", () => {
   const doc = fixtureDoc();
   const fx = ticket(doc, "FX001");
@@ -158,7 +192,7 @@ test("created keeps the leading date and drops the phase suffix", () => {
 
 test("a corpus-root file is not a ticket", () => {
   const doc = fixtureDoc();
-  assert.equal(doc.tickets.length, 5);
+  assert.equal(doc.tickets.length, 6);
   assert.equal(doc.tickets.some(t => t.dir === "README.md"), false);
 });
 

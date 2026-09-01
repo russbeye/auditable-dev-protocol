@@ -177,6 +177,108 @@
       ]
     },
     {
+      "id": "FX003",
+      "dir": "20260827-FX003-closed-watches",
+      "slug": "closed-watches",
+      "date": "2026-08-27",
+      "title": "FX-003 — closure ledger fixture",
+      "state": "shipped",
+      "state_source": "inferred",
+      "pr": null,
+      "merged": null,
+      "phase": 9,
+      "sections": [
+        {
+          "key": "sec-decision-log",
+          "title": "Decision Log",
+          "phase": 5,
+          "canonical": true
+        },
+        {
+          "key": "sec-obligation-ticket-list",
+          "title": "Obligation Ticket List",
+          "phase": 9,
+          "canonical": true
+        },
+        {
+          "key": "sec-review-addendum",
+          "title": "Review addendum",
+          "phase": null,
+          "canonical": false
+        }
+      ],
+      "refs": {
+        "sec-decision-log": [
+          "DL-001"
+        ],
+        "sec-obligation-ticket-list": [
+          "OT-FX003-1",
+          "DL-001",
+          "OT-FX003-2",
+          "OT-FX003-3"
+        ],
+        "sec-review-addendum": [
+          "OT-FX003-1",
+          "OT-FX003-2",
+          "OT-FX003-3",
+          "OT-FX003-9"
+        ]
+      },
+      "decisions": [
+        {
+          "id": "DL-001",
+          "title": "Ledger decision",
+          "confidence": "HIGH",
+          "basis": null,
+          "status": "OPEN",
+          "created": null
+        }
+      ],
+      "watches": [
+        {
+          "wid": "OT-FX003-1",
+          "dl": [
+            "DL-001"
+          ],
+          "what": "The closed watch leaves the board",
+          "due": null,
+          "anchored": false,
+          "window": "60 days after merge",
+          "closed": "2026-09-10",
+          "outcome": "VALIDATED"
+        },
+        {
+          "wid": "OT-FX003-2",
+          "dl": [
+            "DL-001"
+          ],
+          "what": "The relative window gains its date",
+          "due": "2026-12-24",
+          "anchored": true,
+          "window": "45 days after merge"
+        },
+        {
+          "wid": "OT-FX003-3",
+          "dl": [
+            "DL-001"
+          ],
+          "what": "The live watch stays live",
+          "due": "2026-12-01",
+          "anchored": true,
+          "window": "Re-review 2026-12-01"
+        }
+      ],
+      "missing": [
+        "Problem Statement",
+        "Knowledge Gap",
+        "Recommendation Brief",
+        "Pre-Mortem Report",
+        "Test Adversary",
+        "PR Summary",
+        "Deployment Risk"
+      ]
+    },
+    {
       "id": "AV090",
       "dir": "AV-090-legacy-inferred",
       "slug": "legacy-inferred",
