@@ -209,7 +209,8 @@
       ],
       "refs": {
         "sec-decision-log": [
-          "DL-001"
+          "DL-001",
+          "OT-FX003-3"
         ],
         "sec-obligation-ticket-list": [
           "OT-FX003-1",
@@ -221,7 +222,9 @@
           "OT-FX003-1",
           "OT-FX003-2",
           "OT-FX003-3",
-          "OT-FX003-9"
+          "OT-FX003-9",
+          "DL-001",
+          "DL-009"
         ]
       },
       "decisions": [
@@ -231,7 +234,9 @@
           "confidence": "HIGH",
           "basis": null,
           "status": "OPEN",
-          "created": null
+          "created": null,
+          "closed": "2026-09-12",
+          "outcome": "VALIDATED"
         }
       ],
       "watches": [

@@ -34,27 +34,6 @@
           "created": null,
           "closed": "2026-09-12",
           "outcome": "VALIDATED"
-        },
-        {
-          "id": "DL-002",
-          "title": "ruled with a backlink",
-          "confidence": "MEDIUM",
-          "basis": null,
-          "status": "OPEN",
-          "created": null,
-          "closed": "2026-09-13",
-          "outcome": "RETIRED",
-          "supersedes": [
-            "DL-001"
-          ]
-        },
-        {
-          "id": "DL-003",
-          "title": "never ruled",
-          "confidence": "LOW",
-          "basis": null,
-          "status": "OPEN",
-          "created": null
         }
       ],
       "watches": [
@@ -66,25 +45,7 @@
           "anchored": true,
           "window": null,
           "closed": "2026-09-10",
-          "outcome": "VALIDATED"
-        },
-        {
-          "wid": "OT-2",
-          "dl": [],
-          "what": "closed with an unknown token, which is data",
-          "due": null,
-          "anchored": false,
-          "window": "relative",
-          "closed": "2026-09-11",
-          "outcome": "RETIRED"
-        },
-        {
-          "wid": "OT-3",
-          "dl": [],
-          "what": "never closed",
-          "due": null,
-          "anchored": false,
-          "window": null
+          "outcome": "VALIDATED, mostly"
         }
       ],
       "missing": [

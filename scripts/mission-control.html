@@ -298,7 +298,7 @@
       }));
     } else {
       const items = D.sectionItems(t, sel.s);
-      const kindOf = d => D.statusKind(d.status);
+      const kindOf = d => D.decisionKind(d);
       const counts = {all: items.decisions.length,
         open: items.decisions.filter(d => kindOf(d) === "open").length,
         validated: items.decisions.filter(d => kindOf(d) === "validated").length,

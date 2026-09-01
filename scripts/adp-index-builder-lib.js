@@ -130,11 +130,14 @@
      wherever the table sits. Columns resolve by header name, so a foreign
      corpus can reorder them. The due date is the first real calendar date in
      the window text. A window with no date stays unanchored, because a
-     guessed date on a watchboard is worse than a flagged one. */
+     guessed date on a watchboard is worse than a flagged one. Alongside the
+     rows we report which section holds the first watch table, because that
+     section opens the ledger zone. */
   function harvestWatches(secs){
     const watches = [];
     const wids = new Set();
-    for (const sec of secs){
+    let from = secs.length;
+    secs.forEach((sec, si) => {
       const lines = sec.body;
       let i = 0;
       let fence = false;
@@ -149,6 +152,7 @@
         const header = P.splitRow(rows[0]);
         const widCol = header.findIndex(h => /^ticket id$/i.test(h));
         if (widCol === -1) continue;
+        if (si < from) from = si;
         const dlCol = header.findIndex(h => /decision log/i.test(h));
         const whatCol = header.findIndex(h => /assumption/i.test(h));
         const winCol = header.findIndex(h => /window/i.test(h));
@@ -174,35 +178,47 @@
           });
         }
       }
-    }
-    return watches;
+    });
+    return {watches: watches, from: from};
   }
 
-  /* The closure ledger: one line closes or re-anchors a watch, appended
-     anywhere a section exists. The grammar demands a calendar-true date right
-     after the verb, which is the one thing the corpus's legacy closure prose
-     never wrote, so old logs harvest nothing and stay byte-identical. A line
-     missing any part of the form is prose. */
-  const RE_LEDGER = /^\s*(?:[-*]\s+)?(?:\*\*)?(OT-[A-Za-z0-9-]+)\s+(CLOSED|RE-ANCHORED)\s+(\d{4}-\d{2}-\d{2})\s+→\s+([A-Za-z0-9-]+)/;
+  /* The closure ledger: one line closes or re-anchors an obligation ticket,
+     or rules a Decision Log entry. Both value slots share the contract's one
+     token charset, and isDate alone decides which tokens are dates, so no
+     date can pass in one slot and fail in another. The date after the verb
+     is the one thing the corpus's legacy closure prose never wrote, so old
+     logs harvest nothing and stay byte-identical. A line missing any part of
+     the form is prose. */
+  const RE_LEDGER = new RegExp(
+    "^\\s*(?:[-*]\\s+)?(?:\\*\\*)?((?:OT|DL)-" + I.LEDGER_TOKEN + ")" +
+    "\\s+(CLOSED|RE-ANCHORED)\\s+(" + I.LEDGER_TOKEN + ")\\s+→\\s+(" + I.LEDGER_TOKEN + ")");
 
-  /* First occurrence wins for both record kinds, the same resolution every
+  /* First occurrence wins for every record kind, the same resolution every
      repeated id in the contract gets. A wrong ruling is corrected by fixing
-     its line in place, never by appending a contradiction. */
+     its line in place, never by appending a contradiction. The contract's id
+     grammars route each record, so a malformed id harvests nothing. */
   function harvestLedger(secs){
     const closures = new Map();
     const anchors = new Map();
+    const rulings = new Map();
     for (const sec of secs){
       for (const line of withoutFences(sec.body.join("\n")).split("\n")){
         const m = line.match(RE_LEDGER);
         if (!m || !I.isDate(m[3])) continue;
-        if (m[2] === "CLOSED"){
-          if (!closures.has(m[1])) closures.set(m[1], {closed: m[3], outcome: m[4]});
-        } else if (I.isDate(m[4]) && !anchors.has(m[1])){
-          anchors.set(m[1], m[4]);
+        const id = m[1];
+        if (I.RE_DL.test(id)){
+          // A decision only closes; a re-anchor has no meaning for a card.
+          if (m[2] === "CLOSED" && !rulings.has(id)) rulings.set(id, {closed: m[3], outcome: m[4]});
+        } else if (I.RE_OT.test(id)){
+          if (m[2] === "CLOSED"){
+            if (!closures.has(id)) closures.set(id, {closed: m[3], outcome: m[4]});
+          } else if (I.isDate(m[4]) && !anchors.has(id)){
+            anchors.set(id, m[4]);
+          }
         }
       }
     }
-    return {closures: closures, anchors: anchors};
+    return {closures: closures, anchors: anchors, rulings: rulings};
   }
 
   /* The nine artifacts map one to one onto phases 1 through 9. A phase counts
@@ -250,17 +266,31 @@
         if (toks.length) refs[keys[i]] = toks;
       });
       decisions = harvestDecisions(parsed.secs);
-      watches = harvestWatches(parsed.secs);
-      /* Ledger records land on their table row. The row's own window date is
-         the anchor of record, so a re-anchor fills only a null due; closed
-         and outcome trail the core keys as paired additive fields. A record
-         naming a wid with no row harvests nothing. */
-      const ledger = harvestLedger(parsed.secs);
+      const hw = harvestWatches(parsed.secs);
+      watches = hw.watches;
+      /* The ledger zone opens at the section holding the first watch table
+         and runs to the end of the log, so a record above the ticket list is
+         prose. Records land on their table row or card; a record naming an
+         id with no row harvests nothing. The row's own window date is the
+         anchor of record, so a re-anchor fills only a null due. */
+      const ledger = harvestLedger(parsed.secs.slice(hw.from));
       for (const w of watches){
         const a = ledger.anchors.get(w.wid);
         if (a && !w.anchored){ w.due = a; w.anchored = true; }
         const c = ledger.closures.get(w.wid);
         if (c){ w.closed = c.closed; w.outcome = c.outcome; }
+      }
+      for (const d of decisions){
+        const r = ledger.rulings.get(d.id);
+        if (r){
+          // Unknown keys must serialize in ascending order, so the ruling
+          // pair slots in ahead of a supersedes key when the card has one.
+          const sup = d.supersedes;
+          if (sup !== undefined) delete d.supersedes;
+          d.closed = r.closed;
+          d.outcome = r.outcome;
+          if (sup !== undefined) d.supersedes = sup;
+        }
       }
 
       const scanText = withoutFences(fm.rest);
@@ -303,13 +333,7 @@
     return cut > 0 && path.slice(cut + 1) === "audit-log.md";
   }
 
-  /* files is an array of {path, text} with /-separated paths relative to the
-     corpus root. Ticket order and every derived fact come from content, never
-     from array position, so any enumeration order of the same corpus yields
-     identical bytes. generated and source pass through untouched, because the
-     builder never reads a clock and never knows its seam. */
-  function buildIndex(files, opts){
-    opts = opts || {};
+  function groupByDir(files){
     const byDir = new Map();
     for (const f of (files || [])){
       if (!f || typeof f.path !== "string") continue;
@@ -323,6 +347,17 @@
         byDir.set(dir, f.text);
       }
     }
+    return byDir;
+  }
+
+  /* files is an array of {path, text} with /-separated paths relative to the
+     corpus root. Ticket order and every derived fact come from content, never
+     from array position, so any enumeration order of the same corpus yields
+     identical bytes. generated and source pass through untouched, because the
+     builder never reads a clock and never knows its seam. */
+  function buildIndex(files, opts){
+    opts = opts || {};
+    const byDir = groupByDir(files);
     const tickets = Array.from(byDir.keys()).sort().map(dir => buildTicket(dir, byDir.get(dir)));
     return {
       schema: I.SCHEMA,
@@ -333,7 +368,32 @@
     };
   }
 
-  const ADPIndexBuilder = {buildIndex, parseDirName, isLogPath};
+  /* The advisory channel, separate from buildIndex so the index stays a pure
+     contract artifact. A record that parses but lands on no row or card is
+     an authoring mistake the harvest hides by design, so we surface it here.
+     The scan takes every section, because a phantom is suspect wherever it
+     sits. Findings are {dir, id} in document order per sorted ticket. */
+  function lintCorpus(files){
+    const findings = [];
+    const byDir = groupByDir(files);
+    for (const dir of Array.from(byDir.keys()).sort()){
+      const text = byDir.get(dir);
+      if (typeof text !== "string") continue;
+      const secs = P.parseSections(text).secs;
+      const wids = new Set(harvestWatches(secs).watches.map(w => w.wid));
+      const ids = new Set(harvestDecisions(secs).map(d => d.id));
+      const led = harvestLedger(secs);
+      for (const id of new Set([...led.closures.keys(), ...led.anchors.keys()])){
+        if (!wids.has(id)) findings.push({dir: dir, id: id});
+      }
+      for (const id of led.rulings.keys()){
+        if (!ids.has(id)) findings.push({dir: dir, id: id});
+      }
+    }
+    return findings;
+  }
+
+  const ADPIndexBuilder = {buildIndex, lintCorpus, parseDirName, isLogPath};
   if (isNode){ module.exports = ADPIndexBuilder; }
   else { global.ADPIndexBuilder = ADPIndexBuilder; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

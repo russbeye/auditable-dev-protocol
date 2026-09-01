@@ -46,6 +46,13 @@
     return P.dlStatusKind(status);
   }
 
+  // A recorded ledger ruling outranks the card's own status line, because
+  // the append-only closure flow settles an entry without editing the card.
+  // Every consumer classifies a decision through this one lookup.
+  function decisionKind(d){
+    return P.dlStatusKind(d.outcome || d.status);
+  }
+
   // The one covering-watch lookup. The watch column, the unwatched-open
   // filter, and any future board read a decision's coverage through it, so
   // they can never disagree about what "covered" means. Coverage means live
@@ -63,7 +70,7 @@
   }
 
   function unwatchedOpen(t){
-    return t.decisions.filter(d => statusKind(d.status) === "open" &&
+    return t.decisions.filter(d => decisionKind(d) === "open" &&
       !coveringWatch(t, d.id));
   }
 
@@ -152,9 +159,9 @@
     if (en.missing) return {label: "missing", tone: "mute"};
     if (!en.canonical) return {label: "non-canonical", tone: "warn"};
     if (en.phase === 5){
-      if (t.decisions.some(d => statusKind(d.status) === "invalidated"))
+      if (t.decisions.some(d => decisionKind(d) === "invalidated"))
         return {label: "invalidated entries", tone: "bad"};
-      if (t.decisions.some(d => statusKind(d.status) === "open"))
+      if (t.decisions.some(d => decisionKind(d) === "open"))
         return {label: "open items", tone: "warn"};
     }
     if (en.phase === 9){
@@ -205,7 +212,7 @@
   }
 
   const ADPDeriveLib = {GROUPS, daysUntil, dueState, dueLabel, statusKind,
-    coveringWatch, canonicalSection,
+    decisionKind, coveringWatch, canonicalSection,
     unwatchedOpen, attentionReasons, needsAttention, ribbonModel, railGroups,
     sectionEntries, sectionState, sectionItems, citingSections, sortRows};
   if (isNode){ module.exports = ADPDeriveLib; }

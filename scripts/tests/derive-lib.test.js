@@ -318,3 +318,35 @@ test("the obligation section reads complete once its watches close", () => {
     watch({wid: "OT-T1-2", closed: "2026-08-20", outcome: "UNKNOWN"})]});
   assert.deepEqual(D.sectionState(t, en, TODAY), {label: "complete", tone: "ok"});
 });
+
+// ---- recorded rulings ----
+
+test("a recorded ruling outranks the card's own status line", () => {
+  const ruled = decision({status: "OPEN — awaiting the window", closed: "2026-08-20", outcome: "VALIDATED"});
+  assert.equal(D.decisionKind(ruled), "validated");
+  assert.equal(D.decisionKind(decision()), "open");
+  assert.equal(D.decisionKind(decision({outcome: "INVALIDATED", closed: "2026-08-20"})), "invalidated");
+});
+
+test("a ruled decision is settled, so it never counts as unwatched", () => {
+  const t = ticket({decisions: [
+    decision({closed: "2026-08-20", outcome: "VALIDATED"})]});
+  assert.equal(D.unwatchedOpen(t).length, 0);
+  assert.deepEqual(D.attentionReasons(t, TODAY), []);
+});
+
+test("a closed watch never settles the decisions it covered", () => {
+  // The ruling must be recorded on the entry itself; the watch closing
+  // VALIDATED leaves its still-open decision honestly unwatched.
+  const t = ticket({decisions: [decision()],
+    watches: [watch({closed: "2026-08-20", outcome: "VALIDATED"})]});
+  assert.equal(D.unwatchedOpen(t).length, 1);
+});
+
+test("the decision-log section reads through rulings", () => {
+  const en = {key: "sec-d", title: "D", phase: 5, canonical: true, missing: false};
+  const settled = ticket({decisions: [decision({closed: "2026-08-20", outcome: "VALIDATED"})]});
+  assert.deepEqual(D.sectionState(settled, en, TODAY), {label: "complete", tone: "ok"});
+  const struck = ticket({decisions: [decision({closed: "2026-08-20", outcome: "INVALIDATED"})]});
+  assert.deepEqual(D.sectionState(struck, en, TODAY), {label: "invalidated entries", tone: "bad"});
+});

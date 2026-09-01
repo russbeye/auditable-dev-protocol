@@ -149,13 +149,38 @@ test("a re-anchor fills only a null anchor", () => {
   // The row's own window date is the anchor of record, so the re-anchor
   // line aimed at this watch lands nowhere.
   assert.equal(ws[2].due, "2026-12-01");
+  // Both re-anchor lines aimed at the first watch carry a bad date in one
+  // slot or the other, and the one calendar gate rejects each.
+  assert.equal(ws[0].due, null);
 });
 
-test("phantom, dateless, and fenced ledger lines harvest nothing", () => {
+test("phantom, dateless, badly dated, and fenced ledger lines harvest nothing", () => {
   const t = ticket(fixtureDoc(), "FX003");
   assert.equal(t.watches.some(w => w.wid === "OT-FX003-9"), false);
   assert.equal("closed" in t.watches[2], false);
   assert.equal("outcome" in t.watches[2], false);
+});
+
+test("a record above the ticket list is prose", () => {
+  // The fixture closes its third watch with a well-formed, well-dated line
+  // sitting in the Decision Log section, before any watch table exists.
+  const t = ticket(fixtureDoc(), "FX003");
+  assert.equal("closed" in t.watches[2], false);
+  assert.deepEqual(t.refs["sec-decision-log"], ["DL-001", "OT-FX003-3"]);
+});
+
+test("a ruling lands on its card and the status stays verbatim", () => {
+  const d = ticket(fixtureDoc(), "FX003").decisions[0];
+  assert.equal(d.closed, "2026-09-12");
+  assert.equal(d.outcome, "VALIDATED");
+  assert.equal(d.status, "OPEN");
+});
+
+test("lintCorpus reports records that land on no row or card", () => {
+  assert.deepEqual(builder.lintCorpus(readCorpus(CORPUS)), [
+    {dir: "20260827-FX003-closed-watches", id: "OT-FX003-9"},
+    {dir: "20260827-FX003-closed-watches", id: "DL-009"}
+  ]);
 });
 
 test("legacy logs carry no closure keys at all", () => {
