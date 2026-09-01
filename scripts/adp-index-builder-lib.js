@@ -198,24 +198,29 @@
      its line in place, never by appending a contradiction. The contract's id
      grammars route each record, so a malformed id harvests nothing. Losing
      second records are collected rather than dropped, so the lint can report
-     each contradiction the harvest refuses. */
-  function harvestLedger(secs){
+     each contradiction the harvest refuses. Each record kind has its own
+     zone start: watch records from the first watch table, rulings from the
+     first phase-5 section, because cards exist before any ticket list does. */
+  function harvestLedger(secs, watchFrom, rulingFrom){
     const closures = new Map();
     const anchors = new Map();
     const rulings = new Map();
     const contradictions = [];
-    for (const sec of secs){
+    secs.forEach((sec, si) => {
+      if (si < watchFrom && si < rulingFrom) return;
       for (const line of withoutFences(sec.body.join("\n")).split("\n")){
         const m = line.match(RE_LEDGER);
         if (!m || !I.isDate(m[3])) continue;
         const id = m[1];
         if (I.RE_DL.test(id)){
+          if (si < rulingFrom) continue;
           // A decision only closes; a re-anchor has no meaning for a card.
           if (m[2] === "CLOSED"){
             if (!rulings.has(id)) rulings.set(id, {closed: m[3], outcome: m[4]});
             else contradictions.push(id);
           }
         } else if (I.RE_OT.test(id)){
+          if (si < watchFrom) continue;
           if (m[2] === "CLOSED"){
             if (!closures.has(id)) closures.set(id, {closed: m[3], outcome: m[4]});
             else contradictions.push(id);
@@ -225,8 +230,21 @@
           }
         }
       }
-    }
+    });
     return {closures: closures, anchors: anchors, rulings: rulings, contradictions: contradictions};
+  }
+
+  // The section-attribution rule already owns what counts as phase 5, so the
+  // ruling zone asks it rather than growing a second matcher.
+  function dlSectionIndex(secs){
+    return secs.findIndex(sec => P.metaFor(sec.title).tag === "P5");
+  }
+
+  // The one place both the build and the lint compute a ticket's ledger, so
+  // they can never disagree about what landed.
+  function ledgerOf(secs, watchFrom){
+    const dl = dlSectionIndex(secs);
+    return harvestLedger(secs, watchFrom, dl === -1 ? watchFrom : Math.min(dl, watchFrom));
   }
 
   /* The nine artifacts map one to one onto phases 1 through 9. A phase counts
@@ -276,16 +294,18 @@
       decisions = harvestDecisions(parsed.secs);
       const hw = harvestWatches(parsed.secs);
       watches = hw.watches;
-      /* The ledger zone opens at the section holding the first watch table
-         and runs to the end of the log, so a record above the ticket list is
-         prose. Records land on their table row or card; a record naming an
-         id with no row harvests nothing. The row's own window date is the
-         anchor of record, so a re-anchor fills only a null due. */
-      const ledger = harvestLedger(parsed.secs.slice(hw.from));
+      /* Watch records harvest from the section holding the first watch table
+         onward, rulings from the first phase-5 section onward; a record
+         above its zone is prose. Records land on their table row or card; a
+         record naming an id with no row harvests nothing. The row's own
+         window date is the anchor of record, so a re-anchor fills only a
+         null due, and a closure record freezes the row, so no anchor applies
+         to a closed watch. */
+      const ledger = ledgerOf(parsed.secs, hw.from);
       for (const w of watches){
-        const a = ledger.anchors.get(w.wid);
-        if (a && !w.anchored){ w.due = a; w.anchored = true; }
         const c = ledger.closures.get(w.wid);
+        const a = ledger.anchors.get(w.wid);
+        if (a && !w.anchored && !c){ w.due = a; w.anchored = true; }
         if (c){ w.closed = c.closed; w.outcome = c.outcome; }
       }
       for (const d of decisions){
@@ -401,7 +421,7 @@
       const hw = harvestWatches(secs);
       const wids = new Set(hw.watches.map(w => w.wid));
       const ids = new Set(harvestDecisions(secs).map(d => d.id));
-      const led = harvestLedger(secs.slice(hw.from));
+      const led = ledgerOf(secs, hw.from);
       const add = (id, finding) => findings.push({dir: dir, id: id, finding: finding});
       for (const id of new Set([...led.closures.keys(), ...led.anchors.keys()])){
         if (!wids.has(id)) add(id, "phantom");

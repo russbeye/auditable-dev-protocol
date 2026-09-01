@@ -189,6 +189,12 @@
       "phase": 9,
       "sections": [
         {
+          "key": "sec-context",
+          "title": "Context",
+          "phase": null,
+          "canonical": false
+        },
+        {
           "key": "sec-decision-log",
           "title": "Decision Log",
           "phase": 5,
@@ -208,9 +214,13 @@
         }
       ],
       "refs": {
+        "sec-context": [
+          "DL-002"
+        ],
         "sec-decision-log": [
           "DL-001",
-          "OT-FX003-3"
+          "OT-FX003-3",
+          "DL-002"
         ],
         "sec-obligation-ticket-list": [
           "OT-FX003-1",
@@ -236,6 +246,16 @@
           "status": "OPEN",
           "created": null,
           "closed": "2026-09-12",
+          "outcome": "VALIDATED"
+        },
+        {
+          "id": "DL-002",
+          "title": "Ruled where the cards live",
+          "confidence": "MEDIUM",
+          "basis": null,
+          "status": "OPEN",
+          "created": null,
+          "closed": "2026-09-06",
           "outcome": "VALIDATED"
         }
       ],

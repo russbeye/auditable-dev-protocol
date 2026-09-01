@@ -1,5 +1,9 @@
 # FX-003 — closure ledger fixture
 
+## Context
+
+- **DL-002 CLOSED 2026-09-04 → INVALIDATED.** A ruling above the Decision Log is prose.
+
 ## Decision Log
 
 ### [DL-001] Ledger decision
@@ -7,7 +11,14 @@
 - **Confidence:** HIGH
 - **Status:** OPEN
 
-- **OT-FX003-3 CLOSED 2026-09-05 → INVALIDATED.** A record above the ticket list is prose.
+- **OT-FX003-3 CLOSED 2026-09-05 → INVALIDATED.** A watch record above the ticket list is prose.
+
+### [DL-002] Ruled where the cards live
+- **Decision:** We rule entries from the Decision Log on.
+- **Confidence:** MEDIUM
+- **Status:** OPEN
+
+- **DL-002 CLOSED 2026-09-06 → VALIDATED.** A ruling lands from the first phase-5 section onward.
 
 ## Obligation Ticket List
 

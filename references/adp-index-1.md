@@ -199,7 +199,10 @@ Additive since 2026-09-01: the paired optional keys `closed` and `outcome`, mirr
 watch closure fields exactly (IDX-037 pairs them, IDX-036 holds the token). The source is the
 same closure ledger the Watch section specifies, with the entry's `DL-` id in place of the
 wid; only the CLOSED form applies to an entry, first occurrence wins, and a record naming an
-id with no card harvests nothing. The card's own `status` stays verbatim — a recorded ruling
+id with no card harvests nothing. A ruling's zone opens earlier than a watch record's: it
+lands from the first canonical Decision Log section onward (or the watch-table section,
+whichever comes first), because cards exist before any ticket list does and a ticket
+invalidated in review must be rulable on the record. The card's own `status` stays verbatim — a recorded ruling
 settles an entry without editing its card, and consumers classify through the ruling when one
 exists. A watch closure never settles the entries it covers; only a recorded ruling does.
 When a ruled entry also carries `supersedes`, the ruling pair precedes it, keeping unknown
@@ -238,7 +241,9 @@ unanchored watch its absolute due date (the first date is the day of the ruling,
 the new `due`). The ledger addresses ids in the `OT-` shape and `DL-` entry ids only. First
 occurrence in document order wins for every record kind; the row's own window date is the
 anchor of record, so a re-anchor line fills only a null `due` and never moves an existing
-anchor; a record naming a wid with no table row harvests nothing; a line missing any part of
+anchor; a closure record freezes the row, so no anchor record applies to a closed watch,
+whatever the line order; a record naming a wid with no table row harvests nothing; a line
+missing any part of
 the form — the date especially — is prose, which is what keeps every legacy closure sentence
 unharvested. The protocol's outcome vocabulary is VALIDATED, INVALIDATED, and UNKNOWN, and per
 the open-vocabulary principle the index carries the token verbatim: an unknown token is data.

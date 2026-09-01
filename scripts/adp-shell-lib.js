@@ -234,7 +234,10 @@
       + `<td><span class="cf-${d.confKind}">${esc(d.conf)}</span></td>`
       + `<td><span class="st-${d.statusKind}">${esc(d.statusKind)}</span></td>`
       + `<td>${d.watch ? `<a class="wl" data-item="${escAttr(d.watch)}">${esc(d.watch)}</a>`
-        : d.settled ? `<a class="wl" data-item="${escAttr(d.settled.wid)}">${esc(d.settled.wid)}</a>`
+        // An open decision whose watch has closed is unwatched again, so the
+        // marker leads and the settled chip only explains how coverage ended.
+        : d.settled ? (d.statusKind === "open" ? `<span class="st-unanchored">no watch</span> ` : "")
+          + `<a class="wl" data-item="${escAttr(d.settled.wid)}">${esc(d.settled.wid)}</a>`
           + ` <span class="st-closed">${esc(d.settled.outcome + " " + d.settled.closed)}</span>`
         : d.statusKind === "open" ? `<span class="st-unanchored">no watch</span>` : ""}</td>`
       + `<td>${chips(d.chips)}</td></tr>`).join("");

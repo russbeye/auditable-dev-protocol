@@ -161,12 +161,12 @@ test("phantom, dateless, badly dated, and fenced ledger lines harvest nothing", 
   assert.equal("outcome" in t.watches[2], false);
 });
 
-test("a record above the ticket list is prose", () => {
+test("a watch record above the ticket list is prose", () => {
   // The fixture closes its third watch with a well-formed, well-dated line
   // sitting in the Decision Log section, before any watch table exists.
   const t = ticket(fixtureDoc(), "FX003");
   assert.equal("closed" in t.watches[2], false);
-  assert.deepEqual(t.refs["sec-decision-log"], ["DL-001", "OT-FX003-3"]);
+  assert.deepEqual(t.refs["sec-decision-log"], ["DL-001", "OT-FX003-3", "DL-002"]);
 });
 
 test("a ruling lands on its card and the status stays verbatim", () => {
@@ -174,6 +174,40 @@ test("a ruling lands on its card and the status stays verbatim", () => {
   assert.equal(d.closed, "2026-09-12");
   assert.equal(d.outcome, "VALIDATED");
   assert.equal(d.status, "OPEN");
+});
+
+test("the ruling zone opens at the Decision Log, not the ticket list", () => {
+  // The fixture rules DL-002 twice: once above the Decision Log (prose) and
+  // once inside it. The landed date proves which line counted.
+  const d = ticket(fixtureDoc(), "FX003").decisions[1];
+  assert.equal(d.closed, "2026-09-06");
+  assert.equal(d.outcome, "VALIDATED");
+});
+
+test("a ruling lands on a ticket that has no watch table", () => {
+  const doc = builder.buildIndex([{path: "T-2-y/audit-log.md", text: [
+    "# T", "",
+    "## Decision Log", "",
+    "### [DL-001] d",
+    "- **Decision:** x",
+    "- **Confidence:** LOW",
+    "- **Status:** OPEN", "",
+    "- **DL-001 CLOSED 2026-09-01 → INVALIDATED.** Ruled in review, before phase 9 existed.", ""
+  ].join("\n")}], OPTS);
+  const d = doc.tickets[0].decisions[0];
+  assert.equal(d.outcome, "INVALIDATED");
+  assert.equal(d.status, "OPEN");
+});
+
+test("a closure freezes the row, so no anchor applies to a closed watch", () => {
+  const doc = builder.buildIndex(lintLog([
+    "- **OT-1 CLOSED 2026-09-01 → VALIDATED.** Done.",
+    "- **OT-1 RE-ANCHORED 2026-09-02 → 2026-12-01.** The closure already ended this watch."
+  ]), OPTS);
+  const w = doc.tickets[0].watches[0];
+  assert.equal(w.due, null);
+  assert.equal(w.anchored, false);
+  assert.equal(w.closed, "2026-09-01");
 });
 
 test("lintCorpus reports the ledger's silent failures by kind", () => {

@@ -422,7 +422,9 @@ its entries by itself — only a recorded ruling does. The corpus index reads th
 line is prose, and the ticket stays live on the board until the line is fixed. A mis-recorded
 line is corrected by fixing it in place, never by appending a second ruling. A re-anchor never
 moves a date the ticket list already set — a window that must move closes with a disposition,
-and a successor ticket opens.
+and a successor ticket opens — and a closed ticket takes no re-anchor at all. A ruling line
+may sit anywhere from the Decision Log section onward, so an entry invalidated in review
+closes on the record even before a ticket list exists.
 
 Obligation ticket ids take the `OT-` shape — `OT-<TASKID>-<n>`, like `OT-MC001-3` — and the
 ledger addresses only that shape and `DL-` entry ids. An id outside those shapes cannot close
