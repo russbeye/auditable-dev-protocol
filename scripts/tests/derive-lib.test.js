@@ -350,3 +350,11 @@ test("the decision-log section reads through rulings", () => {
   const struck = ticket({decisions: [decision({closed: "2026-08-20", outcome: "INVALIDATED"})]});
   assert.deepEqual(D.sectionState(struck, en, TODAY), {label: "invalidated entries", tone: "bad"});
 });
+
+test("settledWatch names the closed watch that stood over a decision", () => {
+  const w = watch({closed: "2026-08-20", outcome: "VALIDATED"});
+  const t = ticket({decisions: [decision()], watches: [w]});
+  assert.equal(D.settledWatch(t, "DL-001"), w);
+  // A live watch is coverage, never settlement.
+  assert.equal(D.settledWatch(ticket({watches: [watch()]}), "DL-001"), null);
+});

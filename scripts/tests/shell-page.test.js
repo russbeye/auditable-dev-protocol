@@ -755,3 +755,14 @@ test("the closed group starts collapsed, and a click opens it", async () => {
   const after = h.$$(".railsec").find(s => s.getAttribute("data-sec") === "closed");
   assert.match(after.innerHTML, /▾/);
 });
+
+test("a settled decision's watch column shows how its watch ended", () => {
+  const S = require("../adp-shell-lib.js");
+  const assert = require("node:assert/strict");
+  const panel = S.decisionsPanelHtml({label: "x", pills: "", sort: {k: "id", d: 1},
+    rows: [{id: "DL-001", title: "t", conf: "HIGH", confKind: "high", statusKind: "validated",
+      watch: null, settled: {wid: "OT-1", outcome: "VALIDATED", closed: "2026-09-01"},
+      chips: [], hl: false}]});
+  assert.ok(panel.includes(">OT-1</a>"));
+  assert.ok(panel.includes(`<span class="st-closed">VALIDATED 2026-09-01</span>`));
+});

@@ -192,6 +192,8 @@
 .st-soon{color:var(--warn)}
 .st-upcoming{color:var(--ok)}
 .st-unanchored{color:var(--warn)}
+/* Settled debt reads quiet, whatever its outcome was. */
+.st-closed{color:var(--faint)}
 
 /* ---- full log ---- */
 

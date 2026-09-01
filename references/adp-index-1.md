@@ -244,8 +244,12 @@ unharvested. The protocol's outcome vocabulary is VALIDATED, INVALIDATED, and UN
 the open-vocabulary principle the index carries the token verbatim: an unknown token is data.
 A closed watch stays in the index — closure is a fact on the entry, never a deletion — and the
 derivations, not the index, decide that closed watches leave the due math and the attention
-reasons. The builder also exports `lintCorpus`, an advisory sweep reporting records that name
-no row or card; advisories are not contract findings and never enter an index document.
+reasons. The builder also exports `lintCorpus`, an advisory sweep over the corpus reporting
+the ledger's silent failures: a landed record naming no row or card (phantom), a losing second
+record (contradiction), closure intent on a known id that never landed (near-miss), and a
+watch id the ledger grammar cannot address (wid-shape). A landed record makes its id's
+near-misses moot, so a swept corpus lints clean while its old prose stays in place.
+Advisories are not contract findings and never enter an index document.
 
 ## Rules
 

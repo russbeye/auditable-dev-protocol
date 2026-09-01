@@ -176,11 +176,29 @@ test("a ruling lands on its card and the status stays verbatim", () => {
   assert.equal(d.status, "OPEN");
 });
 
-test("lintCorpus reports records that land on no row or card", () => {
+test("lintCorpus reports the ledger's silent failures by kind", () => {
+  const d = "20260827-FX003-closed-watches";
   assert.deepEqual(builder.lintCorpus(readCorpus(CORPUS)), [
-    {dir: "20260827-FX003-closed-watches", id: "OT-FX003-9"},
-    {dir: "20260827-FX003-closed-watches", id: "DL-009"}
+    {dir: d, id: "OT-FX003-9", finding: "phantom"},
+    {dir: d, id: "DL-009", finding: "phantom"},
+    {dir: d, id: "OT-FX003-1", finding: "contradiction"},
+    // The early in-Decision-Log record and the dark-guard lines are closure
+    // intent that never landed, one finding per id.
+    {dir: d, id: "OT-FX003-3", finding: "near-miss"},
+    {dir: d, id: "OT-FX003-1", finding: "near-miss"}
   ]);
+});
+
+test("lintCorpus enumerates watch ids the ledger grammar cannot address", () => {
+  const files = [{path: "T-1-x/audit-log.md", text: [
+    "# T", "",
+    "## Obligation Ticket List", "",
+    "| Ticket ID | Decision Log ref | Assumption to validate | Priority | Exit condition | Observation window |",
+    "|---|---|---|---|---|---|",
+    "| PB011-OT1 | DL-001 | w | LOW | x | — |", ""
+  ].join("\n")}];
+  assert.deepEqual(builder.lintCorpus(files),
+    [{dir: "T-1-x", id: "PB011-OT1", finding: "wid-shape"}]);
 });
 
 test("legacy logs carry no closure keys at all", () => {

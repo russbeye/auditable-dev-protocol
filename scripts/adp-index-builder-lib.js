@@ -196,11 +196,14 @@
   /* First occurrence wins for every record kind, the same resolution every
      repeated id in the contract gets. A wrong ruling is corrected by fixing
      its line in place, never by appending a contradiction. The contract's id
-     grammars route each record, so a malformed id harvests nothing. */
+     grammars route each record, so a malformed id harvests nothing. Losing
+     second records are collected rather than dropped, so the lint can report
+     each contradiction the harvest refuses. */
   function harvestLedger(secs){
     const closures = new Map();
     const anchors = new Map();
     const rulings = new Map();
+    const contradictions = [];
     for (const sec of secs){
       for (const line of withoutFences(sec.body.join("\n")).split("\n")){
         const m = line.match(RE_LEDGER);
@@ -208,17 +211,22 @@
         const id = m[1];
         if (I.RE_DL.test(id)){
           // A decision only closes; a re-anchor has no meaning for a card.
-          if (m[2] === "CLOSED" && !rulings.has(id)) rulings.set(id, {closed: m[3], outcome: m[4]});
+          if (m[2] === "CLOSED"){
+            if (!rulings.has(id)) rulings.set(id, {closed: m[3], outcome: m[4]});
+            else contradictions.push(id);
+          }
         } else if (I.RE_OT.test(id)){
           if (m[2] === "CLOSED"){
             if (!closures.has(id)) closures.set(id, {closed: m[3], outcome: m[4]});
-          } else if (I.isDate(m[4]) && !anchors.has(id)){
-            anchors.set(id, m[4]);
+            else contradictions.push(id);
+          } else if (I.isDate(m[4])){
+            if (!anchors.has(id)) anchors.set(id, m[4]);
+            else contradictions.push(id);
           }
         }
       }
     }
-    return {closures: closures, anchors: anchors, rulings: rulings};
+    return {closures: closures, anchors: anchors, rulings: rulings, contradictions: contradictions};
   }
 
   /* The nine artifacts map one to one onto phases 1 through 9. A phase counts
@@ -368,11 +376,19 @@
     };
   }
 
+  // The near-miss detector is looser than the record grammar on purpose: a
+  // known id followed by a ledger verb, anywhere in a line, reads as closure
+  // intent even when the rest of the form is wrong or the line sits outside
+  // the ledger zone.
+  const RE_NEAR = new RegExp("((?:OT|DL)-" + I.LEDGER_TOKEN + ")\\s+(CLOSED|RE-ANCHORED)\\b");
+
   /* The advisory channel, separate from buildIndex so the index stays a pure
-     contract artifact. A record that parses but lands on no row or card is
-     an authoring mistake the harvest hides by design, so we surface it here.
-     The scan takes every section, because a phantom is suspect wherever it
-     sits. Findings are {dir, id} in document order per sorted ticket. */
+     contract artifact. Advisories are the silent failures the harvest hides
+     by design: a landed record naming no row or card (phantom), a losing
+     second record (contradiction), closure intent that never landed
+     (near-miss), and a watch id the ledger grammar can never address
+     (wid-shape). Findings are {dir, id, finding}, kinds in that order per
+     sorted ticket, one near-miss per id. */
   function lintCorpus(files){
     const findings = [];
     const byDir = groupByDir(files);
@@ -380,14 +396,39 @@
       const text = byDir.get(dir);
       if (typeof text !== "string") continue;
       const secs = P.parseSections(text).secs;
-      const wids = new Set(harvestWatches(secs).watches.map(w => w.wid));
+      const hw = harvestWatches(secs);
+      const wids = new Set(hw.watches.map(w => w.wid));
       const ids = new Set(harvestDecisions(secs).map(d => d.id));
-      const led = harvestLedger(secs);
+      const led = harvestLedger(secs.slice(hw.from));
+      const add = (id, finding) => findings.push({dir: dir, id: id, finding: finding});
       for (const id of new Set([...led.closures.keys(), ...led.anchors.keys()])){
-        if (!wids.has(id)) findings.push({dir: dir, id: id});
+        if (!wids.has(id)) add(id, "phantom");
       }
       for (const id of led.rulings.keys()){
-        if (!ids.has(id)) findings.push({dir: dir, id: id});
+        if (!ids.has(id)) add(id, "phantom");
+      }
+      for (const id of new Set(led.contradictions)) add(id, "contradiction");
+      /* A landed record makes its id's near-misses moot, so a swept corpus
+         lints clean while the old prose stays in place, append-only. */
+      const anchored = new Set(hw.watches.filter(w => w.anchored).map(w => w.wid));
+      const near = new Set();
+      for (const sec of secs){
+        for (const line of withoutFences(sec.body.join("\n")).split("\n")){
+          const m = line.match(RE_NEAR);
+          if (!m || near.has(m[1])) continue;
+          const id = m[1];
+          let miss = false;
+          if (wids.has(id)){
+            miss = m[2] === "CLOSED" ? !led.closures.has(id)
+              : !(anchored.has(id) || led.anchors.has(id));
+          } else if (ids.has(id)){
+            miss = m[2] !== "CLOSED" || !led.rulings.has(id);
+          }
+          if (miss){ near.add(id); add(id, "near-miss"); }
+        }
+      }
+      for (const w of hw.watches){
+        if (!I.RE_OT.test(w.wid)) add(w.wid, "wid-shape");
       }
     }
     return findings;

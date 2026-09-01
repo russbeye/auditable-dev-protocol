@@ -428,6 +428,25 @@ Obligation ticket ids take the `OT-` shape — `OT-<TASKID>-<n>`, like `OT-MC001
 ledger addresses only that shape and `DL-` entry ids. An id outside those shapes cannot close
 on the record, so hold every new ticket list to it.
 
+Copy a line from the block above and replace the values rather than retyping the form — the
+arrow especially. The bare templates:
+
+```
+- **<ID> CLOSED <YYYY-MM-DD> → <OUTCOME>.** <closing note>
+- **<OT-ID> RE-ANCHORED <YYYY-MM-DD> → <YYYY-MM-DD>.** <why this date>
+```
+
+A window that must move closes and succeeds. The worked motion — one closing line, one
+successor row:
+
+```
+- **OT-XXX-2 CLOSED 2026-11-01 → UNKNOWN.** The window must move; the signal was never wired.
+
+| Ticket ID | Decision Log ref | Assumption to validate | Priority | Exit condition | Observation window |
+|-----------|------------------|------------------------|----------|----------------|--------------------|
+| OT-XXX-3 | DL-002 | The same assumption, rewatched with the signal wired | MED | Signal quiet through the window → VALIDATED | 2027-02-01 |
+```
+
 ---
 
 ## Enforcement rules

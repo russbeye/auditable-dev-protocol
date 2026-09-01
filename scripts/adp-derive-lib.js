@@ -62,6 +62,13 @@
     return t.watches.find(w => !w.closed && (w.dl || []).includes(dlId)) || null;
   }
 
+  // The display companion to coveringWatch: the closed watch that stood over
+  // a decision, so a settled row can show how its watch ended. This lookup
+  // never counts as protection; coverage stays live-only.
+  function settledWatch(t, dlId){
+    return t.watches.find(w => w.closed && (w.dl || []).includes(dlId)) || null;
+  }
+
   // The canonical section for a phase, or null. Ownership, the default
   // landing key, and watch-link routing all resolve a phase through this one
   // lookup, and first-wins is its single rule.
@@ -212,7 +219,7 @@
   }
 
   const ADPDeriveLib = {GROUPS, daysUntil, dueState, dueLabel, statusKind,
-    decisionKind, coveringWatch, canonicalSection,
+    decisionKind, coveringWatch, settledWatch, canonicalSection,
     unwatchedOpen, attentionReasons, needsAttention, ribbonModel, railGroups,
     sectionEntries, sectionState, sectionItems, citingSections, sortRows};
   if (isNode){ module.exports = ADPDeriveLib; }
