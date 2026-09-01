@@ -246,10 +246,12 @@ A closed watch stays in the index — closure is a fact on the entry, never a de
 derivations, not the index, decide that closed watches leave the due math and the attention
 reasons. The builder also exports `lintCorpus`, an advisory sweep over the corpus reporting
 the ledger's silent failures: a landed record naming no row or card (phantom), a losing second
-record (contradiction), closure intent on a known id that never landed (near-miss), and a
-watch id the ledger grammar cannot address (wid-shape). A landed record makes its id's
-near-misses moot, so a swept corpus lints clean while its old prose stays in place.
-Advisories are not contract findings and never enter an index document.
+record (contradiction), a landed anchor record that cannot honestly move its watch — the row
+already anchors it, or a closure record has ended it (dead-anchor), closure intent on a known
+id that never landed (near-miss), and a watch id the ledger grammar cannot address
+(wid-shape). A landed record makes its id's near-misses moot, so a swept corpus lints clean
+while its old prose stays in place. Advisories are not contract findings and never enter an
+index document.
 
 ## Rules
 

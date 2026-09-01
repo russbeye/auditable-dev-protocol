@@ -182,11 +182,52 @@ test("lintCorpus reports the ledger's silent failures by kind", () => {
     {dir: d, id: "OT-FX003-9", finding: "phantom"},
     {dir: d, id: "DL-009", finding: "phantom"},
     {dir: d, id: "OT-FX003-1", finding: "contradiction"},
+    // The fixture's valid re-anchor aims at a row-anchored watch, so the
+    // silent refusal now speaks.
+    {dir: d, id: "OT-FX003-3", finding: "dead-anchor"},
     // The early in-Decision-Log record and the dark-guard lines are closure
     // intent that never landed, one finding per id.
     {dir: d, id: "OT-FX003-3", finding: "near-miss"},
     {dir: d, id: "OT-FX003-1", finding: "near-miss"}
   ]);
+});
+
+// A one-ticket corpus for lint cases the fixture corpus does not carry. The
+// table holds live unanchored watches beside whatever lines the case needs.
+function lintLog(lines, extraRows){
+  return [{path: "T-1-x/audit-log.md", text: [
+    "# T", "",
+    "## Obligation Ticket List", "",
+    "| Ticket ID | Decision Log ref | Assumption to validate | Priority | Exit condition | Observation window |",
+    "|---|---|---|---|---|---|",
+    "| OT-1 | DL-001 | w | LOW | x | 60 days after merge |"
+  ].concat(extraRows || [], "", lines, "").join("\n")}];
+}
+
+test("prose that merely ends in an id shape raises nothing", () => {
+  assert.deepEqual(builder.lintCorpus(lintLog([
+    "The PILOT-1 CLOSED the loop last week."
+  ])), []);
+  // The control: the same id standing free is real intent.
+  assert.deepEqual(builder.lintCorpus(lintLog([
+    "OT-1 CLOSED without ever writing the date."
+  ])), [{dir: "T-1-x", id: "OT-1", finding: "near-miss"}]);
+});
+
+test("every intent on a line is seen, not just the first", () => {
+  const files = lintLog(["OT-1 CLOSED and OT-9 CLOSED at the same review."],
+    ["| OT-9 | DL-001 | w | LOW | x | — |"]);
+  assert.deepEqual(builder.lintCorpus(files), [
+    {dir: "T-1-x", id: "OT-1", finding: "near-miss"},
+    {dir: "T-1-x", id: "OT-9", finding: "near-miss"}
+  ]);
+});
+
+test("an anchor landing on a closed watch is a dead anchor", () => {
+  assert.deepEqual(builder.lintCorpus(lintLog([
+    "- **OT-1 CLOSED 2026-09-01 → VALIDATED.** Done.",
+    "- **OT-1 RE-ANCHORED 2026-09-02 → 2026-12-01.** The closure already ended this watch."
+  ])), [{dir: "T-1-x", id: "OT-1", finding: "dead-anchor"}]);
 });
 
 test("lintCorpus enumerates watch ids the ledger grammar cannot address", () => {

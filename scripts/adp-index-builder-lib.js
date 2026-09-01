@@ -379,13 +379,15 @@
   // The near-miss detector is looser than the record grammar on purpose: a
   // known id followed by a ledger verb, anywhere in a line, reads as closure
   // intent even when the rest of the form is wrong or the line sits outside
-  // the ledger zone.
-  const RE_NEAR = new RegExp("((?:OT|DL)-" + I.LEDGER_TOKEN + ")\\s+(CLOSED|RE-ANCHORED)\\b");
+  // the ledger zone. The leading group rejects a word character or hyphen
+  // before the id, so a prose token like PILOT-1 never reads as OT-1.
+  const RE_NEAR = new RegExp("(^|[^A-Za-z0-9-])((?:OT|DL)-" + I.LEDGER_TOKEN + ")\\s+(CLOSED|RE-ANCHORED)\\b", "g");
 
   /* The advisory channel, separate from buildIndex so the index stays a pure
      contract artifact. Advisories are the silent failures the harvest hides
      by design: a landed record naming no row or card (phantom), a losing
-     second record (contradiction), closure intent that never landed
+     second record (contradiction), a landed anchor record that cannot
+     honestly move its watch (dead-anchor), closure intent that never landed
      (near-miss), and a watch id the ledger grammar can never address
      (wid-shape). Findings are {dir, id, finding}, kinds in that order per
      sorted ticket, one near-miss per id. */
@@ -408,23 +410,30 @@
         if (!ids.has(id)) add(id, "phantom");
       }
       for (const id of new Set(led.contradictions)) add(id, "contradiction");
+      const anchored = new Set(hw.watches.filter(w => w.anchored).map(w => w.wid));
+      /* An anchor record aimed at a watch the row already anchors, or that
+         also holds a closure record, cannot honestly move anything. The
+         author sees that here instead of silence. */
+      for (const id of led.anchors.keys()){
+        if (wids.has(id) && (anchored.has(id) || led.closures.has(id))) add(id, "dead-anchor");
+      }
       /* A landed record makes its id's near-misses moot, so a swept corpus
          lints clean while the old prose stays in place, append-only. */
-      const anchored = new Set(hw.watches.filter(w => w.anchored).map(w => w.wid));
       const near = new Set();
       for (const sec of secs){
         for (const line of withoutFences(sec.body.join("\n")).split("\n")){
-          const m = line.match(RE_NEAR);
-          if (!m || near.has(m[1])) continue;
-          const id = m[1];
-          let miss = false;
-          if (wids.has(id)){
-            miss = m[2] === "CLOSED" ? !led.closures.has(id)
-              : !(anchored.has(id) || led.anchors.has(id));
-          } else if (ids.has(id)){
-            miss = m[2] !== "CLOSED" || !led.rulings.has(id);
+          for (const m of line.matchAll(RE_NEAR)){
+            const id = m[2];
+            if (near.has(id)) continue;
+            let miss = false;
+            if (wids.has(id)){
+              miss = m[3] === "CLOSED" ? !led.closures.has(id)
+                : !(anchored.has(id) || led.anchors.has(id));
+            } else if (ids.has(id)){
+              miss = m[3] !== "CLOSED" || !led.rulings.has(id);
+            }
+            if (miss){ near.add(id); add(id, "near-miss"); }
           }
-          if (miss){ near.add(id); add(id, "near-miss"); }
         }
       }
       for (const w of hw.watches){
