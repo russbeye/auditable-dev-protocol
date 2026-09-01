@@ -270,3 +270,91 @@ test("sortRows orders by accessor without mutating the input", () => {
   assert.deepEqual(rows.map(r => r.n), [2, 3, 1]);
   assert.deepEqual(D.sortRows(rows, "missing", 1, {}).map(r => r.n), [2, 3, 1]);
 });
+
+// ---- closed watches ----
+
+test("a closed watch classifies as closed before anything else", () => {
+  const w = watch({anchored: true, due: "2026-08-01", closed: "2026-08-20", outcome: "VALIDATED"});
+  assert.equal(D.dueState(w, TODAY), "closed");
+  assert.equal(D.dueLabel(w, TODAY), "CLOSED");
+  const un = watch({closed: "2026-08-20", outcome: "UNKNOWN"});
+  assert.equal(D.dueState(un, TODAY), "closed");
+});
+
+test("a closed-overdue watch raises nothing, an open one still does", () => {
+  const closed = ticket({watches: [
+    watch({anchored: true, due: "2026-08-01", closed: "2026-08-20", outcome: "VALIDATED"}),
+    watch({wid: "OT-T1-2", closed: "2026-08-20", outcome: "INVALIDATED"})]});
+  assert.deepEqual(D.attentionReasons(closed, TODAY), []);
+  assert.equal(D.needsAttention(closed, TODAY), false);
+  const open = ticket({watches: [watch({anchored: true, due: "2026-08-01"})]});
+  assert.equal(D.attentionReasons(open, TODAY)[0].txt, "WATCH OVERDUE 26D");
+  assert.equal(D.needsAttention(open, TODAY), true);
+});
+
+test("a closed watch covers nothing, so its open decision is unwatched again", () => {
+  const t = ticket({decisions: [decision()],
+    watches: [watch({closed: "2026-08-20", outcome: "VALIDATED"})]});
+  assert.equal(D.coveringWatch(t, "DL-001"), null);
+  assert.equal(D.unwatchedOpen(t).length, 1);
+  const live = ticket({decisions: [decision()], watches: [watch()]});
+  assert.equal(D.coveringWatch(live, "DL-001"), live.watches[0]);
+});
+
+test("the quiet-ticket ribbon skips closed watches when naming the next date", () => {
+  const t = ticket({watches: [
+    watch({anchored: true, due: "2026-09-01", closed: "2026-08-20", outcome: "VALIDATED"}),
+    watch({wid: "OT-T1-2", anchored: true, due: "2026-10-01"})]});
+  assert.equal(D.ribbonModel(t, TODAY).reasons[0].txt, "CLOSED · WATCH 2026-10-01");
+  const all = ticket({watches: [
+    watch({anchored: true, due: "2026-09-01", closed: "2026-08-20", outcome: "VALIDATED"})]});
+  assert.equal(D.ribbonModel(all, TODAY).reasons[0].txt, "CLOSED · LOOP CLOSED");
+});
+
+test("the obligation section reads complete once its watches close", () => {
+  const en = {key: "sec-o", title: "O", phase: 9, canonical: true, missing: false};
+  const t = ticket({watches: [
+    watch({anchored: true, due: "2026-08-01", closed: "2026-08-20", outcome: "VALIDATED"}),
+    watch({wid: "OT-T1-2", closed: "2026-08-20", outcome: "UNKNOWN"})]});
+  assert.deepEqual(D.sectionState(t, en, TODAY), {label: "complete", tone: "ok"});
+});
+
+// ---- recorded rulings ----
+
+test("a recorded ruling outranks the card's own status line", () => {
+  const ruled = decision({status: "OPEN — awaiting the window", closed: "2026-08-20", outcome: "VALIDATED"});
+  assert.equal(D.decisionKind(ruled), "validated");
+  assert.equal(D.decisionKind(decision()), "open");
+  assert.equal(D.decisionKind(decision({outcome: "INVALIDATED", closed: "2026-08-20"})), "invalidated");
+});
+
+test("a ruled decision is settled, so it never counts as unwatched", () => {
+  const t = ticket({decisions: [
+    decision({closed: "2026-08-20", outcome: "VALIDATED"})]});
+  assert.equal(D.unwatchedOpen(t).length, 0);
+  assert.deepEqual(D.attentionReasons(t, TODAY), []);
+});
+
+test("a closed watch never settles the decisions it covered", () => {
+  // The ruling must be recorded on the entry itself; the watch closing
+  // VALIDATED leaves its still-open decision honestly unwatched.
+  const t = ticket({decisions: [decision()],
+    watches: [watch({closed: "2026-08-20", outcome: "VALIDATED"})]});
+  assert.equal(D.unwatchedOpen(t).length, 1);
+});
+
+test("the decision-log section reads through rulings", () => {
+  const en = {key: "sec-d", title: "D", phase: 5, canonical: true, missing: false};
+  const settled = ticket({decisions: [decision({closed: "2026-08-20", outcome: "VALIDATED"})]});
+  assert.deepEqual(D.sectionState(settled, en, TODAY), {label: "complete", tone: "ok"});
+  const struck = ticket({decisions: [decision({closed: "2026-08-20", outcome: "INVALIDATED"})]});
+  assert.deepEqual(D.sectionState(struck, en, TODAY), {label: "invalidated entries", tone: "bad"});
+});
+
+test("settledWatch names the closed watch that stood over a decision", () => {
+  const w = watch({closed: "2026-08-20", outcome: "VALIDATED"});
+  const t = ticket({decisions: [decision()], watches: [w]});
+  assert.equal(D.settledWatch(t, "DL-001"), w);
+  // A live watch is coverage, never settlement.
+  assert.equal(D.settledWatch(ticket({watches: [watch()]}), "DL-001"), null);
+});

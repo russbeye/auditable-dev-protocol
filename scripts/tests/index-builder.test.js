@@ -133,6 +133,158 @@ test("a watch anchors exactly when its window holds a date", () => {
   assert.equal(ticket(doc, "FX002").watches[0].due, "2026-12-01");
 });
 
+test("a closure record lands on its row, and the first ruling wins", () => {
+  // The fixture carries a second, contradictory CLOSED line for this wid;
+  // pinning the first ruling's date and outcome proves it lost.
+  const w = ticket(fixtureDoc(), "FX003").watches[0];
+  assert.equal(w.closed, "2026-09-10");
+  assert.equal(w.outcome, "VALIDATED");
+});
+
+test("a re-anchor fills only a null anchor", () => {
+  const ws = ticket(fixtureDoc(), "FX003").watches;
+  assert.equal(ws[1].due, "2026-12-24");
+  assert.equal(ws[1].anchored, true);
+  assert.equal(ws[1].window, "45 days after merge");
+  // The row's own window date is the anchor of record, so the re-anchor
+  // line aimed at this watch lands nowhere.
+  assert.equal(ws[2].due, "2026-12-01");
+  // Both re-anchor lines aimed at the first watch carry a bad date in one
+  // slot or the other, and the one calendar gate rejects each.
+  assert.equal(ws[0].due, null);
+});
+
+test("phantom, dateless, badly dated, and fenced ledger lines harvest nothing", () => {
+  const t = ticket(fixtureDoc(), "FX003");
+  assert.equal(t.watches.some(w => w.wid === "OT-FX003-9"), false);
+  assert.equal("closed" in t.watches[2], false);
+  assert.equal("outcome" in t.watches[2], false);
+});
+
+test("a watch record above the ticket list is prose", () => {
+  // The fixture closes its third watch with a well-formed, well-dated line
+  // sitting in the Decision Log section, before any watch table exists.
+  const t = ticket(fixtureDoc(), "FX003");
+  assert.equal("closed" in t.watches[2], false);
+  assert.deepEqual(t.refs["sec-decision-log"], ["DL-001", "OT-FX003-3", "DL-002"]);
+});
+
+test("a ruling lands on its card and the status stays verbatim", () => {
+  const d = ticket(fixtureDoc(), "FX003").decisions[0];
+  assert.equal(d.closed, "2026-09-12");
+  assert.equal(d.outcome, "VALIDATED");
+  assert.equal(d.status, "OPEN");
+});
+
+test("the ruling zone opens at the Decision Log, not the ticket list", () => {
+  // The fixture rules DL-002 twice: once above the Decision Log (prose) and
+  // once inside it. The landed date proves which line counted.
+  const d = ticket(fixtureDoc(), "FX003").decisions[1];
+  assert.equal(d.closed, "2026-09-06");
+  assert.equal(d.outcome, "VALIDATED");
+});
+
+test("a ruling lands on a ticket that has no watch table", () => {
+  const doc = builder.buildIndex([{path: "T-2-y/audit-log.md", text: [
+    "# T", "",
+    "## Decision Log", "",
+    "### [DL-001] d",
+    "- **Decision:** x",
+    "- **Confidence:** LOW",
+    "- **Status:** OPEN", "",
+    "- **DL-001 CLOSED 2026-09-01 → INVALIDATED.** Ruled in review, before phase 9 existed.", ""
+  ].join("\n")}], OPTS);
+  const d = doc.tickets[0].decisions[0];
+  assert.equal(d.outcome, "INVALIDATED");
+  assert.equal(d.status, "OPEN");
+});
+
+test("a closure freezes the row, so no anchor applies to a closed watch", () => {
+  const doc = builder.buildIndex(lintLog([
+    "- **OT-1 CLOSED 2026-09-01 → VALIDATED.** Done.",
+    "- **OT-1 RE-ANCHORED 2026-09-02 → 2026-12-01.** The closure already ended this watch."
+  ]), OPTS);
+  const w = doc.tickets[0].watches[0];
+  assert.equal(w.due, null);
+  assert.equal(w.anchored, false);
+  assert.equal(w.closed, "2026-09-01");
+});
+
+test("lintCorpus reports the ledger's silent failures by kind", () => {
+  const d = "20260827-FX003-closed-watches";
+  assert.deepEqual(builder.lintCorpus(readCorpus(CORPUS)), [
+    {dir: d, id: "OT-FX003-9", finding: "phantom"},
+    {dir: d, id: "DL-009", finding: "phantom"},
+    {dir: d, id: "OT-FX003-1", finding: "contradiction"},
+    // The fixture's valid re-anchor aims at a row-anchored watch, so the
+    // silent refusal now speaks.
+    {dir: d, id: "OT-FX003-3", finding: "dead-anchor"},
+    // The early in-Decision-Log record and the dark-guard lines are closure
+    // intent that never landed, one finding per id.
+    {dir: d, id: "OT-FX003-3", finding: "near-miss"},
+    {dir: d, id: "OT-FX003-1", finding: "near-miss"}
+  ]);
+});
+
+// A one-ticket corpus for lint cases the fixture corpus does not carry. The
+// table holds live unanchored watches beside whatever lines the case needs.
+function lintLog(lines, extraRows){
+  return [{path: "T-1-x/audit-log.md", text: [
+    "# T", "",
+    "## Obligation Ticket List", "",
+    "| Ticket ID | Decision Log ref | Assumption to validate | Priority | Exit condition | Observation window |",
+    "|---|---|---|---|---|---|",
+    "| OT-1 | DL-001 | w | LOW | x | 60 days after merge |"
+  ].concat(extraRows || [], "", lines, "").join("\n")}];
+}
+
+test("prose that merely ends in an id shape raises nothing", () => {
+  assert.deepEqual(builder.lintCorpus(lintLog([
+    "The PILOT-1 CLOSED the loop last week."
+  ])), []);
+  // The control: the same id standing free is real intent.
+  assert.deepEqual(builder.lintCorpus(lintLog([
+    "OT-1 CLOSED without ever writing the date."
+  ])), [{dir: "T-1-x", id: "OT-1", finding: "near-miss"}]);
+});
+
+test("every intent on a line is seen, not just the first", () => {
+  const files = lintLog(["OT-1 CLOSED and OT-9 CLOSED at the same review."],
+    ["| OT-9 | DL-001 | w | LOW | x | — |"]);
+  assert.deepEqual(builder.lintCorpus(files), [
+    {dir: "T-1-x", id: "OT-1", finding: "near-miss"},
+    {dir: "T-1-x", id: "OT-9", finding: "near-miss"}
+  ]);
+});
+
+test("an anchor landing on a closed watch is a dead anchor", () => {
+  assert.deepEqual(builder.lintCorpus(lintLog([
+    "- **OT-1 CLOSED 2026-09-01 → VALIDATED.** Done.",
+    "- **OT-1 RE-ANCHORED 2026-09-02 → 2026-12-01.** The closure already ended this watch."
+  ])), [{dir: "T-1-x", id: "OT-1", finding: "dead-anchor"}]);
+});
+
+test("lintCorpus enumerates watch ids the ledger grammar cannot address", () => {
+  const files = [{path: "T-1-x/audit-log.md", text: [
+    "# T", "",
+    "## Obligation Ticket List", "",
+    "| Ticket ID | Decision Log ref | Assumption to validate | Priority | Exit condition | Observation window |",
+    "|---|---|---|---|---|---|",
+    "| PB011-OT1 | DL-001 | w | LOW | x | — |", ""
+  ].join("\n")}];
+  assert.deepEqual(builder.lintCorpus(files),
+    [{dir: "T-1-x", id: "PB011-OT1", finding: "wid-shape"}]);
+});
+
+test("legacy logs carry no closure keys at all", () => {
+  const doc = fixtureDoc();
+  for (const id of ["FX001", "FX002", "AV090"]){
+    for (const w of ticket(doc, id).watches){
+      assert.equal("closed" in w, false, id + " should stay ledger-free");
+    }
+  }
+});
+
 test("a supersedes field harvests as a backlink, and a placeholder drops the key", () => {
   const doc = fixtureDoc();
   const fx = ticket(doc, "FX001");
@@ -158,7 +310,7 @@ test("created keeps the leading date and drops the phase suffix", () => {
 
 test("a corpus-root file is not a ticket", () => {
   const doc = fixtureDoc();
-  assert.equal(doc.tickets.length, 5);
+  assert.equal(doc.tickets.length, 6);
   assert.equal(doc.tickets.some(t => t.dir === "README.md"), false);
 });
 

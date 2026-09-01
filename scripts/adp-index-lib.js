@@ -28,6 +28,16 @@
      validateIndex must not consult these. */
   const CONFIDENCE_TOKENS = ["HIGH", "MEDIUM", "LOW"];
   const STATUS_TOKENS = ["OPEN", "VALIDATED", "INVALIDATED", "UNKNOWN"];
+  // A closing watch has no OPEN: the ticket either validated, invalidated, or
+  // ended with its signal never wired. Same rendering-only role as the two
+  // vocabularies above, and IDX-035 keeps it out of validity.
+  const OUTCOME_TOKENS = ["VALIDATED", "INVALIDATED", "UNKNOWN"];
+  /* One token charset serves the whole closure ledger: the outcome slot and
+     both date slots share it, and isDate alone decides which tokens are
+     dates. IDX-036 holds harvested outcomes to it, and the builder composes
+     its line grammar from it, so the grammar keeps a single owner. */
+  const LEDGER_TOKEN = "[A-Za-z0-9-]+";
+  const RE_OUTCOME = new RegExp("^" + LEDGER_TOKEN + "$");
 
   /* The normative key order per object type (IDX-002). Additive fields from
      later revisions join these lists at their specced slot; until specced,
@@ -134,6 +144,16 @@
         !(d.basis === null || ne(d.basis)) || !(d.created === null || isDate(d.created))){
       flag("IDX-022", p, "decision fields must be nonempty, with basis null-or-nonempty and created null-or-date");
     }
+    /* A recorded ruling mirrors a watch closure exactly: the same paired
+       additive keys, the same absence-is-fine rule (IDX-037), the same token
+       grammar on the outcome (IDX-036). */
+    if ("closed" in d || "outcome" in d){
+      if (!("closed" in d && "outcome" in d) || !isDate(d.closed) || !ne(d.outcome)){
+        flag("IDX-037", p, "closed and outcome appear together, with closed a date and outcome nonempty");
+      } else if (!RE_OUTCOME.test(d.outcome)){
+        flag("IDX-036", p + ".outcome", "outcome must match the ledger token grammar");
+      }
+    }
     /* supersedes is additive-optional, so absence is never a finding; when
        the key exists it must carry at least one real decision id. */
     if ("supersedes" in d){
@@ -179,6 +199,15 @@
     if (!dueOk || typeof w.anchored !== "boolean" || w.anchored !== (w.due !== null) ||
         !(w.window === null || ne(w.window))){
       flag("IDX-026", p, "anchored must be true exactly when due holds a date; window is null or nonempty");
+    }
+    /* closed and outcome are additive-optional and paired, so absence is
+       never a finding; a closure record always carries both facts. */
+    if ("closed" in w || "outcome" in w){
+      if (!("closed" in w && "outcome" in w) || !isDate(w.closed) || !ne(w.outcome)){
+        flag("IDX-034", p, "closed and outcome appear together, with closed a date and outcome nonempty");
+      } else if (!RE_OUTCOME.test(w.outcome)){
+        flag("IDX-036", p + ".outcome", "outcome must match the ledger token grammar");
+      }
     }
   }
 
@@ -302,7 +331,7 @@
   /* The builder shares the date and token grammars through these exports, so
      the contract keeps one owner for what counts as a date, an id, and a
      placeholder. */
-  const ADPIndexLib = {SCHEMA, SOURCES, STATES, STATE_SOURCES, CANONICAL_ARTIFACTS, CONFIDENCE_TOKENS, STATUS_TOKENS, KEY_ORDER, RE_DL, RE_OT, isDate, isPlaceholder, validateIndex, serializeIndex};
+  const ADPIndexLib = {SCHEMA, SOURCES, STATES, STATE_SOURCES, CANONICAL_ARTIFACTS, CONFIDENCE_TOKENS, STATUS_TOKENS, OUTCOME_TOKENS, LEDGER_TOKEN, RE_OUTCOME, KEY_ORDER, RE_DL, RE_OT, isDate, isPlaceholder, validateIndex, serializeIndex};
   if (typeof module !== "undefined" && module.exports){ module.exports = ADPIndexLib; }
   else { global.ADPIndexLib = ADPIndexLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

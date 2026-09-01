@@ -1,0 +1,62 @@
+{
+  "schema": "adp-index/1",
+  "project": "fixture",
+  "generated": "2026-08-31",
+  "source": "snapshot",
+  "tickets": [
+    {
+      "id": "FX010",
+      "dir": "20260827-FX010-closed-watches",
+      "slug": "closed-watches",
+      "date": "2026-08-27",
+      "title": null,
+      "state": "shipped",
+      "state_source": "inferred",
+      "pr": null,
+      "merged": null,
+      "phase": 9,
+      "sections": [
+        {
+          "key": "sec-obligation-ticket-list",
+          "title": "Obligation Ticket List",
+          "phase": 9,
+          "canonical": true
+        }
+      ],
+      "refs": {},
+      "decisions": [
+        {
+          "id": "DL-001",
+          "title": "ruled decision",
+          "confidence": "HIGH",
+          "basis": null,
+          "status": "OPEN — awaiting the window",
+          "created": null,
+          "closed": "2026-09-12"
+        }
+      ],
+      "watches": [
+        {
+          "wid": "OT-1",
+          "dl": [],
+          "what": "closed with a protocol outcome",
+          "due": "2026-09-01",
+          "anchored": true,
+          "window": null,
+          "closed": "2026-09-10",
+          "outcome": "VALIDATED"
+        }
+      ],
+      "missing": [
+        "Problem Statement",
+        "Knowledge Gap",
+        "Recommendation Brief",
+        "Pre-Mortem Report",
+        "Decision Log",
+        "Test Adversary",
+        "PR Summary",
+        "Deployment Risk"
+      ]
+    }
+  ]
+}

@@ -36,6 +36,12 @@ existing field means is a semantic change and bumps the major version. Because s
 has no machine signal before it ships, every PR that touches this file must state the change's
 evolution class (additive or major) in its PR summary, and review holds that line.
 
+Note for the next additive key: IDX-002 makes unknown keys serialize in ascending order, so a
+new optional key joins the emission at its alphabetical slot among its siblings, never simply
+at the end (`closed`/`outcome` before `supersedes` is the live example). When a third optional
+key lands on any object, prefer teaching the validator a known-optional list — a real
+`KEY_ORDER` slot without requiredness — over relying on names that happen to sort right.
+
 ## The index document
 
 A JSON object. The normative key order for every object type is the order shown here, and every
@@ -189,6 +195,19 @@ unknown-key rule. The authoring convention behind it: an entry is never rewritte
 reversed decision is a new entry whose `Supersedes` field names its predecessor, so the chain
 of choices stays traceable.
 
+Additive since 2026-09-01: the paired optional keys `closed` and `outcome`, mirroring the
+watch closure fields exactly (IDX-037 pairs them, IDX-036 holds the token). The source is the
+same closure ledger the Watch section specifies, with the entry's `DL-` id in place of the
+wid; only the CLOSED form applies to an entry, first occurrence wins, and a record naming an
+id with no card harvests nothing. A ruling's zone opens earlier than a watch record's: it
+lands from the first canonical Decision Log section onward (or the watch-table section,
+whichever comes first), because cards exist before any ticket list does and a ticket
+invalidated in review must be rulable on the record. The card's own `status` stays verbatim — a recorded ruling
+settles an entry without editing its card, and consumers classify through the ruling when one
+exists. A watch closure never settles the entries it covers; only a recorded ruling does.
+When a ruled entry also carries `supersedes`, the ruling pair precedes it, keeping unknown
+keys in ascending order.
+
 ### Watch
 
 ```json
@@ -207,6 +226,37 @@ comma-separated when one ticket covers several entries). `what` is the assumptio
 relative windows ("60 days after merge") with no machine-readable merge date; those index as
 `anchored: false` with a null `due` and surface as a warn state — the builder must never guess
 a date. New logs record an absolute due date at creation, per the MC-001 constraints.
+
+Additive since 2026-08-31: two optional keys, `closed` (the closure date) and `outcome` (the
+disposition token, verbatim), trailing the core keys per the unknown-key rule and emitted
+together exactly when the log records a closure. The source is the closure ledger, the
+append-only record form SKILL.md's Phase 9 documents: a line outside fences in the section
+that holds the ticket's first watch table, or any section after it — a record above the ticket
+list is prose. The form reads `<wid> CLOSED <date> → <token>` after an optional `-` or `*`
+list bullet and an optional `**` bold marker, with the date calendar-true and free prose
+allowed after the token. Every value slot shares one token charset (the exported ledger token
+grammar, which IDX-036 also holds harvested outcomes to), and the calendar gate alone decides
+which tokens are dates. The companion form `<wid> RE-ANCHORED <date> → <date>` gives an
+unanchored watch its absolute due date (the first date is the day of the ruling, the second
+the new `due`). The ledger addresses ids in the `OT-` shape and `DL-` entry ids only. First
+occurrence in document order wins for every record kind; the row's own window date is the
+anchor of record, so a re-anchor line fills only a null `due` and never moves an existing
+anchor; a closure record freezes the row, so no anchor record applies to a closed watch,
+whatever the line order; a record naming a wid with no table row harvests nothing; a line
+missing any part of
+the form — the date especially — is prose, which is what keeps every legacy closure sentence
+unharvested. The protocol's outcome vocabulary is VALIDATED, INVALIDATED, and UNKNOWN, and per
+the open-vocabulary principle the index carries the token verbatim: an unknown token is data.
+A closed watch stays in the index — closure is a fact on the entry, never a deletion — and the
+derivations, not the index, decide that closed watches leave the due math and the attention
+reasons. The builder also exports `lintCorpus`, an advisory sweep over the corpus reporting
+the ledger's silent failures: a landed record naming no row or card (phantom), a losing second
+record (contradiction), a landed anchor record that cannot honestly move its watch — the row
+already anchors it, or a closure record has ended it (dead-anchor), closure intent on a known
+id that never landed (near-miss), and a watch id the ledger grammar cannot address
+(wid-shape). A landed record makes its id's near-misses moot, so a swept corpus lints clean
+while its old prose stays in place. Advisories are not contract findings and never enter an
+index document.
 
 ## Rules
 
@@ -272,3 +322,10 @@ lacks a fixture.
   matter before rendering, so the untouched standalone viewer never shows it as prose.
 - **IDX-033** [fixture] When a decision carries a `supersedes` key, it is a nonempty array of
   `DL-`digit tokens.
+- **IDX-034** [fixture] A watch carries `closed` exactly when it carries `outcome`; a present
+  `closed` is a date and a present `outcome` is a nonempty string.
+- **IDX-035** [valid] `outcome` is a verbatim source token; membership in the outcome
+  vocabulary is never a validity requirement.
+- **IDX-036** [fixture] A present `outcome` matches the ledger token grammar.
+- **IDX-037** [fixture] A decision carries `closed` exactly when it carries `outcome`; a
+  present `closed` is a date and a present `outcome` is a nonempty string.
