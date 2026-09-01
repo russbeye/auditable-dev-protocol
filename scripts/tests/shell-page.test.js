@@ -571,6 +571,23 @@ test("the picker path watches files and the poll re-renders on a real change", a
   assert.match(h.$("#secSel").innerHTML, /Amendment Notes/);
 });
 
+test("a poll re-render keeps a paste draft in composition", async () => {
+  const handle = makeHandle("w.md", LOG);
+  const h = bootCorpus({picker: async () => [handle]});
+  await h.settle();
+  h.click(h.$$(".op").find(o => o.getAttribute("data-op") === "openwatch"));
+  await h.settle();
+  h.click(h.$$(".op").find(o => o.getAttribute("data-op") === "paste"));
+  h.$("#pasteArea").value = "half-typed amendment";
+  // The watched file changes under the open drawer. The rebuild must land —
+  // the new section proves it did — with the draft still in the textarea.
+  handle._text = LOG + "\n## Amendment Notes\n\nlate news.\n";
+  h.tick();
+  await h.settle();
+  assert.match(h.$("#secSel").innerHTML, /Amendment Notes/);
+  assert.equal(h.$("#pasteArea").value, "half-typed amendment");
+});
+
 test("a lapsed permission flips the watch to its cached state", async () => {
   const handle = makeHandle("w.md", LOG);
   const h = bootCorpus({picker: async () => [handle]});

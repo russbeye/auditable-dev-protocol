@@ -162,6 +162,19 @@
     const scr = $("#scrInspector");
     const act = document.activeElement;
     const keepSel = !!(act && act.id === "secSel");
+    /* A paste draft lives only in the textarea, so any rebuild — a watched
+       file's poll tick included — would erase it mid-composition. We carry
+       the text and its focus across the innerHTML swap, the same move the
+       section dropdown makes for its focus. */
+    const pa0 = $("#pasteArea");
+    const draft = pa0 ? {text: pa0.value || "", focus: !!(act && act.id === "pasteArea")} : null;
+    const keepDraft = () => {
+      if (!draft) return;
+      const pa = $("#pasteArea");
+      if (!pa) return;
+      pa.value = draft.text;
+      if (draft.focus && pa.focus) try{ pa.focus(); }catch(e){}
+    };
     const tgt = findTarget(sel.t);
     const ops = S.opsRowHtml({fsa: "showOpenFilePicker" in window,
       canReload: !!(tgt && tgt.kind === "doc" && tgt.doc.handle), viewMode, pasteOpen});
@@ -171,6 +184,7 @@
         + `<div class="ipanel"><p class="dnotice">${P.esc(bootNotice || (corpus
           ? "select a ticket from the rail, or open a document"
           : "no corpus behind this page — open, paste, or drop audit logs to inspect them"))}</p></div>`;
+      keepDraft();
       return;
     }
     const t = tgt.ticket;
@@ -184,6 +198,7 @@
         + (tgt.kind === "doc"
           ? S.rawPaneHtml({heading: t.dir, raw: (tgt.text || "").slice(0, 4000)})
           : `<div class="ipanel"><p class="dnotice">this ticket has no audit log yet — only its prompt or other files sit in the directory.</p></div>`);
+      keepDraft();
       return;
     }
 
@@ -286,6 +301,7 @@
       + S.secNavHtml(entries, states, sel.s)
       + pane + panels;
     if (keepSel){ const s2 = $("#secSel"); if (s2 && s2.focus) try{ s2.focus(); }catch(e){} }
+    keepDraft();
     if (fullJump){
       for (const d of document.querySelectorAll(".fsec"))
         if (d.getAttribute("data-key") === fullJump && d.scrollIntoView) d.scrollIntoView();
