@@ -605,6 +605,7 @@ test("a hostile pasted log never lands markup in the page", async () => {
     "",
     "### [DL-001] <img src=y> title",
     "- **Decision:** <script>alert(3)</script>",
+    '- **Confidence:** HIGH" onmouseover="alert(1)',
     "- **Status:** OPEN",
     ""
   ].join("\n");
@@ -613,6 +614,15 @@ test("a hostile pasted log never lands markup in the page", async () => {
   assert.ok(!h.$("#rail").innerHTML.includes("<img"));
   assert.ok(!h.$("#scrInspector").innerHTML.includes("<img"));
   assert.ok(!h.$("#scrInspector").innerHTML.includes("<script"));
+  // The quote-bearing confidence lands in the decisions panel as the cf-high
+  // class and inert cell text. The payload stays visible as content — esc
+  // leaves quotes alone there — so the pin is that no tag ever carries the
+  // handler, in the panel or anywhere else the harvest reaches.
+  h.change(h.$("#secSel"), "sec-decision-log");
+  const html = h.$("#scrInspector").innerHTML;
+  assert.match(html, /class="cf-high"/);
+  assert.ok(!/<[^>]*onmouseover/.test(html));
+  assert.ok(!/<[^>]*onmouseover/.test(h.$("#rail").innerHTML));
 });
 
 test("an entry housed outside the spine still opens as a card", async () => {

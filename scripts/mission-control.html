@@ -252,13 +252,13 @@
         invalidated: items.decisions.filter(d => kindOf(d) === "invalidated").length};
       const shown = dlFilter === "all" ? items.decisions
         : items.decisions.filter(d => kindOf(d) === dlFilter);
-      const confRank = {HIGH: 3, MEDIUM: 2, LOW: 1};
+      const confRank = {high: 3, medium: 2, low: 1};
       const decRows = D.sortRows(shown, sortState.dec.k, sortState.dec.d, {
-        id: d => d.id, title: d => d.title, conf: d => confRank[d.confidence] || 0,
+        id: d => d.id, title: d => d.title, conf: d => confRank[P.dlConfKind(d.confidence)] || 0,
         status: d => kindOf(d), watch: d => (t.watches.find(w => (w.dl || []).includes(d.id)) || {wid: ""}).wid,
         cited: d => D.citingSections(t, d.id).length
       }).map(d => ({id: d.id, title: d.title, conf: d.confidence,
-        confKind: String(d.confidence || "").toLowerCase() || "other",
+        confKind: P.dlConfKind(d.confidence),
         statusKind: kindOf(d),
         watch: (t.watches.find(w => (w.dl || []).includes(d.id)) || {wid: null}).wid,
         chips: D.citingSections(t, d.id).map(k => chipModel(t, k)),

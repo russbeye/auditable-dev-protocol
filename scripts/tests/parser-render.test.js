@@ -11,7 +11,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {parserLib} = require("./helpers.js");
 const {esc, escAttr, inline, decorate, parseSections, sectionKeys, slug, metaFor,
-       renderMarkdown, dlChipSplit, dlConfPill, dlStatusPill, dlRail, renderDLCard,
+       renderMarkdown, dlChipSplit, dlConfKind, dlConfPill, dlStatusPill, dlRail, renderDLCard,
        renderDecisionLog, dlStatusKind, parseDLEntries, dlEntryStatus, dlStatusCounts} = parserLib;
 
 // ---- dual export (R2) ----
@@ -311,6 +311,22 @@ test("dlStatusKind classifies by the same prefix match the rail shipped with", (
   assert.equal(dlStatusKind("UNKNOWNS"), "unknown");
   assert.equal(dlStatusKind(""), "other");
   assert.equal(dlStatusKind(undefined), "other");
+});
+
+test("dlConfKind returns the closed enum the class column interpolates", () => {
+  assert.equal(dlConfKind("HIGH"), "high");
+  assert.equal(dlConfKind("MEDIUM"), "medium");
+  assert.equal(dlConfKind("LOW"), "low");
+  // A tail after the keyword still classifies by prefix, and a value that
+  // carries a quote can only ever pick one of the four class names.
+  assert.equal(dlConfKind("HIGH (revised)"), "high");
+  assert.equal(dlConfKind('HIGH" onmouseover="alert(1)'), "high");
+  assert.equal(dlConfKind("UNSURE at best"), "other");
+  assert.equal(dlConfKind(""), "other");
+  assert.equal(dlConfKind(undefined), "other");
+  // The pill reads through the same classifier, so pill tone and column
+  // class can never disagree about what a confidence means.
+  assert.ok(dlConfPill("med, pending").html.includes("p-med"));
 });
 
 test("rail and chip verdicts agree with dlStatusKind on every bucket", () => {
