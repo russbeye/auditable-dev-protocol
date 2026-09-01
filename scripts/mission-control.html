@@ -310,7 +310,10 @@
         id: d => d.id, title: d => d.title, conf: d => confRank[P.dlConfKind(d.confidence)] || 0,
         status: d => kindOf(d), watch: d => (D.coveringWatch(t, d.id) || {wid: ""}).wid,
         cited: d => D.citingSections(t, d.id).length
-      }).map(d => ({id: d.id, title: d.title, conf: d.confidence,
+      }).map(d => ({id: d.id, title: d.title,
+        // The chip stays single-word, the same rule the DL card pills follow.
+        // The demoted prose still reads in the doc pane's confidence note row.
+        conf: P.dlChipSplit(d.confidence).word,
         confKind: P.dlConfKind(d.confidence),
         statusKind: kindOf(d),
         watch: (D.coveringWatch(t, d.id) || {wid: null}).wid,
