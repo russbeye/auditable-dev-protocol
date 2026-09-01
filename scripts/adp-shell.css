@@ -56,3 +56,146 @@
   display:none;place-items:center;z-index:9}
 .shellmask.is-on{display:grid}
 .shellmask .maskmsg{font-family:var(--mono);font-size:18px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+
+/* ---- rail ---- */
+
+/* The mockup keeps these headers faint; rbeye asked for more contrast, so
+   each group gets a banded header with the name in full ink. The band mixes
+   ink into the panel, which lands darker than the rail in the light palette
+   and lighter in the dark one, so the delimiter reads in both. */
+.railsec{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;
+  font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink);background:color-mix(in srgb, var(--ink) 10%, var(--panel));
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  cursor:pointer;user-select:none}
+.railsec:hover .rname{color:var(--accent)}
+.rcv{display:inline-block;width:12px;color:var(--dim)}
+.rcount{color:var(--dim);font-weight:400}
+/* The whole entry is a button, so the keyboard reaches it; we clear the
+   browser's button paint and keep the card look. */
+.rentry{position:relative;display:block;width:100%;text-align:left;background:none;
+  border:none;border-left:2px solid transparent;padding:7px 12px 8px;cursor:pointer;color:inherit}
+.rentry:hover{background:var(--inset)}
+.rentry.is-sel{background:var(--inset);border-left-color:var(--accent)}
+.rid{display:block;font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--ink)}
+.rdate{color:var(--faint);font-weight:400}
+.rslug{display:block;font-size:11.5px;color:var(--dim);margin-top:1px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.rrib{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;margin-top:4px}
+.r-bad{color:var(--bad)}
+.r-warn{color:var(--warn)}
+.r-ok{color:var(--ok)}
+.rmore{color:var(--faint)}
+.rclose{position:absolute;top:6px;right:8px;font-family:var(--mono);color:var(--faint);padding:0 3px}
+.rclose:hover{color:var(--bad)}
+
+/* ---- inspector chrome ---- */
+
+.screen h2{font-family:var(--mono);font-size:13px;letter-spacing:.1em;text-transform:uppercase;
+  margin:0 0 12px}
+.isub{color:var(--faint);font-size:10.5px;letter-spacing:.06em;margin-left:8px}
+.hsub{float:right;font-weight:400;text-transform:none;letter-spacing:0}
+.tickhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0 10px}
+.tbig{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent)}
+
+.mops{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 10px}
+.mgap{flex:1}
+.op{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  border:1px solid var(--line);background:var(--inset);color:var(--dim);padding:5px 10px;cursor:pointer}
+.op:hover{color:var(--ink);border-color:var(--line-bright)}
+.op[disabled]{opacity:.4;cursor:default}
+.op.op-acc{border-color:var(--accent);color:var(--accent);background:none}
+.op.op-acc:hover{background:var(--accent);color:var(--accent-ink)}
+.op.tgl.is-on{color:var(--accent-ink);background:var(--accent);border-color:var(--accent)}
+.drophint{margin-left:auto;border-style:dashed}
+
+.drawer{border:1px solid var(--line);background:var(--panel);padding:10px;margin:0 0 10px}
+.drawer label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--faint);margin-bottom:6px}
+.drawer textarea{width:100%;min-height:120px;background:var(--inset);color:var(--ink);
+  border:1px solid var(--line);font-family:var(--mono);font-size:11.5px;padding:8px;resize:vertical}
+.drawer .op{margin-top:8px}
+
+/* The approved mockup pins the whole nav row to one 30px height, so the
+   buttons, the dropdown, and the state chit read as one control strip. The
+   select drops its native chrome and carries the mockup's chevron, because
+   adp-theme's element rule would otherwise size it taller than its row. */
+.secnav{display:flex;align-items:center;gap:8px;margin:0 0 18px;flex-wrap:wrap}
+.secnav .op{height:30px;padding:0 12px;display:inline-flex;align-items:center}
+.secsel{flex:0 1 440px;min-width:220px;height:30px;appearance:none;-webkit-appearance:none;
+  background:var(--inset) url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='6'%3E%3Cpath d='M1 1l3.5 3.5L8 1' fill='none' stroke='%23888a9c' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 10px center;
+  border:1px solid var(--line-bright);color:var(--ink);font-family:var(--mono);font-size:11px;
+  padding:0 30px 0 10px;outline:none;text-overflow:ellipsis}
+.secsel:focus{border-color:var(--accent)}
+.secchit{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  border:1px solid currentColor;padding:0 8px;white-space:nowrap;
+  height:30px;display:inline-flex;align-items:center}
+.t-ok{color:var(--ok)}
+.t-warn{color:var(--warn)}
+.t-bad{color:var(--bad)}
+.t-accent{color:var(--accent)}
+.t-mute{color:var(--faint)}
+
+/* ---- doc pane and panels ---- */
+
+.doc{border:1px solid var(--line);background:var(--panel);padding:14px 18px;margin:0 0 14px}
+.doc h4{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+  margin:0 0 10px;color:var(--ink)}
+.backrow{margin:0 0 8px}
+.backlink{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;color:var(--accent);cursor:pointer}
+.lnk{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+  border:none;background:none;color:var(--faint);cursor:pointer;padding:0 2px}
+.lnk:hover{color:var(--accent)}
+.ncbadge{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;border:1px dashed var(--warn);
+  color:var(--warn);padding:1px 6px;text-transform:uppercase}
+.dnotice{font-size:12px;color:var(--dim);font-style:italic;margin:0 0 8px}
+.rawpre{font-family:var(--mono);font-size:11px;color:var(--dim);white-space:pre-wrap;
+  overflow-x:auto;margin:0;max-height:420px;overflow-y:auto}
+
+.ipanel{border:1px solid var(--line);background:var(--panel);padding:12px 14px;margin:0 0 14px}
+.ipanel h2{margin:0 0 10px}
+.tblwrap{overflow-x:auto}
+.ipanel table{width:100%;border-collapse:collapse;font-size:11.5px}
+.ipanel th{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--faint);text-align:left;padding:4px 10px 6px 6px;border-bottom:1px solid var(--line);
+  cursor:pointer;white-space:nowrap}
+.ipanel th:hover{color:var(--dim)}
+.ipanel td{padding:6px 10px 6px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+.ipanel tr:last-child td{border-bottom:none}
+.arr{color:var(--accent);margin-left:3px}
+.mono{font-family:var(--mono);white-space:nowrap}
+.dlrow{cursor:pointer}
+.dlrow:hover td{background:var(--inset)}
+/* The row is the unit of highlight. The background may repeat per cell, since
+   abutting cells read as one band, but the accent bar goes on the first cell
+   only — on every cell it reads as a border around each one. */
+.is-hl td{background:var(--inset)}
+.is-hl td:first-child{box-shadow:inset 2px 0 0 var(--accent)}
+.wl{font-family:var(--mono);color:var(--accent);cursor:pointer;white-space:nowrap}
+.pc{font-family:var(--mono);font-size:10px;border:1px solid var(--line);color:var(--dim);
+  padding:1px 5px;margin-right:3px;cursor:pointer;white-space:nowrap}
+.pc:hover{color:var(--accent);border-color:var(--accent)}
+.fpill{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  border:1px solid var(--line);background:none;color:var(--dim);padding:2px 8px;cursor:pointer}
+.fpill.is-on{color:var(--accent-ink);background:var(--accent);border-color:var(--accent)}
+
+.cf-high{color:var(--ok)}
+.cf-medium{color:var(--warn)}
+.cf-low{color:var(--bad)}
+.cf-other{color:var(--unk)}
+.st-open{color:var(--warn)}
+.st-validated{color:var(--ok)}
+.st-invalidated{color:var(--bad)}
+.st-unknown{color:var(--unk)}
+.st-other{color:var(--unk)}
+.st-overdue{color:var(--bad)}
+.st-soon{color:var(--warn)}
+.st-upcoming{color:var(--ok)}
+.st-unanchored{color:var(--warn)}
+
+/* ---- full log ---- */
+
+.fsec{border:1px solid var(--line);background:var(--panel);margin:0 0 8px}
+.fsum{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  padding:8px 12px;cursor:pointer;color:var(--ink)}
+.fbody{padding:4px 18px 14px}

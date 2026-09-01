@@ -303,9 +303,20 @@
   }
   /* Note: both class matches stay on the full value, not the split word, so
      no existing document changes chip class or rail. */
+  /* The one confidence classifier, the twin of dlStatusKind below. The pill,
+     the decisions panel's class column, and the sort rank all read a
+     harvested confidence through this prefix match, and because it returns a
+     closed enum, a document's value can pick a style but never write into
+     the attribute that carries it. */
+  function dlConfKind(v){
+    const t=String(v==null?'':v).trim().toUpperCase();
+    if(t.indexOf('HIGH')===0) return 'high';
+    if(t.indexOf('MED')===0) return 'medium';
+    if(t.indexOf('LOW')===0) return 'low';
+    return 'other';
+  }
   function dlConfPill(v){
-    const t=v.trim().toUpperCase();
-    const cls = t.indexOf('HIGH')===0?'p-ok' : t.indexOf('MED')===0?'p-med' : t.indexOf('LOW')===0?'p-high' : 'p-low';
+    const cls={high:'p-ok',medium:'p-med',low:'p-high',other:'p-low'}[dlConfKind(v)];
     return dlChip('conf',cls,cls!=='p-low',v);
   }
   /* The one status classifier. The rail, the status chip, and the audit
@@ -421,7 +432,7 @@
       + `<div class="dl-cards">${entries.map(renderDLCard).join('')}</div>`;
   }
 
-  const ADPParserLib={esc,escAttr,safeLinkUrl,inline,decorate,TOK,renderMarkdown,ART,metaFor,splitFrontMatter,parseSections,slug,sectionKeys,isTableStart,splitRow,parseDLFields,dlSplitBody,dlChipSplit,dlConfPill,dlStatusPill,dlStatusKind,dlRail,parseDLEntries,dlEntryStatus,dlStatusCounts,renderDLCard,renderDecisionLog};
+  const ADPParserLib={esc,escAttr,safeLinkUrl,inline,decorate,TOK,renderMarkdown,ART,metaFor,splitFrontMatter,parseSections,slug,sectionKeys,isTableStart,splitRow,parseDLFields,dlSplitBody,dlChipSplit,dlConfKind,dlConfPill,dlStatusPill,dlStatusKind,dlRail,parseDLEntries,dlEntryStatus,dlStatusCounts,renderDLCard,renderDecisionLog};
   if(typeof module!=="undefined"&&module.exports){ module.exports=ADPParserLib; }
   else{ global.ADPParserLib=ADPParserLib; }
 })(typeof globalThis!=="undefined"?globalThis:this);

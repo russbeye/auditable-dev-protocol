@@ -39,6 +39,10 @@ test("the shell page and its tab strip use only adp-shell.css classes", () => {
   for (const m of S.tabsHtml("inspector").matchAll(/class="([^"]+)"/g)) {
     m[1].split(/\s+/).forEach(c => used.add(c));
   }
-  const orphans = [...used].filter(c => !shell.has(c)).sort();
+  // The one deliberate theme class in shell markup: rendered document bodies
+  // are wrapped in .md, so adp-theme's document styles apply to parser-lib
+  // output. Everything else the shell paints, the shell sheet owns.
+  const allowed = new Set(["md"]);
+  const orphans = [...used].filter(c => !shell.has(c) && !allowed.has(c)).sort();
   assert.deepEqual(orphans, []);
 });
