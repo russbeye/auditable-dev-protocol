@@ -207,6 +207,35 @@
     return out;
   }
 
+  /* The watchboard: every live watch across every ticket, one row per watch.
+     Closed watches never row here — the board is a to-do surface and settled
+     debt lives in the ledgers — but we count them, so the board says what it
+     left out. The days field carries the default order and the due column's
+     sort key in one value: overdue days are negative and sort first, and an
+     unanchored watch maps to Infinity, which sinks it below every dated row
+     while its label stays UNANCHORED. Ties break by directory then watch id,
+     so the order is total and replays the same on every build. */
+  function watchboardRows(tickets, today){
+    const rows = [];
+    let settled = 0;
+    for (const t of tickets){
+      for (const w of t.watches){
+        const state = dueState(w, today);
+        if (state === "closed"){ settled++; continue; }
+        rows.push({
+          tid: t.id || t.dir, dir: t.dir, wid: w.wid, what: w.what,
+          due: w.due, anchored: w.anchored, window: w.window,
+          state: state, label: dueLabel(w, today),
+          days: w.anchored ? daysUntil(w.due, today) : Infinity
+        });
+      }
+    }
+    rows.sort((a, b) => a.days - b.days
+      || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0)
+      || (a.wid < b.wid ? -1 : a.wid > b.wid ? 1 : 0));
+    return {rows, settled};
+  }
+
   // One sorter serves every table: accessors map a column key to a value and
   // d flips the direction. Rows never mutate; presentation order is ours.
   function sortRows(rows, k, d, acc){
@@ -221,7 +250,8 @@
   const ADPDeriveLib = {GROUPS, daysUntil, dueState, dueLabel, statusKind,
     decisionKind, coveringWatch, settledWatch, canonicalSection,
     unwatchedOpen, attentionReasons, needsAttention, ribbonModel, railGroups,
-    sectionEntries, sectionState, sectionItems, citingSections, sortRows};
+    sectionEntries, sectionState, sectionItems, citingSections,
+    watchboardRows, sortRows};
   if (isNode){ module.exports = ADPDeriveLib; }
   else { global.ADPDeriveLib = ADPDeriveLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

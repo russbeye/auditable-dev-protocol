@@ -67,7 +67,10 @@
   // The closed group starts collapsed: it is the archive, and its count on
   // the header says how much sits inside.
   const railCollapsed = new Set(["closed"]);
-  const sortState = {dec: {k: "id", d: 1}, iw: {k: "wid", d: 1}};
+  // The board's due key starts every visit at R5's order: overdue first,
+  // unanchored last. The derivation pre-orders ties, and the sort is stable,
+  // so the default pass leaves that order standing.
+  const sortState = {dec: {k: "id", d: 1}, iw: {k: "wid", d: 1}, wb: {k: "due", d: 1}};
   const parsed = new Map();
 
   // The hash is read before the corpus exists, so the selection it names
@@ -360,6 +363,36 @@
     }
   }
 
+  // ---- watchboard ----
+
+  /* The board reads the corpus index only. Opened documents are unindexed by
+     the stage-4 ruling and their watches already render in the inspector, so
+     a page with no corpus behind it says so instead of boarding session
+     documents. */
+  function renderWatch(){
+    const scr = $("#scrWatch");
+    const keep = focusMark(document.activeElement);
+    const head = `<h2>watchboard <span class="isub">overdue first · unanchored flagged, never dated</span></h2>`;
+    if (!corpus){
+      scr.innerHTML = head + `<div class="ipanel"><p class="dnotice">no corpus behind this page — `
+        + `the watchboard reads the served corpus index. open, paste, or drop a document to see its watches in the inspector.</p></div>`;
+      refocus(keep);
+      return;
+    }
+    const wb = D.watchboardRows(corpus.index.tickets, today());
+    const rows = D.sortRows(wb.rows, sortState.wb.k, sortState.wb.d, {
+      tid: r => r.tid, wid: r => r.wid, what: r => r.what,
+      due: r => r.days, state: r => r.days
+    }).map(r => ({tid: r.tid, wid: r.wid, what: r.what,
+      // An unanchored row shows its window prose where a date would sit, so
+      // the flag explains itself; the same rule the inspector's table uses.
+      dueText: r.anchored ? r.due : (r.window || "relative"),
+      state: r.state, stateLabel: r.label}));
+    scr.innerHTML = head
+      + S.watchboardHtml({sort: sortState.wb, rows, live: wb.rows.length, settled: wb.settled});
+    refocus(keep);
+  }
+
   // ---- chrome ----
 
   // The tab strip is built once. Renders flip state on the buttons in place,
@@ -387,7 +420,7 @@
   }
 
   function renderAll(){
-    render(); renderRail(); renderInspector(); syncHash();
+    render(); renderRail(); renderInspector(); renderWatch(); syncHash();
   }
 
   // ---- opened documents ----
@@ -533,6 +566,17 @@
     if (pill){ dlFilter = pill.getAttribute("data-dlf"); renderInspector(); return; }
     const pc = hit(".pc");
     if (pc){ sel.s = pc.getAttribute("data-key"); sel.item = null; missNotice = null; paneJump = true; renderInspector(); syncHash(); return; }
+    const wbl = hit(".wbl");
+    if (wbl){
+      // A watch link leaves s null on purpose: the item-only landing resolves
+      // the owning section, so a retitled section never strands a board link.
+      sel = {t: wbl.getAttribute("data-t"), s: null,
+        item: wbl.getAttribute("data-item") || null};
+      dlFilter = "all"; missNotice = null; fullClosed.clear();
+      selScreen = "inspector"; paneJump = true;
+      renderAll();
+      return;
+    }
     const wl = hit(".wl");
     if (wl){
       sel.item = wl.getAttribute("data-item");
@@ -560,8 +604,12 @@
     }
     const sth = hit(".sth");
     if (sth){
-      const st = sortState[sth.getAttribute("data-t")], k = sth.getAttribute("data-k");
-      if (st){ st.d = st.k === k ? -st.d : 1; st.k = k; renderInspector(); }
+      const tk = sth.getAttribute("data-t");
+      const st = sortState[tk], k = sth.getAttribute("data-k");
+      if (st){
+        st.d = st.k === k ? -st.d : 1; st.k = k;
+        tk === "wb" ? renderWatch() : renderInspector();
+      }
       return;
     }
     const dlrow = hit(".dlrow");

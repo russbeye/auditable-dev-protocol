@@ -777,3 +777,113 @@ test("an open decision with only a settled watch leads with the marker", () => {
   assert.ok(panel.includes(`<span class="st-unanchored">no watch</span> <a class="wl"`));
   assert.ok(panel.includes(`<span class="st-closed">VALIDATED 2026-09-01</span>`));
 });
+
+// ---- the watchboard: R5 ----
+
+/* A second ticket beside AA1 stages the board states the live corpus lacks:
+   an overdue watch, a soon one, and a settled one whose ledger line closed
+   it. With AA1's upcoming and unanchored watches the staged corpus carries
+   every live due state at once. */
+const LOG_B = [
+  "# Audit Log — BB2 beta",
+  "",
+  "## Problem Statement",
+  "",
+  "**What the problem is:** board demo.",
+  "",
+  "## Decision Log",
+  "",
+  "### [DL-001] Board decision",
+  "- **Decision:** pick c",
+  "- **Confidence:** HIGH",
+  "- **Status:** OPEN — rides",
+  "",
+  "## Obligation Ticket List",
+  "",
+  "| Ticket ID | Decision Log ref | Assumption to validate | Priority | Exit condition | Observation window |",
+  "|---|---|---|---|---|---|",
+  "| OT-BB2-1 | DL-001 | overdue thing | HIGH | done → VALIDATED | until 2020-01-01 |",
+  "| OT-BB2-2 | DL-001 | soon thing | MEDIUM | done → VALIDATED | 2026-09-01 |",
+  "| OT-BB2-3 | DL-001 | settled thing | LOW | done → VALIDATED | 2026-08-01 |",
+  "",
+  "- **OT-BB2-3 CLOSED 2026-08-10 → VALIDATED.** The window ended quiet.",
+  ""
+].join("\n");
+const LISTING_WB = {root: "demo",
+  files: ["20260101-AA1-alpha/audit-log.md", "20260102-BB2-beta/audit-log.md"]};
+const TEXTS_WB = {"20260101-AA1-alpha/audit-log.md": LOG, "20260102-BB2-beta/audit-log.md": LOG_B};
+const bootBoard = opts => bootShell(Object.assign(
+  {stored: "dark", fetch: corpusFetch(LISTING_WB, TEXTS_WB)}, opts));
+
+test("the board rows live watches corpus-wide, overdue first, unanchored flagged", async () => {
+  const h = bootBoard();
+  await h.settle();
+  const scr = h.$("#scrWatch").innerHTML;
+  assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
+    ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2"]);
+  assert.match(scr, /4 live · 1 settled/);
+  // The closed watch never rows; the unanchored one shows its window prose
+  // where the dated rows show a date.
+  assert.ok(!scr.includes("OT-BB2-3"));
+  assert.match(scr, /60 days after merge/);
+  assert.match(scr, /UNANCHORED/);
+  assert.match(scr, /OVERDUE \d+D/);
+});
+
+test("a board watch link lands the inspector on the owning section, item highlighted", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  h.click(h.$$(".wbl").find(a => a.getAttribute("data-item") === "OT-BB2-1"));
+  assert.equal(h.$("#scrInspector").classList.contains("is-on"), true);
+  assert.equal(h.$("#secSel").value, "sec-obligation-ticket-list");
+  assert.match(h.$("#scrInspector").innerHTML, /is-hl/);
+  assert.equal(h.hashes[h.hashes.length - 1],
+    "#t=BB2&s=sec-obligation-ticket-list&item=OT-BB2-1");
+});
+
+test("a board ticket link selects the ticket's default view", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  h.click(h.$$(".wbl").find(a =>
+    a.getAttribute("data-t") === "BB2" && !a.getAttribute("data-item")));
+  assert.equal(h.$("#scrInspector").classList.contains("is-on"), true);
+  assert.equal(h.$("#secSel").value, "sec-decision-log");
+  const sel = h.$$(".rentry").find(r => r.classList.contains("is-sel"));
+  assert.equal(sel.getAttribute("data-key"), "BB2");
+});
+
+test("a board header sorts, flips on repeat, and keeps the keyboard", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  const tidTh = () => h.$$(".sth").find(t =>
+    t.getAttribute("data-t") === "wb" && t.getAttribute("data-k") === "tid");
+  tidTh().focus();
+  h.click(tidTh());
+  assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
+    ["OT-AA1-1", "OT-AA1-2", "OT-BB2-1", "OT-BB2-2"]);
+  assert.equal(h.document.activeElement.getAttribute("data-k"), "tid");
+  h.click(tidTh());
+  assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
+    ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2"]);
+});
+
+test("with no corpus the board says so instead of rendering an empty table", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  const scr = h.$("#scrWatch").innerHTML;
+  assert.match(scr, /no corpus behind this page/);
+  assert.ok(!scr.includes("wbrow"));
+});
+
+test("watchboardHtml escapes hostile fields and renders the all-settled state", () => {
+  const hostile = `<img src=x onerror=alert(1)>`;
+  const html = S.watchboardHtml({sort: {k: "due", d: 1}, live: 1, settled: 2,
+    rows: [{tid: hostile, wid: hostile, what: hostile, dueText: hostile,
+      state: "upcoming", stateLabel: hostile}]});
+  assert.ok(!html.includes("<img"));
+  const empty = S.watchboardHtml({sort: {k: "due", d: 1}, live: 0, settled: 3, rows: []});
+  assert.match(empty, /every watch on record is settled — 3 closed watches sit/);
+});

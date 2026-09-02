@@ -260,6 +260,30 @@
       + `${th(m.sort, "iw", "state", "status")}${th(m.sort, "iw", "cited", "cited in")}</tr>${rows}</table></div></div>`;
   }
 
+  // ---- the watchboard ----
+
+  /* The corpus-wide watch table. Both link cells are .wbl anchors: the ticket
+     cell carries data-t alone and the watch cell adds data-item, so one
+     delegated handler routes both into the inspector. The status column
+     shares the due sort key, the mockup's rule — the two columns are one
+     ordering read two ways. */
+  function watchboardHtml(m){
+    const head = `<h2>every live watch, corpus-wide <span class="hsub">${m.live} live · ${m.settled} settled</span></h2>`;
+    if (!m.rows.length)
+      return `<div class="ipanel">${head}<p class="dnotice">every watch on record is settled — `
+        + `${m.settled} closed ${m.settled === 1 ? "watch sits" : "watches sit"} in the tickets' ledgers.</p></div>`;
+    const rows = m.rows.map(w => `<tr class="wbrow" data-wid="${escAttr(w.wid)}">`
+      + `<td><a class="wbl" data-t="${escAttr(w.tid)}">${esc(w.tid)}</a></td>`
+      + `<td><a class="wbl" data-t="${escAttr(w.tid)}" data-item="${escAttr(w.wid)}">${esc(w.wid)}</a></td>`
+      + `<td>${esc(w.what)}</td>`
+      + `<td class="mono">${esc(w.dueText)}</td>`
+      + `<td><span class="st-${w.state}">${esc(w.stateLabel)}</span></td></tr>`).join("");
+    return `<div class="ipanel">${head}`
+      + `<div class="tblwrap"><table><tr>${th(m.sort, "wb", "tid", "ticket")}${th(m.sort, "wb", "wid", "watch")}`
+      + `${th(m.sort, "wb", "what", "what to check")}${th(m.sort, "wb", "due", "due")}`
+      + `${th(m.sort, "wb", "state", "status")}</tr>${rows}</table></div></div>`;
+  }
+
   function fullLogHtml(list){
     return `<div class="mops"><button type="button" class="op" data-exp="open">expand all</button>`
       + `<button type="button" class="op" data-exp="close">collapse all</button></div>`
@@ -272,7 +296,7 @@
     projectChitText, applyTheme, hashRead, hashWrite, logPaths, corpusUrl,
     loadCorpus, railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml,
     docPaneHtml, rawPaneHtml, pillsHtml, decisionsPanelHtml, watchesPanelHtml,
-    fullLogHtml};
+    watchboardHtml, fullLogHtml};
   if (isNode){ module.exports = ADPShellLib; }
   else { global.ADPShellLib = ADPShellLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);
