@@ -323,6 +323,20 @@ function bootShell(opts){
     if (!reachedRoot) (root.listeners.click || []).forEach(fn => fn(ev));
   }
 
+  // A keydown bubbles like a click and carries its key, so the page's
+  // delegated keyboard paths run under the dispatch a browser would give.
+  function key(el, k){
+    if (!el) throw new Error("key target not found");
+    const ev = {target: el, key: k, preventDefault(){}};
+    let n = el, reachedRoot = false;
+    while (n) {
+      (n.listeners && n.listeners.keydown || []).forEach(fn => fn(ev));
+      if (n === root) reachedRoot = true;
+      n = n.parent;
+    }
+    if (!reachedRoot) (root.listeners.keydown || []).forEach(fn => fn(ev));
+  }
+
   // change fires on the element then reaches the document's delegated
   // listener, which is the only place the page listens for it.
   function change(el, value){
@@ -351,8 +365,9 @@ function bootShell(opts){
     for (let i = 0; i < 4; i++) await new Promise(r => setImmediate(r));
   }
 
-  return {document, documentElement, $, $$, storage, click, change, fireWindow,
-    tick, runTimeouts, settle, warns, hashes, clipboard, location, intervals};
+  return {document, documentElement, $, $$, storage, click, key, change,
+    fireWindow, tick, runTimeouts, settle, warns, hashes, clipboard, location,
+    intervals};
 }
 
 module.exports = {bootShell};

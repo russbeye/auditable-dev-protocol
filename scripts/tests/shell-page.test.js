@@ -887,3 +887,46 @@ test("watchboardHtml escapes hostile fields and renders the all-settled state", 
   const empty = S.watchboardHtml({sort: {k: "due", d: 1}, live: 0, settled: 3, rows: []});
   assert.match(empty, /every watch on record is settled — 3 closed watches sit/);
 });
+
+test("a watchless corpus boards the no-watches state, never the settled one", async () => {
+  const LOG_C = ["# Audit Log — CC3 gamma", "", "## Problem Statement", "",
+    "**What the problem is:** young corpus.", ""].join("\n");
+  const h = bootShell({stored: "dark", fetch: corpusFetch(
+    {root: "demo", files: ["20260103-CC3-gamma/audit-log.md"]},
+    {"20260103-CC3-gamma/audit-log.md": LOG_C})});
+  await h.settle();
+  const scr = h.$("#scrWatch").innerHTML;
+  assert.match(scr, /no watches on record yet/);
+  assert.ok(!scr.includes("every watch on record is settled"));
+  assert.match(scr, /0 live · 0 settled/);
+});
+
+test("board links carry real hash hrefs, so the keyboard can reach them", async () => {
+  const h = bootBoard();
+  await h.settle();
+  const w = h.$$(".wbl").find(a => a.getAttribute("data-item") === "OT-BB2-1");
+  // The harness reads the serialized attribute, entities intact; a real
+  // browser decodes &amp; back to & before the hash is followed.
+  assert.equal(w.getAttribute("href"), "#t=BB2&amp;item=OT-BB2-1");
+  const t = h.$$(".wbl").find(a =>
+    a.getAttribute("data-t") === "BB2" && !a.getAttribute("data-item"));
+  assert.equal(t.getAttribute("href"), "#t=BB2");
+});
+
+test("a header sorts from the keyboard with Enter and Space", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  const tidTh = () => h.$$(".sth").find(t =>
+    t.getAttribute("data-t") === "wb" && t.getAttribute("data-k") === "tid");
+  assert.equal(tidTh().getAttribute("tabindex"), "0");
+  tidTh().focus();
+  h.key(tidTh(), "Enter");
+  assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
+    ["OT-AA1-1", "OT-AA1-2", "OT-BB2-1", "OT-BB2-2"]);
+  // The rebuild handed focus to the fresh twin, so Space flips the sort back.
+  assert.equal(h.document.activeElement.getAttribute("data-k"), "tid");
+  h.key(h.document.activeElement, " ");
+  assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
+    ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2"]);
+});

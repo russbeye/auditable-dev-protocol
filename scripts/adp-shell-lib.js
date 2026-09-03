@@ -216,8 +216,10 @@
       + `<pre class="rawpre">${esc(m.raw)}</pre></div>`;
   }
 
+  // The tabindex puts every sort header in the tab order, because a bare th
+  // never takes keyboard focus; the page's keydown path fires the sort.
   const th = (sort, t, k, label) =>
-    `<th class="sth" data-t="${t}" data-k="${k}">${label}${sort.k === k ? `<span class="arr">${sort.d > 0 ? "▲" : "▼"}</span>` : ""}</th>`;
+    `<th class="sth" tabindex="0" data-t="${t}" data-k="${k}">${label}${sort.k === k ? `<span class="arr">${sort.d > 0 ? "▲" : "▼"}</span>` : ""}</th>`;
   const chips = list => list.map(c =>
     `<a class="pc" data-key="${escAttr(c.key)}" title="${escAttr(c.title)}">${esc(c.label)}</a>`).join("");
 
@@ -269,12 +271,18 @@
      ordering read two ways. */
   function watchboardHtml(m){
     const head = `<h2>every live watch, corpus-wide <span class="hsub">${m.live} live · ${m.settled} settled</span></h2>`;
+    // An empty board has two truths: a corpus whose watches all settled, and
+    // a corpus that never opened one. The settled sentence must never claim
+    // ledgers a young corpus does not have.
     if (!m.rows.length)
-      return `<div class="ipanel">${head}<p class="dnotice">every watch on record is settled — `
-        + `${m.settled} closed ${m.settled === 1 ? "watch sits" : "watches sit"} in the tickets' ledgers.</p></div>`;
+      return `<div class="ipanel">${head}<p class="dnotice">${m.settled
+        ? `every watch on record is settled — ${m.settled} closed ${m.settled === 1 ? "watch sits" : "watches sit"} in the tickets' ledgers.`
+        : `no watches on record yet — no ticket in this corpus has opened an obligation table.`}</p></div>`;
+    // The hrefs are real deep links, so the keyboard can reach and fire the
+    // anchors; the page's delegated handler stops the browser's own hash jump.
     const rows = m.rows.map(w => `<tr class="wbrow" data-wid="${escAttr(w.wid)}">`
-      + `<td><a class="wbl" data-t="${escAttr(w.tid)}">${esc(w.tid)}</a></td>`
-      + `<td><a class="wbl" data-t="${escAttr(w.tid)}" data-item="${escAttr(w.wid)}">${esc(w.wid)}</a></td>`
+      + `<td><a class="wbl" href="${escAttr(hashWrite({t: w.tid}))}" data-t="${escAttr(w.tid)}">${esc(w.tid)}</a></td>`
+      + `<td><a class="wbl" href="${escAttr(hashWrite({t: w.tid, item: w.wid}))}" data-t="${escAttr(w.tid)}" data-item="${escAttr(w.wid)}">${esc(w.wid)}</a></td>`
       + `<td>${esc(w.what)}</td>`
       + `<td class="mono">${esc(w.dueText)}</td>`
       + `<td><span class="st-${w.state}">${esc(w.stateLabel)}</span></td></tr>`).join("");

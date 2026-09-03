@@ -143,7 +143,7 @@
      selector, so a harvested value in a mark never turns into query syntax.
      A control that did not survive the rebuild simply stays unfocused. */
   const FOCUS_MARKS = ["data-op", "data-view", "data-secstep", "data-dlf",
-    "data-exp", "data-permalink", "data-t", "data-k", "data-key"];
+    "data-exp", "data-permalink", "data-t", "data-k", "data-key", "data-item"];
   function focusMark(el){
     if (!el || !el.getAttribute) return null;
     if (el.id) return {id: el.id};
@@ -161,7 +161,9 @@
     if (mark.id) el = document.getElementById(mark.id);
     else {
       const cand = [];
-      for (const tag of ["button", "th"])
+      // Anchors joined the list when the board's links gained real hrefs and
+      // with them the ability to hold focus through a rebuild.
+      for (const tag of ["button", "th", "a"])
         cand.push.apply(cand, document.querySelectorAll(tag));
       el = cand.find(c =>
         Object.keys(mark.marks).every(a => c.getAttribute(a) === mark.marks[a]));
@@ -525,6 +527,27 @@
   });
   $("#newTaskBtn").addEventListener("click", () => { selScreen = "new task"; render(); });
 
+  // The click path and the keyboard path fire the same sort, so the two can
+  // never disagree about what a header does.
+  function thSort(sth){
+    const tk = sth.getAttribute("data-t");
+    const st = sortState[tk], k = sth.getAttribute("data-k");
+    if (!st) return;
+    st.d = st.k === k ? -st.d : 1; st.k = k;
+    tk === "wb" ? renderWatch() : renderInspector();
+  }
+
+  // A th never turns Enter or Space into a click the way a button does, so
+  // the sort headers get their keyboard activation dispatched by hand.
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const sth = e.target && e.target.closest ? e.target.closest(".sth") : null;
+    if (sth){
+      if (e.preventDefault) e.preventDefault();
+      thSort(sth);
+    }
+  });
+
   // One delegated listener serves every dynamic control. Inner targets are
   // checked before the containers that hold them.
   document.addEventListener("click", e => {
@@ -568,6 +591,9 @@
     if (pc){ sel.s = pc.getAttribute("data-key"); sel.item = null; missNotice = null; paneJump = true; renderInspector(); syncHash(); return; }
     const wbl = hit(".wbl");
     if (wbl){
+      // The href exists so the keyboard can reach the link; routing stays
+      // in-page, so we stop the browser's own hash jump here.
+      if (e.preventDefault) e.preventDefault();
       // A watch link leaves s null on purpose: the item-only landing resolves
       // the owning section, so a retitled section never strands a board link.
       sel = {t: wbl.getAttribute("data-t"), s: null,
@@ -603,15 +629,7 @@
       return;
     }
     const sth = hit(".sth");
-    if (sth){
-      const tk = sth.getAttribute("data-t");
-      const st = sortState[tk], k = sth.getAttribute("data-k");
-      if (st){
-        st.d = st.k === k ? -st.d : 1; st.k = k;
-        tk === "wb" ? renderWatch() : renderInspector();
-      }
-      return;
-    }
+    if (sth){ thSort(sth); return; }
     const dlrow = hit(".dlrow");
     if (dlrow){ sel.item = dlrow.getAttribute("data-dl"); paneJump = true; renderInspector(); syncHash(); return; }
     const op = hit(".op");
