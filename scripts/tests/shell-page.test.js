@@ -142,15 +142,21 @@ test("projectChitText separates a missing corpus from a nameless project", () =>
 
 // ---- lib: the hash grammar ----
 
-test("hashRead and hashWrite round-trip the t/s/item selection", () => {
-  const sel = {t: "AA1", s: "sec-decision-log", item: "DL-002"};
+test("hashRead and hashWrite round-trip the v/t/s/item selection", () => {
+  const sel = {v: null, t: "AA1", s: "sec-decision-log", item: "DL-002"};
+  // The inspector writes no view token, so its hashes stay byte-identical
+  // with every link minted before the token existed.
   assert.equal(S.hashWrite(sel), "#t=AA1&s=sec-decision-log&item=DL-002");
   assert.deepEqual(S.hashRead(S.hashWrite(sel)), sel);
-  assert.deepEqual(S.hashRead("#t=AA1"), {t: "AA1", s: null, item: null});
-  assert.deepEqual(S.hashRead(""), {t: null, s: null, item: null});
+  assert.deepEqual(S.hashRead("#t=AA1"), {v: null, t: "AA1", s: null, item: null});
+  assert.deepEqual(S.hashRead(""), {v: null, t: null, s: null, item: null});
   assert.equal(S.hashWrite({t: null}), "");
+  const board = {v: "watchboard", t: "AA1", s: null, item: null};
+  assert.equal(S.hashWrite(board), "#v=watchboard&t=AA1");
+  assert.deepEqual(S.hashRead(S.hashWrite(board)), board);
+  assert.equal(S.hashWrite({v: "new task", t: null, s: null, item: null}), "#v=new%20task");
   // Reserved characters survive the trip encoded.
-  const odd = {t: "a&b", s: "sec-x=y", item: null};
+  const odd = {v: null, t: "a&b", s: "sec-x=y", item: null};
   assert.deepEqual(S.hashRead(S.hashWrite(odd)), odd);
 });
 
@@ -818,6 +824,7 @@ const bootBoard = opts => bootShell(Object.assign(
 test("the board rows live watches corpus-wide, overdue first, unanchored flagged", async () => {
   const h = bootBoard();
   await h.settle();
+  h.click(h.$$(".mtab")[1]);
   const scr = h.$("#scrWatch").innerHTML;
   assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
     ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2"]);
@@ -873,6 +880,7 @@ test("a board header sorts, flips on repeat, and keeps the keyboard", async () =
 test("with no corpus the board says so instead of rendering an empty table", async () => {
   const h = bootShell({stored: "dark"});
   await h.settle();
+  h.click(h.$$(".mtab")[1]);
   const scr = h.$("#scrWatch").innerHTML;
   assert.match(scr, /no corpus behind this page/);
   assert.ok(!scr.includes("wbrow"));
@@ -895,6 +903,7 @@ test("a watchless corpus boards the no-watches state, never the settled one", as
     {root: "demo", files: ["20260103-CC3-gamma/audit-log.md"]},
     {"20260103-CC3-gamma/audit-log.md": LOG_C})});
   await h.settle();
+  h.click(h.$$(".mtab")[1]);
   const scr = h.$("#scrWatch").innerHTML;
   assert.match(scr, /no watches on record yet/);
   assert.ok(!scr.includes("every watch on record is settled"));
@@ -904,6 +913,7 @@ test("a watchless corpus boards the no-watches state, never the settled one", as
 test("board links carry real hash hrefs, so the keyboard can reach them", async () => {
   const h = bootBoard();
   await h.settle();
+  h.click(h.$$(".mtab")[1]);
   const w = h.$$(".wbl").find(a => a.getAttribute("data-item") === "OT-BB2-1");
   // The harness reads the serialized attribute, entities intact; a real
   // browser decodes &amp; back to & before the hash is followed.
@@ -911,6 +921,52 @@ test("board links carry real hash hrefs, so the keyboard can reach them", async 
   const t = h.$$(".wbl").find(a =>
     a.getAttribute("data-t") === "BB2" && !a.getAttribute("data-item"));
   assert.equal(t.getAttribute("href"), "#t=BB2");
+});
+
+test("a view token in the hash lands the named screen on boot", async () => {
+  const h = bootBoard({hash: "#v=watchboard"});
+  await h.settle();
+  assert.equal(h.$("#scrWatch").classList.contains("is-on"), true);
+  assert.match(h.$("#scrWatch").innerHTML, /wbrow/);
+});
+
+test("a view token rides beside a selection, and both restore", async () => {
+  const h = bootBoard({hash: "#v=watchboard&t=BB2&item=OT-BB2-1"});
+  await h.settle();
+  assert.equal(h.$("#scrWatch").classList.contains("is-on"), true);
+  // The inspector behind the board holds the restored selection.
+  assert.equal(h.$("#secSel").value, "sec-obligation-ticket-list");
+  assert.match(h.$("#scrInspector").innerHTML, /is-hl/);
+});
+
+test("a token naming no real screen is ignored", async () => {
+  const h = bootBoard({hash: "#v=bogus&t=AA1"});
+  await h.settle();
+  assert.equal(h.$("#scrInspector").classList.contains("is-on"), true);
+});
+
+test("a tab switch writes its view token; the inspector clears it", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  assert.match(h.hashes[h.hashes.length - 1], /^#v=watchboard&t=/);
+  h.click(h.$$(".mtab")[0]);
+  assert.match(h.hashes[h.hashes.length - 1], /^#t=/);
+});
+
+test("a hidden board skips its rebuild and settles the debt on entry", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  const before = h.$$(".wbrow")[0];
+  h.click(h.$$(".mtab")[0]);
+  // A full re-render while the board is hidden must leave its DOM untouched.
+  pick(h, "BB2");
+  assert.equal(h.$$(".wbrow")[0], before);
+  // Entering the tab pays the owed rebuild: fresh nodes, same content.
+  h.click(h.$$(".mtab")[1]);
+  assert.notEqual(h.$$(".wbrow")[0], before);
+  assert.equal(h.$$(".wbrow")[0].getAttribute("data-wid"), "OT-BB2-1");
 });
 
 test("a header sorts from the keyboard with Enter and Space", async () => {

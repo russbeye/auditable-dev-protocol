@@ -58,22 +58,27 @@
 
   // ---- the hash grammar ----
 
-  /* Deep links are #t=<ticket>&s=<section key>&item=<DL/OT id>. The section
-     token is the contract's section key, never a phase number — a phase
-     number cannot reach most sections of a real log. */
+  /* Deep links are #v=<screen>&t=<ticket>&s=<section key>&item=<DL/OT id>.
+     The section token is the contract's section key, never a phase number — a
+     phase number cannot reach most sections of a real log. The view token
+     names a non-inspector screen, so a reload lands where the reader was; the
+     inspector never writes one, which keeps every pre-v link and every
+     inspector hash byte-identical. */
   function hashRead(h){
-    const out = {t: null, s: null, item: null};
+    const out = {v: null, t: null, s: null, item: null};
     for (const kv of String(h || "").replace(/^#/, "").split("&")){
       const eq = kv.indexOf("=");
       if (eq < 1) continue;
       const k = kv.slice(0, eq), v = decodeURIComponent(kv.slice(eq + 1));
-      if (k === "t" || k === "s" || k === "item") out[k] = v || null;
+      if (k === "v" || k === "t" || k === "s" || k === "item") out[k] = v || null;
     }
     return out;
   }
   function hashWrite(sel){
-    if (!sel || !sel.t) return "";
-    const p = ["t=" + encodeURIComponent(sel.t)];
+    if (!sel || (!sel.t && !sel.v)) return "";
+    const p = [];
+    if (sel.v) p.push("v=" + encodeURIComponent(sel.v));
+    if (sel.t) p.push("t=" + encodeURIComponent(sel.t));
     if (sel.s) p.push("s=" + encodeURIComponent(sel.s));
     if (sel.item) p.push("item=" + encodeURIComponent(sel.item));
     return "#" + p.join("&");
