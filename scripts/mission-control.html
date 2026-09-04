@@ -374,9 +374,9 @@
 
   // A hidden board skips its rebuild and remembers that it owes one, so the
   // poll's re-renders never pay for a screen nobody is looking at. Entering
-  // the tab settles the debt. Nothing the board reads can change while it is
-  // hidden — the corpus loads once and sorts rebuild it directly — so a
-  // skipped rebuild never shows stale rows.
+  // the tab settles the debt. The skip does not depend on the board's inputs
+  // staying frozen: any change that re-renders the page marks the flag, so
+  // the next entry rebuilds from whatever the data says by then.
   let wbStale = true;
   function renderWatch(){
     if (selScreen !== "watchboard"){ wbStale = true; return; }
@@ -429,10 +429,15 @@
      inspector writes no view token, which keeps its hashes byte-identical
      with every link minted before the token existed. */
   function syncHash(){
+    // The boot render runs before the seam resolves, and the deep link the
+    // boot is about to honor must survive that first pass untouched.
+    if (pendingSel) return;
     const h = S.hashWrite({v: selScreen === "inspector" ? null : selScreen,
       t: sel.t, s: sel.s, item: sel.item});
-    if (!h) return;
-    try{ history.replaceState(null, "", h); }catch(e){}
+    // An empty composition clears the hash. Keeping the old one would leave
+    // a stale view token standing, and a reload would land on a screen the
+    // reader already left.
+    try{ history.replaceState(null, "", h || "#"); }catch(e){}
   }
 
   function renderAll(){

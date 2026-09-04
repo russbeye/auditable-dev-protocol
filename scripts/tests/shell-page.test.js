@@ -954,6 +954,26 @@ test("a tab switch writes its view token; the inspector clears it", async () => 
   assert.match(h.hashes[h.hashes.length - 1], /^#t=/);
 });
 
+test("leaving the board with nothing selected clears the stale view token", async () => {
+  // No-corpus mode keeps sel.t null, so the inspector composes an empty
+  // hash; the old defect kept the board's token standing there.
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  assert.equal(h.hashes[h.hashes.length - 1], "#v=watchboard");
+  h.click(h.$$(".mtab")[0]);
+  assert.equal(h.hashes[h.hashes.length - 1], "#");
+});
+
+test("the boot passes never write over a pending deep link", async () => {
+  const h = bootCorpus({hash: "#t=AA1&s=sec-pr-summary"});
+  // Before the seam resolves nothing is written, so the deep link survives
+  // the first render untouched.
+  assert.equal(h.hashes.length, 0);
+  await h.settle();
+  assert.equal(h.$("#secSel").value, "sec-pr-summary");
+});
+
 test("a hidden board skips its rebuild and settles the debt on entry", async () => {
   const h = bootBoard();
   await h.settle();
