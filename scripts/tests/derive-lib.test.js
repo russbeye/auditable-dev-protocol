@@ -358,3 +358,69 @@ test("settledWatch names the closed watch that stood over a decision", () => {
   // A live watch is coverage, never settlement.
   assert.equal(D.settledWatch(ticket({watches: [watch()]}), "DL-001"), null);
 });
+
+// ---- the watchboard (R5) ----
+
+// The staged corpus R5's verify line orders: overdue, upcoming, and
+// unanchored watches spread over two tickets, plus a closed one to exclude.
+function boardTickets(){
+  return [
+    ticket({id: "T1", dir: "20260801-T1-alpha", watches: [
+      watch({wid: "OT-T1-1", anchored: true, due: "2026-09-20", window: "until 2026-09-20"}),
+      watch({wid: "OT-T1-2", window: "60 days after merge"}),
+      watch({wid: "OT-T1-3", anchored: true, due: "2026-08-01",
+        closed: "2026-08-10", outcome: "VALIDATED"})
+    ]}),
+    ticket({id: "T2", dir: "20260802-T2-beta", watches: [
+      watch({wid: "OT-T2-1", anchored: true, due: "2026-08-20"}),
+      watch({wid: "OT-T2-2", anchored: true, due: "2026-08-30"})
+    ]})
+  ];
+}
+
+test("watchboardRows boards every live watch, overdue first, unanchored last and flagged", () => {
+  const {rows, settled} = D.watchboardRows(boardTickets(), TODAY);
+  assert.deepEqual(rows.map(r => r.wid),
+    ["OT-T2-1", "OT-T2-2", "OT-T1-1", "OT-T1-2"]);
+  assert.deepEqual(rows.map(r => r.state),
+    ["overdue", "soon", "upcoming", "unanchored"]);
+  assert.equal(settled, 1);
+  // The unanchored row is flagged, never dated: no due, Infinity days, and
+  // the window prose rides along for the due cell.
+  const un = rows[3];
+  assert.equal(un.due, null);
+  assert.equal(un.days, Infinity);
+  assert.equal(un.label, "UNANCHORED");
+  assert.equal(un.window, "60 days after merge");
+  assert.equal(rows[0].label, "OVERDUE 7D");
+});
+
+test("watchboardRows attaches the rail's ticket token, id or directory", () => {
+  const named = D.watchboardRows(boardTickets(), TODAY).rows;
+  assert.ok(named.every(r => r.tid === "T1" || r.tid === "T2"));
+  const bare = D.watchboardRows([ticket({id: null, watches: [watch()]})], TODAY).rows;
+  assert.equal(bare[0].tid, "20260801-T1-alpha");
+});
+
+test("watchboardRows breaks day ties by directory then watch id", () => {
+  const tie = [
+    ticket({id: "B", dir: "20260803-B-b", watches: [
+      watch({wid: "OT-B-2", anchored: true, due: "2026-09-20"}),
+      watch({wid: "OT-B-1", anchored: true, due: "2026-09-20"})
+    ]}),
+    ticket({id: "A", dir: "20260801-A-a", watches: [
+      watch({wid: "OT-A-1", anchored: true, due: "2026-09-20"})
+    ]})
+  ];
+  assert.deepEqual(D.watchboardRows(tie, TODAY).rows.map(r => r.wid),
+    ["OT-A-1", "OT-B-1", "OT-B-2"]);
+});
+
+test("watchboardRows over an all-settled or empty corpus rows nothing and counts", () => {
+  const t = ticket({watches: [
+    watch({wid: "OT-1", closed: "2026-08-10", outcome: "VALIDATED"}),
+    watch({wid: "OT-2", closed: "2026-08-11", outcome: "UNKNOWN"})
+  ]});
+  assert.deepEqual(D.watchboardRows([t], TODAY), {rows: [], settled: 2});
+  assert.deepEqual(D.watchboardRows([], TODAY), {rows: [], settled: 0});
+});

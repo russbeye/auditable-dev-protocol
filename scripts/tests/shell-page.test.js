@@ -142,15 +142,21 @@ test("projectChitText separates a missing corpus from a nameless project", () =>
 
 // ---- lib: the hash grammar ----
 
-test("hashRead and hashWrite round-trip the t/s/item selection", () => {
-  const sel = {t: "AA1", s: "sec-decision-log", item: "DL-002"};
+test("hashRead and hashWrite round-trip the v/t/s/item selection", () => {
+  const sel = {v: null, t: "AA1", s: "sec-decision-log", item: "DL-002"};
+  // The inspector writes no view token, so its hashes stay byte-identical
+  // with every link minted before the token existed.
   assert.equal(S.hashWrite(sel), "#t=AA1&s=sec-decision-log&item=DL-002");
   assert.deepEqual(S.hashRead(S.hashWrite(sel)), sel);
-  assert.deepEqual(S.hashRead("#t=AA1"), {t: "AA1", s: null, item: null});
-  assert.deepEqual(S.hashRead(""), {t: null, s: null, item: null});
+  assert.deepEqual(S.hashRead("#t=AA1"), {v: null, t: "AA1", s: null, item: null});
+  assert.deepEqual(S.hashRead(""), {v: null, t: null, s: null, item: null});
   assert.equal(S.hashWrite({t: null}), "");
+  const board = {v: "watchboard", t: "AA1", s: null, item: null};
+  assert.equal(S.hashWrite(board), "#v=watchboard&t=AA1");
+  assert.deepEqual(S.hashRead(S.hashWrite(board)), board);
+  assert.equal(S.hashWrite({v: "new task", t: null, s: null, item: null}), "#v=new%20task");
   // Reserved characters survive the trip encoded.
-  const odd = {t: "a&b", s: "sec-x=y", item: null};
+  const odd = {v: null, t: "a&b", s: "sec-x=y", item: null};
   assert.deepEqual(S.hashRead(S.hashWrite(odd)), odd);
 });
 
@@ -776,4 +782,227 @@ test("an open decision with only a settled watch leads with the marker", () => {
       chips: [], hl: false}]});
   assert.ok(panel.includes(`<span class="st-unanchored">no watch</span> <a class="wl"`));
   assert.ok(panel.includes(`<span class="st-closed">VALIDATED 2026-09-01</span>`));
+});
+
+// ---- the watchboard: R5 ----
+
+/* A second ticket beside AA1 stages the board states the live corpus lacks:
+   an overdue watch, a soon one, and a settled one whose ledger line closed
+   it. With AA1's upcoming and unanchored watches the staged corpus carries
+   every live due state at once. */
+const LOG_B = [
+  "# Audit Log — BB2 beta",
+  "",
+  "## Problem Statement",
+  "",
+  "**What the problem is:** board demo.",
+  "",
+  "## Decision Log",
+  "",
+  "### [DL-001] Board decision",
+  "- **Decision:** pick c",
+  "- **Confidence:** HIGH",
+  "- **Status:** OPEN — rides",
+  "",
+  "## Obligation Ticket List",
+  "",
+  "| Ticket ID | Decision Log ref | Assumption to validate | Priority | Exit condition | Observation window |",
+  "|---|---|---|---|---|---|",
+  "| OT-BB2-1 | DL-001 | overdue thing | HIGH | done → VALIDATED | until 2020-01-01 |",
+  "| OT-BB2-2 | DL-001 | soon thing | MEDIUM | done → VALIDATED | 2026-09-01 |",
+  "| OT-BB2-3 | DL-001 | settled thing | LOW | done → VALIDATED | 2026-08-01 |",
+  "",
+  "- **OT-BB2-3 CLOSED 2026-08-10 → VALIDATED.** The window ended quiet.",
+  ""
+].join("\n");
+const LISTING_WB = {root: "demo",
+  files: ["20260101-AA1-alpha/audit-log.md", "20260102-BB2-beta/audit-log.md"]};
+const TEXTS_WB = {"20260101-AA1-alpha/audit-log.md": LOG, "20260102-BB2-beta/audit-log.md": LOG_B};
+const bootBoard = opts => bootShell(Object.assign(
+  {stored: "dark", fetch: corpusFetch(LISTING_WB, TEXTS_WB)}, opts));
+
+test("the board rows live watches corpus-wide, overdue first, unanchored flagged", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  const scr = h.$("#scrWatch").innerHTML;
+  assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
+    ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2"]);
+  assert.match(scr, /4 live · 1 settled/);
+  // The closed watch never rows; the unanchored one shows its window prose
+  // where the dated rows show a date.
+  assert.ok(!scr.includes("OT-BB2-3"));
+  assert.match(scr, /60 days after merge/);
+  assert.match(scr, /UNANCHORED/);
+  assert.match(scr, /OVERDUE \d+D/);
+});
+
+test("a board watch link lands the inspector on the owning section, item highlighted", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  h.click(h.$$(".wbl").find(a => a.getAttribute("data-item") === "OT-BB2-1"));
+  assert.equal(h.$("#scrInspector").classList.contains("is-on"), true);
+  assert.equal(h.$("#secSel").value, "sec-obligation-ticket-list");
+  assert.match(h.$("#scrInspector").innerHTML, /is-hl/);
+  assert.equal(h.hashes[h.hashes.length - 1],
+    "#t=BB2&s=sec-obligation-ticket-list&item=OT-BB2-1");
+});
+
+test("a board ticket link selects the ticket's default view", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  h.click(h.$$(".wbl").find(a =>
+    a.getAttribute("data-t") === "BB2" && !a.getAttribute("data-item")));
+  assert.equal(h.$("#scrInspector").classList.contains("is-on"), true);
+  assert.equal(h.$("#secSel").value, "sec-decision-log");
+  const sel = h.$$(".rentry").find(r => r.classList.contains("is-sel"));
+  assert.equal(sel.getAttribute("data-key"), "BB2");
+});
+
+test("a board header sorts, flips on repeat, and keeps the keyboard", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  const tidTh = () => h.$$(".sth").find(t =>
+    t.getAttribute("data-t") === "wb" && t.getAttribute("data-k") === "tid");
+  tidTh().focus();
+  h.click(tidTh());
+  assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
+    ["OT-AA1-1", "OT-AA1-2", "OT-BB2-1", "OT-BB2-2"]);
+  assert.equal(h.document.activeElement.getAttribute("data-k"), "tid");
+  h.click(tidTh());
+  assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
+    ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2"]);
+});
+
+test("with no corpus the board says so instead of rendering an empty table", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  const scr = h.$("#scrWatch").innerHTML;
+  assert.match(scr, /no corpus behind this page/);
+  assert.ok(!scr.includes("wbrow"));
+});
+
+test("watchboardHtml escapes hostile fields and renders the all-settled state", () => {
+  const hostile = `<img src=x onerror=alert(1)>`;
+  const html = S.watchboardHtml({sort: {k: "due", d: 1}, live: 1, settled: 2,
+    rows: [{tid: hostile, wid: hostile, what: hostile, dueText: hostile,
+      state: "upcoming", stateLabel: hostile}]});
+  assert.ok(!html.includes("<img"));
+  const empty = S.watchboardHtml({sort: {k: "due", d: 1}, live: 0, settled: 3, rows: []});
+  assert.match(empty, /every watch on record is settled — 3 closed watches sit/);
+});
+
+test("a watchless corpus boards the no-watches state, never the settled one", async () => {
+  const LOG_C = ["# Audit Log — CC3 gamma", "", "## Problem Statement", "",
+    "**What the problem is:** young corpus.", ""].join("\n");
+  const h = bootShell({stored: "dark", fetch: corpusFetch(
+    {root: "demo", files: ["20260103-CC3-gamma/audit-log.md"]},
+    {"20260103-CC3-gamma/audit-log.md": LOG_C})});
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  const scr = h.$("#scrWatch").innerHTML;
+  assert.match(scr, /no watches on record yet/);
+  assert.ok(!scr.includes("every watch on record is settled"));
+  assert.match(scr, /0 live · 0 settled/);
+});
+
+test("board links carry real hash hrefs, so the keyboard can reach them", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  const w = h.$$(".wbl").find(a => a.getAttribute("data-item") === "OT-BB2-1");
+  // The harness reads the serialized attribute, entities intact; a real
+  // browser decodes &amp; back to & before the hash is followed.
+  assert.equal(w.getAttribute("href"), "#t=BB2&amp;item=OT-BB2-1");
+  const t = h.$$(".wbl").find(a =>
+    a.getAttribute("data-t") === "BB2" && !a.getAttribute("data-item"));
+  assert.equal(t.getAttribute("href"), "#t=BB2");
+});
+
+test("a view token in the hash lands the named screen on boot", async () => {
+  const h = bootBoard({hash: "#v=watchboard"});
+  await h.settle();
+  assert.equal(h.$("#scrWatch").classList.contains("is-on"), true);
+  assert.match(h.$("#scrWatch").innerHTML, /wbrow/);
+});
+
+test("a view token rides beside a selection, and both restore", async () => {
+  const h = bootBoard({hash: "#v=watchboard&t=BB2&item=OT-BB2-1"});
+  await h.settle();
+  assert.equal(h.$("#scrWatch").classList.contains("is-on"), true);
+  // The inspector behind the board holds the restored selection.
+  assert.equal(h.$("#secSel").value, "sec-obligation-ticket-list");
+  assert.match(h.$("#scrInspector").innerHTML, /is-hl/);
+});
+
+test("a token naming no real screen is ignored", async () => {
+  const h = bootBoard({hash: "#v=bogus&t=AA1"});
+  await h.settle();
+  assert.equal(h.$("#scrInspector").classList.contains("is-on"), true);
+});
+
+test("a tab switch writes its view token; the inspector clears it", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  assert.match(h.hashes[h.hashes.length - 1], /^#v=watchboard&t=/);
+  h.click(h.$$(".mtab")[0]);
+  assert.match(h.hashes[h.hashes.length - 1], /^#t=/);
+});
+
+test("leaving the board with nothing selected clears the stale view token", async () => {
+  // No-corpus mode keeps sel.t null, so the inspector composes an empty
+  // hash; the old defect kept the board's token standing there.
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  assert.equal(h.hashes[h.hashes.length - 1], "#v=watchboard");
+  h.click(h.$$(".mtab")[0]);
+  assert.equal(h.hashes[h.hashes.length - 1], "#");
+});
+
+test("the boot passes never write over a pending deep link", async () => {
+  const h = bootCorpus({hash: "#t=AA1&s=sec-pr-summary"});
+  // Before the seam resolves nothing is written, so the deep link survives
+  // the first render untouched.
+  assert.equal(h.hashes.length, 0);
+  await h.settle();
+  assert.equal(h.$("#secSel").value, "sec-pr-summary");
+});
+
+test("a hidden board skips its rebuild and settles the debt on entry", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  const before = h.$$(".wbrow")[0];
+  h.click(h.$$(".mtab")[0]);
+  // A full re-render while the board is hidden must leave its DOM untouched.
+  pick(h, "BB2");
+  assert.equal(h.$$(".wbrow")[0], before);
+  // Entering the tab pays the owed rebuild: fresh nodes, same content.
+  h.click(h.$$(".mtab")[1]);
+  assert.notEqual(h.$$(".wbrow")[0], before);
+  assert.equal(h.$$(".wbrow")[0].getAttribute("data-wid"), "OT-BB2-1");
+});
+
+test("a header sorts from the keyboard with Enter and Space", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  const tidTh = () => h.$$(".sth").find(t =>
+    t.getAttribute("data-t") === "wb" && t.getAttribute("data-k") === "tid");
+  assert.equal(tidTh().getAttribute("tabindex"), "0");
+  tidTh().focus();
+  h.key(tidTh(), "Enter");
+  assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
+    ["OT-AA1-1", "OT-AA1-2", "OT-BB2-1", "OT-BB2-2"]);
+  // The rebuild handed focus to the fresh twin, so Space flips the sort back.
+  assert.equal(h.document.activeElement.getAttribute("data-k"), "tid");
+  h.key(h.document.activeElement, " ");
+  assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
+    ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2"]);
 });

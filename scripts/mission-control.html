@@ -67,7 +67,10 @@
   // The closed group starts collapsed: it is the archive, and its count on
   // the header says how much sits inside.
   const railCollapsed = new Set(["closed"]);
-  const sortState = {dec: {k: "id", d: 1}, iw: {k: "wid", d: 1}};
+  // The board's due key starts every visit at R5's order: overdue first,
+  // unanchored last. The derivation pre-orders ties, and the sort is stable,
+  // so the default pass leaves that order standing.
+  const sortState = {dec: {k: "id", d: 1}, iw: {k: "wid", d: 1}, wb: {k: "due", d: 1}};
   const parsed = new Map();
 
   // The hash is read before the corpus exists, so the selection it names
@@ -140,7 +143,7 @@
      selector, so a harvested value in a mark never turns into query syntax.
      A control that did not survive the rebuild simply stays unfocused. */
   const FOCUS_MARKS = ["data-op", "data-view", "data-secstep", "data-dlf",
-    "data-exp", "data-permalink", "data-t", "data-k", "data-key"];
+    "data-exp", "data-permalink", "data-t", "data-k", "data-key", "data-item"];
   function focusMark(el){
     if (!el || !el.getAttribute) return null;
     if (el.id) return {id: el.id};
@@ -158,7 +161,9 @@
     if (mark.id) el = document.getElementById(mark.id);
     else {
       const cand = [];
-      for (const tag of ["button", "th"])
+      // Anchors joined the list when the board's links gained real hrefs and
+      // with them the ability to hold focus through a rebuild.
+      for (const tag of ["button", "th", "a"])
         cand.push.apply(cand, document.querySelectorAll(tag));
       el = cand.find(c =>
         Object.keys(mark.marks).every(a => c.getAttribute(a) === mark.marks[a]));
@@ -360,6 +365,45 @@
     }
   }
 
+  // ---- watchboard ----
+
+  /* The board reads the corpus index only. Opened documents are unindexed by
+     the stage-4 ruling and their watches already render in the inspector, so
+     a page with no corpus behind it says so instead of boarding session
+     documents. */
+
+  // A hidden board skips its rebuild and remembers that it owes one, so the
+  // poll's re-renders never pay for a screen nobody is looking at. Entering
+  // the tab settles the debt. The skip does not depend on the board's inputs
+  // staying frozen: any change that re-renders the page marks the flag, so
+  // the next entry rebuilds from whatever the data says by then.
+  let wbStale = true;
+  function renderWatch(){
+    if (selScreen !== "watchboard"){ wbStale = true; return; }
+    wbStale = false;
+    const scr = $("#scrWatch");
+    const keep = focusMark(document.activeElement);
+    const head = `<h2>watchboard <span class="isub">overdue first · unanchored flagged, never dated</span></h2>`;
+    if (!corpus){
+      scr.innerHTML = head + `<div class="ipanel"><p class="dnotice">no corpus behind this page — `
+        + `the watchboard reads the served corpus index. open, paste, or drop a document to see its watches in the inspector.</p></div>`;
+      refocus(keep);
+      return;
+    }
+    const wb = D.watchboardRows(corpus.index.tickets, today());
+    const rows = D.sortRows(wb.rows, sortState.wb.k, sortState.wb.d, {
+      tid: r => r.tid, wid: r => r.wid, what: r => r.what,
+      due: r => r.days, state: r => r.days
+    }).map(r => ({tid: r.tid, wid: r.wid, what: r.what,
+      // An unanchored row shows its window prose where a date would sit, so
+      // the flag explains itself; the same rule the inspector's table uses.
+      dueText: r.anchored ? r.due : (r.window || "relative"),
+      state: r.state, stateLabel: r.label}));
+    scr.innerHTML = head
+      + S.watchboardHtml({sort: sortState.wb, rows, live: wb.rows.length, settled: wb.settled});
+    refocus(keep);
+  }
+
   // ---- chrome ----
 
   // The tab strip is built once. Renders flip state on the buttons in place,
@@ -381,13 +425,23 @@
     $("#foot").textContent = S.footerText(corpus ? corpus.index : null);
   }
 
+  /* Every screen syncs, so a reload lands where the reader was. The
+     inspector writes no view token, which keeps its hashes byte-identical
+     with every link minted before the token existed. */
   function syncHash(){
-    if (selScreen !== "inspector" || !sel.t) return;
-    try{ history.replaceState(null, "", S.hashWrite(sel)); }catch(e){}
+    // The boot render runs before the seam resolves, and the deep link the
+    // boot is about to honor must survive that first pass untouched.
+    if (pendingSel) return;
+    const h = S.hashWrite({v: selScreen === "inspector" ? null : selScreen,
+      t: sel.t, s: sel.s, item: sel.item});
+    // An empty composition clears the hash. Keeping the old one would leave
+    // a stale view token standing, and a reload would land on a screen the
+    // reader already left.
+    try{ history.replaceState(null, "", h || "#"); }catch(e){}
   }
 
   function renderAll(){
-    render(); renderRail(); renderInspector(); syncHash();
+    render(); renderRail(); renderInspector(); renderWatch(); syncHash();
   }
 
   // ---- opened documents ----
@@ -490,14 +544,41 @@
     const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
     S.applyTheme(document, localStorage, next);
   });
-  $("#newTaskBtn").addEventListener("click", () => { selScreen = "new task"; render(); });
+  $("#newTaskBtn").addEventListener("click", () => { selScreen = "new task"; render(); syncHash(); });
+
+  // The click path and the keyboard path fire the same sort, so the two can
+  // never disagree about what a header does.
+  function thSort(sth){
+    const tk = sth.getAttribute("data-t");
+    const st = sortState[tk], k = sth.getAttribute("data-k");
+    if (!st) return;
+    st.d = st.k === k ? -st.d : 1; st.k = k;
+    tk === "wb" ? renderWatch() : renderInspector();
+  }
+
+  // A th never turns Enter or Space into a click the way a button does, so
+  // the sort headers get their keyboard activation dispatched by hand.
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const sth = e.target && e.target.closest ? e.target.closest(".sth") : null;
+    if (sth){
+      if (e.preventDefault) e.preventDefault();
+      thSort(sth);
+    }
+  });
 
   // One delegated listener serves every dynamic control. Inner targets are
   // checked before the containers that hold them.
   document.addEventListener("click", e => {
     const hit = cls => e.target.closest ? e.target.closest(cls) : null;
     const tab = hit(".mtab");
-    if (tab){ selScreen = tab.getAttribute("data-s"); render(); return; }
+    if (tab){
+      selScreen = tab.getAttribute("data-s");
+      render();
+      if (selScreen === "watchboard" && wbStale) renderWatch();
+      syncHash();
+      return;
+    }
     if (e.target.id === "pasteImport"){
       const v = ($("#pasteArea") || {value: ""}).value;
       addDoc("pasted.md", v, false);
@@ -533,6 +614,20 @@
     if (pill){ dlFilter = pill.getAttribute("data-dlf"); renderInspector(); return; }
     const pc = hit(".pc");
     if (pc){ sel.s = pc.getAttribute("data-key"); sel.item = null; missNotice = null; paneJump = true; renderInspector(); syncHash(); return; }
+    const wbl = hit(".wbl");
+    if (wbl){
+      // The href exists so the keyboard can reach the link; routing stays
+      // in-page, so we stop the browser's own hash jump here.
+      if (e.preventDefault) e.preventDefault();
+      // A watch link leaves s null on purpose: the item-only landing resolves
+      // the owning section, so a retitled section never strands a board link.
+      sel = {t: wbl.getAttribute("data-t"), s: null,
+        item: wbl.getAttribute("data-item") || null};
+      dlFilter = "all"; missNotice = null; fullClosed.clear();
+      selScreen = "inspector"; paneJump = true;
+      renderAll();
+      return;
+    }
     const wl = hit(".wl");
     if (wl){
       sel.item = wl.getAttribute("data-item");
@@ -559,11 +654,7 @@
       return;
     }
     const sth = hit(".sth");
-    if (sth){
-      const st = sortState[sth.getAttribute("data-t")], k = sth.getAttribute("data-k");
-      if (st){ st.d = st.k === k ? -st.d : 1; st.k = k; renderInspector(); }
-      return;
-    }
+    if (sth){ thSort(sth); return; }
     const dlrow = hit(".dlrow");
     if (dlrow){ sel.item = dlrow.getAttribute("data-dl"); paneJump = true; renderInspector(); syncHash(); return; }
     const op = hit(".op");
@@ -645,14 +736,19 @@
   renderAll();
   S.loadCorpus(u => fetch(u)).then(c => {
     corpus = c;
-    if (pendingSel && pendingSel.t){
-      const tgt = findTarget(pendingSel.t);
-      if (tgt){
-        sel = {t: pendingSel.t, s: pendingSel.s, item: pendingSel.item};
-        selScreen = "inspector";
-      } else {
-        bootNotice = `ticket "${pendingSel.t}" is not in this corpus.`;
+    if (pendingSel){
+      if (pendingSel.t){
+        const tgt = findTarget(pendingSel.t);
+        if (tgt){
+          sel = {t: pendingSel.t, s: pendingSel.s, item: pendingSel.item};
+          selScreen = "inspector";
+        } else {
+          bootNotice = `ticket "${pendingSel.t}" is not in this corpus.`;
+        }
       }
+      // The view token restores the screen a reload left. A token naming no
+      // real screen is ignored, so a mangled link still lands somewhere sane.
+      if (pendingSel.v && S.SCREENS.includes(pendingSel.v)) selScreen = pendingSel.v;
       pendingSel = null;
     }
     // A dead deep link keeps its notice visible instead of being papered

@@ -58,22 +58,27 @@
 
   // ---- the hash grammar ----
 
-  /* Deep links are #t=<ticket>&s=<section key>&item=<DL/OT id>. The section
-     token is the contract's section key, never a phase number — a phase
-     number cannot reach most sections of a real log. */
+  /* Deep links are #v=<screen>&t=<ticket>&s=<section key>&item=<DL/OT id>.
+     The section token is the contract's section key, never a phase number — a
+     phase number cannot reach most sections of a real log. The view token
+     names a non-inspector screen, so a reload lands where the reader was; the
+     inspector never writes one, which keeps every pre-v link and every
+     inspector hash byte-identical. */
   function hashRead(h){
-    const out = {t: null, s: null, item: null};
+    const out = {v: null, t: null, s: null, item: null};
     for (const kv of String(h || "").replace(/^#/, "").split("&")){
       const eq = kv.indexOf("=");
       if (eq < 1) continue;
       const k = kv.slice(0, eq), v = decodeURIComponent(kv.slice(eq + 1));
-      if (k === "t" || k === "s" || k === "item") out[k] = v || null;
+      if (k === "v" || k === "t" || k === "s" || k === "item") out[k] = v || null;
     }
     return out;
   }
   function hashWrite(sel){
-    if (!sel || !sel.t) return "";
-    const p = ["t=" + encodeURIComponent(sel.t)];
+    if (!sel || (!sel.t && !sel.v)) return "";
+    const p = [];
+    if (sel.v) p.push("v=" + encodeURIComponent(sel.v));
+    if (sel.t) p.push("t=" + encodeURIComponent(sel.t));
     if (sel.s) p.push("s=" + encodeURIComponent(sel.s));
     if (sel.item) p.push("item=" + encodeURIComponent(sel.item));
     return "#" + p.join("&");
@@ -216,8 +221,10 @@
       + `<pre class="rawpre">${esc(m.raw)}</pre></div>`;
   }
 
+  // The tabindex puts every sort header in the tab order, because a bare th
+  // never takes keyboard focus; the page's keydown path fires the sort.
   const th = (sort, t, k, label) =>
-    `<th class="sth" data-t="${t}" data-k="${k}">${label}${sort.k === k ? `<span class="arr">${sort.d > 0 ? "▲" : "▼"}</span>` : ""}</th>`;
+    `<th class="sth" tabindex="0" data-t="${t}" data-k="${k}">${label}${sort.k === k ? `<span class="arr">${sort.d > 0 ? "▲" : "▼"}</span>` : ""}</th>`;
   const chips = list => list.map(c =>
     `<a class="pc" data-key="${escAttr(c.key)}" title="${escAttr(c.title)}">${esc(c.label)}</a>`).join("");
 
@@ -260,6 +267,36 @@
       + `${th(m.sort, "iw", "state", "status")}${th(m.sort, "iw", "cited", "cited in")}</tr>${rows}</table></div></div>`;
   }
 
+  // ---- the watchboard ----
+
+  /* The corpus-wide watch table. Both link cells are .wbl anchors: the ticket
+     cell carries data-t alone and the watch cell adds data-item, so one
+     delegated handler routes both into the inspector. The status column
+     shares the due sort key, the mockup's rule — the two columns are one
+     ordering read two ways. */
+  function watchboardHtml(m){
+    const head = `<h2>every live watch, corpus-wide <span class="hsub">${m.live} live · ${m.settled} settled</span></h2>`;
+    // An empty board has two truths: a corpus whose watches all settled, and
+    // a corpus that never opened one. The settled sentence must never claim
+    // ledgers a young corpus does not have.
+    if (!m.rows.length)
+      return `<div class="ipanel">${head}<p class="dnotice">${m.settled
+        ? `every watch on record is settled — ${m.settled} closed ${m.settled === 1 ? "watch sits" : "watches sit"} in the tickets' ledgers.`
+        : `no watches on record yet — no ticket in this corpus has opened an obligation table.`}</p></div>`;
+    // The hrefs are real deep links, so the keyboard can reach and fire the
+    // anchors; the page's delegated handler stops the browser's own hash jump.
+    const rows = m.rows.map(w => `<tr class="wbrow" data-wid="${escAttr(w.wid)}">`
+      + `<td><a class="wbl" href="${escAttr(hashWrite({t: w.tid}))}" data-t="${escAttr(w.tid)}">${esc(w.tid)}</a></td>`
+      + `<td><a class="wbl" href="${escAttr(hashWrite({t: w.tid, item: w.wid}))}" data-t="${escAttr(w.tid)}" data-item="${escAttr(w.wid)}">${esc(w.wid)}</a></td>`
+      + `<td>${esc(w.what)}</td>`
+      + `<td class="mono">${esc(w.dueText)}</td>`
+      + `<td><span class="st-${w.state}">${esc(w.stateLabel)}</span></td></tr>`).join("");
+    return `<div class="ipanel">${head}`
+      + `<div class="tblwrap"><table><tr>${th(m.sort, "wb", "tid", "ticket")}${th(m.sort, "wb", "wid", "watch")}`
+      + `${th(m.sort, "wb", "what", "what to check")}${th(m.sort, "wb", "due", "due")}`
+      + `${th(m.sort, "wb", "state", "status")}</tr>${rows}</table></div></div>`;
+  }
+
   function fullLogHtml(list){
     return `<div class="mops"><button type="button" class="op" data-exp="open">expand all</button>`
       + `<button type="button" class="op" data-exp="close">collapse all</button></div>`
@@ -272,7 +309,7 @@
     projectChitText, applyTheme, hashRead, hashWrite, logPaths, corpusUrl,
     loadCorpus, railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml,
     docPaneHtml, rawPaneHtml, pillsHtml, decisionsPanelHtml, watchesPanelHtml,
-    fullLogHtml};
+    watchboardHtml, fullLogHtml};
   if (isNode){ module.exports = ADPShellLib; }
   else { global.ADPShellLib = ADPShellLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);
