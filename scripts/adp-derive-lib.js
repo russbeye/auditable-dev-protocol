@@ -207,50 +207,51 @@
     return out;
   }
 
-  /* The watchboard: every live watch across every ticket, one row per watch.
-     Closed watches never row here — the board is a to-do surface and settled
-     debt lives in the ledgers — but we count them, so the board says what it
-     left out. The days field carries the default order and the due column's
-     sort key in one value: overdue days are negative and sort first, and an
-     unanchored watch maps to Infinity, which sinks it below every dated row
-     while its label stays UNANCHORED. Ties break by directory then watch id,
-     so the order is total and replays the same on every build. */
+  /* The watchboard: every watch across every ticket, one row per watch —
+     the shell's one watch surface, settled rows included. Live rows lead in
+     due order: overdue days are negative and sort first, and an unanchored
+     watch maps to Infinity, which sinks it below every dated row while its
+     label stays UNANCHORED. Closed rows trail, newest ruling first, carrying
+     the closure pair. The page's status filters decide what shows, so counts
+     reports every state and the filter chips can say what they hide. Ties
+     break by directory then watch id, so the order is total and replays the
+     same on every build. */
   function watchboardRows(tickets, today){
     const rows = [];
-    let settled = 0;
+    const counts = {overdue: 0, soon: 0, upcoming: 0, unanchored: 0, closed: 0};
     for (const t of tickets){
       for (const w of t.watches){
         const state = dueState(w, today);
-        if (state === "closed"){ settled++; continue; }
+        counts[state]++;
         rows.push({
           tid: t.id || t.dir, dir: t.dir, wid: w.wid, what: w.what,
           due: w.due, anchored: w.anchored, window: w.window,
-          state: state, label: dueLabel(w, today),
-          days: w.anchored ? daysUntil(w.due, today) : Infinity
+          closed: w.closed || null, outcome: w.outcome || null,
+          state, label: dueLabel(w, today),
+          days: state !== "closed" && w.anchored ? daysUntil(w.due, today) : Infinity,
+          grp: state === "closed" ? 1 : 0
         });
       }
     }
-    rows.sort((a, b) => a.days - b.days
+    rows.sort((a, b) => a.grp - b.grp
+      || (a.grp ? (a.closed < b.closed ? 1 : a.closed > b.closed ? -1 : 0) : a.days - b.days)
       || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0)
       || (a.wid < b.wid ? -1 : a.wid > b.wid ? 1 : 0));
-    return {rows, settled};
+    return {rows, counts};
   }
 
-  /* The ledgers: the corpus's whole decision and obligation record, settled
-     debt included. Decision rows pre-order as triage. Unwatched-open entries
-     lead because they are the debt nobody guards, covered-open entries
-     follow, unknown and unrecognized tokens sit next as questions, and the
-     settled outcomes close the list. Watch rows put live debt in due order
-     on top and the settled rows after it, newest closure first, so the
-     archive reads backward from the latest ruling. Both orders break ties by
-     directory then id, so they are total and replay the same on every
-     build. */
+  /* The assumption ledger: the corpus's whole decision record, settled
+     rulings included. Rows pre-order as triage. Unwatched-open entries lead
+     because they are the debt nobody guards, covered-open entries follow,
+     unknown and unrecognized tokens sit next as questions, and the settled
+     outcomes close the list. Ties break by directory then id, so the order
+     is total and replays the same on every build. Watches have no ledger of
+     their own: the board is the one watch surface. */
   // Open entries split on coverage: rank 0 is open with no live watch, rank
   // 1 is open under one. The table starts at 1 so the split stays visible.
   const LEDGER_RANK = {open: 1, unknown: 2, other: 3, invalidated: 4, validated: 5};
   function ledgerRows(tickets, today){
-    const decisions = [], watches = [];
-    let live = 0, settled = 0;
+    const decisions = [];
     for (const t of tickets){
       const tid = t.id || t.dir;
       for (const d of t.decisions){
@@ -269,26 +270,11 @@
           rank: kind === "open" && !cover ? 0 : LEDGER_RANK[kind]
         });
       }
-      for (const w of t.watches){
-        const state = dueState(w, today);
-        if (state === "closed") settled++; else live++;
-        watches.push({
-          tid, dir: t.dir, wid: w.wid, what: w.what,
-          due: w.due, anchored: w.anchored, window: w.window,
-          closed: w.closed || null, outcome: w.outcome || null,
-          state, label: dueLabel(w, today),
-          days: state !== "closed" && w.anchored ? daysUntil(w.due, today) : Infinity,
-          grp: state === "closed" ? 1 : 0
-        });
-      }
     }
-    const byDirId = key => (a, b) => (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0)
-      || (a[key] < b[key] ? -1 : a[key] > b[key] ? 1 : 0);
-    decisions.sort((a, b) => a.rank - b.rank || byDirId("id")(a, b));
-    watches.sort((a, b) => a.grp - b.grp
-      || (a.grp ? (a.closed < b.closed ? 1 : a.closed > b.closed ? -1 : 0) : a.days - b.days)
-      || byDirId("wid")(a, b));
-    return {decisions, watches, live, settled};
+    decisions.sort((a, b) => a.rank - b.rank
+      || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0)
+      || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    return {decisions};
   }
 
   // One sorter serves every table: accessors map a column key to a value and

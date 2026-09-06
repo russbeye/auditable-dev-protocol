@@ -73,10 +73,13 @@
   // The board's due key starts every visit at R5's order: overdue first,
   // unanchored last. The derivation pre-orders ties, and the sort is stable,
   // so the default pass leaves that order standing.
-  // The ledger defaults sort the ranked column, so the stable default pass
+  // The ledger default sorts the ranked column, so the stable default pass
   // leaves the derivation's triage order standing, the board's rule.
   const sortState = {dec: {k: "id", d: 1}, iw: {k: "wid", d: 1}, wb: {k: "due", d: 1},
-    la: {k: "status", d: 1}, lo: {k: "state", d: 1}};
+    la: {k: "status", d: 1}};
+  // Which watch states the board shows. Closed starts hidden, so the board
+  // opens as R5's to-do surface and the filter is how the archive joins it.
+  const wbShow = new Set(["overdue", "soon", "upcoming", "unanchored"]);
   const parsed = new Map();
 
   // The hash is read before the corpus exists, so the selection it names
@@ -149,7 +152,8 @@
      selector, so a harvested value in a mark never turns into query syntax.
      A control that did not survive the rebuild simply stays unfocused. */
   const FOCUS_MARKS = ["data-op", "data-view", "data-secstep", "data-dlf", "data-lgf",
-    "data-exp", "data-permalink", "data-t", "data-k", "data-key", "data-item", "data-close"];
+    "data-ws", "data-exp", "data-permalink", "data-t", "data-k", "data-key", "data-item",
+    "data-close"];
   function focusMark(el){
     if (!el || !el.getAttribute) return null;
     if (el.id) return {id: el.id};
@@ -389,7 +393,7 @@
     wbStale = false;
     const scr = $("#scrWatch");
     const keep = focusMark(document.activeElement);
-    const head = `<h2>watchboard <span class="isub">overdue first · unanchored flagged, never dated</span></h2>`;
+    const head = `<h2>watchboard <span class="isub">overdue first · unanchored flagged, never dated · settled behind its chip</span></h2>`;
     if (!corpus){
       scr.innerHTML = head + `<div class="ipanel"><p class="dnotice">no corpus behind this page — `
         + `the watchboard reads the served corpus index. open, paste, or drop a document to see its watches in the inspector.</p></div>`;
@@ -397,16 +401,26 @@
       return;
     }
     const wb = D.watchboardRows(corpus.index.tickets, today());
-    const rows = D.sortRows(wb.rows, sortState.wb.k, sortState.wb.d, {
+    const visible = wb.rows.filter(r => wbShow.has(r.state));
+    const rows = D.sortRows(visible, sortState.wb.k, sortState.wb.d, {
       tid: r => r.tid, wid: r => r.wid, what: r => r.what,
-      due: r => r.days, state: r => r.days
+      due: r => r.days, state: r => r.grp,
+      outcome: r => r.outcome ? r.outcome + " " + r.closed : ""
     }).map(r => ({tid: r.tid, wid: r.wid, what: r.what,
       // An unanchored row shows its window prose where a date would sit, so
       // the flag explains itself; the same rule the inspector's table uses.
       dueText: r.anchored ? r.due : (r.window || "relative"),
-      state: r.state, stateLabel: r.label}));
+      state: r.state, stateLabel: r.label,
+      outcomeText: r.closed ? r.outcome + " " + r.closed : null,
+      outcomeKind: r.closed ? D.statusKind(r.outcome) : null}));
     scr.innerHTML = head
-      + S.watchboardHtml({sort: sortState.wb, rows, live: wb.rows.length, settled: wb.settled});
+      + S.watchboardHtml({sort: sortState.wb, rows,
+        live: wb.rows.length - wb.counts.closed, settled: wb.counts.closed,
+        pills: S.statusPillsHtml(wb.counts, wbShow),
+        // An empty table has two truths: filters hiding real rows, and a
+        // corpus that never opened a watch. Say which one is happening.
+        empty: wb.rows.length ? "every watch here is hidden by the status filters."
+          : "no watches on record yet — no ticket in this corpus has opened an obligation table."});
     refocus(keep);
   }
 
@@ -421,7 +435,7 @@
     lgStale = false;
     const scr = $("#scrLedgers");
     const keep = focusMark(document.activeElement);
-    const head = `<h2>ledgers <span class="isub">the corpus's full decision and obligation record · settled debt included</span></h2>`;
+    const head = `<h2>ledgers <span class="isub">the corpus's decision record · settled rulings included · watches live on the board</span></h2>`;
     if (!corpus){
       scr.innerHTML = head + `<div class="ipanel"><p class="dnotice">no corpus behind this page — `
         + `the ledgers read the served corpus index. open, paste, or drop a document to see its record in the inspector.</p></div>`;
@@ -449,23 +463,11 @@
       conf: P.dlChipSplit(r.confidence).word, confKind: P.dlConfKind(r.confidence),
       statusKind: r.kind, watch: r.watch, settled: r.settled,
       ageText: r.age == null ? "—" : r.age + "d"}));
-    const oRows = D.sortRows(lg.watches, sortState.lo.k, sortState.lo.d, {
-      tid: r => r.tid, wid: r => r.wid, what: r => r.what,
-      due: r => r.days, state: r => r.grp,
-      outcome: r => r.outcome ? r.outcome + " " + r.closed : ""
-    }).map(r => ({tid: r.tid, wid: r.wid, what: r.what,
-      dueText: r.anchored ? r.due : (r.window || "relative"),
-      state: r.state, stateLabel: r.label,
-      outcomeText: r.closed ? r.outcome + " " + r.closed : null,
-      outcomeKind: r.closed ? D.statusKind(r.outcome) : null}));
     scr.innerHTML = head
       + S.assumptionLedgerHtml({sort: sortState.la, rows: aRows,
         pills: S.pillsHtml(counts, lgFilter, "data-lgf"),
         empty: counts.all ? "nothing under this filter — the pills count what exists."
-          : "no decisions on record — no ticket in this corpus has logged an entry."})
-      + S.obligationLedgerHtml({sort: sortState.lo, rows: oRows,
-        live: lg.live, settled: lg.settled,
-        empty: "no watches on record yet — no ticket in this corpus has opened an obligation table."});
+          : "no decisions on record — no ticket in this corpus has logged an entry."});
     refocus(keep);
   }
 
@@ -619,7 +621,7 @@
     if (!st) return;
     st.d = st.k === k ? -st.d : 1; st.k = k;
     tk === "wb" ? renderWatch()
-      : tk === "la" || tk === "lo" ? renderLedgers()
+      : tk === "la" ? renderLedgers()
       : renderInspector();
   }
 
@@ -680,10 +682,13 @@
     }
     const pill = hit(".fpill");
     if (pill){
-      // The data mark says which filter the pill belongs to, so the ledger
-      // and the inspector never trample each other's state.
+      // The data mark says which filter the pill belongs to, so the three
+      // screens never trample each other's state. The board's chips toggle
+      // set membership; the other two are single-select.
+      const ws = pill.getAttribute("data-ws");
       const lgf = pill.getAttribute("data-lgf");
-      if (lgf){ lgFilter = lgf; renderLedgers(); }
+      if (ws){ wbShow.has(ws) ? wbShow.delete(ws) : wbShow.add(ws); renderWatch(); }
+      else if (lgf){ lgFilter = lgf; renderLedgers(); }
       else { dlFilter = pill.getAttribute("data-dlf"); renderInspector(); }
       return;
     }

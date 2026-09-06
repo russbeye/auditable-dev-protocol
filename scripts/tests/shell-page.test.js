@@ -821,7 +821,7 @@ const TEXTS_WB = {"20260101-AA1-alpha/audit-log.md": LOG, "20260102-BB2-beta/aud
 const bootBoard = opts => bootShell(Object.assign(
   {stored: "dark", fetch: corpusFetch(LISTING_WB, TEXTS_WB)}, opts));
 
-test("the board rows live watches corpus-wide, overdue first, unanchored flagged", async () => {
+test("the board rows live watches by default, overdue first, unanchored flagged", async () => {
   const h = bootBoard();
   await h.settle();
   h.click(h.$$(".mtab")[1]);
@@ -829,12 +829,35 @@ test("the board rows live watches corpus-wide, overdue first, unanchored flagged
   assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
     ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2"]);
   assert.match(scr, /4 live · 1 settled/);
-  // The closed watch never rows; the unanchored one shows its window prose
-  // where the dated rows show a date.
+  // The closed chip starts off, so the settled row waits behind it; the
+  // unanchored one shows its window prose where the dated rows show a date.
   assert.ok(!scr.includes("OT-BB2-3"));
   assert.match(scr, /60 days after merge/);
   assert.match(scr, /UNANCHORED/);
   assert.match(scr, /OVERDUE \d+D/);
+});
+
+test("the status chips reveal settled rows with their ruling and hide a live state", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  const chip = s => h.$$(".fpill").find(p => p.getAttribute("data-ws") === s);
+  assert.match(chip("closed").innerHTML, /closed 1/);
+  h.click(chip("closed"));
+  assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
+    ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2", "OT-BB2-3"]);
+  assert.match(h.$("#scrWatch").innerHTML, /VALIDATED 2026-08-10/);
+  // The settled row's link lands the inspector like any board row's.
+  h.click(h.$$(".wbl").find(a => a.getAttribute("data-item") === "OT-BB2-3"));
+  assert.equal(h.$("#secSel").value, "sec-obligation-ticket-list");
+  assert.match(h.$("#scrInspector").innerHTML, /is-hl/);
+  // Back on the board, hiding upcoming removes its row and only its row.
+  // The upcoming chip is the date-robust pick: AA1's 2099 due holds that
+  // state whatever real day the corpus generates against.
+  h.click(h.$$(".mtab")[1]);
+  h.click(chip("upcoming"));
+  assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
+    ["OT-BB2-1", "OT-BB2-2", "OT-AA1-2", "OT-BB2-3"]);
 });
 
 test("a board watch link lands the inspector on the owning section, item highlighted", async () => {
@@ -886,17 +909,24 @@ test("with no corpus the board says so instead of rendering an empty table", asy
   assert.ok(!scr.includes("wbrow"));
 });
 
-test("watchboardHtml escapes hostile fields and renders the all-settled state", () => {
+test("watchboardHtml escapes hostile fields and passes the empty text through", () => {
   const hostile = `<img src=x onerror=alert(1)>`;
-  const html = S.watchboardHtml({sort: {k: "due", d: 1}, live: 1, settled: 2,
+  const html = S.watchboardHtml({sort: {k: "due", d: 1}, live: 1, settled: 2, pills: "",
     rows: [{tid: hostile, wid: hostile, what: hostile, dueText: hostile,
-      state: "upcoming", stateLabel: hostile}]});
+      state: "upcoming", stateLabel: hostile, outcomeText: hostile, outcomeKind: "validated"}]});
   assert.ok(!html.includes("<img"));
-  const empty = S.watchboardHtml({sort: {k: "due", d: 1}, live: 0, settled: 3, rows: []});
-  assert.match(empty, /every watch on record is settled — 3 closed watches sit/);
+  const empty = S.watchboardHtml({sort: {k: "due", d: 1}, live: 0, settled: 3, pills: "",
+    rows: [], empty: hostile});
+  assert.ok(!empty.includes("<img"));
+  // The chips carry their counts, and only states that exist get one.
+  const pills = S.statusPillsHtml({overdue: 2, soon: 0, upcoming: 1, unanchored: 0, closed: 3},
+    new Set(["overdue"]));
+  assert.match(pills, /is-on" data-ws="overdue">overdue 2/);
+  assert.match(pills, /data-ws="closed">closed 3/);
+  assert.ok(!pills.includes("soon"));
 });
 
-test("a watchless corpus boards the no-watches state, never the settled one", async () => {
+test("a watchless corpus boards the no-watches state, never the filtered one", async () => {
   const LOG_C = ["# Audit Log — CC3 gamma", "", "## Problem Statement", "",
     "**What the problem is:** young corpus.", ""].join("\n");
   const h = bootShell({stored: "dark", fetch: corpusFetch(
@@ -906,8 +936,27 @@ test("a watchless corpus boards the no-watches state, never the settled one", as
   h.click(h.$$(".mtab")[1]);
   const scr = h.$("#scrWatch").innerHTML;
   assert.match(scr, /no watches on record yet/);
-  assert.ok(!scr.includes("every watch on record is settled"));
+  assert.ok(!scr.includes("hidden by the status filters"));
   assert.match(scr, /0 live · 0 settled/);
+});
+
+test("an all-settled corpus says the filters hide it, and the closed chip shows it", async () => {
+  const LOG_D = ["# Audit Log — DD4 delta", "", "## Decision Log", "",
+    "### [DL-001] Settled decision", "- **Decision:** pick d",
+    "- **Confidence:** HIGH", "- **Status:** OPEN", "",
+    "## Obligation Ticket List", "",
+    "| Ticket ID | Decision Log ref | Assumption to validate | Priority | Exit condition | Observation window |",
+    "|---|---|---|---|---|---|",
+    "| OT-DD4-1 | DL-001 | held | HIGH | done → VALIDATED | 2026-08-01 |", "",
+    "- **OT-DD4-1 CLOSED 2026-08-10 → VALIDATED.** The window ended quiet.", ""].join("\n");
+  const h = bootShell({stored: "dark", fetch: corpusFetch(
+    {root: "demo", files: ["20260104-DD4-delta/audit-log.md"]},
+    {"20260104-DD4-delta/audit-log.md": LOG_D})});
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  assert.match(h.$("#scrWatch").innerHTML, /every watch here is hidden by the status filters/);
+  h.click(h.$$(".fpill").find(p => p.getAttribute("data-ws") === "closed"));
+  assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")), ["OT-DD4-1"]);
 });
 
 test("board links carry real hash hrefs, so the keyboard can reach them", async () => {
@@ -1009,7 +1058,7 @@ test("a header sorts from the keyboard with Enter and Space", async () => {
 
 // ---- the ledgers ----
 
-test("the ledgers row every decision and every watch, open debt first, settled archive last", async () => {
+test("the ledger rows every decision, open debt first, settled outcomes last", async () => {
   const h = bootBoard();
   await h.settle();
   h.click(h.$$(".mtab")[2]);
@@ -1017,12 +1066,8 @@ test("the ledgers row every decision and every watch, open debt first, settled a
   const dls = h.$$(".lgrow").filter(r => r.getAttribute("data-dl"));
   assert.deepEqual(dls.map(r => r.getAttribute("data-t") + "/" + r.getAttribute("data-dl")),
     ["AA1/DL-002", "BB2/DL-001", "AA1/DL-001"]);
-  const ws = h.$$(".lgrow").filter(r => r.getAttribute("data-wid"));
-  assert.deepEqual(ws.map(r => r.getAttribute("data-wid")),
-    ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2", "OT-BB2-3"]);
-  assert.match(scr, /4 live · 1 settled/);
-  // The settled row carries its ruling; the live rows carry the dash.
-  assert.match(scr, /VALIDATED 2026-08-10/);
+  // Watches never row here — the board is the one watch surface.
+  assert.equal(h.$$(".lgrow").filter(r => r.getAttribute("data-wid")).length, 0);
   // The covered entries name their live watch and the pills count the record.
   assert.match(scr, /open 2/);
   assert.match(scr, /validated 1/);
@@ -1067,7 +1112,7 @@ test("a ledger coverage link lands the watch, and a ticket link the default view
   const h = bootBoard();
   await h.settle();
   h.click(h.$$(".mtab")[2]);
-  h.click(h.$$(".wbl").find(a => a.getAttribute("data-item") === "OT-BB2-3"));
+  h.click(h.$$(".wbl").find(a => a.getAttribute("data-item") === "OT-AA1-1"));
   assert.equal(h.$("#secSel").value, "sec-obligation-ticket-list");
   assert.match(h.$("#scrInspector").innerHTML, /is-hl/);
   h.click(h.$$(".mtab")[2]);
@@ -1147,16 +1192,12 @@ test("the rail close control is a sibling button the keyboard can reach", async 
   assert.ok(!h.$("#rail").innerHTML.includes("opened documents"));
 });
 
-test("ledger builders escape hostile harvested fields", () => {
+test("the ledger builder escapes hostile harvested fields", () => {
   const hostile = `<img src=x onerror=alert(1)>`;
   const a = S.assumptionLedgerHtml({sort: {k: "status", d: 1}, pills: "", empty: "",
     rows: [{tid: hostile, id: hostile, title: hostile, conf: hostile, confKind: "high",
       statusKind: "open", watch: hostile, settled: null, ageText: hostile}]});
-  const o = S.obligationLedgerHtml({sort: {k: "state", d: 1}, live: 1, settled: 0, empty: "",
-    rows: [{tid: hostile, wid: hostile, what: hostile, dueText: hostile,
-      state: "upcoming", stateLabel: hostile, outcomeText: hostile, outcomeKind: "validated"}]});
   assert.ok(!a.includes("<img"));
-  assert.ok(!o.includes("<img"));
   // The pill builder stamps the mark it was asked for.
   assert.match(S.pillsHtml({all: 1, open: 1}, "all", "data-lgf"), /data-lgf="open"/);
 });

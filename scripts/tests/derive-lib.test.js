@@ -378,13 +378,14 @@ function boardTickets(){
   ];
 }
 
-test("watchboardRows boards every live watch, overdue first, unanchored last and flagged", () => {
-  const {rows, settled} = D.watchboardRows(boardTickets(), TODAY);
+test("watchboardRows rows every watch: live in due order, closed trailing with the ruling", () => {
+  const {rows, counts} = D.watchboardRows(boardTickets(), TODAY);
   assert.deepEqual(rows.map(r => r.wid),
-    ["OT-T2-1", "OT-T2-2", "OT-T1-1", "OT-T1-2"]);
+    ["OT-T2-1", "OT-T2-2", "OT-T1-1", "OT-T1-2", "OT-T1-3"]);
   assert.deepEqual(rows.map(r => r.state),
-    ["overdue", "soon", "upcoming", "unanchored"]);
-  assert.equal(settled, 1);
+    ["overdue", "soon", "upcoming", "unanchored", "closed"]);
+  assert.deepEqual(counts,
+    {overdue: 1, soon: 1, upcoming: 1, unanchored: 1, closed: 1});
   // The unanchored row is flagged, never dated: no due, Infinity days, and
   // the window prose rides along for the due cell.
   const un = rows[3];
@@ -393,6 +394,13 @@ test("watchboardRows boards every live watch, overdue first, unanchored last and
   assert.equal(un.label, "UNANCHORED");
   assert.equal(un.window, "60 days after merge");
   assert.equal(rows[0].label, "OVERDUE 7D");
+  // The settled row carries the closure pair and leaves the due math,
+  // however stale its date is.
+  const done = rows[4];
+  assert.equal(done.closed, "2026-08-10");
+  assert.equal(done.outcome, "VALIDATED");
+  assert.equal(done.label, "CLOSED");
+  assert.equal(done.days, Infinity);
 });
 
 test("watchboardRows attaches the rail's ticket token, id or directory", () => {
@@ -416,13 +424,16 @@ test("watchboardRows breaks day ties by directory then watch id", () => {
     ["OT-A-1", "OT-B-1", "OT-B-2"]);
 });
 
-test("watchboardRows over an all-settled or empty corpus rows nothing and counts", () => {
+test("watchboardRows orders closed rows newest ruling first and zeroes an empty corpus", () => {
   const t = ticket({watches: [
     watch({wid: "OT-1", closed: "2026-08-10", outcome: "VALIDATED"}),
     watch({wid: "OT-2", closed: "2026-08-11", outcome: "UNKNOWN"})
   ]});
-  assert.deepEqual(D.watchboardRows([t], TODAY), {rows: [], settled: 2});
-  assert.deepEqual(D.watchboardRows([], TODAY), {rows: [], settled: 0});
+  const {rows, counts} = D.watchboardRows([t], TODAY);
+  assert.deepEqual(rows.map(r => r.wid), ["OT-2", "OT-1"]);
+  assert.equal(counts.closed, 2);
+  assert.deepEqual(D.watchboardRows([], TODAY),
+    {rows: [], counts: {overdue: 0, soon: 0, upcoming: 0, unanchored: 0, closed: 0}});
 });
 
 // ---- the ledgers ----
@@ -478,22 +489,10 @@ test("ledgerRows ranks decisions as triage: unwatched-open leads, settled trails
   assert.equal(decisions[1].age, null);
 });
 
-test("ledgerRows keeps every watch: live debt in due order, settled newest first", () => {
+test("ledgerRows carries decisions only — the board is the one watch surface", () => {
   const lg = D.ledgerRows(ledgerTickets(), TODAY);
-  assert.deepEqual(lg.watches.map(r => r.wid),
-    ["OT-T1-1", "OT-T2-1", "OT-T2-2", "OT-T1-2"]);
-  assert.deepEqual(lg.watches.map(r => r.state),
-    ["upcoming", "unanchored", "closed", "closed"]);
-  assert.equal(lg.live, 2);
-  assert.equal(lg.settled, 2);
-  const done = lg.watches[2];
-  assert.equal(done.closed, "2026-08-21");
-  assert.equal(done.outcome, "UNKNOWN");
-  assert.equal(done.label, "CLOSED");
-  // A closed watch leaves the due math however stale its date is.
-  assert.equal(done.days, Infinity);
-  assert.deepEqual(D.ledgerRows([], TODAY),
-    {decisions: [], watches: [], live: 0, settled: 0});
+  assert.deepEqual(Object.keys(lg), ["decisions"]);
+  assert.deepEqual(D.ledgerRows([], TODAY), {decisions: []});
 });
 
 test("ledgerRows breaks equal ranks by directory then entry id", () => {

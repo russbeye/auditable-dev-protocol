@@ -289,20 +289,27 @@
 
   // ---- the watchboard ----
 
-  /* The corpus-wide watch table. Both link cells are .wbl anchors: the ticket
-     cell carries data-t alone and the watch cell adds data-item, so one
-     delegated handler routes both into the inspector. The status column
-     shares the due sort key, the mockup's rule — the two columns are one
+  // The board's status filters are toggle chips, one per due state that
+  // exists in the corpus, each carrying its count so a hidden state still
+  // says how much it hides. Multi-select on purpose: show and hide compose.
+  function statusPillsHtml(counts, visible){
+    return ["overdue", "soon", "upcoming", "unanchored", "closed"]
+      .filter(s => counts[s])
+      .map(s => `<button type="button" class="fpill${visible.has(s) ? " is-on" : ""}" data-ws="${s}">${s} ${counts[s]}</button>`)
+      .join(" ");
+  }
+
+  /* The corpus-wide watch table — the shell's one watch surface, so settled
+     rows render here behind their filter chip with the outcome the closure
+     ledger recorded. Both link cells are .wbl anchors: the ticket cell
+     carries data-t alone and the watch cell adds data-item, so one delegated
+     handler routes both into the inspector. The status column shares the
+     derivation's group order, the mockup's rule — the two columns are one
      ordering read two ways. */
   function watchboardHtml(m){
-    const head = `<h2>every live watch, corpus-wide <span class="hsub">${m.live} live · ${m.settled} settled</span></h2>`;
-    // An empty board has two truths: a corpus whose watches all settled, and
-    // a corpus that never opened one. The settled sentence must never claim
-    // ledgers a young corpus does not have.
+    const head = `<h2>every watch, corpus-wide <span class="hsub">${m.live} live · ${m.settled} settled · ${m.pills}</span></h2>`;
     if (!m.rows.length)
-      return `<div class="ipanel">${head}<p class="dnotice">${m.settled
-        ? `every watch on record is settled — ${m.settled} closed ${m.settled === 1 ? "watch sits" : "watches sit"} in the tickets' ledgers.`
-        : `no watches on record yet — no ticket in this corpus has opened an obligation table.`}</p></div>`;
+      return `<div class="ipanel">${head}<p class="dnotice">${esc(m.empty)}</p></div>`;
     // The hrefs are real deep links, so the keyboard can reach and fire the
     // anchors; the page's delegated handler stops the browser's own hash jump.
     const rows = m.rows.map(w => `<tr class="wbrow" data-wid="${escAttr(w.wid)}">`
@@ -310,17 +317,18 @@
       + `<td><a class="wbl" href="${escAttr(hashWrite({t: w.tid, item: w.wid}))}" data-t="${escAttr(w.tid)}" data-item="${escAttr(w.wid)}">${esc(w.wid)}</a></td>`
       + `<td>${esc(w.what)}</td>`
       + `<td class="mono">${esc(w.dueText)}</td>`
-      + `<td><span class="st-${w.state}">${esc(w.stateLabel)}</span></td></tr>`).join("");
+      + `<td><span class="st-${w.state}">${esc(w.stateLabel)}</span></td>`
+      + `<td>${w.outcomeText ? `<span class="st-${w.outcomeKind}">${esc(w.outcomeText)}</span>` : "—"}</td></tr>`).join("");
     return `<div class="ipanel">${head}`
       + `<div class="tblwrap"><table><tr>${th(m.sort, "wb", "tid", "ticket")}${th(m.sort, "wb", "wid", "watch")}`
       + `${th(m.sort, "wb", "what", "what to check")}${th(m.sort, "wb", "due", "due")}`
-      + `${th(m.sort, "wb", "state", "status")}</tr>${rows}</table></div></div>`;
+      + `${th(m.sort, "wb", "state", "status")}${th(m.sort, "wb", "outcome", "outcome")}</tr>${rows}</table></div></div>`;
   }
 
-  // ---- the ledgers ----
+  // ---- the ledger ----
 
-  // Both ledger tables link the way board rows do: real deep-link hrefs on
-  // .wbl anchors, so the shipped delegated route and the keyboard serve them
+  // Ledger rows link the way board rows do: real deep-link hrefs on .wbl
+  // anchors, so the shipped delegated route and the keyboard serve them
   // unchanged. The ticket cell lands the default view and the id cell lands
   // the item in its owning section.
   const ledgerLink = (tid, item) =>
@@ -349,26 +357,6 @@
       + `${th(m.sort, "la", "age", "age")}</tr>${rows}</table></div></div>`;
   }
 
-  /* The obligation ledger: every watch on record, live debt on top and the
-     settled archive after it. The outcome cell is what the board never
-     shows, which is why the settled rows live here. */
-  function obligationLedgerHtml(m){
-    const head = `<h2>obligations <span class="hsub">${m.live} live · ${m.settled} settled</span></h2>`;
-    if (!m.rows.length)
-      return `<div class="ipanel">${head}<p class="dnotice">${esc(m.empty)}</p></div>`;
-    const rows = m.rows.map(w => `<tr class="lgrow" data-t="${escAttr(w.tid)}" data-wid="${escAttr(w.wid)}">`
-      + `<td>${ledgerLink(w.tid)}</td>`
-      + `<td class="mono">${ledgerLink(w.tid, w.wid)}</td>`
-      + `<td>${esc(w.what)}</td>`
-      + `<td class="mono">${esc(w.dueText)}</td>`
-      + `<td><span class="st-${w.state}">${esc(w.stateLabel)}</span></td>`
-      + `<td>${w.outcomeText ? `<span class="st-${w.outcomeKind}">${esc(w.outcomeText)}</span>` : "—"}</td></tr>`).join("");
-    return `<div class="ipanel">${head}`
-      + `<div class="tblwrap"><table><tr>${th(m.sort, "lo", "tid", "ticket")}${th(m.sort, "lo", "wid", "watch")}`
-      + `${th(m.sort, "lo", "what", "what to check")}${th(m.sort, "lo", "due", "due")}`
-      + `${th(m.sort, "lo", "state", "status")}${th(m.sort, "lo", "outcome", "outcome")}</tr>${rows}</table></div></div>`;
-  }
-
   function fullLogHtml(list){
     return `<div class="mops"><button type="button" class="op" data-exp="open">expand all</button>`
       + `<button type="button" class="op" data-exp="close">collapse all</button></div>`
@@ -381,7 +369,7 @@
     projectChitText, applyTheme, hashRead, hashWrite, logPaths, corpusUrl,
     loadCorpus, railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml,
     docPaneHtml, rawPaneHtml, pillsHtml, decisionsPanelHtml, watchesPanelHtml,
-    watchboardHtml, assumptionLedgerHtml, obligationLedgerHtml, fullLogHtml};
+    statusPillsHtml, watchboardHtml, assumptionLedgerHtml, fullLogHtml};
   if (isNode){ module.exports = ADPShellLib; }
   else { global.ADPShellLib = ADPShellLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);
