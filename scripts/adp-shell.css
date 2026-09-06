@@ -71,9 +71,11 @@
 .railsec:hover .rname{color:var(--accent)}
 .rcv{display:inline-block;width:12px;color:var(--dim)}
 .rcount{color:var(--dim);font-weight:400}
-/* The whole entry is a button, so the keyboard reaches it; we clear the
-   browser's button paint and keep the card look. */
-.rentry{position:relative;display:block;width:100%;text-align:left;background:none;
+/* The entry and its close control are sibling buttons inside one positioned
+   row, so both take the keyboard; we clear the browser's button paint and
+   keep the card look. */
+.rrow{position:relative}
+.rentry{display:block;width:100%;text-align:left;background:none;
   border:none;border-left:2px solid transparent;padding:7px 12px 8px;cursor:pointer;color:inherit}
 .rentry:hover{background:var(--inset)}
 .rentry.is-sel{background:var(--inset);border-left-color:var(--accent)}
@@ -86,7 +88,8 @@
 .r-warn{color:var(--warn)}
 .r-ok{color:var(--ok)}
 .rmore{color:var(--faint)}
-.rclose{position:absolute;top:6px;right:8px;font-family:var(--mono);color:var(--faint);padding:0 3px}
+.rclose{position:absolute;top:6px;right:8px;font-family:var(--mono);color:var(--faint);
+  padding:0 3px;background:none;border:none;cursor:pointer;font-size:inherit}
 .rclose:hover{color:var(--bad)}
 
 /* ---- inspector chrome ---- */

@@ -424,3 +424,84 @@ test("watchboardRows over an all-settled or empty corpus rows nothing and counts
   assert.deepEqual(D.watchboardRows([t], TODAY), {rows: [], settled: 2});
   assert.deepEqual(D.watchboardRows([], TODAY), {rows: [], settled: 0});
 });
+
+// ---- the ledgers ----
+
+/* The staged corpus for the ledgers: every decision rank at once over two
+   tickets, plus live and settled watches carrying the closure pair. */
+function ledgerTickets(){
+  return [
+    ticket({id: "T1", dir: "20260801-T1-alpha",
+      decisions: [
+        // The covered entry takes the lower id on purpose: only the coverage
+        // rank can put the unwatched entry first, never the id tiebreak.
+        decision({id: "DL-001", title: "covered open", status: "OPEN — rides"}),
+        decision({id: "DL-002", title: "unwatched open", created: "2026-08-20"}),
+        decision({id: "DL-003", title: "ruled off the card",
+          closed: "2026-08-20", outcome: "INVALIDATED"}),
+        decision({id: "DL-004", title: "validated", status: "VALIDATED"})
+      ],
+      watches: [
+        watch({wid: "OT-T1-1", dl: ["DL-001"], anchored: true, due: "2026-09-20"}),
+        watch({wid: "OT-T1-2", dl: ["DL-004"], anchored: true, due: "2026-08-01",
+          closed: "2026-08-10", outcome: "VALIDATED"})
+      ]}),
+    ticket({id: "T2", dir: "20260802-T2-beta",
+      decisions: [
+        decision({id: "DL-001", title: "mystery token", status: "PARKED"}),
+        decision({id: "DL-002", title: "unjudged", status: "UNKNOWN"})
+      ],
+      watches: [
+        watch({wid: "OT-T2-1", dl: ["DL-001"], window: "60 days after merge"}),
+        watch({wid: "OT-T2-2", dl: ["DL-002"], anchored: true, due: "2026-08-05",
+          closed: "2026-08-21", outcome: "UNKNOWN"})
+      ]})
+  ];
+}
+
+test("ledgerRows ranks decisions as triage: unwatched-open leads, settled trails", () => {
+  const {decisions} = D.ledgerRows(ledgerTickets(), TODAY);
+  assert.deepEqual(decisions.map(r => r.tid + "/" + r.id),
+    ["T1/DL-002", "T1/DL-001", "T2/DL-002", "T2/DL-001", "T1/DL-003", "T1/DL-004"]);
+  assert.deepEqual(decisions.map(r => r.kind),
+    ["open", "open", "unknown", "other", "invalidated", "validated"]);
+  // Coverage reads through the live-only seam: the covered entry names its
+  // watch, and the entry whose watch closed shows how coverage ended.
+  assert.equal(decisions[1].watch, "OT-T1-1");
+  assert.equal(decisions[5].watch, null);
+  assert.deepEqual(decisions[5].settled,
+    {wid: "OT-T1-2", outcome: "VALIDATED", closed: "2026-08-10"});
+  // A recorded ruling classifies the entry whatever its card status says.
+  assert.equal(decisions[4].kind, "invalidated");
+  // A dated card ages in days; an undated one stays null, never NaN.
+  assert.equal(decisions[0].age, 7);
+  assert.equal(decisions[1].age, null);
+});
+
+test("ledgerRows keeps every watch: live debt in due order, settled newest first", () => {
+  const lg = D.ledgerRows(ledgerTickets(), TODAY);
+  assert.deepEqual(lg.watches.map(r => r.wid),
+    ["OT-T1-1", "OT-T2-1", "OT-T2-2", "OT-T1-2"]);
+  assert.deepEqual(lg.watches.map(r => r.state),
+    ["upcoming", "unanchored", "closed", "closed"]);
+  assert.equal(lg.live, 2);
+  assert.equal(lg.settled, 2);
+  const done = lg.watches[2];
+  assert.equal(done.closed, "2026-08-21");
+  assert.equal(done.outcome, "UNKNOWN");
+  assert.equal(done.label, "CLOSED");
+  // A closed watch leaves the due math however stale its date is.
+  assert.equal(done.days, Infinity);
+  assert.deepEqual(D.ledgerRows([], TODAY),
+    {decisions: [], watches: [], live: 0, settled: 0});
+});
+
+test("ledgerRows breaks equal ranks by directory then entry id", () => {
+  const tie = [
+    ticket({id: "B", dir: "20260803-B-b", decisions: [
+      decision({id: "DL-002"}), decision({id: "DL-001"})]}),
+    ticket({id: "A", dir: "20260801-A-a", decisions: [decision({id: "DL-001"})]})
+  ];
+  assert.deepEqual(D.ledgerRows(tie, TODAY).decisions.map(r => r.tid + "/" + r.id),
+    ["A/DL-001", "B/DL-001", "B/DL-002"]);
+});

@@ -54,6 +54,9 @@
   let docSeq = 0;
   let sel = {t: null, s: null, item: null};
   let viewMode = "section", dlFilter = "all", pasteOpen = false;
+  // The ledger's pill filter is corpus-scoped, so it never resets on a rail
+  // selection the way the inspector's per-ticket filter does.
+  let lgFilter = "all";
   let missNotice = null, bootNotice = null;
   // Collapse state for the full-log view, keyed by section key and scoped to
   // the current selection. fullJump names a section the next full-log render
@@ -70,7 +73,10 @@
   // The board's due key starts every visit at R5's order: overdue first,
   // unanchored last. The derivation pre-orders ties, and the sort is stable,
   // so the default pass leaves that order standing.
-  const sortState = {dec: {k: "id", d: 1}, iw: {k: "wid", d: 1}, wb: {k: "due", d: 1}};
+  // The ledger defaults sort the ranked column, so the stable default pass
+  // leaves the derivation's triage order standing, the board's rule.
+  const sortState = {dec: {k: "id", d: 1}, iw: {k: "wid", d: 1}, wb: {k: "due", d: 1},
+    la: {k: "status", d: 1}, lo: {k: "state", d: 1}};
   const parsed = new Map();
 
   // The hash is read before the corpus exists, so the selection it names
@@ -142,8 +148,8 @@
      Matching walks candidates and compares attributes instead of composing a
      selector, so a harvested value in a mark never turns into query syntax.
      A control that did not survive the rebuild simply stays unfocused. */
-  const FOCUS_MARKS = ["data-op", "data-view", "data-secstep", "data-dlf",
-    "data-exp", "data-permalink", "data-t", "data-k", "data-key", "data-item"];
+  const FOCUS_MARKS = ["data-op", "data-view", "data-secstep", "data-dlf", "data-lgf",
+    "data-exp", "data-permalink", "data-t", "data-k", "data-key", "data-item", "data-close"];
   function focusMark(el){
     if (!el || !el.getAttribute) return null;
     if (el.id) return {id: el.id};
@@ -404,6 +410,65 @@
     refocus(keep);
   }
 
+  // ---- ledgers ----
+
+  /* The ledgers read the corpus index only, like the board: opened documents
+     are unindexed by the stage-4 ruling and their record renders in the
+     inspector. The hidden-screen debt flag works the way the board's does. */
+  let lgStale = true;
+  function renderLedgers(){
+    if (selScreen !== "ledgers"){ lgStale = true; return; }
+    lgStale = false;
+    const scr = $("#scrLedgers");
+    const keep = focusMark(document.activeElement);
+    const head = `<h2>ledgers <span class="isub">the corpus's full decision and obligation record · settled debt included</span></h2>`;
+    if (!corpus){
+      scr.innerHTML = head + `<div class="ipanel"><p class="dnotice">no corpus behind this page — `
+        + `the ledgers read the served corpus index. open, paste, or drop a document to see its record in the inspector.</p></div>`;
+      refocus(keep);
+      return;
+    }
+    const lg = D.ledgerRows(corpus.index.tickets, today());
+    // The pills count the whole record; the filter cuts rows, never counts.
+    const counts = {all: lg.decisions.length,
+      open: lg.decisions.filter(r => r.kind === "open").length,
+      validated: lg.decisions.filter(r => r.kind === "validated").length,
+      invalidated: lg.decisions.filter(r => r.kind === "invalidated").length};
+    const shown = lgFilter === "all" ? lg.decisions
+      : lg.decisions.filter(r => r.kind === lgFilter);
+    const confRank = {high: 3, medium: 2, low: 1};
+    const aRows = D.sortRows(shown, sortState.la.k, sortState.la.d, {
+      tid: r => r.tid, id: r => r.id, title: r => r.title,
+      conf: r => confRank[P.dlConfKind(r.confidence)] || 0,
+      status: r => r.rank,
+      watch: r => r.watch || (r.settled ? r.settled.wid : ""),
+      // A dateless card maps to Infinity, so the ascending pass keeps the
+      // null-age rows last instead of letting a NaN land them mid-table.
+      age: r => r.age == null ? Infinity : r.age
+    }).map(r => ({tid: r.tid, id: r.id, title: r.title,
+      conf: P.dlChipSplit(r.confidence).word, confKind: P.dlConfKind(r.confidence),
+      statusKind: r.kind, watch: r.watch, settled: r.settled,
+      ageText: r.age == null ? "—" : r.age + "d"}));
+    const oRows = D.sortRows(lg.watches, sortState.lo.k, sortState.lo.d, {
+      tid: r => r.tid, wid: r => r.wid, what: r => r.what,
+      due: r => r.days, state: r => r.grp,
+      outcome: r => r.outcome ? r.outcome + " " + r.closed : ""
+    }).map(r => ({tid: r.tid, wid: r.wid, what: r.what,
+      dueText: r.anchored ? r.due : (r.window || "relative"),
+      state: r.state, stateLabel: r.label,
+      outcomeText: r.closed ? r.outcome + " " + r.closed : null,
+      outcomeKind: r.closed ? D.statusKind(r.outcome) : null}));
+    scr.innerHTML = head
+      + S.assumptionLedgerHtml({sort: sortState.la, rows: aRows,
+        pills: S.pillsHtml(counts, lgFilter, "data-lgf"),
+        empty: counts.all ? "nothing under this filter — the pills count what exists."
+          : "no decisions on record — no ticket in this corpus has logged an entry."})
+      + S.obligationLedgerHtml({sort: sortState.lo, rows: oRows,
+        live: lg.live, settled: lg.settled,
+        empty: "no watches on record yet — no ticket in this corpus has opened an obligation table."});
+    refocus(keep);
+  }
+
   // ---- chrome ----
 
   // The tab strip is built once. Renders flip state on the buttons in place,
@@ -441,7 +506,7 @@
   }
 
   function renderAll(){
-    render(); renderRail(); renderInspector(); renderWatch(); syncHash();
+    render(); renderRail(); renderInspector(); renderWatch(); renderLedgers(); syncHash();
   }
 
   // ---- opened documents ----
@@ -553,7 +618,9 @@
     const st = sortState[tk], k = sth.getAttribute("data-k");
     if (!st) return;
     st.d = st.k === k ? -st.d : 1; st.k = k;
-    tk === "wb" ? renderWatch() : renderInspector();
+    tk === "wb" ? renderWatch()
+      : tk === "la" || tk === "lo" ? renderLedgers()
+      : renderInspector();
   }
 
   // A th never turns Enter or Space into a click the way a button does, so
@@ -576,6 +643,7 @@
       selScreen = tab.getAttribute("data-s");
       render();
       if (selScreen === "watchboard" && wbStale) renderWatch();
+      if (selScreen === "ledgers" && lgStale) renderLedgers();
       syncHash();
       return;
     }
@@ -611,7 +679,14 @@
       return;
     }
     const pill = hit(".fpill");
-    if (pill){ dlFilter = pill.getAttribute("data-dlf"); renderInspector(); return; }
+    if (pill){
+      // The data mark says which filter the pill belongs to, so the ledger
+      // and the inspector never trample each other's state.
+      const lgf = pill.getAttribute("data-lgf");
+      if (lgf){ lgFilter = lgf; renderLedgers(); }
+      else { dlFilter = pill.getAttribute("data-dlf"); renderInspector(); }
+      return;
+    }
     const pc = hit(".pc");
     if (pc){ sel.s = pc.getAttribute("data-key"); sel.item = null; missNotice = null; paneJump = true; renderInspector(); syncHash(); return; }
     const wbl = hit(".wbl");

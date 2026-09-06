@@ -236,6 +236,61 @@
     return {rows, settled};
   }
 
+  /* The ledgers: the corpus's whole decision and obligation record, settled
+     debt included. Decision rows pre-order as triage. Unwatched-open entries
+     lead because they are the debt nobody guards, covered-open entries
+     follow, unknown and unrecognized tokens sit next as questions, and the
+     settled outcomes close the list. Watch rows put live debt in due order
+     on top and the settled rows after it, newest closure first, so the
+     archive reads backward from the latest ruling. Both orders break ties by
+     directory then id, so they are total and replay the same on every
+     build. */
+  // Open entries split on coverage: rank 0 is open with no live watch, rank
+  // 1 is open under one. The table starts at 1 so the split stays visible.
+  const LEDGER_RANK = {open: 1, unknown: 2, other: 3, invalidated: 4, validated: 5};
+  function ledgerRows(tickets, today){
+    const decisions = [], watches = [];
+    let live = 0, settled = 0;
+    for (const t of tickets){
+      const tid = t.id || t.dir;
+      for (const d of t.decisions){
+        const kind = decisionKind(d);
+        const cover = coveringWatch(t, d.id);
+        const sw = settledWatch(t, d.id);
+        decisions.push({
+          tid, dir: t.dir, id: d.id, title: d.title,
+          confidence: d.confidence, kind,
+          watch: cover ? cover.wid : null,
+          settled: sw ? {wid: sw.wid, outcome: sw.outcome, closed: sw.closed} : null,
+          created: d.created,
+          // A card with no date has no age. The page renders that as a dash
+          // instead of letting a null reach the day math as NaN.
+          age: d.created ? -daysUntil(d.created, today) : null,
+          rank: kind === "open" && !cover ? 0 : LEDGER_RANK[kind]
+        });
+      }
+      for (const w of t.watches){
+        const state = dueState(w, today);
+        if (state === "closed") settled++; else live++;
+        watches.push({
+          tid, dir: t.dir, wid: w.wid, what: w.what,
+          due: w.due, anchored: w.anchored, window: w.window,
+          closed: w.closed || null, outcome: w.outcome || null,
+          state, label: dueLabel(w, today),
+          days: state !== "closed" && w.anchored ? daysUntil(w.due, today) : Infinity,
+          grp: state === "closed" ? 1 : 0
+        });
+      }
+    }
+    const byDirId = key => (a, b) => (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0)
+      || (a[key] < b[key] ? -1 : a[key] > b[key] ? 1 : 0);
+    decisions.sort((a, b) => a.rank - b.rank || byDirId("id")(a, b));
+    watches.sort((a, b) => a.grp - b.grp
+      || (a.grp ? (a.closed < b.closed ? 1 : a.closed > b.closed ? -1 : 0) : a.days - b.days)
+      || byDirId("wid")(a, b));
+    return {decisions, watches, live, settled};
+  }
+
   // One sorter serves every table: accessors map a column key to a value and
   // d flips the direction. Rows never mutate; presentation order is ours.
   function sortRows(rows, k, d, acc){
@@ -251,7 +306,7 @@
     decisionKind, coveringWatch, settledWatch, canonicalSection,
     unwatchedOpen, attentionReasons, needsAttention, ribbonModel, railGroups,
     sectionEntries, sectionState, sectionItems, citingSections,
-    watchboardRows, sortRows};
+    watchboardRows, ledgerRows, sortRows};
   if (isNode){ module.exports = ADPDeriveLib; }
   else { global.ADPDeriveLib = ADPDeriveLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

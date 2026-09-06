@@ -1006,3 +1006,157 @@ test("a header sorts from the keyboard with Enter and Space", async () => {
   assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
     ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2"]);
 });
+
+// ---- the ledgers ----
+
+test("the ledgers row every decision and every watch, open debt first, settled archive last", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[2]);
+  const scr = h.$("#scrLedgers").innerHTML;
+  const dls = h.$$(".lgrow").filter(r => r.getAttribute("data-dl"));
+  assert.deepEqual(dls.map(r => r.getAttribute("data-t") + "/" + r.getAttribute("data-dl")),
+    ["AA1/DL-002", "BB2/DL-001", "AA1/DL-001"]);
+  const ws = h.$$(".lgrow").filter(r => r.getAttribute("data-wid"));
+  assert.deepEqual(ws.map(r => r.getAttribute("data-wid")),
+    ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2", "OT-BB2-3"]);
+  assert.match(scr, /4 live · 1 settled/);
+  // The settled row carries its ruling; the live rows carry the dash.
+  assert.match(scr, /VALIDATED 2026-08-10/);
+  // The covered entries name their live watch and the pills count the record.
+  assert.match(scr, /open 2/);
+  assert.match(scr, /validated 1/);
+  assert.ok(!scr.includes("invalidated"));
+});
+
+test("the ledger pills filter corpus-wide and leave the inspector's filter alone", async () => {
+  const h = bootBoard();
+  await h.settle();
+  // Narrow the inspector to AA1's validated entry first, so a trampled
+  // filter state would show up as a changed table on the way back.
+  pick(h, "AA1");
+  h.click(h.$$(".fpill").find(p => p.getAttribute("data-dlf") === "validated"));
+  assert.deepEqual(h.$$(".dlrow").map(r => r.getAttribute("data-dl")), ["DL-001"]);
+  h.click(h.$$(".mtab")[2]);
+  h.click(h.$$(".fpill").find(p => p.getAttribute("data-lgf") === "open"));
+  assert.deepEqual(
+    h.$$(".lgrow").filter(r => r.getAttribute("data-dl")).map(r => r.getAttribute("data-dl")),
+    ["DL-002", "DL-001"]);
+  h.click(h.$$(".mtab")[0]);
+  assert.deepEqual(h.$$(".dlrow").map(r => r.getAttribute("data-dl")), ["DL-001"]);
+  const on = h.$$(".fpill").find(p => p.getAttribute("data-dlf") && p.classList.contains("is-on"));
+  assert.match(on.innerHTML, /validated/);
+  // The ledger's own filter held through the round trip too.
+  h.click(h.$$(".mtab")[2]);
+  const lon = h.$$(".fpill").find(p => p.getAttribute("data-lgf") && p.classList.contains("is-on"));
+  assert.match(lon.innerHTML, /open/);
+});
+
+test("a ledger entry link lands the inspector on the item in its owning section", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[2]);
+  h.click(h.$$(".wbl").find(a => a.getAttribute("data-item") === "DL-002"));
+  assert.equal(h.$("#scrInspector").classList.contains("is-on"), true);
+  assert.equal(h.$("#secSel").value, "sec-decision-log");
+  assert.match(h.$("#scrInspector").innerHTML, /\[DL-002\]/);
+  assert.equal(h.hashes[h.hashes.length - 1], "#t=AA1&s=sec-decision-log&item=DL-002");
+});
+
+test("a ledger coverage link lands the watch, and a ticket link the default view", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[2]);
+  h.click(h.$$(".wbl").find(a => a.getAttribute("data-item") === "OT-BB2-3"));
+  assert.equal(h.$("#secSel").value, "sec-obligation-ticket-list");
+  assert.match(h.$("#scrInspector").innerHTML, /is-hl/);
+  h.click(h.$$(".mtab")[2]);
+  h.click(h.$$(".wbl").find(a =>
+    a.getAttribute("data-t") === "BB2" && !a.getAttribute("data-item")));
+  assert.equal(h.$("#secSel").value, "sec-decision-log");
+});
+
+test("a ledgers deep link boots to the screen and a tab visit writes its token", async () => {
+  const h = bootBoard({hash: "#v=ledgers"});
+  await h.settle();
+  assert.equal(h.$("#scrLedgers").classList.contains("is-on"), true);
+  assert.ok(h.$$(".lgrow").length > 0);
+  const h2 = bootBoard();
+  await h2.settle();
+  h2.click(h2.$$(".mtab")[2]);
+  assert.match(h2.hashes[h2.hashes.length - 1], /^#v=ledgers/);
+});
+
+test("with no corpus the ledgers say so instead of rendering empty tables", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  h.click(h.$$(".mtab")[2]);
+  const scr = h.$("#scrLedgers").innerHTML;
+  assert.match(scr, /no corpus behind this page/);
+  assert.ok(!scr.includes("lgrow"));
+});
+
+test("a hidden ledgers screen skips its rebuild and pays it on entry", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[2]);
+  const before = h.$$(".lgrow")[0];
+  h.click(h.$$(".mtab")[0]);
+  // A full re-render while the ledgers are hidden must leave their DOM alone.
+  pick(h, "BB2");
+  assert.equal(h.$$(".lgrow")[0], before);
+  // Entering the tab pays the owed rebuild: fresh nodes, same content.
+  h.click(h.$$(".mtab")[2]);
+  assert.notEqual(h.$$(".lgrow")[0], before);
+  assert.equal(h.$$(".lgrow")[0].getAttribute("data-dl"), "DL-002");
+});
+
+test("the sorted header carries aria-sort and the arrow hides from the tree", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[2]);
+  const laTh = k => h.$$(".sth").find(t =>
+    t.getAttribute("data-t") === "la" && t.getAttribute("data-k") === k);
+  assert.equal(laTh("status").getAttribute("aria-sort"), "ascending");
+  assert.equal(laTh("id").getAttribute("aria-sort"), null);
+  h.click(laTh("id"));
+  assert.equal(laTh("id").getAttribute("aria-sort"), "ascending");
+  assert.equal(laTh("status").getAttribute("aria-sort"), null);
+  h.click(laTh("id"));
+  assert.equal(laTh("id").getAttribute("aria-sort"), "descending");
+  assert.equal(h.$$(".arr")[0].getAttribute("aria-hidden"), "true");
+});
+
+test("the rail close control is a sibling button the keyboard can reach", async () => {
+  const h = bootCorpus();
+  await h.settle();
+  h.click(h.$$(".op").find(o => o.getAttribute("data-op") === "paste"));
+  h.$("#pasteArea").value = LOG;
+  h.click(h.$("#pasteImport"));
+  await h.settle();
+  const rc = h.$(".rclose");
+  assert.equal(rc.tagName, "BUTTON");
+  // The close control must never nest inside the entry button; the shared
+  // row container holds the two as siblings.
+  for (let p = rc.parent; p; p = p.parent)
+    assert.ok(!(p.className || "").includes("rentry"));
+  assert.ok(rc.parent.className.includes("rrow"));
+  rc.focus();
+  h.click(rc);
+  await h.settle();
+  assert.ok(!h.$("#rail").innerHTML.includes("opened documents"));
+});
+
+test("ledger builders escape hostile harvested fields", () => {
+  const hostile = `<img src=x onerror=alert(1)>`;
+  const a = S.assumptionLedgerHtml({sort: {k: "status", d: 1}, pills: "", empty: "",
+    rows: [{tid: hostile, id: hostile, title: hostile, conf: hostile, confKind: "high",
+      statusKind: "open", watch: hostile, settled: null, ageText: hostile}]});
+  const o = S.obligationLedgerHtml({sort: {k: "state", d: 1}, live: 1, settled: 0, empty: "",
+    rows: [{tid: hostile, wid: hostile, what: hostile, dueText: hostile,
+      state: "upcoming", stateLabel: hostile, outcomeText: hostile, outcomeKind: "validated"}]});
+  assert.ok(!a.includes("<img"));
+  assert.ok(!o.includes("<img"));
+  // The pill builder stamps the mark it was asked for.
+  assert.match(S.pillsHtml({all: 1, open: 1}, "all", "data-lgf"), /data-lgf="open"/);
+});
