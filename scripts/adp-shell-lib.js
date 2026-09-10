@@ -257,17 +257,19 @@
   // A decision's coverage cell, shared by the inspector and the ledger. The
   // link builder is injected because the two screens route differently. An
   // open decision whose watch has closed is unwatched again, so the marker
-  // leads and the settled chip only explains how coverage ended.
+  // leads. A settled watch keeps its cell to the id; how coverage ended
+  // rides the link's hover title, because the ruled state already sits in
+  // the status column beside it.
   function watchCell(d, link){
     return d.watch ? link(d.watch)
       : d.settled ? (d.statusKind === "open" ? `<span class="st-unanchored">no watch</span> ` : "")
-        + link(d.settled.wid)
-        + ` <span class="st-closed">${esc(d.settled.outcome + " " + d.settled.closed)}</span>`
+        + link(d.settled.wid, "closed " + d.settled.outcome + " " + d.settled.closed)
       : d.statusKind === "open" ? `<span class="st-unanchored">no watch</span>` : "";
   }
 
   function decisionsPanelHtml(m){
-    const wl = wid => `<a class="wl" data-item="${escAttr(wid)}">${esc(wid)}</a>`;
+    const wl = (wid, title) => `<a class="wl" data-item="${escAttr(wid)}"`
+      + `${title ? ` title="${escAttr(title)}"` : ""}>${esc(wid)}</a>`;
     const rows = m.rows.map(d => `<tr class="dlrow${d.hl ? " is-hl" : ""}" data-dl="${escAttr(d.id)}">`
       + `<td class="mono">${esc(d.id)}</td><td>${esc(d.title)}</td>`
       + `<td><span class="cf-${d.confKind}">${esc(d.conf)}</span></td>`
@@ -337,9 +339,10 @@
   // anchors, so the shipped delegated route and the keyboard serve them
   // unchanged. The ticket cell lands the default view and the id cell lands
   // the item in its owning section.
-  const ledgerLink = (tid, item) =>
+  const ledgerLink = (tid, item, title) =>
     `<a class="wbl" href="${escAttr(hashWrite(item ? {t: tid, item} : {t: tid}))}"`
-    + ` data-t="${escAttr(tid)}"${item ? ` data-item="${escAttr(item)}"` : ""}>${esc(item || tid)}</a>`;
+    + ` data-t="${escAttr(tid)}"${item ? ` data-item="${escAttr(item)}"` : ""}`
+    + `${title ? ` title="${escAttr(title)}"` : ""}>${esc(item || tid)}</a>`;
 
   /* The assumption ledger: every decision on record, corpus-wide. The status
      and coverage cells reuse the inspector's vocabulary, so a row reads the
@@ -354,7 +357,7 @@
       + `<td>${esc(d.title)}</td>`
       + `<td><span class="cf-${d.confKind}">${esc(d.conf)}</span></td>`
       + `<td><span class="st-${d.statusKind}">${esc(d.statusKind)}</span></td>`
-      + `<td>${watchCell(d, wid => ledgerLink(d.tid, wid))}</td>`
+      + `<td>${watchCell(d, (wid, title) => ledgerLink(d.tid, wid, title))}</td>`
       + `<td class="mono">${esc(d.ageText)}</td></tr>`).join("");
     return `<div class="ipanel">${head}`
       + `<div class="tblwrap"><table><tr>${th(m.sort, "la", "tid", "ticket")}${th(m.sort, "la", "id", "entry")}`
