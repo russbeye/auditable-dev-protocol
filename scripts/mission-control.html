@@ -404,7 +404,7 @@
     const visible = wb.rows.filter(r => wbShow.has(r.state));
     const rows = D.sortRows(visible, sortState.wb.k, sortState.wb.d, {
       tid: r => r.tid, wid: r => r.wid, what: r => r.what,
-      due: r => r.days, state: r => r.grp,
+      due: r => r.order, state: r => r.order,
       outcome: r => r.outcome ? r.outcome + " " + r.closed : ""
     }).map(r => ({tid: r.tid, wid: r.wid, what: r.what,
       // An unanchored row shows its window prose where a date would sit, so
@@ -552,6 +552,16 @@
     if (i >= 0) docs.splice(i, 1);
     if (sel.t === key){ sel = {t: null, s: null, item: null}; fullClosed.clear(); }
     renderAll();
+    /* The activated close button died with the rebuild, so the generic
+       refocus has no twin to find and a keyboard user would land on the
+       body. We hand focus on deterministically: the entry that took the
+       closed one's place, else the last remaining document, else whatever
+       entry or section header the rail still shows. */
+    const next = docs[i] || docs[i - 1];
+    let el = next ? Array.from(document.querySelectorAll(".rentry"))
+      .find(b => b.getAttribute("data-key") === next.key) : null;
+    if (!el) el = document.querySelector(".rentry") || document.querySelector(".railsec");
+    if (el && el.focus) try{ el.focus(); }catch(e){}
   }
 
   async function openDocs(){

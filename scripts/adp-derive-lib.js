@@ -208,14 +208,18 @@
   }
 
   /* The watchboard: every watch across every ticket, one row per watch —
-     the shell's one watch surface, settled rows included. Live rows lead in
-     due order: overdue days are negative and sort first, and an unanchored
-     watch maps to Infinity, which sinks it below every dated row while its
-     label stays UNANCHORED. Closed rows trail, newest ruling first, carrying
-     the closure pair. The page's status filters decide what shows, so counts
-     reports every state and the filter chips can say what they hide. Ties
-     break by directory then watch id, so the order is total and replays the
-     same on every build. */
+     the shell's one watch surface, settled rows included. Each row carries
+     one numeric order value, and that value is the default order, the due
+     column, and the status column alike, so the two columns stay one
+     ordering read two ways. Dated live rows carry their days (overdue is
+     negative and sorts first), unanchored rows carry a sentinel above any
+     real date, and closed rows sit above that with newer rulings first.
+     The page's status filters decide what shows, so counts reports every
+     state and the filter chips can say what they hide. Ties break by
+     directory then watch id, so the order is total and replays the same on
+     every build. */
+  const UNANCHORED_ORDER = 1e15;
+  const CLOSED_ORDER = 2e15;
   function watchboardRows(tickets, today){
     const rows = [];
     const counts = {overdue: 0, soon: 0, upcoming: 0, unanchored: 0, closed: 0};
@@ -228,13 +232,15 @@
           due: w.due, anchored: w.anchored, window: w.window,
           closed: w.closed || null, outcome: w.outcome || null,
           state, label: dueLabel(w, today),
-          days: state !== "closed" && w.anchored ? daysUntil(w.due, today) : Infinity,
-          grp: state === "closed" ? 1 : 0
+          // Subtracting the closure day keeps closed rows one band above
+          // the sentinel while newer rulings take the smaller value.
+          order: state === "closed" ? CLOSED_ORDER - utcOf(w.closed)
+            : w.anchored ? daysUntil(w.due, today)
+            : UNANCHORED_ORDER
         });
       }
     }
-    rows.sort((a, b) => a.grp - b.grp
-      || (a.grp ? (a.closed < b.closed ? 1 : a.closed > b.closed ? -1 : 0) : a.days - b.days)
+    rows.sort((a, b) => a.order - b.order
       || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0)
       || (a.wid < b.wid ? -1 : a.wid > b.wid ? 1 : 0));
     return {rows, counts};

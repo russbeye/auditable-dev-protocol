@@ -152,14 +152,18 @@
       + `<span class="rid">${esc(e.id)}${e.date ? ` <span class="rdate">· ${esc(e.date)}</span>` : ""}</span>`
       + `<span class="rslug">${esc(e.slug)}</span>`
       + `<span class="rrib">${rib}</span></button>`
-      + (e.closable ? `<button type="button" class="rclose" data-close="${escAttr(e.key)}" title="close document" aria-label="close document">×</button>` : "")
+      // The accessible name carries the entry id, so a reader tabbing the
+      // rail hears which document each close button closes.
+      + (e.closable ? `<button type="button" class="rclose" data-close="${escAttr(e.key)}" title="close document" aria-label="close ${escAttr(e.id)}">×</button>` : "")
       + `</div>`;
   }
 
   function railHtml(groups, selKey, collapsed){
     return groups.map(([name, list]) => {
       const closed = collapsed.has(name);
-      return `<div class="railsec" data-sec="${escAttr(name)}">`
+      // tabindex -1 lets the page hand focus to a section header after a
+      // close empties the list; the header never joins the tab order.
+      return `<div class="railsec" data-sec="${escAttr(name)}" tabindex="-1">`
         + `<span><span class="rcv">${closed ? "▸" : "▾"}</span><span class="rname">${esc(name)}</span></span>`
         + `<b class="rcount">${list.length}</b></div>`
         + (closed ? "" : list.map(e => railEntryHtml(e, selKey)).join(""));
@@ -226,12 +230,14 @@
 
   // The tabindex puts every sort header in the tab order, because a bare th
   // never takes keyboard focus; the page's keydown path fires the sort.
-  // aria-sort names the active order on the one sorted header, which is the
-  // only header the ARIA spec wants it on. The arrow repeats that order
-  // visually, so we hide the glyph from the accessibility tree.
+  // scope="col" makes the columnheader role explicit instead of leaving it
+  // to browser heuristics, because aria-sort only means something on that
+  // role. aria-sort names the active order on the one sorted header, which
+  // is the only header the ARIA spec wants it on. The arrow repeats that
+  // order visually, so we hide the glyph from the accessibility tree.
   const th = (sort, t, k, label) => {
     const on = sort.k === k;
-    return `<th class="sth" tabindex="0" data-t="${t}" data-k="${k}"`
+    return `<th class="sth" scope="col" tabindex="0" data-t="${t}" data-k="${k}"`
       + (on ? ` aria-sort="${sort.d > 0 ? "ascending" : "descending"}"` : "")
       + `>${label}${on ? `<span class="arr" aria-hidden="true">${sort.d > 0 ? "▲" : "▼"}</span>` : ""}</th>`;
   };

@@ -1162,6 +1162,9 @@ test("the sorted header carries aria-sort and the arrow hides from the tree", as
   h.click(h.$$(".mtab")[2]);
   const laTh = k => h.$$(".sth").find(t =>
     t.getAttribute("data-t") === "la" && t.getAttribute("data-k") === k);
+  // scope makes the columnheader role explicit; aria-sort only means
+  // something on that role.
+  assert.ok(h.$$(".sth").every(t => t.getAttribute("scope") === "col"));
   assert.equal(laTh("status").getAttribute("aria-sort"), "ascending");
   assert.equal(laTh("id").getAttribute("aria-sort"), null);
   h.click(laTh("id"));
@@ -1181,6 +1184,8 @@ test("the rail close control is a sibling button the keyboard can reach", async 
   await h.settle();
   const rc = h.$(".rclose");
   assert.equal(rc.tagName, "BUTTON");
+  // The accessible name says which document this button closes.
+  assert.equal(rc.getAttribute("aria-label"), "close pasted.md");
   // The close control must never nest inside the entry button; the shared
   // row container holds the two as siblings.
   for (let p = rc.parent; p; p = p.parent)
@@ -1190,6 +1195,47 @@ test("the rail close control is a sibling button the keyboard can reach", async 
   h.click(rc);
   await h.settle();
   assert.ok(!h.$("#rail").innerHTML.includes("opened documents"));
+});
+
+test("closing from the keyboard hands focus to the next rail entry", async () => {
+  const h = bootCorpus();
+  await h.settle();
+  const pasteDoc = () => {
+    h.click(h.$$(".op").find(o => o.getAttribute("data-op") === "paste"));
+    h.$("#pasteArea").value = LOG;
+    h.click(h.$("#pasteImport"));
+  };
+  pasteDoc();
+  pasteDoc();
+  const closeOf = key => h.$$(".rclose").find(b => b.getAttribute("data-close") === key);
+  closeOf("doc-1").focus();
+  h.click(closeOf("doc-1"));
+  await h.settle();
+  // The entry that took the closed one's place holds the keyboard now.
+  assert.equal(h.document.activeElement.getAttribute("data-key"), "doc-2");
+  closeOf("doc-2").focus();
+  h.click(closeOf("doc-2"));
+  await h.settle();
+  // With no documents left, focus falls to the first rail entry the
+  // corpus still shows instead of dropping to the body.
+  assert.ok((h.document.activeElement.className || "").includes("rentry"));
+});
+
+test("the status header orders the default board and a flip really reverses it", async () => {
+  const h = bootBoard();
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  const stateTh = () => h.$$(".sth").find(t =>
+    t.getAttribute("data-t") === "wb" && t.getAttribute("data-k") === "state");
+  h.click(stateTh());
+  assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
+    ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2"]);
+  // The flip must produce a real order change on an all-live board — the
+  // status key reads the shared order value, never a group flag alone.
+  h.click(stateTh());
+  assert.equal(stateTh().getAttribute("aria-sort"), "descending");
+  assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
+    ["OT-AA1-2", "OT-AA1-1", "OT-BB2-2", "OT-BB2-1"]);
 });
 
 test("the ledger builder escapes hostile harvested fields", () => {

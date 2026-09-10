@@ -386,21 +386,25 @@ test("watchboardRows rows every watch: live in due order, closed trailing with t
     ["overdue", "soon", "upcoming", "unanchored", "closed"]);
   assert.deepEqual(counts,
     {overdue: 1, soon: 1, upcoming: 1, unanchored: 1, closed: 1});
-  // The unanchored row is flagged, never dated: no due, Infinity days, and
-  // the window prose rides along for the due cell.
+  // The unanchored row is flagged, never dated: no due, a sentinel order
+  // above every dated row, and the window prose rides for the due cell.
   const un = rows[3];
   assert.equal(un.due, null);
-  assert.equal(un.days, Infinity);
   assert.equal(un.label, "UNANCHORED");
   assert.equal(un.window, "60 days after merge");
   assert.equal(rows[0].label, "OVERDUE 7D");
-  // The settled row carries the closure pair and leaves the due math,
-  // however stale its date is.
+  // The settled row carries the closure pair and sits in its own band
+  // above the sentinel, however stale its due date is.
   const done = rows[4];
   assert.equal(done.closed, "2026-08-10");
   assert.equal(done.outcome, "VALIDATED");
   assert.equal(done.label, "CLOSED");
-  assert.equal(done.days, Infinity);
+  assert.ok(done.order > un.order);
+  // One order value carries the row order, so the due and status columns
+  // can both read it and stay one ordering read two ways.
+  for (let i = 1; i < rows.length; i++)
+    assert.ok(rows[i].order >= rows[i - 1].order);
+  assert.ok(un.order > rows[2].order);
 });
 
 test("watchboardRows attaches the rail's ticket token, id or directory", () => {
