@@ -126,7 +126,9 @@ true exactly when `phase` is non-null. Attribution follows the alias table below
 canonical heading demotes to non-canonical rather than overwriting the first (its `phase` is
 null and its `key` carries the dedupe suffix); two headings matching the same alias row are
 duplicates, whatever their exact text. Non-canonical sections pass through verbatim — they are
-never filtered, renamed, or dropped.
+never filtered, renamed, or dropped. A section's kind (the companion vocabulary SKILL.md
+defines beside the artifact chain) is a viewer-side classification that adp-parser-lib's
+`metaFor` computes from `title`; it is not an index field.
 
 The alias table. adp-parser-lib's `ART` registry is the single owner of title matching; this
 spec documents it and adds one form, and no other component may grow its own matcher.

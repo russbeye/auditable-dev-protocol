@@ -10,7 +10,7 @@ const vm = require("node:vm");
 const fs = require("node:fs");
 const path = require("node:path");
 const {parserLib} = require("./helpers.js");
-const {esc, escAttr, inline, decorate, parseSections, sectionKeys, slug, metaFor,
+const {esc, escAttr, inline, decorate, parseSections, sectionKeys, slug, metaFor, ART, SECTION_KINDS,
        renderMarkdown, dlChipSplit, dlConfKind, dlConfPill, dlStatusPill, dlRail, renderDLCard,
        renderDecisionLog, dlStatusKind, parseDLEntries, dlEntryStatus, dlStatusCounts} = parserLib;
 
@@ -66,7 +66,64 @@ test("slug lowercases, collapses punctuation, and caps at 42 chars", () => {
 test("metaFor routes titles to the registry and defaults unknown ones", () => {
   assert.equal(metaFor("Decision Log").spine, true);
   assert.equal(metaFor("Pre-Mortem Report").tag, "P4");
-  assert.deepEqual(metaFor("Anything Else"), {icon: "§", tag: ""});
+  assert.deepEqual(metaFor("Anything Else"), {icon: "§", tag: "", kind: "ad-hoc"});
+});
+
+// ---- section vocabulary ----
+
+test("every registry row carries a kind, and only artifact rows carry a phase tag", () => {
+  assert.equal(SECTION_KINDS[0], "artifact");
+  assert.equal(SECTION_KINDS[SECTION_KINDS.length - 1], "ad-hoc");
+  for (const row of ART){
+    assert.ok(SECTION_KINDS.includes(row.kind), row.re.source);
+    assert.equal(row.tag !== "", row.kind === "artifact", row.re.source);
+  }
+});
+
+test("canonical headings keep their tags in every form the record writes them", () => {
+  const keep = {
+    "Problem Statement": "P1", "Knowledge Gap Document": "P2",
+    "Open Questions (resolve before Phase 3)": "P2", "Recommendation Brief": "P3",
+    "Pre-Mortem Report": "P4", "Implementation Authorization": "P4",
+    "Decision Log": "P5", "Test Adversary Document": "P6", "Test Coverage Gaps": "P6",
+    "PR Summary": "P7", "🚩 Mandatory Review Items (LOW-confidence decisions)": "P7",
+    "Residual Risk": "P7", "Deployment Risk Statement": "P8", "Obligation Ticket List": "P9",
+    "Decision Log — Stage 2": "P5", "Obligation Ticket List — amendment (2026-08-13)": "P9",
+    "Knowledge Gap Document — Stage 3": "P2", "Phase 7: Synthesis": "P7", "Phase 1: Observation": "P1"
+  };
+  for (const [title, tag] of Object.entries(keep)){
+    assert.equal(metaFor(title).tag, tag, title);
+    assert.equal(metaFor(title).kind, "artifact", title);
+  }
+});
+
+test("companion headings resolve to their kind with no phase tag, and near misses stay ad hoc", () => {
+  const kinds = {
+    "Sweep amendment — 2026-09-01": "amendment", "Post-run amendment (2026-07-31)": "amendment",
+    "Review Response — PR #7 (2026-08-24)": "review", "Review finding — PR #7, in-review": "review",
+    "Review findings — PR #7, seventh through ninth": "review", "Review addendum — 2026-08-18": "review",
+    "Run status": "status", "Run status — round 2": "status", "Stage 2 — index builder (run start 2026-08-24)": "status",
+    "Requirement coverage": "evidence", "Verification record (2026-09-01)": "evidence",
+    "Differential corpus render (Phase 6 falsification run)": "evidence",
+    "Browser acceptance — PR #7 (2026-09-04)": "evidence", "Files changed": "evidence",
+    "Ledger — round 2 closures": "ledger", "Post-merge note — PR #7 merged (2026-09-04)": "ledger",
+    "Ticket Dispositions (2026-08-20, post-review)": "ledger", "Post-run resolutions (2026-08-04)": "ledger",
+    "Closure": "ledger",
+    "Notes on review": "ad-hoc", "Status of the migration": "ad-hoc", "Ruling on the fifth finding": "ad-hoc",
+    "Compatibility statement": "ad-hoc", "Stages of grief": "ad-hoc"
+  };
+  for (const [title, kind] of Object.entries(kinds)){
+    assert.equal(metaFor(title).kind, kind, title);
+    assert.equal(metaFor(title).tag, "", title);
+  }
+});
+
+test("SKILL.md's section vocabulary names every kind the registry knows", () => {
+  const skill = fs.readFileSync(path.join(__dirname, "..", "..", "SKILL.md"), "utf8");
+  const at = skill.indexOf("### Section vocabulary");
+  assert.ok(at > -1, "SKILL.md lacks the Section vocabulary subsection");
+  const sub = skill.slice(at, skill.indexOf("**Persist everything", at));
+  for (const kind of SECTION_KINDS) assert.ok(sub.includes("| `" + kind + "` |"), kind);
 });
 
 // ---- link scheme allowlist (pinned here post-extraction) ----

@@ -188,34 +188,52 @@
      Section splitter + artifact registry
      ========================================================= */
   const ART=[
-    {re:/problem statement/i,            icon:'◎', tag:'P1'},
-    {re:/knowledge gap/i,                icon:'◫', tag:'P2'},
-    {re:/open questions/i,               icon:'?', tag:'P2'},
-    {re:/recommendation brief/i,         icon:'◆', tag:'P3'},
-    {re:/pre-?mortem/i,                  icon:'⚠', tag:'P4'},
-    {re:/implementation authorization/i, icon:'⊞', tag:'P4'},
-    {re:/decision log/i,                 icon:'⎇', tag:'P5', spine:true},
-    {re:/test adversary/i,               icon:'⊗', tag:'P6'},
-    {re:/mandatory review/i,             icon:'🚩', tag:'P7', alert:true},
-    {re:/residual risk/i,                icon:'◬', tag:'P7'},
-    {re:/test coverage gaps/i,           icon:'▤', tag:'P6'},
-    {re:/pr summary/i,                   icon:'⇡', tag:'P7'},
-    {re:/deployment risk/i,              icon:'⟲', tag:'P8'},
-    {re:/obligation ticket/i,            icon:'✓', tag:'P9'},
+    {re:/problem statement/i,            icon:'◎', tag:'P1', kind:'artifact'},
+    {re:/knowledge gap/i,                icon:'◫', tag:'P2', kind:'artifact'},
+    {re:/open questions/i,               icon:'?', tag:'P2', kind:'artifact'},
+    {re:/recommendation brief/i,         icon:'◆', tag:'P3', kind:'artifact'},
+    {re:/pre-?mortem/i,                  icon:'⚠', tag:'P4', kind:'artifact'},
+    {re:/implementation authorization/i, icon:'⊞', tag:'P4', kind:'artifact'},
+    {re:/decision log/i,                 icon:'⎇', tag:'P5', spine:true, kind:'artifact'},
+    {re:/test adversary/i,               icon:'⊗', tag:'P6', kind:'artifact'},
+    {re:/mandatory review/i,             icon:'🚩', tag:'P7', alert:true, kind:'artifact'},
+    {re:/residual risk/i,                icon:'◬', tag:'P7', kind:'artifact'},
+    {re:/test coverage gaps/i,           icon:'▤', tag:'P6', kind:'artifact'},
+    {re:/pr summary/i,                   icon:'⇡', tag:'P7', kind:'artifact'},
+    {re:/deployment risk/i,              icon:'⟲', tag:'P8', kind:'artifact'},
+    {re:/obligation ticket/i,            icon:'✓', tag:'P9', kind:'artifact'},
     // Other corpora title their sections "Phase N: <name>" instead of using
     // the artifact names. These rows sit after the artifact rows, so an
     // artifact name inside such a title still wins the tie on the same phase.
-    {re:/^phase\s*1\s*:/i,               icon:'◎', tag:'P1'},
-    {re:/^phase\s*2\s*:/i,               icon:'◫', tag:'P2'},
-    {re:/^phase\s*3\s*:/i,               icon:'◆', tag:'P3'},
-    {re:/^phase\s*4\s*:/i,               icon:'⚠', tag:'P4'},
-    {re:/^phase\s*5\s*:/i,               icon:'⎇', tag:'P5', spine:true},
-    {re:/^phase\s*6\s*:/i,               icon:'⊗', tag:'P6'},
-    {re:/^phase\s*7\s*:/i,               icon:'⇡', tag:'P7'},
-    {re:/^phase\s*8\s*:/i,               icon:'⟲', tag:'P8'},
-    {re:/^phase\s*9\s*:/i,               icon:'✓', tag:'P9'}
+    {re:/^phase\s*1\s*:/i,               icon:'◎', tag:'P1', kind:'artifact'},
+    {re:/^phase\s*2\s*:/i,               icon:'◫', tag:'P2', kind:'artifact'},
+    {re:/^phase\s*3\s*:/i,               icon:'◆', tag:'P3', kind:'artifact'},
+    {re:/^phase\s*4\s*:/i,               icon:'⚠', tag:'P4', kind:'artifact'},
+    {re:/^phase\s*5\s*:/i,               icon:'⎇', tag:'P5', spine:true, kind:'artifact'},
+    {re:/^phase\s*6\s*:/i,               icon:'⊗', tag:'P6', kind:'artifact'},
+    {re:/^phase\s*7\s*:/i,               icon:'⇡', tag:'P7', kind:'artifact'},
+    {re:/^phase\s*8\s*:/i,               icon:'⟲', tag:'P8', kind:'artifact'},
+    {re:/^phase\s*9\s*:/i,               icon:'✓', tag:'P9', kind:'artifact'},
+    // Companion sections recur across the record without belonging to a
+    // phase, so we give these rows a kind and an empty tag. The index builder
+    // reads an empty tag as "no phase", which keeps a ledger from clearing
+    // phase 9. We keep them last and anchor them at the title start, so an
+    // artifact name inside a title still wins and "Notes on review" stays
+    // ad hoc.
+    {re:/^(sweep|post-run) amendment\b/i,                        icon:'✎', tag:'', kind:'amendment'},
+    {re:/^review (response|findings?|addendum)\b/i,              icon:'↩', tag:'', kind:'review'},
+    {re:/^(run status\b|stage\s*\d+\b)/i,                         icon:'◔', tag:'', kind:'status'},
+    {re:/^(requirement coverage|verification record|differential corpus render|browser acceptance|files changed)\b/i,
+                                                                 icon:'▣', tag:'', kind:'evidence'},
+    {re:/^(ledger|post-merge note|ticket dispositions|post-run resolutions|closure)\b/i,
+                                                                 icon:'≡', tag:'', kind:'ledger'}
   ];
-  function metaFor(title){ for(const a of ART) if(a.re.test(title)) return a; return {icon:'§',tag:''}; }
+  // We treat a title nothing recognizes as an ad hoc section. That is a named
+  // kind, never an error, and a run should need one or two at most.
+  function metaFor(title){ for(const a of ART) if(a.re.test(title)) return a; return {icon:'§',tag:'',kind:'ad-hoc'}; }
+  // We derive the vocabulary from the registry, ad hoc last, so the tests and
+  // SKILL.md's parity check never read a second copy of it.
+  const SECTION_KINDS=ART.map(a=>a.kind).filter((k,i,all)=>all.indexOf(k)===i).concat(['ad-hoc']);
 
   /* A declared lifecycle block is YAML front matter at byte 0. We only strip
      the opener when a closing bare --- line exists and every interior line is
@@ -432,7 +450,7 @@
       + `<div class="dl-cards">${entries.map(renderDLCard).join('')}</div>`;
   }
 
-  const ADPParserLib={esc,escAttr,safeLinkUrl,inline,decorate,TOK,renderMarkdown,ART,metaFor,splitFrontMatter,parseSections,slug,sectionKeys,isTableStart,splitRow,parseDLFields,dlSplitBody,dlChipSplit,dlConfKind,dlConfPill,dlStatusPill,dlStatusKind,dlRail,parseDLEntries,dlEntryStatus,dlStatusCounts,renderDLCard,renderDecisionLog};
+  const ADPParserLib={esc,escAttr,safeLinkUrl,inline,decorate,TOK,renderMarkdown,ART,SECTION_KINDS,metaFor,splitFrontMatter,parseSections,slug,sectionKeys,isTableStart,splitRow,parseDLFields,dlSplitBody,dlChipSplit,dlConfKind,dlConfPill,dlStatusPill,dlStatusKind,dlRail,parseDLEntries,dlEntryStatus,dlStatusCounts,renderDLCard,renderDecisionLog};
   if(typeof module!=="undefined"&&module.exports){ module.exports=ADPParserLib; }
   else{ global.ADPParserLib=ADPParserLib; }
 })(typeof globalThis!=="undefined"?globalThis:this);

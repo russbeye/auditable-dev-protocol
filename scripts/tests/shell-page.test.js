@@ -349,6 +349,18 @@ test("a phase-scoped section shows only what it cites, with backlink chips", asy
   assert.match(scr, /class="pc"/);
 });
 
+test("a backlink chip names an ad hoc section by its kind instead of §", async () => {
+  const h = bootCorpus();
+  await h.settle();
+  pick(h, "AA1");
+  // Aside Notes cites DL-002 and matches no registry row, so its chip reads
+  // the fallback kind. The canonical chips keep their phase labels.
+  const scr = h.$("#scrInspector").innerHTML;
+  assert.match(scr, /data-key="sec-aside-notes"[^>]*>ad-hoc</);
+  assert.match(scr, /data-key="sec-obligation-ticket-list"[^>]*>P9</);
+  assert.ok(!/>§</.test(scr));
+});
+
 test("a decision row opens its card and the back link returns", async () => {
   const h = bootCorpus();
   await h.settle();

@@ -1,0 +1,22 @@
+schema_version: "1.0"
+
+task:
+  id: "FX-004"
+  title: "Section vocabulary fixture: one section of every kind"
+  author: "the fixture author"
+  date: "2026-09-11"
+
+prompt: |
+  Write the smallest audit log that carries every section kind once.
+
+output:
+  format: "markdown"
+  destination: "audit-log.md beside this prompt"
+
+requirements:
+  - id: "R1"
+    statement: "Every kind appears exactly once"
+    verify: "The parser suite counts one section per companion kind and fourteen artifact sections"
+
+protocol:
+  apply: true
