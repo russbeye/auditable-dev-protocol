@@ -140,23 +140,30 @@
 
   // ---- the rail ----
 
-  /* One rail entry. The whole card is a real button, so the keyboard reaches
-     it; the close control is a span inside it, because a button cannot nest
-     a button. */
+  /* One rail entry: a container holding two sibling buttons, because a close
+     control inside the entry button could never take the keyboard. The entry
+     button carries the selection and the close button sits over its corner,
+     painted above it by document order. */
   function railEntryHtml(e, selKey){
     const rib = e.ribbon.reasons.map(r => `<span class="r-${r.tone}">${esc(r.txt)}</span>`).join(" · ")
       + (e.ribbon.more ? ` <span class="rmore">+${e.ribbon.more}</span>` : "");
-    return `<button type="button" class="rentry${e.key === selKey ? " is-sel" : ""}" data-key="${escAttr(e.key)}">`
-      + (e.closable ? `<span class="rclose" data-close="${escAttr(e.key)}" title="close document">×</span>` : "")
+    return `<div class="rrow">`
+      + `<button type="button" class="rentry${e.key === selKey ? " is-sel" : ""}" data-key="${escAttr(e.key)}">`
       + `<span class="rid">${esc(e.id)}${e.date ? ` <span class="rdate">· ${esc(e.date)}</span>` : ""}</span>`
       + `<span class="rslug">${esc(e.slug)}</span>`
-      + `<span class="rrib">${rib}</span></button>`;
+      + `<span class="rrib">${rib}</span></button>`
+      // The accessible name carries the entry id, so a reader tabbing the
+      // rail hears which document each close button closes.
+      + (e.closable ? `<button type="button" class="rclose" data-close="${escAttr(e.key)}" title="close document" aria-label="close ${escAttr(e.id)}">×</button>` : "")
+      + `</div>`;
   }
 
   function railHtml(groups, selKey, collapsed){
     return groups.map(([name, list]) => {
       const closed = collapsed.has(name);
-      return `<div class="railsec" data-sec="${escAttr(name)}">`
+      // tabindex -1 lets the page hand focus to a section header after a
+      // close empties the list; the header never joins the tab order.
+      return `<div class="railsec" data-sec="${escAttr(name)}" tabindex="-1">`
         + `<span><span class="rcv">${closed ? "▸" : "▾"}</span><span class="rname">${esc(name)}</span></span>`
         + `<b class="rcount">${list.length}</b></div>`
         + (closed ? "" : list.map(e => railEntryHtml(e, selKey)).join(""));
@@ -223,30 +230,51 @@
 
   // The tabindex puts every sort header in the tab order, because a bare th
   // never takes keyboard focus; the page's keydown path fires the sort.
-  const th = (sort, t, k, label) =>
-    `<th class="sth" tabindex="0" data-t="${t}" data-k="${k}">${label}${sort.k === k ? `<span class="arr">${sort.d > 0 ? "▲" : "▼"}</span>` : ""}</th>`;
+  // scope="col" makes the columnheader role explicit instead of leaving it
+  // to browser heuristics, because aria-sort only means something on that
+  // role. aria-sort names the active order on the one sorted header, which
+  // is the only header the ARIA spec wants it on. The arrow repeats that
+  // order visually, so we hide the glyph from the accessibility tree.
+  const th = (sort, t, k, label) => {
+    const on = sort.k === k;
+    return `<th class="sth" scope="col" tabindex="0" data-t="${t}" data-k="${k}"`
+      + (on ? ` aria-sort="${sort.d > 0 ? "ascending" : "descending"}"` : "")
+      + `>${label}${on ? `<span class="arr" aria-hidden="true">${sort.d > 0 ? "▲" : "▼"}</span>` : ""}</th>`;
+  };
   const chips = list => list.map(c =>
     `<a class="pc" data-key="${escAttr(c.key)}" title="${escAttr(c.title)}">${esc(c.label)}</a>`).join("");
 
-  function pillsHtml(counts, active){
+  // attr names the data mark the pills carry, so the inspector's filter and
+  // the ledger's filter route to different state through one delegated path.
+  function pillsHtml(counts, active, attr){
+    const a = attr || "data-dlf";
     return ["all", "open", "validated", "invalidated"]
       .filter(f => f === "all" || counts[f])
-      .map(f => `<button type="button" class="fpill${active === f ? " is-on" : ""}" data-dlf="${f}">${f} ${counts[f]}</button>`)
+      .map(f => `<button type="button" class="fpill${active === f ? " is-on" : ""}" ${a}="${f}">${f} ${counts[f]}</button>`)
       .join(" ");
   }
 
+  // A decision's coverage cell, shared by the inspector and the ledger. The
+  // link builder is injected because the two screens route differently. An
+  // open decision whose watch has closed is unwatched again, so the marker
+  // leads. A settled watch keeps its cell to the id; how coverage ended
+  // rides the link's hover title, because the ruled state already sits in
+  // the status column beside it.
+  function watchCell(d, link){
+    return d.watch ? link(d.watch)
+      : d.settled ? (d.statusKind === "open" ? `<span class="st-unanchored">no watch</span> ` : "")
+        + link(d.settled.wid, "closed " + d.settled.outcome + " " + d.settled.closed)
+      : d.statusKind === "open" ? `<span class="st-unanchored">no watch</span>` : "";
+  }
+
   function decisionsPanelHtml(m){
+    const wl = (wid, title) => `<a class="wl" data-item="${escAttr(wid)}"`
+      + `${title ? ` title="${escAttr(title)}"` : ""}>${esc(wid)}</a>`;
     const rows = m.rows.map(d => `<tr class="dlrow${d.hl ? " is-hl" : ""}" data-dl="${escAttr(d.id)}">`
       + `<td class="mono">${esc(d.id)}</td><td>${esc(d.title)}</td>`
       + `<td><span class="cf-${d.confKind}">${esc(d.conf)}</span></td>`
       + `<td><span class="st-${d.statusKind}">${esc(d.statusKind)}</span></td>`
-      + `<td>${d.watch ? `<a class="wl" data-item="${escAttr(d.watch)}">${esc(d.watch)}</a>`
-        // An open decision whose watch has closed is unwatched again, so the
-        // marker leads and the settled chip only explains how coverage ended.
-        : d.settled ? (d.statusKind === "open" ? `<span class="st-unanchored">no watch</span> ` : "")
-          + `<a class="wl" data-item="${escAttr(d.settled.wid)}">${esc(d.settled.wid)}</a>`
-          + ` <span class="st-closed">${esc(d.settled.outcome + " " + d.settled.closed)}</span>`
-        : d.statusKind === "open" ? `<span class="st-unanchored">no watch</span>` : ""}</td>`
+      + `<td>${watchCell(d, wl)}</td>`
       + `<td>${chips(d.chips)}</td></tr>`).join("");
     return `<div class="ipanel"><h2>decisions cited by ${esc(m.label)} <span class="hsub">${m.pills}</span></h2>`
       + `<div class="tblwrap"><table><tr>${th(m.sort, "dec", "id", "entry")}${th(m.sort, "dec", "title", "decision")}`
@@ -269,20 +297,27 @@
 
   // ---- the watchboard ----
 
-  /* The corpus-wide watch table. Both link cells are .wbl anchors: the ticket
-     cell carries data-t alone and the watch cell adds data-item, so one
-     delegated handler routes both into the inspector. The status column
-     shares the due sort key, the mockup's rule — the two columns are one
+  // The board's status filters are toggle chips, one per due state that
+  // exists in the corpus, each carrying its count so a hidden state still
+  // says how much it hides. Multi-select on purpose: show and hide compose.
+  function statusPillsHtml(counts, visible){
+    return ["overdue", "soon", "upcoming", "unanchored", "closed"]
+      .filter(s => counts[s])
+      .map(s => `<button type="button" class="fpill${visible.has(s) ? " is-on" : ""}" data-ws="${s}">${s} ${counts[s]}</button>`)
+      .join(" ");
+  }
+
+  /* The corpus-wide watch table — the shell's one watch surface, so settled
+     rows render here behind their filter chip with the outcome the closure
+     ledger recorded. Both link cells are .wbl anchors: the ticket cell
+     carries data-t alone and the watch cell adds data-item, so one delegated
+     handler routes both into the inspector. The status column shares the
+     derivation's group order, the mockup's rule — the two columns are one
      ordering read two ways. */
   function watchboardHtml(m){
-    const head = `<h2>every live watch, corpus-wide <span class="hsub">${m.live} live · ${m.settled} settled</span></h2>`;
-    // An empty board has two truths: a corpus whose watches all settled, and
-    // a corpus that never opened one. The settled sentence must never claim
-    // ledgers a young corpus does not have.
+    const head = `<h2>every watch, corpus-wide <span class="hsub">${m.live} live · ${m.settled} settled · ${m.pills}</span></h2>`;
     if (!m.rows.length)
-      return `<div class="ipanel">${head}<p class="dnotice">${m.settled
-        ? `every watch on record is settled — ${m.settled} closed ${m.settled === 1 ? "watch sits" : "watches sit"} in the tickets' ledgers.`
-        : `no watches on record yet — no ticket in this corpus has opened an obligation table.`}</p></div>`;
+      return `<div class="ipanel">${head}<p class="dnotice">${esc(m.empty)}</p></div>`;
     // The hrefs are real deep links, so the keyboard can reach and fire the
     // anchors; the page's delegated handler stops the browser's own hash jump.
     const rows = m.rows.map(w => `<tr class="wbrow" data-wid="${escAttr(w.wid)}">`
@@ -290,11 +325,45 @@
       + `<td><a class="wbl" href="${escAttr(hashWrite({t: w.tid, item: w.wid}))}" data-t="${escAttr(w.tid)}" data-item="${escAttr(w.wid)}">${esc(w.wid)}</a></td>`
       + `<td>${esc(w.what)}</td>`
       + `<td class="mono">${esc(w.dueText)}</td>`
-      + `<td><span class="st-${w.state}">${esc(w.stateLabel)}</span></td></tr>`).join("");
+      + `<td><span class="st-${w.state}">${esc(w.stateLabel)}</span></td>`
+      + `<td>${w.outcomeText ? `<span class="st-${w.outcomeKind}">${esc(w.outcomeText)}</span>` : "—"}</td></tr>`).join("");
     return `<div class="ipanel">${head}`
       + `<div class="tblwrap"><table><tr>${th(m.sort, "wb", "tid", "ticket")}${th(m.sort, "wb", "wid", "watch")}`
       + `${th(m.sort, "wb", "what", "what to check")}${th(m.sort, "wb", "due", "due")}`
-      + `${th(m.sort, "wb", "state", "status")}</tr>${rows}</table></div></div>`;
+      + `${th(m.sort, "wb", "state", "status")}${th(m.sort, "wb", "outcome", "outcome")}</tr>${rows}</table></div></div>`;
+  }
+
+  // ---- the ledger ----
+
+  // Ledger rows link the way board rows do: real deep-link hrefs on .wbl
+  // anchors, so the shipped delegated route and the keyboard serve them
+  // unchanged. The ticket cell lands the default view and the id cell lands
+  // the item in its owning section.
+  const ledgerLink = (tid, item, title) =>
+    `<a class="wbl" href="${escAttr(hashWrite(item ? {t: tid, item} : {t: tid}))}"`
+    + ` data-t="${escAttr(tid)}"${item ? ` data-item="${escAttr(item)}"` : ""}`
+    + `${title ? ` title="${escAttr(title)}"` : ""}>${esc(item || tid)}</a>`;
+
+  /* The assumption ledger: every decision on record, corpus-wide. The status
+     and coverage cells reuse the inspector's vocabulary, so a row reads the
+     same on both screens. */
+  function assumptionLedgerHtml(m){
+    const head = `<h2>assumptions <span class="hsub">${m.pills}</span></h2>`;
+    if (!m.rows.length)
+      return `<div class="ipanel">${head}<p class="dnotice">${esc(m.empty)}</p></div>`;
+    const rows = m.rows.map(d => `<tr class="lgrow" data-t="${escAttr(d.tid)}" data-dl="${escAttr(d.id)}">`
+      + `<td>${ledgerLink(d.tid)}</td>`
+      + `<td class="mono">${ledgerLink(d.tid, d.id)}</td>`
+      + `<td>${esc(d.title)}</td>`
+      + `<td><span class="cf-${d.confKind}">${esc(d.conf)}</span></td>`
+      + `<td><span class="st-${d.statusKind}">${esc(d.statusKind)}</span></td>`
+      + `<td>${watchCell(d, (wid, title) => ledgerLink(d.tid, wid, title))}</td>`
+      + `<td class="mono">${esc(d.ageText)}</td></tr>`).join("");
+    return `<div class="ipanel">${head}`
+      + `<div class="tblwrap"><table><tr>${th(m.sort, "la", "tid", "ticket")}${th(m.sort, "la", "id", "entry")}`
+      + `${th(m.sort, "la", "title", "decision")}${th(m.sort, "la", "conf", "conf")}`
+      + `${th(m.sort, "la", "status", "status")}${th(m.sort, "la", "watch", "watch")}`
+      + `${th(m.sort, "la", "age", "age")}</tr>${rows}</table></div></div>`;
   }
 
   function fullLogHtml(list){
@@ -309,7 +378,7 @@
     projectChitText, applyTheme, hashRead, hashWrite, logPaths, corpusUrl,
     loadCorpus, railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml,
     docPaneHtml, rawPaneHtml, pillsHtml, decisionsPanelHtml, watchesPanelHtml,
-    watchboardHtml, fullLogHtml};
+    statusPillsHtml, watchboardHtml, assumptionLedgerHtml, fullLogHtml};
   if (isNode){ module.exports = ADPShellLib; }
   else { global.ADPShellLib = ADPShellLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);
