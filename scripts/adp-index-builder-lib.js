@@ -403,6 +403,25 @@
   // before the id, so a prose token like PILOT-1 never reads as OT-1.
   const RE_NEAR = new RegExp("(^|[^A-Za-z0-9-])((?:OT|DL)-" + I.LEDGER_TOKEN + ")\\s+(CLOSED|RE-ANCHORED)\\b", "g");
 
+  /* SKILL.md's Encoding subsection owns this rule. A log is UTF-8, and a
+     control byte other than tab, newline, and carriage return is written
+     escaped inside a code span, never raw, so no tool calls the log binary.
+     We report a raw one by the byte offset a byte tool takes, and we count
+     the bytes from code units so the browser build and the Node build agree
+     without a platform encoder. */
+  const RE_CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
+  function byteOffset(text, at){
+    let n = 0;
+    for (let i = 0; i < at; i++){
+      const c = text.charCodeAt(i);
+      if (c < 0x80) n += 1;
+      else if (c < 0x800) n += 2;
+      else if (c >= 0xd800 && c <= 0xdbff){ n += 4; i++; }
+      else n += 3;
+    }
+    return n;
+  }
+
   /* The advisory channel, separate from buildIndex so the index stays a pure
      contract artifact. Advisories are the silent failures the harvest hides
      by design: a landed record naming no row or card (phantom), a losing
@@ -410,10 +429,13 @@
      honestly move its watch (dead-anchor), closure intent that never landed
      (near-miss), a watch id the ledger grammar can never address
      (wid-shape), and a companion section written ahead of the place the
-     section order convention in SKILL.md gives it (misplaced). Findings are
-     {dir, id, finding}, kinds in that order per sorted ticket, one near-miss
-     per id. A misplaced finding also carries after, the key of the section
-     the companion should follow. */
+     section order convention in SKILL.md gives it (misplaced), and a raw
+     control byte in a log, which SKILL.md's Encoding subsection rules out
+     (control-byte). Findings are {dir, id, finding}, kinds in that order per
+     sorted ticket, one near-miss per id. A misplaced finding also carries
+     after, the key of the section the companion should follow. A control-byte
+     finding names the log in id and carries offset, the UTF-8 byte offset of
+     the byte. */
   function lintCorpus(files){
     const findings = [];
     const byDir = groupByDir(files);
@@ -485,6 +507,9 @@
           const zone = kind === "evidence" ? dl : chainEnd;
           if (zone !== -1 && i < zone) findings.push({dir: dir, id: s.key, finding: "misplaced", after: rows[zone].key});
         });
+      }
+      for (const m of text.matchAll(RE_CONTROL)){
+        findings.push({dir: dir, id: dir + "/audit-log.md", finding: "control-byte", offset: byteOffset(text, m.index)});
       }
     }
     return findings;

@@ -257,7 +257,9 @@ record (contradiction), a landed anchor record that cannot honestly move its wat
 already anchors it, or a closure record has ended it (dead-anchor), closure intent on a known
 id that never landed (near-miss), a watch id the ledger grammar cannot address
 (wid-shape), and a companion section written ahead of the place SKILL.md's section order
-convention gives it (misplaced, carrying `after`, the key of the section it should follow).
+convention gives it (misplaced, carrying `after`, the key of the section it should follow),
+and a raw control byte in a log, which SKILL.md's Encoding subsection forbids (control-byte,
+naming the log in `id` and carrying `offset`, the UTF-8 byte offset of the byte).
 A landed record makes its id's near-misses moot, so a swept corpus lints clean
 while its old prose stays in place. Advisories are not contract findings and never enter an
 index document.

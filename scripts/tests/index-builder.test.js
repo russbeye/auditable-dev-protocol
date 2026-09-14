@@ -222,7 +222,10 @@ test("lintCorpus reports the ledger's silent failures by kind", () => {
     // The early in-Decision-Log record and the dark-guard lines are closure
     // intent that never landed, one finding per id.
     {dir: d, id: "OT-FX003-3", finding: "near-miss"},
-    {dir: d, id: "OT-FX003-1", finding: "near-miss"}
+    {dir: d, id: "OT-FX003-1", finding: "near-miss"},
+    // The misc-notes fixture carries a raw NUL inside a code span on purpose,
+    // so it is the staged control-byte carrier and names the log and the byte.
+    {dir: "misc-notes", id: "misc-notes/audit-log.md", finding: "control-byte", offset: 49}
   ]);
 });
 
@@ -346,6 +349,61 @@ test("SKILL.md's section order convention names the lint kind that enforces it",
   assert.ok(at > -1, "SKILL.md lacks the Section order subsection");
   const sub = skill.slice(at, skill.indexOf("**Persist everything", at));
   assert.ok(sub.includes("`misplaced`") && sub.includes("`after`"), "the subsection must name the finding and its field");
+});
+
+// A one-ticket corpus of one section with the given body, for the encoding cases.
+function bodyLog(body){
+  return [{path: "T-1-x/audit-log.md", text: "# T\n\n## Scratch\n\n" + body + "\n"}];
+}
+
+test("a raw control byte is a control-byte advisory naming the log and its UTF-8 byte offset", () => {
+  // The arrow before the byte is three bytes and one code unit, so the byte
+  // offset a byte tool takes differs from the string index.
+  const files = bodyLog("→ `a\u0000b`");
+  const at = files[0].text.indexOf("\u0000");
+  const bytes = Buffer.byteLength(files[0].text.slice(0, at));
+  assert.notEqual(bytes, at);
+  assert.deepEqual(builder.lintCorpus(files),
+    [{dir: "T-1-x", id: "T-1-x/audit-log.md", finding: "control-byte", offset: bytes}]);
+  // A surrogate pair is four bytes and two code units.
+  const emoji = bodyLog("😀\u0001");
+  assert.equal(builder.lintCorpus(emoji)[0].offset,
+    Buffer.byteLength(emoji[0].text.slice(0, emoji[0].text.indexOf("\u0001"))));
+  // Every byte reports, in document order, and DEL counts as a control.
+  assert.deepEqual(builder.lintCorpus(bodyLog("\u001b x \u007f")).map(f => f.offset), [17, 21]);
+});
+
+test("tab, newline, carriage return, and the escaped form raise nothing", () => {
+  assert.deepEqual(builder.lintCorpus(bodyLog("a\tb\r\nc")), []);
+  assert.deepEqual(builder.lintCorpus(bodyLog("`\\u0000` escaped, never raw")), []);
+});
+
+test("escaping a control byte in place moves no index metadata", () => {
+  const raw = fs.readFileSync(path.join(CORPUS, "misc-notes", "audit-log.md"), "utf8");
+  const escaped = raw.replace("\u0000", "\\u0000");
+  assert.notEqual(raw, escaped);
+  const build = text => indexLib.serializeIndex(builder.buildIndex([{path: "misc-notes/audit-log.md", text: text}], OPTS));
+  assert.equal(build(escaped), build(raw));
+  assert.deepEqual(builder.lintCorpus([{path: "misc-notes/audit-log.md", text: escaped}]), []);
+});
+
+test("a latin1 read of a ledger log un-harvests every closure the UTF-8 read finds", () => {
+  // This is the trap references/failure-modes.md names under "Reading the
+  // corpus". The arrow decodes as three characters, so no ledger line matches.
+  const p = "20260827-FX003-closed-watches/audit-log.md";
+  const utf8 = fs.readFileSync(path.join(CORPUS, p), "utf8");
+  const latin1 = Buffer.from(utf8, "utf8").toString("latin1");
+  const closed = text => builder.buildIndex([{path: p, text: text}], OPTS).tickets[0].watches.filter(w => w.closed).length;
+  assert.ok(closed(utf8) > 0);
+  assert.equal(closed(latin1), 0);
+});
+
+test("SKILL.md's Encoding subsection names the lint kind and its field", () => {
+  const skill = fs.readFileSync(path.join(__dirname, "..", "..", "SKILL.md"), "utf8");
+  const at = skill.indexOf("### Encoding");
+  assert.ok(at > -1, "SKILL.md lacks the Encoding subsection");
+  const sub = skill.slice(at, skill.indexOf("## Core principles", at));
+  assert.ok(sub.includes("`control-byte`") && sub.includes("`offset`"), "the subsection must name the finding and its field");
 });
 
 test("legacy logs carry no closure keys at all", () => {
