@@ -50,6 +50,10 @@
 
   let selScreen = "inspector";
   let corpus = null;                 // {index, texts} from the seam, or null
+  // One flag covers the boot load and every poll, so two corpus loads can
+  // never be in flight at once and a slow one cannot land over a newer one.
+  let corpusLoading = false;
+  let corpusSig = "";                // signature of the corpus on screen
   const docs = [];                   // opened documents, session-local
   let docSeq = 0;
   let sel = {t: null, s: null, item: null};
@@ -615,7 +619,27 @@
     }
     doc.polling = false;
   }
-  setInterval(() => { docs.forEach(pollDoc); }, 1500);
+  /* The served corpus rides the same tick. The signature is the whole
+     load: the built tickets, every log body, and the generated date. So an
+     unchanged tick never re-renders, a change to any served file always
+     does, and a page left open past midnight rolls its day-based ages once
+     instead of holding the boot date. A null load is a failure the seam has
+     already traced to the console; we keep the last good corpus on screen
+     and try again next tick. A page with no corpus behind it never polls:
+     a file:// open would otherwise warn every 1.5s. */
+  const sigOf = c => JSON.stringify([c.index.generated, c.index.tickets, c.texts]);
+  async function pollCorpus(){
+    if (corpusLoading || !corpus) return;
+    corpusLoading = true;
+    const c = await S.loadCorpus(u => fetch(u));
+    corpusLoading = false;
+    if (!c) return;
+    const s = sigOf(c);
+    if (s === corpusSig) return;
+    corpus = c; corpusSig = s;
+    renderAll();
+  }
+  setInterval(() => { docs.forEach(pollDoc); pollCorpus(); }, 1500);
 
   // ---- events ----
 
@@ -826,8 +850,11 @@
      no-corpus chrome and the same render fills everything in when the
      index resolves. */
   renderAll();
+  corpusLoading = true;
   S.loadCorpus(u => fetch(u)).then(c => {
+    corpusLoading = false;
     corpus = c;
+    corpusSig = c ? sigOf(c) : "";
     if (pendingSel){
       if (pendingSel.t){
         const tgt = findTarget(pendingSel.t);

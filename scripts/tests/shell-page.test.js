@@ -1260,3 +1260,86 @@ test("the ledger builder escapes hostile harvested fields", () => {
   // The pill builder stamps the mark it was asked for.
   assert.match(S.pillsHtml({all: 1, open: 1}, "all", "data-lgf"), /data-lgf="open"/);
 });
+
+// ---- the page: the corpus poll (MC-002) ----
+
+/* A fetch stub whose corpus can change under the page, and which can go
+   down, so a test can play the run that appends to a log while the page
+   sits on screen. */
+function liveCorpus(){
+  const texts = Object.assign({}, TEXTS);
+  const st = {texts, down: false, listings: 0};
+  st.fetch = u => {
+    if (st.down) return Promise.reject(new Error("server down"));
+    if (u === "corpus.json") st.listings++;
+    return corpusFetch(LISTING, texts)(u);
+  };
+  return st;
+}
+const LOG_GROWN = LOG.replace("## Aside Notes", "## Test Adversary Document\n\nGrown while watched.\n\n## Aside Notes");
+
+test("a served log that grows re-renders within one tick", async () => {
+  const live = liveCorpus();
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  assert.doesNotMatch(h.$("#scrInspector").innerHTML, /Test Adversary Document/);
+  live.texts["20260101-AA1-alpha/audit-log.md"] = LOG_GROWN;
+  h.tick();
+  await h.settle();
+  assert.match(h.$("#scrInspector").innerHTML, /Test Adversary Document/);
+  // The rail's missing-sections ribbon counts the new section too.
+  assert.doesNotMatch(h.$("#rail").innerHTML, /9 SECTIONS MISSING[\s\S]*AA1/);
+});
+
+test("an unchanged tick renders nothing and disturbs no reader state", async () => {
+  const live = liveCorpus();
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  pick(h, "AA1");
+  h.click(h.$$(".op").find(o => o.getAttribute("data-op") === "paste"));
+  h.$("#pasteArea").value = "half a draft";
+  const before = {rail: h.$("#rail").innerHTML, insp: h.$("#scrInspector").innerHTML,
+    renders: h.hashes.length, hash: h.location.hash};
+  h.tick();
+  await h.settle();
+  // Every renderAll writes the hash, so an unchanged count is no render.
+  assert.equal(h.hashes.length, before.renders);
+  assert.equal(h.$("#rail").innerHTML, before.rail);
+  assert.equal(h.$("#scrInspector").innerHTML, before.insp);
+  assert.equal(h.location.hash, before.hash);
+  assert.equal(h.$("#pasteArea").value, "half a draft");
+});
+
+test("a failed re-fetch keeps the last good corpus and traces once", async () => {
+  const live = liveCorpus();
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  const renders = h.hashes.length;
+  live.down = true;
+  h.tick();
+  await h.settle();
+  assert.equal(h.$("#projChit").textContent, "project: demo");
+  assert.match(h.$("#rail").innerHTML, /AA1/);
+  assert.equal(h.hashes.length, renders);
+  assert.equal(h.warns.length, 1);
+  assert.match(h.warns[0], /corpus load failed/);
+});
+
+test("a page with no corpus behind it never polls for one", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  assert.equal(h.warns.length, 1);
+  h.tick(); h.tick();
+  await h.settle();
+  assert.equal(h.warns.length, 1);
+});
+
+test("ticks never overlap a corpus load in flight", async () => {
+  const live = liveCorpus();
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  assert.equal(live.listings, 1);
+  h.tick(); h.tick(); h.tick();
+  await h.settle();
+  assert.equal(live.listings, 2);
+});
