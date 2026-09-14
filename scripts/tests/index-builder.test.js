@@ -276,6 +276,58 @@ test("lintCorpus enumerates watch ids the ledger grammar cannot address", () => 
     [{dir: "T-1-x", id: "PB011-OT1", finding: "wid-shape"}]);
 });
 
+// A one-ticket corpus made of headings alone, for the placement cases.
+function orderLog(titles){
+  return [{path: "T-1-x/audit-log.md",
+    text: "# T\n\n" + titles.map(t => "## " + t + "\n\nbody\n").join("\n")}];
+}
+
+test("a companion ahead of its place is a misplaced advisory naming the key it should follow", () => {
+  assert.deepEqual(builder.lintCorpus(orderLog([
+    "Problem Statement", "Verification record (2026-09-01)", "Decision Log",
+    "Review Response — PR #1", "Test Adversary Document", "Obligation Ticket List",
+    "Sweep amendment — 2026-09-14"
+  ])), [
+    {dir: "T-1-x", id: "sec-verification-record-2026-09-01", finding: "misplaced", after: "sec-decision-log"},
+    {dir: "T-1-x", id: "sec-review-response-pr-1", finding: "misplaced", after: "sec-obligation-ticket-list"}
+  ]);
+});
+
+test("evidence beside the artifact that cites it, and companions after the chain, raise nothing", () => {
+  assert.deepEqual(builder.lintCorpus(orderLog([
+    "Problem Statement", "Decision Log", "Differential corpus render (Phase 6 falsification run)",
+    "Test Adversary Document", "PR Summary", "Requirement coverage", "Residual Risk",
+    "Obligation Ticket List", "Run status", "Review Response — PR #1", "Post-merge note",
+    "Sweep amendment — 2026-09-14"
+  ])), []);
+});
+
+test("ad hoc sections and canonical repeats are not governed", () => {
+  assert.deepEqual(builder.lintCorpus(orderLog([
+    "Context", "Problem Statement", "Decision Log", "Decision Log", "Compatibility statement",
+    "Obligation Ticket List"
+  ])), []);
+});
+
+test("without a ticket list the chain ends at the last canonical section, and a later stage is tail", () => {
+  assert.deepEqual(builder.lintCorpus(orderLog(["Problem Statement", "Run status", "Decision Log"])),
+    [{dir: "T-1-x", id: "sec-run-status", finding: "misplaced", after: "sec-decision-log"}]);
+  assert.deepEqual(builder.lintCorpus(orderLog(["Problem Statement", "Decision Log", "Run status"])), []);
+  assert.deepEqual(builder.lintCorpus(orderLog([
+    "Problem Statement", "Decision Log", "Obligation Ticket List",
+    "Stage 2 — more (run start 2026-09-01)", "Decision Log — Stage 2", "Review Response — PR #2",
+    "Obligation Ticket List — Stage 2", "Ledger — round 2"
+  ])), []);
+});
+
+test("SKILL.md's section order convention names the lint kind that enforces it", () => {
+  const skill = fs.readFileSync(path.join(__dirname, "..", "..", "SKILL.md"), "utf8");
+  const at = skill.indexOf("### Section order");
+  assert.ok(at > -1, "SKILL.md lacks the Section order subsection");
+  const sub = skill.slice(at, skill.indexOf("**Persist everything", at));
+  assert.ok(sub.includes("`misplaced`") && sub.includes("`after`"), "the subsection must name the finding and its field");
+});
+
 test("legacy logs carry no closure keys at all", () => {
   const doc = fixtureDoc();
   for (const id of ["FX001", "FX002", "AV090"]){
