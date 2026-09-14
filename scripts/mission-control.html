@@ -647,7 +647,40 @@
     const s = sigOf(c);
     if (s === corpusSig){ syncLive(); return; }
     corpus = c; corpusSig = s;
+    if (!selSettled) settleSelection();
     renderAll();
+  }
+
+  // The view token restores the screen a reload left. A token naming no
+  // real screen is ignored, so a mangled link still lands somewhere sane.
+  const viewToken = () => pendingSel && pendingSel.v && S.SCREENS.includes(pendingSel.v) ? pendingSel.v : null;
+
+  /* The first corpus to land settles the selection, whether it arrives from
+     the boot load or from a later tick after a boot that failed. Until
+     then a deep link naming a ticket stays pending and no notice is stated,
+     because nothing is known yet about the ticket it names. A ticket link
+     lands on the inspector unless the link also names the screen. */
+  let selSettled = false;
+  function settleSelection(){
+    selSettled = true;
+    if (pendingSel){
+      if (pendingSel.t){
+        const tgt = findTarget(pendingSel.t);
+        if (tgt){
+          sel = {t: pendingSel.t, s: pendingSel.s, item: pendingSel.item};
+          if (!viewToken()) selScreen = "inspector";
+        } else {
+          bootNotice = `ticket "${pendingSel.t}" is not in this corpus.`;
+        }
+      }
+      pendingSel = null;
+    }
+    // A dead deep link keeps its notice visible instead of being papered
+    // over by the default selection.
+    if (!sel.t && !bootNotice){
+      const first = railModel().find(g => g[1].length);
+      if (first) sel = {t: first[1][0].key, s: null, item: null};
+    }
   }
 
   /* The one writer for the live pill, in the viewer's pattern: the state
@@ -661,8 +694,13 @@
     if (!corpus) return "IDLE";
     return corpusStale ? "CACHED" : "WATCHING";
   }
+  // A live region reports every text write, so the word is written only
+  // when it changes; render() calls this on every pass.
+  let liveShown = "";
   function syncLive(){
     const state = liveState();
+    if (state === liveShown) return;
+    liveShown = state;
     $("#liveChit").className = "chit poll poll-" + (state === "WATCHING" ? "ok" : state === "CACHED" ? "warn" : "idle");
     $("#liveTxt").textContent = state;
   }
@@ -882,27 +920,12 @@
     corpusLoading = false;
     corpus = c;
     corpusSig = c ? sigOf(c) : "";
-    if (pendingSel){
-      if (pendingSel.t){
-        const tgt = findTarget(pendingSel.t);
-        if (tgt){
-          sel = {t: pendingSel.t, s: pendingSel.s, item: pendingSel.item};
-          selScreen = "inspector";
-        } else {
-          bootNotice = `ticket "${pendingSel.t}" is not in this corpus.`;
-        }
-      }
-      // The view token restores the screen a reload left. A token naming no
-      // real screen is ignored, so a mangled link still lands somewhere sane.
-      if (pendingSel.v && S.SCREENS.includes(pendingSel.v)) selScreen = pendingSel.v;
-      pendingSel = null;
-    }
-    // A dead deep link keeps its notice visible instead of being papered
-    // over by the default selection.
-    if (!sel.t && corpus && !bootNotice){
-      const first = railModel().find(g => g[1].length);
-      if (first) sel = {t: first[1][0].key, s: null, item: null};
-    }
+    // The screen the link names needs no corpus, so it is honored now. The
+    // ticket it names waits for the first corpus to answer; a link naming
+    // no ticket has nothing left to wait for.
+    if (viewToken()) selScreen = viewToken();
+    if (c) settleSelection();
+    else if (pendingSel && !pendingSel.t) pendingSel = null;
     renderAll();
   });
 })();

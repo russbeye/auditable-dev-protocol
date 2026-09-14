@@ -1400,3 +1400,66 @@ test("ticks never overlap a corpus load in flight", async () => {
   await h.settle();
   assert.equal(live.listings, 2);
 });
+
+test("a boot that failed honors its deep link when the corpus first answers", async () => {
+  const live = liveCorpus();
+  live.down = true;
+  const h = bootShell({stored: "dark", fetch: live.fetch, hash: "#t=AA1&s=sec-pr-summary"});
+  await h.settle();
+  assert.equal(h.$("#projChit").textContent, "no corpus");
+  assert.doesNotMatch(h.$("#scrInspector").innerHTML, /is not in this corpus/);
+  live.down = false;
+  h.tick();
+  await h.settle();
+  assert.ok(entry(h, "AA1").classList.contains("is-sel"));
+  assert.match(h.$("#scrInspector").innerHTML, /PR Summary/);
+  assert.doesNotMatch(h.$("#scrInspector").innerHTML, /is not in this corpus/);
+  assert.equal(h.hashes[h.hashes.length - 1], "#t=AA1&s=sec-pr-summary");
+});
+
+test("a boot that failed takes the default selection when the corpus first answers", async () => {
+  const live = liveCorpus();
+  live.down = true;
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  live.down = false;
+  h.tick();
+  await h.settle();
+  assert.ok(entry(h, "AA1").classList.contains("is-sel"));
+  assert.equal(h.hashes[h.hashes.length - 1], "#t=AA1&s=sec-decision-log");
+});
+
+test("the live pill's status region is written only when its state changes", async () => {
+  const live = liveCorpus();
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  assert.equal(h.$("#liveTxt").textContent, "WATCHING");
+  // A live region reports every text write, so an unchanged word must not
+  // be written again on ordinary navigation or a quiet tick.
+  const txt = h.$("#liveTxt");
+  let writes = 0, word = txt.textContent;
+  Object.defineProperty(txt, "textContent", {get: () => word, set: v => { writes++; word = v; }});
+  pick(h, "AA1");
+  h.click(h.$$(".mtab")[1]);
+  h.tick();
+  await h.settle();
+  assert.equal(writes, 0);
+  live.down = true;
+  h.tick();
+  await h.settle();
+  assert.equal(writes, 1);
+  assert.equal(word, "CACHED");
+});
+
+test("a boot that failed honors the screen token at once and the ticket token when the corpus answers", async () => {
+  const live = liveCorpus();
+  live.down = true;
+  const h = bootShell({stored: "dark", fetch: live.fetch, hash: "#v=watchboard&t=AA1"});
+  await h.settle();
+  assert.equal(h.$("#scrWatch").classList.contains("is-on"), true);
+  live.down = false;
+  h.tick();
+  await h.settle();
+  assert.equal(h.$("#scrWatch").classList.contains("is-on"), true);
+  assert.ok(entry(h, "AA1").classList.contains("is-sel"));
+});
