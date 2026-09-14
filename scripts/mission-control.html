@@ -18,6 +18,10 @@
   <header>
     <span class="brand">ADP · <b>MISSION CONTROL</b></span>
     <span class="chit" id="projChit"></span>
+    <!-- The viewer's source pill, for the served corpus. The state word is
+         the spoken twin too: role=status reads each change, and the states
+         change only on boot, a failed re-fetch, and its recovery. -->
+    <span class="chit poll poll-idle" id="liveChit" role="status"><i aria-hidden="true"></i><span id="liveTxt">IDLE</span></span>
     <button type="button" class="chit click" id="themeBtn" title="Toggle light / dark"><span id="ttIcon" aria-hidden="true">☾</span> theme</button>
     <nav class="tabs" id="tabs" role="tablist"></nav>
     <button class="newtask" id="newTaskBtn">+ new task</button>
@@ -54,6 +58,7 @@
   // never be in flight at once and a slow one cannot land over a newer one.
   let corpusLoading = false;
   let corpusSig = "";                // signature of the corpus on screen
+  let corpusStale = false;           // the last re-fetch failed; the corpus on screen is the last good one
   const docs = [];                   // opened documents, session-local
   let docSeq = 0;
   let sel = {t: null, s: null, item: null};
@@ -495,6 +500,7 @@
     const theme = document.documentElement.getAttribute("data-theme");
     $("#ttIcon").textContent = theme === "dark" ? "☾" : "☀";
     $("#projChit").textContent = S.projectChitText(corpus ? corpus.index : null);
+    syncLive();
     $("#foot").textContent = S.footerText(corpus ? corpus.index : null);
   }
 
@@ -636,11 +642,29 @@
     corpusLoading = true;
     const c = await S.loadCorpus(u => fetch(u));
     corpusLoading = false;
-    if (!c) return;
+    corpusStale = !c && !!corpus;
+    if (!c){ syncLive(); return; }
     const s = sigOf(c);
-    if (s === corpusSig) return;
+    if (s === corpusSig){ syncLive(); return; }
     corpus = c; corpusSig = s;
     renderAll();
+  }
+
+  /* The one writer for the live pill, in the viewer's pattern: the state
+     derives from what the page is, never from a stored word, so the pill
+     cannot disagree with the poll. STATIC is a file:// open with no server
+     to poll. IDLE is a served page with no corpus yet. CACHED is a served
+     corpus whose last re-fetch failed, on screen until a tick answers.
+     WATCHING is the served corpus polling every 1.5s. */
+  function liveState(){
+    if (location.protocol === "file:") return "STATIC";
+    if (!corpus) return "IDLE";
+    return corpusStale ? "CACHED" : "WATCHING";
+  }
+  function syncLive(){
+    const state = liveState();
+    $("#liveChit").className = "chit poll poll-" + (state === "WATCHING" ? "ok" : state === "CACHED" ? "warn" : "idle");
+    $("#liveTxt").textContent = state;
   }
   setInterval(() => { docs.forEach(pollDoc); pollCorpus(); }, 1500);
 

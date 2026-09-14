@@ -191,7 +191,8 @@ test("mission-control.html carries the frame the harness models", () => {
      "adp-derive-lib.js", "adp-shell-lib.js"]);
   const screens = [...HTML.matchAll(/<section class="screen" data-s="([^"]+)"/g)].map(m => m[1]);
   assert.deepEqual(screens, S.SCREENS);
-  for (const id of ["projChit", "themeBtn", "ttIcon", "tabs", "newTaskBtn", "rail", "foot", "shellmask"]) {
+  assert.match(HTML, /<span class="chit poll poll-idle" id="liveChit" role="status">/);
+  for (const id of ["projChit", "liveChit", "liveTxt", "themeBtn", "ttIcon", "tabs", "newTaskBtn", "rail", "foot", "shellmask"]) {
     assert.match(HTML, new RegExp('id="' + id + '"'));
   }
 });
@@ -269,6 +270,8 @@ test("a served corpus fills the chit, the footer, and the rail", async () => {
   const h = bootCorpus();
   await h.settle();
   assert.equal(h.$("#projChit").textContent, "project: demo");
+  assert.equal(h.$("#liveTxt").textContent, "WATCHING");
+  assert.equal(h.$("#liveChit").className, "chit poll poll-ok");
   assert.match(h.$("#foot").textContent, /2 tickets/);
   const rail = h.$("#rail").innerHTML;
   assert.match(rail, /needs attention/);
@@ -1325,6 +1328,15 @@ test("a failed re-fetch keeps the last good corpus and traces once", async () =>
   assert.equal(h.hashes.length, renders);
   assert.equal(h.warns.length, 1);
   assert.match(h.warns[0], /corpus load failed/);
+  // The pill says the corpus on screen is the last good one, then recovers.
+  assert.equal(h.$("#liveTxt").textContent, "CACHED");
+  assert.equal(h.$("#liveChit").className, "chit poll poll-warn");
+  live.down = false;
+  h.tick();
+  await h.settle();
+  assert.equal(h.$("#liveTxt").textContent, "WATCHING");
+  assert.equal(h.$("#liveChit").className, "chit poll poll-ok");
+  assert.equal(h.hashes.length, renders);
 });
 
 test("a file:// open never polls for a corpus", async () => {
@@ -1335,6 +1347,8 @@ test("a file:// open never polls for a corpus", async () => {
   await h.settle();
   assert.equal(h.warns.length, 1);
   assert.equal(h.$("#projChit").textContent, "no corpus");
+  assert.equal(h.$("#liveTxt").textContent, "STATIC");
+  assert.equal(h.$("#liveChit").className, "chit poll poll-idle");
 });
 
 test("a served page whose boot load failed catches up on a later tick", async () => {
@@ -1343,12 +1357,14 @@ test("a served page whose boot load failed catches up on a later tick", async ()
   const h = bootShell({stored: "dark", fetch: live.fetch});
   await h.settle();
   assert.equal(h.$("#projChit").textContent, "no corpus");
+  assert.equal(h.$("#liveTxt").textContent, "IDLE");
   assert.equal(h.warns.length, 1);
   live.down = false;
   h.tick();
   await h.settle();
   assert.equal(h.$("#projChit").textContent, "project: demo");
   assert.match(h.$("#rail").innerHTML, /AA1/);
+  assert.equal(h.$("#liveTxt").textContent, "WATCHING");
 });
 
 test("a served page with no corpus directory probes quietly", async () => {

@@ -168,6 +168,9 @@ function buildTree(){
   const shell = add("div", {class: "shell"}, root);
   const header = add("header", {}, shell);
   add("span", {class: "chit", id: "projChit"}, header);
+  const liveChit = add("span", {class: "chit poll poll-idle", id: "liveChit"}, header);
+  add("i", {}, liveChit);
+  add("span", {id: "liveTxt"}, liveChit);
   const themeBtn = add("button", {class: "chit click", id: "themeBtn"}, header);
   add("span", {id: "ttIcon"}, themeBtn);
   add("nav", {class: "tabs", id: "tabs"}, header);
