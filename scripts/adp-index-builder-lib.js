@@ -408,9 +408,12 @@
      by design: a landed record naming no row or card (phantom), a losing
      second record (contradiction), a landed anchor record that cannot
      honestly move its watch (dead-anchor), closure intent that never landed
-     (near-miss), and a watch id the ledger grammar can never address
-     (wid-shape). Findings are {dir, id, finding}, kinds in that order per
-     sorted ticket, one near-miss per id. */
+     (near-miss), a watch id the ledger grammar can never address
+     (wid-shape), and a companion section written ahead of the place the
+     section order convention in SKILL.md gives it (misplaced). Findings are
+     {dir, id, finding}, kinds in that order per sorted ticket, one near-miss
+     per id. A misplaced finding also carries after, the key of the section
+     the companion should follow. */
   function lintCorpus(files){
     const findings = [];
     const byDir = groupByDir(files);
@@ -458,6 +461,30 @@
       }
       for (const w of hw.watches){
         if (!I.RE_OT.test(w.wid)) add(w.wid, "wid-shape");
+      }
+      /* SKILL.md's section order convention owns this rule. Amendments,
+         reviews, status notes, and ledgers follow the Obligation Ticket List,
+         and evidence follows the Decision Log. A companion ahead of its pivot
+         is named with the key it should follow. A log that has no ticket
+         list yet ends its chain at its last canonical section, and a log
+         with no Decision Log gives evidence no zone, so we leave it alone.
+         We ask
+         buildTicket for the canonical flags and keys, so the first-occurrence
+         rule keeps its one owner. Ad hoc sections and canonical repeats are
+         not governed, so they raise nothing. */
+      const rows = buildTicket(dir, text).sections;
+      const canon = rows.map((s, i) => s.canonical ? i : -1).filter(i => i > -1);
+      if (canon.length){
+        const otl = rows.findIndex(s => s.canonical && s.phase === 9);
+        const chainEnd = otl === -1 ? canon[canon.length - 1] : otl;
+        const dl = dlSectionIndex(rows);
+        rows.forEach((s, i) => {
+          if (s.canonical) return;
+          const kind = P.metaFor(s.title).kind;
+          if (kind === "artifact" || kind === "ad-hoc") return;
+          const zone = kind === "evidence" ? dl : chainEnd;
+          if (zone !== -1 && i < zone) findings.push({dir: dir, id: s.key, finding: "misplaced", after: rows[zone].key});
+        });
       }
     }
     return findings;
