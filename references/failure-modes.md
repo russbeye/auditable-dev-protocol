@@ -39,6 +39,18 @@ The conversation carries only gate questions and can be summarized or lost, so n
 only there. Persisting from Phase 1, even when the work fits in one session, is what lets the developer
 watch the log grow and what keeps the record alive through context loss.
 
+## Reading the corpus
+
+Census tooling reads every log as UTF-8; the contract is the Encoding subsection of SKILL.md. A read
+under any other decoding (`open(p)` under a C locale, `encoding="latin1"`) fails silently: the bytes
+decode, every non-ASCII character comes out as two or three others, the ledger arrow `→` among them,
+so no closure line matches the record grammar and every watch reads as still open. The MC-001
+stage-5 census hit this and un-harvested all 89 closures with no error. The symptom is a closure
+count of zero over a corpus that has closed watches. Read with `encoding="utf-8"` in Python and
+`"utf8"` in Node, and count `→` in the decoded text: zero over this corpus means the decoding is
+wrong. A log that `grep -I` calls binary carries a raw control byte, which the contract forbids and
+`lintCorpus` reports as `control-byte` with the byte's offset.
+
 ## Meta
 
 This protocol is itself subject to the protocol. Amendments require a logged reason in a revision

@@ -184,6 +184,22 @@ the artifact by name and does not reproduce it. Everything else goes to the file
 deliberate output-token budget: narrating artifacts into the chat duplicates the audit log and pays
 for it twice.
 
+### Encoding
+
+An audit log is UTF-8 throughout, and so is every file a run writes beside it. A control byte other
+than tab, newline, and carriage return (U+0000–U+0008, U+000B, U+000C, U+000E–U+001F, U+007F) is
+written escaped inside a code span, `\u0000` for NUL, never raw. A raw one makes `grep` call the log
+binary, so a census that shells out skips the file, and the sentence around it loses the byte it was
+naming. Every reader on record decodes UTF-8: `adp-serve.py` sends `charset=utf-8`, the pages read
+`res.text()`, and the suite reads `"utf8"`. A reader that decodes anything else mangles every
+non-ASCII character, the ledger arrow `→` first, so no closure line matches the record grammar;
+`references/failure-modes.md` names that trap for census tooling. `lintCorpus` reports a raw control
+byte as a `control-byte` advisory that names the log in `id` and carries `offset`, the UTF-8 byte
+offset of the byte. The advisory never fails a check and never enters an index document. The two
+logs on record that carried a raw NUL were repaired in place on 2026-09-14 by escaping the byte
+(SWEEP-005), the one representation repair the record allows: each sentence reads the same, and the
+index built over the swept corpus is byte-identical.
+
 ## Core principles
 
 1. Each phase resolves its open questions before the next begins. An unresolved question becomes a

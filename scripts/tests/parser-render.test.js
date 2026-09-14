@@ -243,6 +243,14 @@ test("a literal NUL inside a table code span survives the split byte-for-byte", 
   assert.ok(html.includes("<code>\u0000</code>"));
 });
 
+test("the control-byte fixture renders with the byte intact, and the escaped form renders as six characters", () => {
+  const raw = fs.readFileSync(path.join(__dirname, "fixtures", "corpus", "misc-notes", "audit-log.md"), "utf8");
+  const {secs} = parseSections(raw);
+  assert.equal(secs.length, 1);
+  assert.ok(renderMarkdown(secs[0].body.join("\n")).includes("<code>a\u0000b</code>"));
+  assert.ok(renderMarkdown("`\\u0000`").includes("<code>\\u0000</code>"));
+});
+
 // ---- list grouping (loose lists stay one list) ----
 
 test("a loose ordered list renders as one ol, so markers count 1..N", () => {
