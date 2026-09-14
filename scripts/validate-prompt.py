@@ -170,9 +170,9 @@ def main():
 
     path = sys.argv[1]
     try:
-        with open(path) as handle:
+        with open(path, encoding="utf-8") as handle:
             doc = yaml.safe_load(handle)
-    except (OSError, yaml.YAMLError) as exc:
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
         print(f"error: could not read or parse {path}: {exc}", file=sys.stderr)
         sys.exit(2)
 

@@ -42,9 +42,12 @@ watch the log grow and what keeps the record alive through context loss.
 ## Reading the corpus
 
 Census tooling reads every log as UTF-8; the contract is the Encoding subsection of SKILL.md. A read
-under any other decoding (`open(p)` under a C locale, `encoding="latin1"`) fails silently: the bytes
-decode, every non-ASCII character comes out as two or three others, the ledger arrow `→` among them,
-so no closure line matches the record grammar and every watch reads as still open. The MC-001
+under any other decoding fails silently: the bytes decode, every non-ASCII character comes out as two
+or three others, the ledger arrow `→` among them, so no closure line matches the record grammar and
+every watch reads as still open. The two real triggers are an explicit `encoding="latin1"`, which is
+the read the stage-5 census wrote, and a bare `open(p)` under a non-UTF-8 locale such as Windows
+cp1252 before Python 3.15. A bare `open(p)` under the C or POSIX locale is not a trigger: Python 3.7
+and later switch on UTF-8 mode there, so that read decodes UTF-8. The MC-001
 stage-5 census hit this and un-harvested all 89 closures with no error. The symptom is a closure
 count of zero over a corpus that has closed watches. Read with `encoding="utf-8"` in Python and
 `"utf8"` in Node, and count `→` in the decoded text: zero over this corpus means the decoding is
