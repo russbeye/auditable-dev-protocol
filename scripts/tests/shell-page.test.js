@@ -1277,18 +1277,20 @@ function liveCorpus(){
   return st;
 }
 const LOG_GROWN = LOG.replace("## Aside Notes", "## Test Adversary Document\n\nGrown while watched.\n\n## Aside Notes");
+const entry = (h, key) => h.$$(".rentry").find(r => r.getAttribute("data-key") === key);
 
 test("a served log that grows re-renders within one tick", async () => {
   const live = liveCorpus();
   const h = bootShell({stored: "dark", fetch: live.fetch});
   await h.settle();
   assert.doesNotMatch(h.$("#scrInspector").innerHTML, /Test Adversary Document/);
+  assert.match(entry(h, "AA1").innerHTML, /5 SECTIONS MISSING/);
   live.texts["20260101-AA1-alpha/audit-log.md"] = LOG_GROWN;
   h.tick();
   await h.settle();
   assert.match(h.$("#scrInspector").innerHTML, /Test Adversary Document/);
-  // The rail's missing-sections ribbon counts the new section too.
-  assert.doesNotMatch(h.$("#rail").innerHTML, /9 SECTIONS MISSING[\s\S]*AA1/);
+  // The rail re-rendered too: AA1's own ribbon counts one section fewer.
+  assert.match(entry(h, "AA1").innerHTML, /4 SECTIONS MISSING/);
 });
 
 test("an unchanged tick renders nothing and disturbs no reader state", async () => {
@@ -1325,13 +1327,52 @@ test("a failed re-fetch keeps the last good corpus and traces once", async () =>
   assert.match(h.warns[0], /corpus load failed/);
 });
 
-test("a page with no corpus behind it never polls for one", async () => {
-  const h = bootShell({stored: "dark"});
+test("a file:// open never polls for a corpus", async () => {
+  const h = bootShell({stored: "dark", href: "file:///mission-control.html"});
   await h.settle();
   assert.equal(h.warns.length, 1);
   h.tick(); h.tick();
   await h.settle();
   assert.equal(h.warns.length, 1);
+  assert.equal(h.$("#projChit").textContent, "no corpus");
+});
+
+test("a served page whose boot load failed catches up on a later tick", async () => {
+  const live = liveCorpus();
+  live.down = true;
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  assert.equal(h.$("#projChit").textContent, "no corpus");
+  assert.equal(h.warns.length, 1);
+  live.down = false;
+  h.tick();
+  await h.settle();
+  assert.equal(h.$("#projChit").textContent, "project: demo");
+  assert.match(h.$("#rail").innerHTML, /AA1/);
+});
+
+test("a served page with no corpus directory probes quietly", async () => {
+  const h = bootShell({stored: "dark", fetch: () => Promise.resolve({ok: false})});
+  await h.settle();
+  h.tick(); h.tick();
+  await h.settle();
+  assert.equal(h.warns.length, 0);
+  assert.equal(h.$("#projChit").textContent, "no corpus");
+});
+
+test("a hidden tab skips the corpus fetch until it is shown again", async () => {
+  const live = liveCorpus();
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  assert.equal(live.listings, 1);
+  h.document.visibilityState = "hidden";
+  h.tick();
+  await h.settle();
+  assert.equal(live.listings, 1);
+  h.document.visibilityState = "visible";
+  h.tick();
+  await h.settle();
+  assert.equal(live.listings, 2);
 });
 
 test("ticks never overlap a corpus load in flight", async () => {

@@ -205,7 +205,8 @@ function inlineScripts(){
 /* Boot the page. opts.stored seeds the adp-theme key, opts.matchMediaLight
    answers the system-preference probe, opts.storageThrows models a browser
    that blocks storage, opts.fetch is the seam's network, opts.hash seeds
-   location.hash before the scripts run, and opts.picker installs a
+   location.hash before the scripts run, opts.href sets the page's own URL
+   (its protocol decides whether the corpus poll runs), and opts.picker installs a
    showOpenFilePicker stub, which is how a test enters the watch path. The
    default fetch rejects, which is what a file:// open does. */
 function bootShell(opts){
@@ -244,12 +245,16 @@ function bootShell(opts){
   };
   if (opts.picker) window.showOpenFilePicker = opts.picker;
 
-  const location = {hash: opts.hash || "", href: "http://local/mission-control.html" + (opts.hash || "")};
+  // opts.href is the page's own URL without its hash; the protocol comes
+  // from it, so a test can open the page over file://.
+  const base = opts.href || "http://local/mission-control.html";
+  const location = {hash: opts.hash || "", href: base + (opts.hash || ""),
+    protocol: base.slice(0, base.indexOf(":") + 1)};
   const hashes = [];
   const history = {
     replaceState(_s, _t, url){
       location.hash = String(url);
-      location.href = "http://local/mission-control.html" + url;
+      location.href = base + url;
       hashes.push(String(url));
     }
   };

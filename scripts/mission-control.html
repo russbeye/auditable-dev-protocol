@@ -625,11 +625,14 @@
      does, and a page left open past midnight rolls its day-based ages once
      instead of holding the boot date. A null load is a failure the seam has
      already traced to the console; we keep the last good corpus on screen
-     and try again next tick. A page with no corpus behind it never polls:
-     a file:// open would otherwise warn every 1.5s. */
+     and try again next tick, which is how a page whose boot load failed
+     catches up once the server answers. A file:// open never polls: there
+     is no server to answer, and every tick would warn. A hidden tab never
+     polls either, because a full corpus fetch for a page nobody is looking
+     at buys nothing; the first tick after the tab is shown catches up. */
   const sigOf = c => JSON.stringify([c.index.generated, c.index.tickets, c.texts]);
   async function pollCorpus(){
-    if (corpusLoading || !corpus) return;
+    if (corpusLoading || location.protocol === "file:" || document.visibilityState === "hidden") return;
     corpusLoading = true;
     const c = await S.loadCorpus(u => fetch(u));
     corpusLoading = false;
