@@ -122,13 +122,13 @@ form, clears a phase from `missing` in the index. Where sections sit in the log 
 A log is the canonical chain, then everything that happened after it. The chain is the fourteen
 canonical headings, once each, in the order the phase templates below list them, and every complete
 log on record writes them that way. A companion section takes its place from its kind. The rule
-comes from a census of the thirty-three logs on record (168 non-canonical sections), and each row
-cites the count it codifies.
+comes from a census of the thirty-three logs on record before this rule's own run (168 non-canonical
+sections, counted 2026-09-14), and each row cites the count it codifies.
 
 | Kind | Where it belongs | On record |
 |------|------------------|-----------|
 | `amendment`, `review`, `status`, `ledger` | After the Obligation Ticket List, in the order the events happened. A log that has not reached Phase 9 appends them after its last canonical section. | 75 of 75 sections sit after the chain: 31 amendments in 30 logs, 24 review sections in 4, 13 status sections in 4, 7 ledgers in 6. |
-| `evidence` | Beside the artifact that cites it, anywhere from the Decision Log onward: a Phase 6 render just before the Test Adversary Document, a coverage table inside the Phase 7 block (PR Summary through Test Coverage Gaps), or after the ticket list. | 11 of 11 sit after the Decision Log: 3 just before the Test Adversary Document, 5 inside the Phase 7 block, 3 after the ticket list. |
+| `evidence` | Beside the artifact that cites it, anywhere from the Decision Log onward: a Phase 6 render just before the Test Adversary Document, a coverage table inside the Phase 7 block (PR Summary through Test Coverage Gaps), or after the ticket list. A log with no Decision Log gives evidence no zone, and the lint leaves it alone. | 11 of 11 sit after the Decision Log: 3 just before the Test Adversary Document, 5 inside the Phase 7 block, 3 after the ticket list. |
 | `ad-hoc` | Not governed. The heading says what the section is, and the section sits where that makes sense. | 2 after the chain, 1 inside the Phase 7 block. |
 
 A repeat of a canonical heading ("Decision Log — Stage 2") is that artifact's amendment, not a
@@ -139,7 +139,10 @@ chain under suffixed headings.
 Every run on record writes all nine phases before its PR opens, which is why review rounds land
 after the chain. A section written where the chain then grows past it, a review that arrives before
 Phase 8 is written or a status note at a pause, takes the advisory and stays where it landed:
-history is append-only, and no log reorders to satisfy this rule. `lintCorpus` reports a companion
+history is append-only, and no log reorders to satisfy this rule. A stage that resumes a chain its
+predecessor left short of Phase 9 grows the chain past the companions that predecessor wrote, and
+they take the advisory too; nothing on record does this, because every first stage shipped its
+ticket list before a second stage opened. `lintCorpus` reports a companion
 section ahead of its place as a `misplaced` advisory that names the section key and, in `after`, the
 key of the section it should follow. The advisory never fails a check and never enters an index
 document, and every deviation older than this rule stands as written.

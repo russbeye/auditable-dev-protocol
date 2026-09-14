@@ -309,6 +309,18 @@ test("ad hoc sections and canonical repeats are not governed", () => {
   ])), []);
 });
 
+test("evidence takes the Decision Log as its only zone, and has none without one", () => {
+  // Without a Decision Log the rule gives evidence no place, so the lint
+  // must not send a Phase 6 render past the ticket list.
+  assert.deepEqual(builder.lintCorpus(orderLog([
+    "Problem Statement", "Test Adversary Document", "Verification record", "Obligation Ticket List"
+  ])), []);
+  // A Decision Log after the ticket list still opens the evidence zone.
+  assert.deepEqual(builder.lintCorpus(orderLog([
+    "Problem Statement", "Obligation Ticket List", "Verification record", "Decision Log", "Files changed"
+  ])), [{dir: "T-1-x", id: "sec-verification-record", finding: "misplaced", after: "sec-decision-log"}]);
+});
+
 test("without a ticket list the chain ends at the last canonical section, and a later stage is tail", () => {
   assert.deepEqual(builder.lintCorpus(orderLog(["Problem Statement", "Run status", "Decision Log"])),
     [{dir: "T-1-x", id: "sec-run-status", finding: "misplaced", after: "sec-decision-log"}]);
@@ -318,6 +330,14 @@ test("without a ticket list the chain ends at the last canonical section, and a 
     "Stage 2 — more (run start 2026-09-01)", "Decision Log — Stage 2", "Review Response — PR #2",
     "Obligation Ticket List — Stage 2", "Ledger — round 2"
   ])), []);
+  // A second stage that resumes a chain left short of Phase 9 grows the
+  // chain past the first stage's companions, which SKILL.md says take the
+  // advisory and stay put.
+  assert.deepEqual(builder.lintCorpus(orderLog([
+    "Problem Statement", "Decision Log", "Stage 2 — more (run start 2026-09-01)",
+    "Deployment Risk Statement — Stage 2", "Obligation Ticket List — Stage 2"
+  ])), [{dir: "T-1-x", id: "sec-stage-2-more-run-start-2026-09-01", finding: "misplaced",
+         after: "sec-obligation-ticket-list-stage-2"}]);
 });
 
 test("SKILL.md's section order convention names the lint kind that enforces it", () => {

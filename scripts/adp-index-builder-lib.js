@@ -466,7 +466,9 @@
          reviews, status notes, and ledgers follow the Obligation Ticket List,
          and evidence follows the Decision Log. A companion ahead of its pivot
          is named with the key it should follow. A log that has no ticket
-         list yet ends its chain at its last canonical section. We ask
+         list yet ends its chain at its last canonical section, and a log
+         with no Decision Log gives evidence no zone, so we leave it alone.
+         We ask
          buildTicket for the canonical flags and keys, so the first-occurrence
          rule keeps its one owner. Ad hoc sections and canonical repeats are
          not governed, so they raise nothing. */
@@ -480,8 +482,8 @@
           if (s.canonical) return;
           const kind = P.metaFor(s.title).kind;
           if (kind === "artifact" || kind === "ad-hoc") return;
-          const zone = kind === "evidence" && dl !== -1 ? Math.min(dl, chainEnd) : chainEnd;
-          if (i < zone) findings.push({dir: dir, id: s.key, finding: "misplaced", after: rows[zone].key});
+          const zone = kind === "evidence" ? dl : chainEnd;
+          if (zone !== -1 && i < zone) findings.push({dir: dir, id: s.key, finding: "misplaced", after: rows[zone].key});
         });
       }
     }
