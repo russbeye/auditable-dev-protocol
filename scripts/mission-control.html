@@ -191,12 +191,14 @@
 
   // A canonical section's chip carries its phase. A non-canonical one still
   // gets the artifact family's tag when ART recognizes the title ("Decision
-  // Log — Stage 2" reads P5), and § only when nothing does.
+  // Log — Stage 2" reads P5), and its kind otherwise, so a ledger or an ad
+  // hoc note is named rather than marked §.
   function chipModel(t, key){
     const s = t.sections.find(x => x.key === key);
+    const meta = s ? P.metaFor(s.title) : null;
     const label = !s ? "§"
       : s.phase != null ? "P" + s.phase
-      : P.metaFor(s.title).tag || "§";
+      : meta.tag || meta.kind;
     return {key, label, title: s ? s.title : key};
   }
 

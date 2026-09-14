@@ -1,0 +1,73 @@
+<!-- sec-problem-statement | P1 | Problem Statement -->
+<p><strong>What the problem is:</strong> A log needs one section of every kind so the viewers and the index can be checked against the whole vocabulary at once.<br><strong>What the problem is not:</strong> A real run. Nothing here was measured.<br><strong>Human-level definition of done:</strong> Every kind renders with its label, and the index row reads as expected.<br><strong>Confirmed by:</strong> the fixture author   <strong>Date:</strong> 2026-09-11</p>
+
+<!-- sec-knowledge-gap-document | P2 | Knowledge Gap Document -->
+<div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Known</th><th>Inferred (flagged)</th><th>Cannot Determine</th></tr></thead><tbody><tr><td>The registry tags fourteen artifact headings.</td><td>Companion kinds recur.</td><td>Whether a reader ever opens this fixture.</td></tr></tbody></table></div>
+
+<!-- sec-open-questions-resolve-before-phase-3 | P2 | Open Questions (resolve before Phase 3) -->
+<ol class="md-list"><li>Does one section per kind suffice? → Yes; a second copy would only test deduping, which FX-003 covers.</li></ol>
+
+<!-- sec-recommendation-brief | P3 | Recommendation Brief -->
+<p><strong>Recommended approach:</strong> One heading per kind, in phase order, companions after the ticket list.<br><strong>Defense:</strong> The smallest log that touches every registry row is the cheapest full-vocabulary assertion.<br><strong>Assumptions this depends on:</strong> DL-001.</p>
+
+<!-- sec-pre-mortem-report | P4 | Pre-Mortem Report -->
+<div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Failure mode</th><th>Likelihood</th><th>Impact</th><th>Developer response (rebuttal or mitigation)</th><th>Monitoring signal</th><th>Implemented at</th></tr></thead><tbody><tr><td>A kind is missing from the fixture</td><td><span class="pill p-low">L</span></td><td><span class="pill p-high">H</span></td><td>Mitigation: the parser suite counts kinds.</td><td>The count test — fires at any kind not seen once</td><td><code>renderViewerGolden</code></td></tr></tbody></table></div>
+
+<!-- sec-implementation-authorization | P4 | Implementation Authorization -->
+<p>All <span class="pill p-high">HIGH</span>-likelihood items resolved: YES<br>Authorized by: the fixture author</p>
+
+<!-- sec-decision-log | P5 | Decision Log -->
+<div class="dl-cards"><div class="dl-card rail-ok">
+      <div class="dl-head">
+        <span class="dl-id">DL-001</span>
+        <span class="dl-title">One section per kind</span>
+        <span class="dl-pills"><span class="pill dl-pill p-ok"><i>conf</i>HIGH</span><span class="pill dl-pill p-ok"><i>status</i>VALIDATED</span></span>
+      </div>
+      <div class="dl-grid"><div class="dl-row"><span class="dl-k">Decision</span><span class="dl-v">We write each kind exactly once.</span></div><div class="dl-row"><span class="dl-k">Confidence basis</span><span class="dl-v">DIRECT EVIDENCE — the parser suite counts them.</span></div><div class="dl-row"><span class="dl-k">Created</span><span class="dl-v">2026-09-11 / Phase 5</span></div></div>
+    </div><div class="dl-card rail-open">
+      <div class="dl-head">
+        <span class="dl-id">DL-002</span>
+        <span class="dl-title">Companions sit after the ticket list</span>
+        <span class="dl-pills"><span class="pill dl-pill p-high"><i>conf</i>LOW</span><span class="pill dl-pill p-open"><i>status</i>OPEN</span></span>
+      </div>
+      <div class="dl-grid"><div class="dl-row"><span class="dl-k">Decision</span><span class="dl-v">We place every companion section after the Obligation Ticket List.</span></div><div class="dl-row"><span class="dl-k">Confidence basis</span><span class="dl-v">INFERENCE FROM CONVENTION — most logs on record append companions at the end.</span></div><div class="dl-row"><span class="dl-k">Created</span><span class="dl-v">2026-09-11 / Phase 5</span></div></div>
+    </div></div>
+
+<!-- sec-test-adversary-document | P6 | Test Adversary Document -->
+<p><strong>What passing tests prove:</strong> Each kind resolves to its label and the index row holds its shape.<br><strong>What passing tests do not prove:</strong></p><div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Gap</th><th>Why untestable / untested</th><th>Risk if the assumption is wrong</th><th>dl_ref</th></tr></thead><tbody><tr><td>Placement of companions</td><td>Order is another ticket's convention</td><td>A viewer sorts nothing</td><td>DL-002</td></tr></tbody></table></div>
+
+<!-- sec-pr-summary | P7 | PR Summary -->
+<p><strong>Problem being solved:</strong> The vocabulary needs a fixture.<br><strong>Approach taken:</strong> One section per kind.<br><strong>Key decisions:</strong> DL-001 (<span class="pill p-high">HIGH</span>), DL-002 (<span class="pill p-low">LOW</span>, flagged below).</p>
+
+<!-- sec-mandatory-review-items-low-confidence-deci | P7 | 🚩 Mandatory Review Items (LOW-confidence decisions) -->
+<ul class="md-list"><li class="task"><span class="cbx "></span><span>DL-002: companions after the ticket list — placement is convention, not rule — reviewer must respond</span></li></ul>
+
+<!-- sec-residual-risk | P7 | Residual Risk -->
+<p>The fixture proves labels, not meaning. A section can wear the right kind and say the wrong thing.</p>
+
+<!-- sec-test-coverage-gaps | P6 | Test Coverage Gaps -->
+<p>No test reads a section body against its kind.</p>
+
+<!-- sec-deployment-risk-statement | P8 | Deployment Risk Statement -->
+<p><strong>Known unknowns at ship time:</strong> DL-002.<br><strong>Monitoring targets:</strong></p><div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Assumption</th><th>Signal that it was wrong</th><th>Threshold</th><th>dl_ref</th></tr></thead><tbody><tr><td>Companions sit last</td><td>A log with a companion above its ticket list</td><td>One log</td><td>DL-002</td></tr></tbody></table></div><p><strong>Rollback trigger conditions:</strong></p><ul class="md-list"><li class="task"><span class="cbx "></span><span>The kind count test fails on a fresh checkout → rollback</span></li></ul><p><strong>Staged rollout:</strong> NO — a fixture ships whole.</p>
+
+<!-- sec-obligation-ticket-list | P9 | Obligation Ticket List -->
+<div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Ticket ID</th><th>Decision Log ref</th><th>Assumption to validate</th><th>Priority</th><th>Exit condition</th><th>Observation window</th></tr></thead><tbody><tr><td>OT-FX004-1</td><td>DL-002</td><td>Companions sit after the ticket list</td><td><span class="pill p-low">LOW</span></td><td>A log breaks the convention → <span class="pill p-bad">INVALIDATED</span></td><td>30 days after merge</td></tr><tr><td>OT-FX004-2</td><td>DL-001</td><td>One section per kind holds</td><td><span class="pill p-low">LOW</span></td><td>The count test stays green → <span class="pill p-ok">VALIDATED</span></td><td>2026-10-11</td></tr></tbody></table></div><p><strong>Decision Log status:</strong> CLOSED   <strong>Closed by:</strong> the fixture author   <strong>Date:</strong> 2026-09-11</p>
+
+<!-- sec-requirement-coverage | evidence | Requirement coverage -->
+<div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>Requirement</th><th>Covered by</th></tr></thead><tbody><tr><td>Every kind once</td><td>The parser suite's kind count, DL-001</td></tr></tbody></table></div>
+
+<!-- sec-run-status | status | Run status -->
+<p>Every phase is written, the ticket list is closed, and the companions below are on the record.</p>
+
+<!-- sec-review-response-pr-4-2026-09-12 | review | Review Response — PR #4 (2026-09-12) -->
+<p>The reviewer asked whether the ad hoc section needed a kind of its own. It does not: ad hoc is the kind. No change; DL-002 stays open.</p>
+
+<!-- sec-post-merge-note-pr-4-merged-2026-09-13 | ledger | Post-merge note — PR #4 merged (2026-09-13) -->
+<ul class="md-list"><li><strong>OT-FX004-1 RE-ANCHORED 2026-09-13 → 2026-10-13.</strong> The relative window gains its absolute date.</li><li><strong>OT-FX004-2 CLOSED 2026-09-13 → <span class="pill p-ok">VALIDATED</span>.</strong> The count test stayed green through the window.</li></ul>
+
+<!-- sec-sweep-amendment-2026-09-14 | amendment | Sweep amendment — 2026-09-14 -->
+<p>A later sweep read this log and found nothing to amend. The line exists so the kind exists.</p>
+
+<!-- sec-naming-note | ad-hoc | Naming note -->
+<p>Why "kind" and not "type": the index already uses type words for tokens, and a section's kind is a reading of its title, not a schema. This heading matches no row on purpose.</p>

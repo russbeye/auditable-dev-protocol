@@ -304,6 +304,221 @@
       ]
     },
     {
+      "id": "FX004",
+      "dir": "20260911-FX004-section-vocabulary",
+      "slug": "section-vocabulary",
+      "date": "2026-09-11",
+      "title": "Audit Log — FX-004 section vocabulary",
+      "state": "closed",
+      "state_source": "inferred",
+      "pr": null,
+      "merged": null,
+      "phase": 9,
+      "sections": [
+        {
+          "key": "sec-problem-statement",
+          "title": "Problem Statement",
+          "phase": 1,
+          "canonical": true
+        },
+        {
+          "key": "sec-knowledge-gap-document",
+          "title": "Knowledge Gap Document",
+          "phase": 2,
+          "canonical": true
+        },
+        {
+          "key": "sec-open-questions-resolve-before-phase-3",
+          "title": "Open Questions (resolve before Phase 3)",
+          "phase": 2,
+          "canonical": true
+        },
+        {
+          "key": "sec-recommendation-brief",
+          "title": "Recommendation Brief",
+          "phase": 3,
+          "canonical": true
+        },
+        {
+          "key": "sec-pre-mortem-report",
+          "title": "Pre-Mortem Report",
+          "phase": 4,
+          "canonical": true
+        },
+        {
+          "key": "sec-implementation-authorization",
+          "title": "Implementation Authorization",
+          "phase": 4,
+          "canonical": true
+        },
+        {
+          "key": "sec-decision-log",
+          "title": "Decision Log",
+          "phase": 5,
+          "canonical": true
+        },
+        {
+          "key": "sec-test-adversary-document",
+          "title": "Test Adversary Document",
+          "phase": 6,
+          "canonical": true
+        },
+        {
+          "key": "sec-pr-summary",
+          "title": "PR Summary",
+          "phase": 7,
+          "canonical": true
+        },
+        {
+          "key": "sec-mandatory-review-items-low-confidence-deci",
+          "title": "🚩 Mandatory Review Items (LOW-confidence decisions)",
+          "phase": 7,
+          "canonical": true
+        },
+        {
+          "key": "sec-residual-risk",
+          "title": "Residual Risk",
+          "phase": 7,
+          "canonical": true
+        },
+        {
+          "key": "sec-test-coverage-gaps",
+          "title": "Test Coverage Gaps",
+          "phase": 6,
+          "canonical": true
+        },
+        {
+          "key": "sec-deployment-risk-statement",
+          "title": "Deployment Risk Statement",
+          "phase": 8,
+          "canonical": true
+        },
+        {
+          "key": "sec-obligation-ticket-list",
+          "title": "Obligation Ticket List",
+          "phase": 9,
+          "canonical": true
+        },
+        {
+          "key": "sec-requirement-coverage",
+          "title": "Requirement coverage",
+          "phase": null,
+          "canonical": false
+        },
+        {
+          "key": "sec-run-status",
+          "title": "Run status",
+          "phase": null,
+          "canonical": false
+        },
+        {
+          "key": "sec-review-response-pr-4-2026-09-12",
+          "title": "Review Response — PR #4 (2026-09-12)",
+          "phase": null,
+          "canonical": false
+        },
+        {
+          "key": "sec-post-merge-note-pr-4-merged-2026-09-13",
+          "title": "Post-merge note — PR #4 merged (2026-09-13)",
+          "phase": null,
+          "canonical": false
+        },
+        {
+          "key": "sec-sweep-amendment-2026-09-14",
+          "title": "Sweep amendment — 2026-09-14",
+          "phase": null,
+          "canonical": false
+        },
+        {
+          "key": "sec-naming-note",
+          "title": "Naming note",
+          "phase": null,
+          "canonical": false
+        }
+      ],
+      "refs": {
+        "sec-recommendation-brief": [
+          "DL-001"
+        ],
+        "sec-decision-log": [
+          "DL-001",
+          "DL-002"
+        ],
+        "sec-test-adversary-document": [
+          "DL-002"
+        ],
+        "sec-pr-summary": [
+          "DL-001",
+          "DL-002"
+        ],
+        "sec-mandatory-review-items-low-confidence-deci": [
+          "DL-002"
+        ],
+        "sec-deployment-risk-statement": [
+          "DL-002"
+        ],
+        "sec-obligation-ticket-list": [
+          "OT-FX004-1",
+          "DL-002",
+          "OT-FX004-2",
+          "DL-001"
+        ],
+        "sec-requirement-coverage": [
+          "DL-001"
+        ],
+        "sec-review-response-pr-4-2026-09-12": [
+          "DL-002"
+        ],
+        "sec-post-merge-note-pr-4-merged-2026-09-13": [
+          "OT-FX004-1",
+          "OT-FX004-2"
+        ]
+      },
+      "decisions": [
+        {
+          "id": "DL-001",
+          "title": "One section per kind",
+          "confidence": "HIGH",
+          "basis": "DIRECT EVIDENCE — the parser suite counts them.",
+          "status": "VALIDATED",
+          "created": "2026-09-11"
+        },
+        {
+          "id": "DL-002",
+          "title": "Companions sit after the ticket list",
+          "confidence": "LOW",
+          "basis": "INFERENCE FROM CONVENTION — most logs on record append companions at the end.",
+          "status": "OPEN",
+          "created": "2026-09-11"
+        }
+      ],
+      "watches": [
+        {
+          "wid": "OT-FX004-1",
+          "dl": [
+            "DL-002"
+          ],
+          "what": "Companions sit after the ticket list",
+          "due": "2026-10-13",
+          "anchored": true,
+          "window": "30 days after merge"
+        },
+        {
+          "wid": "OT-FX004-2",
+          "dl": [
+            "DL-001"
+          ],
+          "what": "One section per kind holds",
+          "due": "2026-10-11",
+          "anchored": true,
+          "window": "2026-10-11",
+          "closed": "2026-09-13",
+          "outcome": "VALIDATED"
+        }
+      ],
+      "missing": []
+    },
+    {
       "id": "AV090",
       "dir": "AV-090-legacy-inferred",
       "slug": "legacy-inferred",

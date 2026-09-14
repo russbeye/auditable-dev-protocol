@@ -32,7 +32,8 @@ const normalize = lib.normalize;
 
 /* We compose the viewer golden the same way render() in ADP-Parser.html
    routes sections, minus the DOM. Each section becomes a marker comment with
-   its deduped key, registry tag, and title, followed by the rendered body
+   its deduped key, registry tag (or kind, when it has no phase), and title,
+   followed by the rendered body
    HTML. The golden test and the regeneration one-liner in
    fixtures/viewer-example.js both call this, so the fixture cannot be
    composed two different ways. */
@@ -44,7 +45,7 @@ function renderViewerGolden(md){
     const meta = metaFor(sec.title);
     const body = sec.body.join("\n");
     const html = meta.spine ? renderDecisionLog(body) : renderMarkdown(body);
-    return "<!-- " + keys[i] + " | " + (meta.tag || "-") + " | " + sec.title + " -->\n" + html;
+    return "<!-- " + keys[i] + " | " + (meta.tag || meta.kind) + " | " + sec.title + " -->\n" + html;
   }).join("\n\n") + "\n";
 }
 

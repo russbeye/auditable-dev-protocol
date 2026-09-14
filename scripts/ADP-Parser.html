@@ -190,7 +190,9 @@
       const isCollapsed = act.collapsed.has(key);
       const cls=['art', meta.spine?'spine':'', meta.alert?'alert':'', isCollapsed?'collapsed':'', changed?'flash':''].filter(Boolean).join(' ');
       const spinePill = meta.spine?'<span class="art-spine-pill">spine</span>':'';
-      const tagPill = meta.tag?`<span class="art-tag">${meta.tag}</span>`:'';
+      // A canonical section's pill is its phase. Every other section shows
+      // its kind, so a ledger or an ad hoc note never reads as untagged.
+      const tagPill = `<span class="art-tag">${meta.tag||meta.kind}</span>`;
 
       // The toggle and the permalink are real buttons emitted by this
       // template, not enhancements added after load. Live updates rebuild the
@@ -211,7 +213,7 @@
 
       // The ti-open badge lets a reviewer spot outstanding decisions from the
       // TOC, so it only renders when the open count is nonzero.
-      tocItems.push(`<li><a href="#${key}" data-toc="${key}"><span class="ti-icon">${meta.icon}</span><span class="ti-name">${esc(sec.title)}</span>${meta.tag?`<span class="ti-tag">${meta.tag}</span>`:''}${counts&&counts.open?`<span class="ti-tag ti-open">${counts.open} open</span>`:''}</a></li>`);
+      tocItems.push(`<li><a href="#${key}" data-toc="${key}"><span class="ti-icon">${meta.icon}</span><span class="ti-name">${esc(sec.title)}</span><span class="ti-tag">${meta.tag||meta.kind}</span>${counts&&counts.open?`<span class="ti-tag ti-open">${counts.open} open</span>`:''}</a></li>`);
     });
 
     // A live update can empty the active bucket. Keeping the filter would hide

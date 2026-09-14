@@ -96,6 +96,28 @@ Each artifact feeds the next, and no artifact starts while the prior one has ope
 Log is the spine: it opens in Phase 5, stays live through Phase 8, and is the first thing you open
 when something breaks.
 
+### Section vocabulary
+
+An audit log's H2 headings are its sections, and every section has a kind. The kinds below come
+from a census of the logs on record: thirty-two logs wrote the same fourteen canonical headings and
+a small recurring set of companions. The registry in `scripts/adp-parser-lib.js` tags each kind,
+and both viewers label a section with it. The set is defined, not closed: a section the set does
+not cover is `ad-hoc`, which is a named kind and never an error.
+
+| Kind | What it is for | When a run writes it | Heading forms on record |
+|------|----------------|----------------------|-------------------------|
+| `artifact` | The fourteen canonical headings: the nine phase artifacts plus Open Questions, Implementation Authorization, Mandatory Review Items, Residual Risk, and Test Coverage Gaps. | Every run, once each, in phase order. A repeat of a canonical heading ("Decision Log — Stage 2", "Obligation Ticket List — amendment (date)") keeps the artifact's tag, and the index demotes the repeat to non-canonical. | The artifact names, or `Phase N: <name>` |
+| `amendment` | A dated correction appended to a log that is already on record, by a sweep or by the developer, never an edit in place. | After merge, when a sweep or a later ruling has to reach a finished log. | `Sweep amendment — <what> (<date>)`, `Post-run amendment (<date>)` |
+| `review` | The run's answer to a review round: the findings raised, what changed, what was refused and why. | During PR review, one section per round or per finding. | `Review Response — PR #N (<date>)`, `Review finding — …`, `Review findings — …`, `Review addendum — <date>` |
+| `status` | Where the run stands, in one place, for a reader who opens the log cold. | At a run start, a stage boundary, or a pause, whenever the phase chain alone would mislead. | `Run status`, `Run status — <qualifier>`, `Stage N — <name> (run start <date>)` |
+| `evidence` | A record of something observed or measured that an artifact cites: coverage against requirements, a verification transcript, a differential render, a browser check, the files a change touched. | Phase 6 onward, whenever a claim needs its evidence beside it rather than in the conversation. | `Requirement coverage`, `Verification record (<date>)`, `Differential corpus render …`, `Browser acceptance — PR #N (<date>)`, `Files changed` |
+| `ledger` | Closure records: the dated CLOSED and RE-ANCHORED lines of Phase 9, merge facts, and ticket dispositions that settle what the run left open. | After merge, or at a review round that closes a watch. Per Phase 9 a ruling line lands anywhere from the Decision Log onward. | `Ledger — <what>`, `Post-merge note — PR #N merged (<date>)`, `Ticket Dispositions (<date>, …)`, `Post-run resolutions (<date>)`, `Closure` |
+| `ad-hoc` | Anything the set above does not cover. | Rarely, one or two per run at most. The heading says what the section is, and it must not start with another kind's lead word. | Whatever the section is, in plain words |
+
+A companion section never counts toward a phase: only the artifact heading, or its `Phase N:`
+form, clears a phase from `missing` in the index. Where sections sit in the log is a separate
+convention, not part of this vocabulary.
+
 **Persist everything to one audit-log file, written live.** Every run has a task id, taken from the
 filled prompt's `task.id` or derived as a short, stable kebab-case slug when no filled prompt exists.
 At Phase 1, create `.adp/<task.id>/audit-log.md` at the project root and make it the system of record

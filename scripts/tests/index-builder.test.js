@@ -308,9 +308,29 @@ test("created keeps the leading date and drops the phase suffix", () => {
   assert.equal(dls[1].created, null);
 });
 
+test("FX004: every companion section lands non-canonical, and nothing is missing", () => {
+  const t = ticket(fixtureDoc(), "FX004");
+  assert.equal(t.state, "closed");
+  assert.equal(t.state_source, "inferred");
+  assert.equal(t.phase, 9);
+  assert.deepEqual(t.missing, []);
+  const companions = t.sections.slice(14);
+  assert.deepEqual(companions.map(s => s.key), [
+    "sec-requirement-coverage", "sec-run-status", "sec-review-response-pr-4-2026-09-12",
+    "sec-post-merge-note-pr-4-merged-2026-09-13", "sec-sweep-amendment-2026-09-14", "sec-naming-note"]);
+  assert.ok(companions.every(s => s.phase === null && s.canonical === false));
+  assert.ok(t.sections.slice(0, 14).every(s => s.canonical === true));
+  assert.deepEqual(t.decisions.map(d => [d.id, d.confidence, d.status]),
+    [["DL-001", "HIGH", "VALIDATED"], ["DL-002", "LOW", "OPEN"]]);
+  assert.deepEqual(t.watches.map(w => [w.wid, w.due, w.anchored, w.closed || null, w.outcome || null]),
+    [["OT-FX004-1", "2026-10-13", true, null, null], ["OT-FX004-2", "2026-10-11", true, "2026-09-13", "VALIDATED"]]);
+  assert.deepEqual(t.refs["sec-post-merge-note-pr-4-merged-2026-09-13"], ["OT-FX004-1", "OT-FX004-2"]);
+  assert.deepEqual(t.refs["sec-review-response-pr-4-2026-09-12"], ["DL-002"]);
+});
+
 test("a corpus-root file is not a ticket", () => {
   const doc = fixtureDoc();
-  assert.equal(doc.tickets.length, 6);
+  assert.equal(doc.tickets.length, 7);
   assert.equal(doc.tickets.some(t => t.dir === "README.md"), false);
 });
 
