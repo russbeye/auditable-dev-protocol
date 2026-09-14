@@ -26,8 +26,12 @@
   border:1px solid var(--line);padding:3px 8px;color:var(--dim);white-space:nowrap}
 .chit.src{border-color:var(--line-bright);color:var(--accent)}
 /* A clickable chit can be a real button, so we clear the button fill the
-   browser would paint under it. */
-.chit.click{cursor:pointer;background:none}
+   browser would paint under it. A button also keeps the browser's own
+   line-height, which follows whatever font the icon glyph falls back to,
+   so the sun and the moon gave the button two different heights and
+   neither matched the chits beside it. Inheriting the row's line-height
+   sizes it like its siblings. */
+.chit.click{cursor:pointer;background:none;line-height:inherit}
 .chit.click:hover{color:var(--ink);border-color:var(--line-bright)}
 /* The viewer's source pill in the chit's shape: the same three tones and
    the same blinking block, owned here because the shell paints it. */
