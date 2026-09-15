@@ -35,6 +35,9 @@ function waitForUrl(proc){
       if (m){ clearTimeout(timer); resolve(m[1]); }
     });
     proc.stderr.on("data", d => { stderr += d; });
+    // A missing interpreter emits error, not exit, so we name the requirement
+    // here instead of leaving a bare ENOENT stack for the next machine.
+    proc.on("error", e => { clearTimeout(timer); reject(new Error("adp-serve.py could not start (python3 must be on PATH): " + e.message)); });
     proc.on("exit", code => { clearTimeout(timer); reject(new Error("adp-serve.py exited " + code + "\n" + stderr)); });
   });
 }
