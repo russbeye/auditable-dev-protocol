@@ -1463,3 +1463,43 @@ test("a boot that failed honors the screen token at once and the ticket token wh
   assert.equal(h.$("#scrWatch").classList.contains("is-on"), true);
   assert.ok(entry(h, "AA1").classList.contains("is-sel"));
 });
+
+test("a pending ticket link never replaces a selection the reader made first", async () => {
+  const live = liveCorpus();
+  live.down = true;
+  const h = bootShell({stored: "dark", fetch: live.fetch, hash: "#t=AA1"});
+  await h.settle();
+  h.click(h.$$(".op").find(o => o.getAttribute("data-op") === "paste"));
+  h.$("#pasteArea").value = "# Pasted\n\n## Problem Statement\n\nmine.";
+  h.click(h.$("#pasteImport"));
+  await h.settle();
+  assert.ok(entry(h, "doc-1").classList.contains("is-sel"));
+  live.down = false;
+  h.tick();
+  await h.settle();
+  assert.ok(entry(h, "doc-1").classList.contains("is-sel"));
+  assert.ok(!entry(h, "AA1").classList.contains("is-sel"));
+});
+
+test("a file:// open with a ticket link keeps the URL following the reader", async () => {
+  const h = bootShell({stored: "dark", href: "file:///mission-control.html", hash: "#t=AA1"});
+  await h.settle();
+  assert.match(h.$("#scrInspector").innerHTML, /"AA1" is not in this corpus/);
+  h.click(h.$$(".mtab")[1]);
+  assert.equal(h.location.hash, "#v=watchboard");
+});
+
+test("a served page waiting for its corpus carries the ticket link through its hash writes", async () => {
+  const live = liveCorpus();
+  live.down = true;
+  const h = bootShell({stored: "dark", fetch: live.fetch, hash: "#t=AA1"});
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  assert.equal(h.location.hash, "#v=watchboard&t=AA1");
+  live.down = false;
+  h.tick();
+  await h.settle();
+  // The link's ticket lands; the screen the reader chose in the meantime stays.
+  assert.ok(entry(h, "AA1").classList.contains("is-sel"));
+  assert.equal(h.$("#scrWatch").classList.contains("is-on"), true);
+});

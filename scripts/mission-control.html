@@ -95,6 +95,7 @@
   // waits as pending until the seam resolves.
   let pendingSel = null;
   try{ pendingSel = S.hashRead(location.hash); }catch(e){}
+  let booting = true;                // the boot load is in flight
 
   // Derivations date against the index's own build day, so a tab left open
   // overnight keeps reporting the day the data is from.
@@ -509,10 +510,13 @@
      with every link minted before the token existed. */
   function syncHash(){
     // The boot render runs before the seam resolves, and the deep link the
-    // boot is about to honor must survive that first pass untouched.
-    if (pendingSel) return;
+    // boot is about to honor must survive that first pass untouched. After
+    // the boot the URL follows the reader; a ticket link still waiting for
+    // its corpus rides along until the reader selects something.
+    if (booting) return;
+    const pend = !sel.t && pendingSel && pendingSel.t ? pendingSel : sel;
     const h = S.hashWrite({v: selScreen === "inspector" ? null : selScreen,
-      t: sel.t, s: sel.s, item: sel.item});
+      t: pend.t, s: pend.s, item: pend.item});
     // An empty composition clears the hash. Keeping the old one would leave
     // a stale view token standing, and a reload would land on a screen the
     // reader already left.
@@ -658,20 +662,18 @@
   /* The first corpus to land settles the selection, whether it arrives from
      the boot load or from a later tick after a boot that failed. Until
      then a deep link naming a ticket stays pending and no notice is stated,
-     because nothing is known yet about the ticket it names. A ticket link
-     lands on the inspector unless the link also names the screen. */
+     because nothing is known yet about the ticket it names. A selection the
+     reader made in the meantime stands: the link fills an empty selection
+     and never replaces one. The screen is never touched here; the view
+     token set it at boot and the reader owns it after that. */
   let selSettled = false;
   function settleSelection(){
     selSettled = true;
     if (pendingSel){
-      if (pendingSel.t){
+      if (pendingSel.t && !sel.t){
         const tgt = findTarget(pendingSel.t);
-        if (tgt){
-          sel = {t: pendingSel.t, s: pendingSel.s, item: pendingSel.item};
-          if (!viewToken()) selScreen = "inspector";
-        } else {
-          bootNotice = `ticket "${pendingSel.t}" is not in this corpus.`;
-        }
+        if (tgt) sel = {t: pendingSel.t, s: pendingSel.s, item: pendingSel.item};
+        else bootNotice = `ticket "${pendingSel.t}" is not in this corpus.`;
       }
       pendingSel = null;
     }
@@ -921,11 +923,13 @@
     corpus = c;
     corpusSig = c ? sigOf(c) : "";
     // The screen the link names needs no corpus, so it is honored now. The
-    // ticket it names waits for the first corpus to answer; a link naming
-    // no ticket has nothing left to wait for.
+    // ticket it names waits for the first corpus to answer, except over
+    // file://, where nothing will ever answer and the link settles now; a
+    // link naming no ticket has nothing left to wait for.
     if (viewToken()) selScreen = viewToken();
-    if (c) settleSelection();
+    if (c || location.protocol === "file:") settleSelection();
     else if (pendingSel && !pendingSel.t) pendingSel = null;
+    booting = false;
     renderAll();
   });
 })();
