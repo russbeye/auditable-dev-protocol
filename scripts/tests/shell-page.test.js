@@ -191,7 +191,8 @@ test("mission-control.html carries the frame the harness models", () => {
      "adp-derive-lib.js", "adp-shell-lib.js"]);
   const screens = [...HTML.matchAll(/<section class="screen" data-s="([^"]+)"/g)].map(m => m[1]);
   assert.deepEqual(screens, S.SCREENS);
-  for (const id of ["projChit", "themeBtn", "ttIcon", "tabs", "newTaskBtn", "rail", "foot", "shellmask"]) {
+  assert.match(HTML, /<span class="chit poll poll-idle" id="liveChit" role="status">/);
+  for (const id of ["projChit", "liveChit", "liveTxt", "themeBtn", "ttIcon", "tabs", "newTaskBtn", "rail", "foot", "shellmask"]) {
     assert.match(HTML, new RegExp('id="' + id + '"'));
   }
 });
@@ -269,6 +270,8 @@ test("a served corpus fills the chit, the footer, and the rail", async () => {
   const h = bootCorpus();
   await h.settle();
   assert.equal(h.$("#projChit").textContent, "project: demo");
+  assert.equal(h.$("#liveTxt").textContent, "WATCHING");
+  assert.equal(h.$("#liveChit").className, "chit poll poll-ok");
   assert.match(h.$("#foot").textContent, /2 tickets/);
   const rail = h.$("#rail").innerHTML;
   assert.match(rail, /needs attention/);
@@ -1259,4 +1262,244 @@ test("the ledger builder escapes hostile harvested fields", () => {
   assert.ok(!a.includes("<img"));
   // The pill builder stamps the mark it was asked for.
   assert.match(S.pillsHtml({all: 1, open: 1}, "all", "data-lgf"), /data-lgf="open"/);
+});
+
+// ---- the page: the corpus poll (MC-002) ----
+
+/* A fetch stub whose corpus can change under the page, and which can go
+   down, so a test can play the run that appends to a log while the page
+   sits on screen. */
+function liveCorpus(){
+  const texts = Object.assign({}, TEXTS);
+  const st = {texts, down: false, listings: 0};
+  st.fetch = u => {
+    if (st.down) return Promise.reject(new Error("server down"));
+    if (u === "corpus.json") st.listings++;
+    return corpusFetch(LISTING, texts)(u);
+  };
+  return st;
+}
+const LOG_GROWN = LOG.replace("## Aside Notes", "## Test Adversary Document\n\nGrown while watched.\n\n## Aside Notes");
+const entry = (h, key) => h.$$(".rentry").find(r => r.getAttribute("data-key") === key);
+
+test("a served log that grows re-renders within one tick", async () => {
+  const live = liveCorpus();
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  assert.doesNotMatch(h.$("#scrInspector").innerHTML, /Test Adversary Document/);
+  assert.match(entry(h, "AA1").innerHTML, /5 SECTIONS MISSING/);
+  live.texts["20260101-AA1-alpha/audit-log.md"] = LOG_GROWN;
+  h.tick();
+  await h.settle();
+  assert.match(h.$("#scrInspector").innerHTML, /Test Adversary Document/);
+  // The rail re-rendered too: AA1's own ribbon counts one section fewer.
+  assert.match(entry(h, "AA1").innerHTML, /4 SECTIONS MISSING/);
+});
+
+test("an unchanged tick renders nothing and disturbs no reader state", async () => {
+  const live = liveCorpus();
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  pick(h, "AA1");
+  h.click(h.$$(".op").find(o => o.getAttribute("data-op") === "paste"));
+  h.$("#pasteArea").value = "half a draft";
+  const before = {rail: h.$("#rail").innerHTML, insp: h.$("#scrInspector").innerHTML,
+    renders: h.hashes.length, hash: h.location.hash};
+  h.tick();
+  await h.settle();
+  // Every renderAll writes the hash, so an unchanged count is no render.
+  assert.equal(h.hashes.length, before.renders);
+  assert.equal(h.$("#rail").innerHTML, before.rail);
+  assert.equal(h.$("#scrInspector").innerHTML, before.insp);
+  assert.equal(h.location.hash, before.hash);
+  assert.equal(h.$("#pasteArea").value, "half a draft");
+});
+
+test("a failed re-fetch keeps the last good corpus and traces once", async () => {
+  const live = liveCorpus();
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  const renders = h.hashes.length;
+  live.down = true;
+  h.tick();
+  await h.settle();
+  assert.equal(h.$("#projChit").textContent, "project: demo");
+  assert.match(h.$("#rail").innerHTML, /AA1/);
+  assert.equal(h.hashes.length, renders);
+  assert.equal(h.warns.length, 1);
+  assert.match(h.warns[0], /corpus load failed/);
+  // The pill says the corpus on screen is the last good one, then recovers.
+  assert.equal(h.$("#liveTxt").textContent, "CACHED");
+  assert.equal(h.$("#liveChit").className, "chit poll poll-warn");
+  live.down = false;
+  h.tick();
+  await h.settle();
+  assert.equal(h.$("#liveTxt").textContent, "WATCHING");
+  assert.equal(h.$("#liveChit").className, "chit poll poll-ok");
+  assert.equal(h.hashes.length, renders);
+});
+
+test("a file:// open never polls for a corpus", async () => {
+  const h = bootShell({stored: "dark", href: "file:///mission-control.html"});
+  await h.settle();
+  assert.equal(h.warns.length, 1);
+  h.tick(); h.tick();
+  await h.settle();
+  assert.equal(h.warns.length, 1);
+  assert.equal(h.$("#projChit").textContent, "no corpus");
+  assert.equal(h.$("#liveTxt").textContent, "STATIC");
+  assert.equal(h.$("#liveChit").className, "chit poll poll-idle");
+});
+
+test("a served page whose boot load failed catches up on a later tick", async () => {
+  const live = liveCorpus();
+  live.down = true;
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  assert.equal(h.$("#projChit").textContent, "no corpus");
+  assert.equal(h.$("#liveTxt").textContent, "IDLE");
+  assert.equal(h.warns.length, 1);
+  live.down = false;
+  h.tick();
+  await h.settle();
+  assert.equal(h.$("#projChit").textContent, "project: demo");
+  assert.match(h.$("#rail").innerHTML, /AA1/);
+  assert.equal(h.$("#liveTxt").textContent, "WATCHING");
+});
+
+test("a served page with no corpus directory probes quietly", async () => {
+  const h = bootShell({stored: "dark", fetch: () => Promise.resolve({ok: false})});
+  await h.settle();
+  h.tick(); h.tick();
+  await h.settle();
+  assert.equal(h.warns.length, 0);
+  assert.equal(h.$("#projChit").textContent, "no corpus");
+});
+
+test("a hidden tab skips the corpus fetch until it is shown again", async () => {
+  const live = liveCorpus();
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  assert.equal(live.listings, 1);
+  h.document.visibilityState = "hidden";
+  h.tick();
+  await h.settle();
+  assert.equal(live.listings, 1);
+  h.document.visibilityState = "visible";
+  h.tick();
+  await h.settle();
+  assert.equal(live.listings, 2);
+});
+
+test("ticks never overlap a corpus load in flight", async () => {
+  const live = liveCorpus();
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  assert.equal(live.listings, 1);
+  h.tick(); h.tick(); h.tick();
+  await h.settle();
+  assert.equal(live.listings, 2);
+});
+
+test("a boot that failed honors its deep link when the corpus first answers", async () => {
+  const live = liveCorpus();
+  live.down = true;
+  const h = bootShell({stored: "dark", fetch: live.fetch, hash: "#t=AA1&s=sec-pr-summary"});
+  await h.settle();
+  assert.equal(h.$("#projChit").textContent, "no corpus");
+  assert.doesNotMatch(h.$("#scrInspector").innerHTML, /is not in this corpus/);
+  live.down = false;
+  h.tick();
+  await h.settle();
+  assert.ok(entry(h, "AA1").classList.contains("is-sel"));
+  assert.match(h.$("#scrInspector").innerHTML, /PR Summary/);
+  assert.doesNotMatch(h.$("#scrInspector").innerHTML, /is not in this corpus/);
+  assert.equal(h.hashes[h.hashes.length - 1], "#t=AA1&s=sec-pr-summary");
+});
+
+test("a boot that failed takes the default selection when the corpus first answers", async () => {
+  const live = liveCorpus();
+  live.down = true;
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  live.down = false;
+  h.tick();
+  await h.settle();
+  assert.ok(entry(h, "AA1").classList.contains("is-sel"));
+  assert.equal(h.hashes[h.hashes.length - 1], "#t=AA1&s=sec-decision-log");
+});
+
+test("the live pill's status region is written only when its state changes", async () => {
+  const live = liveCorpus();
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  assert.equal(h.$("#liveTxt").textContent, "WATCHING");
+  // A live region reports every text write, so an unchanged word must not
+  // be written again on ordinary navigation or a quiet tick.
+  const txt = h.$("#liveTxt");
+  let writes = 0, word = txt.textContent;
+  Object.defineProperty(txt, "textContent", {get: () => word, set: v => { writes++; word = v; }});
+  pick(h, "AA1");
+  h.click(h.$$(".mtab")[1]);
+  h.tick();
+  await h.settle();
+  assert.equal(writes, 0);
+  live.down = true;
+  h.tick();
+  await h.settle();
+  assert.equal(writes, 1);
+  assert.equal(word, "CACHED");
+});
+
+test("a boot that failed honors the screen token at once and the ticket token when the corpus answers", async () => {
+  const live = liveCorpus();
+  live.down = true;
+  const h = bootShell({stored: "dark", fetch: live.fetch, hash: "#v=watchboard&t=AA1"});
+  await h.settle();
+  assert.equal(h.$("#scrWatch").classList.contains("is-on"), true);
+  live.down = false;
+  h.tick();
+  await h.settle();
+  assert.equal(h.$("#scrWatch").classList.contains("is-on"), true);
+  assert.ok(entry(h, "AA1").classList.contains("is-sel"));
+});
+
+test("a pending ticket link never replaces a selection the reader made first", async () => {
+  const live = liveCorpus();
+  live.down = true;
+  const h = bootShell({stored: "dark", fetch: live.fetch, hash: "#t=AA1"});
+  await h.settle();
+  h.click(h.$$(".op").find(o => o.getAttribute("data-op") === "paste"));
+  h.$("#pasteArea").value = "# Pasted\n\n## Problem Statement\n\nmine.";
+  h.click(h.$("#pasteImport"));
+  await h.settle();
+  assert.ok(entry(h, "doc-1").classList.contains("is-sel"));
+  live.down = false;
+  h.tick();
+  await h.settle();
+  assert.ok(entry(h, "doc-1").classList.contains("is-sel"));
+  assert.ok(!entry(h, "AA1").classList.contains("is-sel"));
+});
+
+test("a file:// open with a ticket link keeps the URL following the reader", async () => {
+  const h = bootShell({stored: "dark", href: "file:///mission-control.html", hash: "#t=AA1"});
+  await h.settle();
+  assert.match(h.$("#scrInspector").innerHTML, /"AA1" is not in this corpus/);
+  h.click(h.$$(".mtab")[1]);
+  assert.equal(h.location.hash, "#v=watchboard");
+});
+
+test("a served page waiting for its corpus carries the ticket link through its hash writes", async () => {
+  const live = liveCorpus();
+  live.down = true;
+  const h = bootShell({stored: "dark", fetch: live.fetch, hash: "#t=AA1"});
+  await h.settle();
+  h.click(h.$$(".mtab")[1]);
+  assert.equal(h.location.hash, "#v=watchboard&t=AA1");
+  live.down = false;
+  h.tick();
+  await h.settle();
+  // The link's ticket lands; the screen the reader chose in the meantime stays.
+  assert.ok(entry(h, "AA1").classList.contains("is-sel"));
+  assert.equal(h.$("#scrWatch").classList.contains("is-on"), true);
 });
