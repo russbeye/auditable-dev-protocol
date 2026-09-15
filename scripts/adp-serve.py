@@ -41,10 +41,17 @@ def main():
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=SCRIPTS_DIR, **kwargs)
 
+        def end_headers(self):
+            # We mark every response no-store, because the static path in
+            # SimpleHTTPRequestHandler sends only Last-Modified. A browser then
+            # guesses freshness and can show a stale page or stylesheet on the
+            # next reload. This server exists to show what is on disk now.
+            self.send_header("Cache-Control", "no-store")
+            super().end_headers()
+
         def send_bytes(self, body, ctype):
             self.send_response(200)
             self.send_header("Content-Type", ctype)
-            self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
