@@ -132,10 +132,7 @@
      the window text. A window with no date stays unanchored, because a
      guessed date on a watchboard is worse than a flagged one. Alongside the
      rows we report which section holds the first watch table, because that
-     section opens the ledger zone, and the exit condition of every row whose
-     window is the dash. The lint reads that map and nothing else does. We
-     keep it off the watch object because that object is what the index
-     serializes. */
+     section opens the ledger zone. */
   function harvestWatches(secs){
     const watches = [];
     const wids = new Set();
@@ -173,6 +170,9 @@
           const rawWin = winCol === -1 ? "" : (cells[winCol] || "").trim();
           const win = rawWin && rawWin !== "—" ? rawWin : null;
           const due = win ? firstDate(win) : null;
+          // A dash window gives us no date, so we keep the row's exit condition
+          // for the lint. It stays off the watch object, because that object is
+          // what the index serializes.
           if (rawWin === "—") dashedExits.set(wid, exitCol === -1 ? "" : (cells[exitCol] || "").trim());
           watches.push({
             wid: wid,
@@ -428,22 +428,14 @@
     return n;
   }
 
-  /* The advisory channel, separate from buildIndex so the index stays a pure
-     contract artifact. Advisories are the silent failures the harvest hides
-     by design: a landed record naming no row or card (phantom), a losing
-     second record (contradiction), a landed anchor record that cannot
-     honestly move its watch (dead-anchor), closure intent that never landed
-     (near-miss), a watch id the ledger grammar can never address
-     (wid-shape), and a companion section written ahead of the place the
-     section order convention in SKILL.md gives it (misplaced), a raw
-     control byte in a log, which SKILL.md's Encoding subsection rules out
-     (control-byte), and a live watch whose window is the dash while its exit
-     condition names a calendar date, which the Phase 9 window rule forbids
-     (undated-window). Findings are {dir, id, finding}, kinds in that order
-     per sorted ticket, one near-miss per id. A misplaced finding also carries
-     after, the key of the section the companion should follow. A control-byte
-     finding names the log in id and carries offset, the UTF-8 byte offset of
-     the byte. */
+  /* The advisory channel. We keep it separate from buildIndex so the index
+     stays a pure contract artifact. Each kind names a silent failure the
+     harvest hides by design, and the loop that raises it says what it
+     catches. Findings are {dir, id, finding}, kinds in the order the loops
+     run per sorted ticket, one near-miss per id. A misplaced finding also
+     carries after, the key of the section the companion should follow. A
+     control-byte finding names the log in id and carries offset, the UTF-8
+     byte offset of the byte. */
   function lintCorpus(files){
     const findings = [];
     const byDir = groupByDir(files);
@@ -456,12 +448,14 @@
       const ids = new Set(harvestDecisions(secs).map(d => d.id));
       const led = ledgerOf(secs, hw.from);
       const add = (id, finding) => findings.push({dir: dir, id: id, finding: finding});
+      // A phantom is a landed record that names no row or card, so it moved nothing.
       for (const id of new Set([...led.closures.keys(), ...led.anchors.keys()])){
         if (!wids.has(id)) add(id, "phantom");
       }
       for (const id of led.rulings.keys()){
         if (!ids.has(id)) add(id, "phantom");
       }
+      // A contradiction is a second record for an id that the first record already ruled.
       for (const id of new Set(led.contradictions)) add(id, "contradiction");
       const anchored = new Set(hw.watches.filter(w => w.anchored).map(w => w.wid));
       /* An anchor record aimed at a watch the row already anchors, or that
@@ -489,6 +483,7 @@
           }
         }
       }
+      // A wid-shape is a watch id the ledger grammar can never address.
       for (const w of hw.watches){
         if (!I.RE_OT.test(w.wid)) add(w.wid, "wid-shape");
       }
@@ -516,13 +511,14 @@
           if (zone !== -1 && i < zone) findings.push({dir: dir, id: s.key, finding: "misplaced", after: rows[zone].key});
         });
       }
+      // A control-byte is a raw control byte, which SKILL.md's Encoding subsection rules out.
       for (const m of text.matchAll(RE_CONTROL)){
         findings.push({dir: dir, id: dir + "/audit-log.md", finding: "control-byte", offset: byteOffset(text, m.index)});
       }
-      /* The harvest reads a due date from the window alone, so a dash beside
-         a dated exit condition hides the date from every board. A closure
-         freezes the row and a landed re-anchor has already supplied the date,
-         so neither case is worth a finding. */
+      /* We read a due date from the window alone, so a dash beside a dated
+         exit condition hides that date from every board. SKILL.md's Phase 9
+         window rule forbids the shape. A closed row is frozen, and a landed
+         re-anchor already supplied the date, so we skip both. */
       for (const [id, exit] of hw.dashedExits){
         if (led.closures.has(id) || led.anchors.has(id)) continue;
         if (firstDate(exit)) add(id, "undated-window");

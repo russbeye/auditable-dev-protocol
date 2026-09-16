@@ -536,10 +536,9 @@ test("own corpus: the live .adp builds a valid, deterministic index", t => {
     (blind.length ? " (" + blind.join("; ") + ")" : ""));
 });
 
-// The pre-amendment SWEEP-005 row shape: a dash window beside a dated
-// re-review in the exit condition, which is the shape the Phase 9 window
-// rule forbids. The default lintLog row keeps its undated exit cell, so the
-// existing cases never see this kind.
+// A dash window beside a dated re-review in the exit condition is the shape
+// the Phase 9 window rule forbids. The default lintLog row keeps an undated
+// exit cell, so the existing cases never see this kind.
 const DASHED_ROW = "| OT-2 | DL-002 | w | LOW | Dated re-review on 2026-12-14 over the corpus → recorded acceptance | — |";
 
 test("a dash window beside a dated exit condition is an undated-window advisory", () => {
@@ -558,8 +557,8 @@ test("a window that carries the date, a dated window, a landed re-anchor, and a 
   assert.deepEqual(builder.lintCorpus(lintLog([
     "- **OT-2 CLOSED 2026-09-14 → VALIDATED.** Done early."
   ], [DASHED_ROW])), []);
-  // A dash beside an exit condition with no date is the shape the rule
-  // still allows, a ticket with neither a signal nor a re-review.
+  // A dash beside an undated exit condition is still allowed. That row is a
+  // ticket with neither a signal nor a re-review.
   assert.deepEqual(builder.lintCorpus(lintLog([], [
     "| OT-2 | DL-002 | w | LOW | Recorded acceptance when a consumer appears | — |"
   ])), []);
