@@ -132,10 +132,14 @@
      the window text. A window with no date stays unanchored, because a
      guessed date on a watchboard is worse than a flagged one. Alongside the
      rows we report which section holds the first watch table, because that
-     section opens the ledger zone. */
+     section opens the ledger zone, and the exit condition of every row whose
+     window is the dash. The lint reads that map and nothing else does. We
+     keep it off the watch object because that object is what the index
+     serializes. */
   function harvestWatches(secs){
     const watches = [];
     const wids = new Set();
+    const dashedExits = new Map();
     let from = secs.length;
     secs.forEach((sec, si) => {
       const lines = sec.body;
@@ -156,6 +160,7 @@
         const dlCol = header.findIndex(h => /decision log/i.test(h));
         const whatCol = header.findIndex(h => /assumption/i.test(h));
         const winCol = header.findIndex(h => /window/i.test(h));
+        const exitCol = header.findIndex(h => /exit/i.test(h));
         for (const r of rows.slice(2)){
           const cells = P.splitRow(r);
           let wid = (cells[widCol] || "").trim();
@@ -168,6 +173,7 @@
           const rawWin = winCol === -1 ? "" : (cells[winCol] || "").trim();
           const win = rawWin && rawWin !== "—" ? rawWin : null;
           const due = win ? firstDate(win) : null;
+          if (rawWin === "—") dashedExits.set(wid, exitCol === -1 ? "" : (cells[exitCol] || "").trim());
           watches.push({
             wid: wid,
             dl: harvestTokens(dlCol === -1 ? "" : (cells[dlCol] || ""), true),
@@ -179,7 +185,7 @@
         }
       }
     });
-    return {watches: watches, from: from};
+    return {watches: watches, from: from, dashedExits: dashedExits};
   }
 
   /* The closure ledger: one line closes or re-anchors an obligation ticket,
@@ -429,10 +435,12 @@
      honestly move its watch (dead-anchor), closure intent that never landed
      (near-miss), a watch id the ledger grammar can never address
      (wid-shape), and a companion section written ahead of the place the
-     section order convention in SKILL.md gives it (misplaced), and a raw
+     section order convention in SKILL.md gives it (misplaced), a raw
      control byte in a log, which SKILL.md's Encoding subsection rules out
-     (control-byte). Findings are {dir, id, finding}, kinds in that order per
-     sorted ticket, one near-miss per id. A misplaced finding also carries
+     (control-byte), and a live watch whose window is the dash while its exit
+     condition names a calendar date, which the Phase 9 window rule forbids
+     (undated-window). Findings are {dir, id, finding}, kinds in that order
+     per sorted ticket, one near-miss per id. A misplaced finding also carries
      after, the key of the section the companion should follow. A control-byte
      finding names the log in id and carries offset, the UTF-8 byte offset of
      the byte. */
@@ -510,6 +518,14 @@
       }
       for (const m of text.matchAll(RE_CONTROL)){
         findings.push({dir: dir, id: dir + "/audit-log.md", finding: "control-byte", offset: byteOffset(text, m.index)});
+      }
+      /* The harvest reads a due date from the window alone, so a dash beside
+         a dated exit condition hides the date from every board. A closure
+         freezes the row and a landed re-anchor has already supplied the date,
+         so neither case is worth a finding. */
+      for (const [id, exit] of hw.dashedExits){
+        if (led.closures.has(id) || led.anchors.has(id)) continue;
+        if (firstDate(exit)) add(id, "undated-window");
       }
     }
     return findings;

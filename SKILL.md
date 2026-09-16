@@ -454,12 +454,14 @@ ticketed. No entry stays OPEN without a ticket.
 
 Decision Log ref takes the form DL-XXX, comma-separated when one ticket covers several entries.
 Observation window: how long the signal is
-watched, in plain time anchored to an event ("30 days after deploy"); "—" when the ticket has no
-signal to watch. Exit condition: the condition under which the ticket closes with no further
-judgment call. A ticket watching a signal covers three outcomes: the signal fires — close, entry
-INVALIDATED; the window ends with the signal wired and quiet — close, entry VALIDATED; the window
-ends with the signal never emitted — close, entry UNKNOWN, and the closing note names the
-instrumentation gap. For an UNOBSERVABLE assumption the exit condition is a dated re-review whose
+watched, in plain time anchored to an event ("30 days after deploy"). For an UNOBSERVABLE
+assumption the window carries the re-review date the exit condition names
+("re-review 2026-12-14"), so the ticket is anchored at creation; "—" only when the ticket has
+neither a signal to watch nor a re-review. Exit condition: the condition under which the ticket
+closes with no further judgment call. A ticket watching a signal covers three outcomes: the
+signal fires — close, entry INVALIDATED; the window ends with the signal wired and quiet — close,
+entry VALIDATED; the window ends with the signal never emitted — close, entry UNKNOWN, and the
+closing note names the instrumentation gap. For an UNOBSERVABLE assumption the exit condition is a dated re-review whose
 default disposition is recorded acceptance, unless a newly available observable reopens the entry
 with a signal.
 
@@ -489,6 +491,13 @@ moves a date the ticket list already set — a window that must move closes with
 and a successor ticket opens — and a closed ticket takes no re-anchor at all. A ruling line
 may sit anywhere from the Decision Log section onward, so an entry invalidated in review
 closes on the record even before a ticket list exists.
+
+A live watch whose window is the dash while its exit condition names a calendar date is the shape
+the window rule above forbids: the harvest reads a due date from the window alone, so the ticket
+sits on every board as unanchored and its date is invisible. `lintCorpus` reports it as an
+`undated-window` advisory naming the watch id. A RE-ANCHORED line granting the date silences it
+for a row already on record; a new row writes the date in its window. The advisory never fails a
+check and never enters an index document.
 
 Obligation ticket ids take the `OT-` shape — `OT-<TASKID>-<n>`, like `OT-MC001-3` — and the
 ledger addresses only that shape and `DL-` entry ids. An id outside those shapes cannot close
