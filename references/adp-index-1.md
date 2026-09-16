@@ -258,8 +258,11 @@ already anchors it, or a closure record has ended it (dead-anchor), closure inte
 id that never landed (near-miss), a watch id the ledger grammar cannot address
 (wid-shape), and a companion section written ahead of the place SKILL.md's section order
 convention gives it (misplaced, carrying `after`, the key of the section it should follow),
-and a raw control byte in a log, which SKILL.md's Encoding subsection forbids (control-byte,
-naming the log in `id` and carrying `offset`, the UTF-8 byte offset of the byte).
+a raw control byte in a log, which SKILL.md's Encoding subsection forbids (control-byte,
+naming the log in `id` and carrying `offset`, the UTF-8 byte offset of the byte), and a live
+watch whose window is the dash while its exit condition names a calendar date, which SKILL.md's
+Phase 9 window rule forbids (undated-window, naming the watch id; a landed re-anchor, a dated
+window, or a closure keeps it quiet).
 A landed record makes its id's near-misses moot, so a swept corpus lints clean
 while its old prose stays in place. Advisories are not contract findings and never enter an
 index document.
