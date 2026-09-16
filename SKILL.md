@@ -461,9 +461,10 @@ neither a signal to watch nor a re-review. Exit condition: the condition under w
 closes with no further judgment call. A ticket watching a signal covers three outcomes: the
 signal fires — close, entry INVALIDATED; the window ends with the signal wired and quiet — close,
 entry VALIDATED; the window ends with the signal never emitted — close, entry UNKNOWN, and the
-closing note names the instrumentation gap. For an UNOBSERVABLE assumption the exit condition is a dated re-review whose
-default disposition is recorded acceptance, unless a newly available observable reopens the entry
-with a signal.
+closing note names the instrumentation gap. For an UNOBSERVABLE assumption the exit condition
+is the re-review the window dates, named there once and not copied into the exit condition,
+whose default disposition is recorded acceptance, unless a newly available observable reopens
+the entry with a signal.
 
 **Decision Log status:** CLOSED   **Closed by:** [developer]   **Date:** [date]
 ```
