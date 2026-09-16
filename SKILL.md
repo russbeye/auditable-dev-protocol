@@ -455,16 +455,15 @@ ticketed. No entry stays OPEN without a ticket.
 Decision Log ref takes the form DL-XXX, comma-separated when one ticket covers several entries.
 Observation window: how long the signal is
 watched, in plain time anchored to an event ("30 days after deploy"). For an UNOBSERVABLE
-assumption the window carries the re-review date the exit condition names
-("re-review 2026-12-14"), so the ticket is anchored at creation; "—" only when the ticket has
-neither a signal to watch nor a re-review. Exit condition: the condition under which the ticket
-closes with no further judgment call. A ticket watching a signal covers three outcomes: the
-signal fires — close, entry INVALIDATED; the window ends with the signal wired and quiet — close,
-entry VALIDATED; the window ends with the signal never emitted — close, entry UNKNOWN, and the
-closing note names the instrumentation gap. For an UNOBSERVABLE assumption the exit condition
-is the re-review the window dates, named there once and not copied into the exit condition,
-whose default disposition is recorded acceptance, unless a newly available observable reopens
-the entry with a signal.
+assumption the window carries the re-review date ("re-review 2026-12-14"), so the ticket is
+anchored at creation; "—" only when the ticket has neither a signal to watch nor a re-review.
+Exit condition: the condition under which the ticket closes with no further judgment call. A
+ticket watching a signal covers three outcomes: the signal fires — close, entry INVALIDATED; the
+window ends with the signal wired and quiet — close, entry VALIDATED; the window ends with the
+signal never emitted — close, entry UNKNOWN, and the closing note names the instrumentation gap.
+For an UNOBSERVABLE assumption the exit condition is the re-review the window dates, named there
+once and not copied into the exit condition, whose default disposition is recorded acceptance,
+unless a newly available observable reopens the entry with a signal.
 
 **Decision Log status:** CLOSED   **Closed by:** [developer]   **Date:** [date]
 ```
