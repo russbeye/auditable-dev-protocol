@@ -1,0 +1,15 @@
+=== ADP PACK close-watch/v1 · 2026-11-20 ===
+ticket: 20260911-FX004-section-vocabulary
+watch: OT-FX004-1 covers DL-002
+check: Companions sit after the ticket list
+due: 2026-10-13 · OVERDUE 38D
+
+Check each watched condition against the current code and corpus. Close a
+watch on the record with one appended ledger line under the ticket's
+Obligation Ticket List, never by editing its row:
+  - **<OT-ID> CLOSED <YYYY-MM-DD> → <OUTCOME>.** <closing note>
+Rule the entries it covers the same way, with their DL- ids. The window
+ended with the signal wired and quiet: VALIDATED. The signal fired:
+INVALIDATED, and a follow-up ticket opens before the log closes. The signal
+was never wired: UNKNOWN, and the closing note names the instrumentation gap.
+=== END PACK ===

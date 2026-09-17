@@ -52,7 +52,8 @@ test.after(() => {
   fs.rmSync(root, {recursive: true, force: true});
 });
 
-for (const route of ["/adp-shell.css", "/mission-control.html", "/corpus.json", "/audit-log.md"]){
+for (const route of ["/adp-shell.css", "/mission-control.html", "/corpus.json", "/audit-log.md",
+    "/packs.json", "/packs/resume-ticket.pack.md"]){
   test(`${route} answers with Cache-Control: no-store, once`, async () => {
     const res = await fetch(base + route);
     assert.equal(res.status, 200);
@@ -64,4 +65,32 @@ for (const route of ["/adp-shell.css", "/mission-control.html", "/corpus.json", 
 
 test("the script prints the URL and nothing else", () => {
   assert.equal(stdout.trim().split("\n").length, 1);
+});
+
+/* The packs routes serve the skill's own packs/ directory, whatever corpus
+   the log lives in, so the shipped files answer here. The listing is the
+   allow-list for the raw route: a name outside it, a traversal included,
+   gets a plain 404 before any file is opened. */
+const PACKS_DIR = path.join(__dirname, "..", "..", "packs");
+const PACK_FILES = fs.readdirSync(PACKS_DIR).filter(f => f.endsWith(".pack.md")).sort();
+
+test("/packs.json lists every shipped .pack.md, sorted", async () => {
+  const res = await fetch(base + "/packs.json");
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), {packs: PACK_FILES});
+  assert.ok(PACK_FILES.includes("resume-ticket.pack.md"));
+});
+
+test("/packs/<name> serves a listed pack byte for byte", async () => {
+  const res = await fetch(base + "/packs/resume-ticket.pack.md");
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-type"), /^text\/markdown/);
+  assert.equal(await res.text(), fs.readFileSync(path.join(PACKS_DIR, "resume-ticket.pack.md"), "utf8"));
+});
+
+test("/packs/<name> refuses a name the listing does not carry", async () => {
+  for (const name of ["nope.pack.md", "..%2FSKILL.md", "../SKILL.md", "resume-ticket.pack.md%2F..%2F..%2FSKILL.md"]){
+    const res = await fetch(base + "/packs/" + name);
+    assert.equal(res.status, 404, name);
+  }
 });

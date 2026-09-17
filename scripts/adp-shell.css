@@ -218,3 +218,20 @@
 .fsum{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
   padding:8px 12px;cursor:pointer;color:var(--ink)}
 .fbody{padding:4px 18px 14px}
+
+/* ---- resume pack ---- */
+
+.packrow{display:flex;gap:2px;margin:0 0 10px;flex-wrap:wrap}
+.pk{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  border:1px solid var(--line);background:var(--inset);color:var(--dim);padding:5px 11px;cursor:pointer}
+.pk.is-on{color:var(--accent-ink);background:var(--accent);border-color:var(--accent);font-weight:700}
+.packsrc{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--faint);margin:0 0 12px}
+/* The block keeps the pack's bytes as written: no wrapping, so a copied
+   pack and the block agree line for line. */
+.packpre{font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--ink);background:var(--inset);
+  border:1px solid var(--line-bright);padding:14px 16px;margin:0 0 10px;overflow-x:auto;white-space:pre}
+.packdocs{margin-top:18px;padding-top:12px;border-top:1px solid var(--line)}
+.packdocs h3{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin:0 0 6px}
+.packdocs p{font-size:12.5px;color:var(--dim);margin:0 0 10px;max-width:70ch}
+.packdocs code{font-family:var(--mono);font-size:11px;color:var(--ok)}
+.slotlist{font-family:var(--mono);font-size:11px;color:var(--faint);line-height:2;word-spacing:.6em}

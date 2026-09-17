@@ -1,0 +1,24 @@
+=== ADP PACK audit-sweep/v1 · 2026-11-20 ===
+corpus: fixture-corpus · 7 tickets
+
+OVERDUE WATCHES
+- FX004 OT-FX004-1: Companions sit after the ticket list · due 2026-10-13 · OVERDUE 38D
+- FX001 OT-FX001-1: The second option holds · due 2026-10-15 · OVERDUE 36D
+
+WATCHES DUE WITHIN 14 DAYS
+- FX002 OT-FX002-1: Prefix headings attribute truly · due 2026-12-01 · 11D LEFT
+- FX003 OT-FX003-3: The live watch stays live · due 2026-12-01 · 11D LEFT
+
+UNANCHORED WATCHES (no due date on record)
+- AV090 OT-1: The fixture stays legacy
+- AV090 OT-2: Placeholders never reach a dl list
+
+OPEN DECISIONS WITH NO LIVE WATCH
+- none
+
+Work the lists top to bottom, each item in its own ticket's log. Close a
+watch with one CLOSED ledger line and rule each entry it covers with its
+own line; never batch outcomes into one entry. Give an unanchored watch its
+date with a RE-ANCHORED line. Open a ticket in the Obligation Ticket List
+for every open decision that no live watch covers.
+=== END PACK ===

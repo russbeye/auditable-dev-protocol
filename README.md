@@ -25,6 +25,7 @@ A nine-phase protocol for AI-assisted development. The model defends one recomme
 - `scripts/prompt-builder.html`: a browser form for filling the template, with import and YAML export.
 - `scripts/ADP-Parser.html`: a browser viewer that watches the audit log and renders it by section. This is the protocol's observability layer.
 - `scripts/adp-serve.py`: a localhost server that opens the viewer already attached to the audit log, so watching starts without any clicks.
+- `packs/`: the resume packs mission control fills from the corpus index, one `.pack.md` per pack. Drop a file in to add one.
 
 ## Using the protocol
 
