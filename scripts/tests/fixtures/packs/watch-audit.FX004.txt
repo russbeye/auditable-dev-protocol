@@ -1,0 +1,20 @@
+=== ADP PACK watch-audit/v1 · 2026-11-20 ===
+corpus: fixture-corpus · 7 tickets · 7 live watches · 2 settled
+overdue 2 · due within 14 days 2 · upcoming 1 · unanchored 2
+
+LIVE WATCHES, MOST OVERDUE FIRST
+- FX004 OT-FX004-1 [OVERDUE 38D] Companions sit after the ticket list · due 2026-10-13
+- FX001 OT-FX001-1 [OVERDUE 36D] The second option holds · due 2026-10-15
+- FX002 OT-FX002-1 [11D LEFT] Prefix headings attribute truly · due 2026-12-01
+- FX003 OT-FX003-3 [11D LEFT] The live watch stays live · due 2026-12-01
+- FX003 OT-FX003-2 [34D LEFT] The relative window gains its date · due 2026-12-24
+- AV090 OT-1 [UNANCHORED] The fixture stays legacy
+- AV090 OT-2 [UNANCHORED] Placeholders never reach a dl list
+
+Audit each watch against its own exit condition in its ticket's Obligation
+Ticket List: the signal fired, the window ended with the signal wired and
+quiet, or the signal was never wired. Close a watch only with a CLOSED
+ledger line appended under that list, and rule the entries it covers with
+their own lines. A watch whose window must move closes with a disposition
+and a successor row opens; a closed watch never re-anchors.
+=== END PACK ===

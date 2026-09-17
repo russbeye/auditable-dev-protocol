@@ -1,0 +1,23 @@
+=== ADP PACK evidence-mix/v1 · 2026-11-20 ===
+corpus: fixture-corpus · 7 tickets · open decisions by confidence basis
+direct evidence 0 · inference from convention 1 · developer assertion 1 · other 0 · no basis stated 1
+
+ON DEVELOPER ASSERTION
+- AV090 DL-001 [LOW] Only decision
+
+ON INFERENCE FROM CONVENTION
+- FX004 DL-002 [LOW] Companions sit after the ticket list
+
+ON A BASIS OF ANOTHER KIND
+- none
+
+WITH NO BASIS STATED
+- FX001 DL-002 [MEDIUM] Fixture decision two
+
+A basis is classified by its leading phrase. An assertion rests on one
+person's word: confirm it with that person or find the evidence. An
+inference rests on a convention: name where the record states it, or lower
+the confidence. An entry with no basis predates the field or skipped it:
+add a dated status note that names one. Direct evidence needs no action
+here; its count is the corpus's calibration base.
+=== END PACK ===

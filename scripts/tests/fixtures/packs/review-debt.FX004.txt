@@ -1,0 +1,12 @@
+=== ADP PACK review-debt/v1 · 2026-11-20 ===
+corpus: fixture-corpus · 7 tickets
+
+TICKETS IN REVIEW
+- none
+
+Each ticket above has a PR open and a Decision Log open with it. For each:
+answer every Mandatory Review Item, rule the open entries the review can
+rule, and when the PR merges write the post-merge note that closes the
+watches whose windows end at the merge and returns the front matter to its
+between-stages shape.
+=== END PACK ===

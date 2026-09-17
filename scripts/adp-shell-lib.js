@@ -421,11 +421,46 @@
      shows its UNANCHORED label and never its window prose, so a pack never
      reads a date out of a sentence. The ticket may be null, in which case
      every ticket slot renders empty. */
+  // A confidence basis is classified by its leading phrase, because the
+  // field is one line that names its kind first and its evidence after a
+  // dash. A mixed basis ("DIRECT EVIDENCE for X; inference for Y") takes
+  // the kind it leads with. No basis at all is its own kind, since the
+  // field postdates many entries on record.
+  function packBasisKind(basis){
+    const s = String(basis || "").trim().toUpperCase();
+    if (!s) return "none";
+    if (s.startsWith("DIRECT EVIDENCE")) return "direct";
+    if (s.startsWith("INFERENCE")) return "inference";
+    if (s.startsWith("DEVELOPER ASSERTION")) return "assertion";
+    return "other";
+  }
+
   function packContext(index, t, today){
     const word = c => P.dlChipSplit(c).word;
     const watchRow = w => ({tid: w.tid, wid: w.wid, what: w.what,
       due: w.anchored ? w.due : "", state: w.label});
-    const board = D.watchboardRows(index.tickets, today).rows;
+    const wb = D.watchboardRows(index.tickets, today);
+    const board = wb.rows;
+    const live = board.filter(w => w.state !== "closed");
+    const ledger = D.ledgerRows(index.tickets, today).decisions;
+    const open = ledger.filter(r => r.kind === "open");
+    const entryRow = r => ({tid: r.tid, id: r.id, title: r.title, confidence: word(r.confidence)});
+    // Oldest first, so the entries with the most drift lead; an undated
+    // card has no age and sits last, named as undated rather than as zero.
+    const byAge = open.slice().sort((a, b) =>
+      (b.age == null ? -1 : b.age) - (a.age == null ? -1 : a.age));
+    // Ledger rows carry no basis, so the card is read back through its
+    // ticket for the one field the evidence mix classifies.
+    const basisOf = r => {
+      const own = index.tickets.find(x => x.dir === r.dir);
+      const card = own && own.decisions.find(d => d.id === r.id);
+      return card ? card.basis : null;
+    };
+    const basis = {};
+    for (const k of ["direct", "inference", "assertion", "other", "none"]) basis[k] = [];
+    for (const r of open) basis[packBasisKind(basisOf(r))].push(entryRow(r));
+    const counts = {};
+    for (const k in basis) counts[k] = basis[k].length;
     return {
       index: {generated: index.generated, project: index.project},
       ticket: t ? {id: t.id, dir: t.dir, slug: t.slug, date: t.date, title: t.title,
@@ -444,9 +479,22 @@
       overdue: board.filter(w => w.state === "overdue").map(watchRow),
       soon: board.filter(w => w.state === "soon").map(watchRow),
       unanchored: board.filter(w => w.state === "unanchored").map(watchRow),
-      unwatched: D.ledgerRows(index.tickets, today).decisions
-        .filter(r => r.rank === 0)
-        .map(r => ({tid: r.tid, id: r.id, title: r.title, confidence: word(r.confidence)}))
+      unwatched: ledger.filter(r => r.rank === 0).map(entryRow),
+      // The board's whole live set in its order, its dated members alone as
+      // a calendar, and the state counts the board's chips carry.
+      live_watches: live.map(watchRow),
+      calendar: live.filter(w => w.anchored).map(watchRow),
+      watch_counts: Object.assign({live: live.length}, wb.counts),
+      open_by_age: byAge.map(r => Object.assign(entryRow(r), {
+        age: r.age == null ? "undated" : r.age + "d",
+        watch: r.watch || "no watch"})),
+      in_review: index.tickets.filter(x => x.state === "in-review").map(x => ({
+        id: x.id || x.dir, dir: x.dir, pr: x.pr,
+        open_count: x.decisions.filter(d => D.decisionKind(d) === "open").length,
+        live_count: x.watches.filter(w => !w.closed).length})),
+      basis_direct: basis.direct, basis_inference: basis.inference,
+      basis_assertion: basis.assertion, basis_other: basis.other, basis_none: basis.none,
+      basis_counts: counts
     };
   }
 
@@ -508,7 +556,7 @@
     loadCorpus, railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml,
     docPaneHtml, rawPaneHtml, pillsHtml, decisionsPanelHtml, watchesPanelHtml,
     statusPillsHtml, watchboardHtml, assumptionLedgerHtml, fullLogHtml,
-    fillPack, packSlots, packContext, loadPacks, packScreenHtml};
+    fillPack, packSlots, packBasisKind, packContext, loadPacks, packScreenHtml};
   if (isNode){ module.exports = ADPShellLib; }
   else { global.ADPShellLib = ADPShellLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

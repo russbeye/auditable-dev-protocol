@@ -110,6 +110,61 @@ test("the unwatched list is the ledger's rank-zero rows", () => {
   assert.deepEqual([ctx.missing, ctx.open_decisions, ctx.watches], ["", [], []]);
 });
 
+test("the live set, its calendar, and the counts are the board's rows and chips", () => {
+  const ctx = S.packContext(idx, null, idx.generated);
+  assert.deepEqual(ctx.live_watches.map(w => w.wid),
+    ["OT-FX004-1", "OT-FX001-1", "OT-FX002-1", "OT-FX003-3", "OT-FX003-2", "OT-1", "OT-2"]);
+  // The calendar is the dated live rows in due order, which the board's
+  // day-based order already is; the undated two fall off it.
+  assert.deepEqual(ctx.calendar.map(w => w.due),
+    ["2026-10-13", "2026-10-15", "2026-12-01", "2026-12-01", "2026-12-24"]);
+  assert.deepEqual(ctx.watch_counts, {live: 7, overdue: 2, soon: 2, upcoming: 1, unanchored: 2, closed: 2});
+});
+
+test("open entries age oldest first, undated last and named, each with its cover", () => {
+  const ctx = S.packContext(idx, null, idx.generated);
+  assert.deepEqual(ctx.open_by_age.map(r => [r.tid + " " + r.id, r.age, r.watch]), [
+    ["AV090 DL-001", "142d", "OT-1"],
+    ["FX004 DL-002", "70d", "OT-FX004-1"],
+    ["FX001 DL-002", "undated", "OT-FX001-1"]]);
+});
+
+test("packBasisKind classifies a basis by its leading phrase", () => {
+  assert.equal(S.packBasisKind("DIRECT EVIDENCE — the suite pins it"), "direct");
+  assert.equal(S.packBasisKind("Direct evidence for the markup; inference for the rest"), "direct");
+  assert.equal(S.packBasisKind("INFERENCE FROM CONVENTION — one prior stage"), "inference");
+  assert.equal(S.packBasisKind("DEVELOPER ASSERTION — rbeye said so"), "assertion");
+  assert.equal(S.packBasisKind("MEASURED — a count"), "other");
+  assert.equal(S.packBasisKind(null), "none");
+  assert.equal(S.packBasisKind("  "), "none");
+});
+
+test("the evidence mix groups open entries by basis kind and counts them", () => {
+  const ctx = S.packContext(idx, null, idx.generated);
+  assert.deepEqual(ctx.basis_inference.map(r => r.id), ["DL-002"]);
+  assert.deepEqual(ctx.basis_assertion.map(r => r.tid), ["AV090"]);
+  assert.deepEqual(ctx.basis_none.map(r => r.tid + " " + r.id), ["FX001 DL-002"]);
+  assert.deepEqual(ctx.basis_counts, {direct: 0, inference: 1, assertion: 1, other: 0, none: 1});
+});
+
+test("tickets in review list their PR, open entries, and live watches; the fixtures have none", () => {
+  assert.deepEqual(S.packContext(idx, null, idx.generated).in_review, []);
+  const B = require("../adp-index-builder-lib.js");
+  const log = ["---", "state: in-review", 'pr: "#9"', "---", "# T", "", "## Decision Log", "",
+    "### [DL-001] a", "- **Decision:** x", "- **Confidence:** HIGH", "- **Status:** OPEN", "",
+    "### [DL-002] b", "- **Decision:** y", "- **Confidence:** LOW", "- **Status:** VALIDATED", "",
+    "## Obligation Ticket List", "",
+    "| Ticket ID | Decision Log ref | Assumption to validate | Priority | Exit condition | Observation window |",
+    "|---|---|---|---|---|---|",
+    "| OT-RV1-1 | DL-001 | it holds | HIGH | done → VALIDATED | 2026-12-01 |",
+    "| OT-RV1-2 | DL-001 | it held | LOW | done → VALIDATED | 2026-11-01 |", "",
+    "- **OT-RV1-2 CLOSED 2026-11-02 → VALIDATED.** Quiet.", ""].join("\n");
+  const one = B.buildIndex([{path: "20260901-RV1-review/audit-log.md", text: log}],
+    {project: "p", generated: "2026-11-20", source: "snapshot"});
+  assert.deepEqual(S.packContext(one, null, "2026-11-20").in_review,
+    [{id: "RV1", dir: "20260901-RV1-review", pr: "#9", open_count: 1, live_count: 1}]);
+});
+
 // ---- the shipped packs ----
 
 test("every shipped pack carries a versioned banner naming its own file, and an end line", () => {
@@ -134,20 +189,27 @@ test("the bootstrap pack states the record's watch convention, not the mockup's"
 test("the shipped packs use only slots the context provides", () => {
   const ctx = S.packContext(idx, ticket("FX004"), idx.generated);
   const known = new Set(Object.keys(ctx));
+  const watchKeys = ["tid", "wid", "what", "due", "state"];
+  const entryKeys = ["tid", "id", "title", "confidence"];
   const rowKeys = {open_decisions: ["id", "title", "confidence", "created", "watch"],
     watches: ["wid", "what", "dl", "due", "state"],
-    overdue: ["tid", "wid", "what", "due", "state"], soon: ["tid", "wid", "what", "due", "state"],
-    unanchored: ["tid", "wid", "what", "due", "state"], unwatched: ["tid", "id", "title", "confidence"]};
+    overdue: watchKeys, soon: watchKeys, unanchored: watchKeys, live_watches: watchKeys, calendar: watchKeys,
+    unwatched: entryKeys, basis_direct: entryKeys, basis_inference: entryKeys,
+    basis_assertion: entryKeys, basis_other: entryKeys, basis_none: entryKeys,
+    open_by_age: entryKeys.concat("age", "watch"),
+    in_review: ["id", "dir", "pr", "open_count", "live_count"]};
   for (const file of R.packFiles()){
     const tpl = fs.readFileSync(path.join(R.PACKS_DIR, file), "utf8");
-    let inside = [];
+    // Every opener goes on the stack and every closer pops one, so a value
+    // section inside a list never pops the list; only list names resolve keys.
+    const inside = [];
     for (const slot of tpl.match(/\{\{[#^/]?[\w.]+\}\}/g) || []){
       const kind = slot[2], p = slot.replace(/^\{\{[#^/]?/, "").replace(/\}\}$/, "");
       if (kind === "/"){ inside.pop(); continue; }
       const head = p.split(".")[0];
       const ok = known.has(head) || inside.some(list => (rowKeys[list] || []).includes(head));
       assert.equal(ok, true, `${file}: ${slot} names nothing the context carries`);
-      if (kind === "#" && rowKeys[p]) inside.push(p);
+      if (kind === "#" || kind === "^") inside.push(p);
     }
   }
 });
