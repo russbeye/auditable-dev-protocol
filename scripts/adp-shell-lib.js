@@ -14,6 +14,7 @@
   const isNode = typeof module !== "undefined" && module.exports;
   const B = isNode ? require("./adp-index-builder-lib.js") : global.ADPIndexBuilder;
   const P = isNode ? require("./adp-parser-lib.js") : global.ADPParserLib;
+  const D = isNode ? require("./adp-derive-lib.js") : global.ADPDeriveLib;
   const esc = P.esc, escAttr = P.escAttr;
 
   /* The six screens are the accepted product enumeration from the mockup.
@@ -374,11 +375,204 @@
         + `<div class="fbody">${s.bodyHtml}</div></details>`).join("");
   }
 
+  // ---- resume packs ----
+
+  /* A pack is plain text plus three constructs and nothing else. {{path}}
+     inserts one value. {{#name}}…{{/name}} repeats its body per item of a
+     list, with the item's keys laid over the context, or renders it once
+     when name holds a present value. {{^name}}…{{/name}} renders its body
+     only when the list is empty or the value is missing. The fill walks the
+     template once, left to right. A section's body runs to the first closer
+     that names it. An inserted value lands as a literal that is never read
+     again, so a title that quotes a slot keeps its braces. A path that
+     resolves to nothing renders empty, and any other brace text stays
+     verbatim: the fill never invents a value and never interprets a
+     construct it does not know. */
+  function packGet(ctx, path){
+    return path.split(".").reduce((o, k) => o == null ? o : o[k], ctx);
+  }
+  function fillPack(tpl, ctx){
+    tpl = String(tpl);
+    const tag = /\{\{([#^])?([\w.]+)\}\}/g;
+    let out = "", at = 0, m;
+    while ((m = tag.exec(tpl))){
+      const [whole, mark, p] = m;
+      const v = packGet(ctx, p);
+      out += tpl.slice(at, m.index);
+      at = tag.lastIndex;
+      if (!mark){ out += v == null ? "" : String(v); continue; }
+      const closer = "{{/" + p + "}}";
+      const end = tpl.indexOf(closer, at);
+      // An opener with no closer is not a construct, so it stays as written.
+      if (end < 0){ out += whole; continue; }
+      const body = tpl.slice(at, end);
+      const empty = Array.isArray(v) ? !v.length : !v;
+      if (mark === "#" && Array.isArray(v))
+        out += v.map(item => fillPack(body, Object.assign({}, ctx, item))).join("");
+      else if (mark === "#" ? !empty : empty) out += fillPack(body, ctx);
+      at = tag.lastIndex = end + closer.length;
+    }
+    return out + tpl.slice(at);
+  }
+
+  // The constructs a pack uses, each once, in first-use order. The screen
+  // lists them so an author can see what a pack reads.
+  function packSlots(tpl){
+    return [...new Set(String(tpl).match(/\{\{[#^]?[\w.]+\}\}/g) || [])];
+  }
+
+  // The slots packContext fills from the selected ticket alone. A pack that
+  // reads none of them is corpus-wide and fills with no ticket selected.
+  const TICKET_SLOTS = /^\{\{[#^]?(ticket(\.[\w.]+)?|missing|open_decisions|watches)\}\}$/;
+  function packReadsTicket(tpl){
+    return packSlots(tpl).some(s => TICKET_SLOTS.test(s));
+  }
+
+  /* The one context every pack fills from. Every classified value comes
+     through the derive lib, so a pack can only say what the board and the
+     ledger say: an entry is open by decisionKind, which prefers a recorded
+     ruling to the card; a watch is live when no closure record ended it;
+     the corpus-wide lists are the board's rows and the ledger's unwatched
+     rank. Dates come from due and anchored alone. A watch with no date
+     shows its UNANCHORED label and never its window prose, so a pack never
+     reads a date out of a sentence. The ticket may be null, in which case
+     every ticket slot renders empty. */
+  // A confidence basis is classified by its leading phrase, because the
+  // field is one line that names its kind first and its evidence after a
+  // dash. A mixed basis ("DIRECT EVIDENCE for X; inference for Y") takes
+  // the kind it leads with. No basis at all is its own kind, since the
+  // field postdates many entries on record.
+  function packBasisKind(basis){
+    const s = String(basis || "").trim().toUpperCase();
+    if (!s) return "none";
+    if (s.startsWith("DIRECT EVIDENCE")) return "direct";
+    if (s.startsWith("INFERENCE")) return "inference";
+    if (s.startsWith("DEVELOPER ASSERTION")) return "assertion";
+    return "other";
+  }
+
+  function packContext(index, t, today){
+    const word = c => P.dlChipSplit(c).word;
+    const watchRow = w => ({tid: w.tid, wid: w.wid, what: w.what,
+      due: w.anchored ? w.due : "", state: w.label});
+    const wb = D.watchboardRows(index.tickets, today);
+    const board = wb.rows;
+    const live = board.filter(w => w.state !== "closed");
+    const ledger = D.ledgerRows(index.tickets, today).decisions;
+    const open = ledger.filter(r => r.kind === "open");
+    const entryRow = r => ({tid: r.tid, id: r.id, title: r.title, confidence: word(r.confidence)});
+    // Oldest first, so the entries with the most drift lead; an undated
+    // card has no age and sits last, named as undated rather than as zero.
+    const byAge = open.slice().sort((a, b) =>
+      (b.age == null ? -1 : b.age) - (a.age == null ? -1 : a.age));
+    // Ledger rows carry no basis, so the card is read back through its
+    // ticket for the one field the evidence mix classifies.
+    const basisOf = r => {
+      const own = index.tickets.find(x => x.dir === r.dir);
+      const card = own && own.decisions.find(d => d.id === r.id);
+      return card ? card.basis : null;
+    };
+    const basis = {};
+    for (const k of ["direct", "inference", "assertion", "other", "none"]) basis[k] = [];
+    for (const r of open) basis[packBasisKind(basisOf(r))].push(entryRow(r));
+    const counts = {};
+    for (const k in basis) counts[k] = basis[k].length;
+    return {
+      index: {generated: index.generated, project: index.project},
+      ticket: t ? {id: t.id, dir: t.dir, slug: t.slug, date: t.date, title: t.title,
+        state: t.state, state_source: t.state_source, pr: t.pr, merged: t.merged,
+        phase: t.phase} : null,
+      ticket_count: index.tickets.length,
+      missing: t ? (t.missing.join(", ") || "none") : "",
+      open_decisions: t ? t.decisions.filter(d => D.decisionKind(d) === "open").map(d => {
+        const cover = D.coveringWatch(t, d.id);
+        return {id: d.id, title: d.title, confidence: word(d.confidence),
+          created: d.created || "", watch: cover ? cover.wid : "no watch"};
+      }) : [],
+      watches: t ? t.watches.filter(w => !w.closed).map(w => ({
+        wid: w.wid, what: w.what, dl: (w.dl || []).join(", "),
+        due: w.anchored ? w.due : "", state: D.dueLabel(w, today)})) : [],
+      overdue: board.filter(w => w.state === "overdue").map(watchRow),
+      soon: board.filter(w => w.state === "soon").map(watchRow),
+      unanchored: board.filter(w => w.state === "unanchored").map(watchRow),
+      unwatched: ledger.filter(r => r.rank === 0).map(entryRow),
+      // The board's whole live set in its order, its dated members alone as
+      // a calendar, and the state counts the board's chips carry.
+      live_watches: live.map(watchRow),
+      calendar: live.filter(w => w.anchored).map(watchRow),
+      watch_counts: Object.assign({live: live.length}, wb.counts),
+      open_by_age: byAge.map(r => Object.assign(entryRow(r), {
+        age: r.age == null ? "undated" : r.age + "d",
+        watch: r.watch || "no watch"})),
+      in_review: index.tickets.filter(x => x.state === "in-review").map(x => ({
+        id: x.id || x.dir, dir: x.dir, pr: x.pr,
+        open_count: x.decisions.filter(d => D.decisionKind(d) === "open").length,
+        live_count: x.watches.filter(w => !w.closed).length})),
+      basis_direct: basis.direct, basis_inference: basis.inference,
+      basis_assertion: basis.assertion, basis_other: basis.other, basis_none: basis.none,
+      basis_counts: counts
+    };
+  }
+
+  /* The packs seam, in the corpus seam's shape: one probe of packs.json,
+     then every listed file, all-or-null. A pack the server lists but cannot
+     serve would leave a button that fills nothing, so the whole load fails
+     instead. The listing's order is the screen's order. A probe that never
+     answers is quiet: a dead server is the corpus seam's trace to make, and
+     a server without the packs routes answers not-ok, so both read as the
+     no-packs mode. Only a listing the server did answer can fail loudly. */
+  async function loadPacks(fetchFn){
+    let probe = null;
+    try{ probe = await fetchFn("packs.json"); }catch(e){}
+    if (!probe || !probe.ok) return null;
+    try{
+      const listing = await probe.json();
+      if (!listing || !Array.isArray(listing.packs)) throw new Error("packs.json carries no packs array");
+      return await Promise.all(listing.packs.map(async file => {
+        const res = await fetchFn("packs/" + encodeURIComponent(file));
+        if (!res || !res.ok) throw new Error("unreadable pack: " + file);
+        return {name: String(file).replace(/\.pack\.md$/, ""), file: "packs/" + file, text: await res.text()};
+      }));
+    }catch(e){
+      console.warn("packs load failed:", e);
+      return null;
+    }
+  }
+
+  const PACK_DOCS = `<div class="packdocs"><h3>add your own pack</h3>`
+    + `<p>Drop a <code>.pack.md</code> file into the skill's <code>packs/</code> directory and reload: `
+    + `it appears here. A pack is plain text plus three constructs, filled from the ticket index: `
+    + `<code>{{path}}</code> inserts one value, <code>{{#name}}…{{/name}}</code> repeats its body for `
+    + `each item of a list, or once when name holds a present value, and <code>{{^name}}…{{/name}}</code> `
+    + `renders its body only when the list is empty or the value is missing. Nothing else is `
+    + `interpreted: a missing value renders empty, and the same index fills the same bytes.</p>`;
+
+  /* The pack screen. m.packs null means nothing loaded, and only the notice
+     renders. Otherwise the row, the source line, and either the filled
+     block with its copy control or the notice that explains why there is no
+     fill. m.text is the pack's bytes and lands escaped. */
+  function packScreenHtml(m){
+    const head = `<h2>resume pack <span class="isub">deterministic · copy into your next interactive session</span></h2>`;
+    if (!m.packs)
+      return head + `<div class="ipanel"><p class="dnotice">${esc(m.notice)}</p></div>`;
+    const row = `<div class="packrow">` + m.packs.map(p =>
+      `<button type="button" class="pk${p.name === m.sel ? " is-on" : ""}" data-pk="${escAttr(p.name)}">${esc(p.name)}</button>`).join("")
+      + `</div>`;
+    const body = m.notice
+      ? `<div class="ipanel"><p class="dnotice">${esc(m.notice)}</p></div>`
+      : `<pre class="packpre" id="packText">${esc(m.text)}</pre>`
+        + `<div class="mops"><button type="button" class="op op-acc" data-op="copypack">${esc(m.copyLabel || "⧉ copy pack")}</button></div>`;
+    return head + row + `<div class="packsrc">source: ${esc(m.file)}</div>` + body
+      + PACK_DOCS + `<h3>slots used by this pack</h3>`
+      + `<div class="slotlist">${m.slots.map(esc).join("  ")}</div></div>`;
+  }
+
   const ADPShellLib = {SCREENS, TAB_SCREENS, localDate, tabsHtml, footerText,
     projectChitText, applyTheme, hashRead, hashWrite, logPaths, corpusUrl,
     loadCorpus, railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml,
     docPaneHtml, rawPaneHtml, pillsHtml, decisionsPanelHtml, watchesPanelHtml,
-    statusPillsHtml, watchboardHtml, assumptionLedgerHtml, fullLogHtml};
+    statusPillsHtml, watchboardHtml, assumptionLedgerHtml, fullLogHtml,
+    fillPack, packSlots, packReadsTicket, packBasisKind, packContext, loadPacks, packScreenHtml};
   if (isNode){ module.exports = ADPShellLib; }
   else { global.ADPShellLib = ADPShellLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

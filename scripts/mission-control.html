@@ -67,6 +67,10 @@
   // selection the way the inspector's per-ticket filter does.
   let lgFilter = "all";
   let missNotice = null, bootNotice = null;
+  // The loaded packs, null until the boot load answers or when it failed.
+  // The selected pack is a name; null means the default, which is
+  // resume-ticket when it exists, else the first in the listing.
+  let packs = null, selPack = null, packText = "", copyLabel = null;
   // Collapse state for the full-log view, keyed by section key and scoped to
   // the current selection. fullJump names a section the next full-log render
   // must open and scroll to.
@@ -163,7 +167,7 @@
      A control that did not survive the rebuild simply stays unfocused. */
   const FOCUS_MARKS = ["data-op", "data-view", "data-secstep", "data-dlf", "data-lgf",
     "data-ws", "data-exp", "data-permalink", "data-t", "data-k", "data-key", "data-item",
-    "data-close"];
+    "data-close", "data-pk"];
   function focusMark(el){
     if (!el || !el.getAttribute) return null;
     if (el.id) return {id: el.id};
@@ -483,6 +487,58 @@
     refocus(keep);
   }
 
+  // ---- resume pack ----
+
+  /* The pack screen reads the corpus index only, like the board and the
+     ledgers: an opened document is unindexed, so a pack never fills from
+     one. The hidden-screen debt flag works the way the board's does. The
+     three notices come in order of what is missing: packs, corpus, then an
+     indexed ticket to fill from. */
+  let pkStale = true;
+  function renderPack(){
+    if (selScreen !== "resume pack"){ pkStale = true; return; }
+    pkStale = false;
+    const scr = $("#scrPack");
+    const keep = focusMark(document.activeElement);
+    if (!packs || !packs.length){
+      scr.innerHTML = S.packScreenHtml({packs: null, notice: packs
+        ? "the packs directory is empty — drop a .pack.md file into the skill's packs/ directory and reload."
+        : "no packs behind this page — packs load from the skill's packs/ directory through adp-serve.py (restart a server started before this page had packs routes); a page opened over file:// or with no server has none."});
+      refocus(keep);
+      return;
+    }
+    if (!packs.some(p => p.name === selPack))
+      selPack = packs.some(p => p.name === "resume-ticket") ? "resume-ticket" : packs[0].name;
+    const pack = packs.find(p => p.name === selPack);
+    const tgt = findTarget(sel.t);
+    const t = tgt && tgt.kind === "ticket" ? tgt.ticket : null;
+    let notice = null;
+    packText = "";
+    if (!corpus) notice = "no corpus behind this page — a pack fills from the served corpus index.";
+    // A corpus-wide pack reads no ticket slot, so it fills whether or not a
+    // ticket is selected. Only a pack that reads one waits for the rail.
+    else if (!t && S.packReadsTicket(pack.text)) notice = tgt
+      ? "opened documents are unindexed — a pack fills from the corpus index. select a ticket from the rail."
+      : bootNotice || "select a ticket from the rail to fill this pack.";
+    else packText = S.fillPack(pack.text, S.packContext(corpus.index, t, today()));
+    scr.innerHTML = S.packScreenHtml({packs, sel: selPack, file: pack.file, text: packText,
+      slots: S.packSlots(pack.text), notice, copyLabel});
+    refocus(keep);
+  }
+
+  // The label reports what the clipboard did, because a "copied" that
+  // assumes success would hide a denied write. The outcome shows for a
+  // moment and the control returns to its resting label.
+  function copyPack(){
+    let write;
+    try{ write = navigator.clipboard.writeText(packText); }
+    catch(e){ write = Promise.reject(e); }
+    Promise.resolve(write).then(
+      () => { copyLabel = "copied"; renderPack(); },
+      () => { copyLabel = "copy failed — select the text"; renderPack(); });
+    setTimeout(() => { copyLabel = null; renderPack(); }, 1200);
+  }
+
   // ---- chrome ----
 
   // The tab strip is built once. Renders flip state on the buttons in place,
@@ -524,7 +580,7 @@
   }
 
   function renderAll(){
-    render(); renderRail(); renderInspector(); renderWatch(); renderLedgers(); syncHash();
+    render(); renderRail(); renderInspector(); renderWatch(); renderLedgers(); renderPack(); syncHash();
   }
 
   // ---- opened documents ----
@@ -749,9 +805,12 @@
       render();
       if (selScreen === "watchboard" && wbStale) renderWatch();
       if (selScreen === "ledgers" && lgStale) renderLedgers();
+      if (selScreen === "resume pack" && pkStale) renderPack();
       syncHash();
       return;
     }
+    const pk = hit(".pk");
+    if (pk){ selPack = pk.getAttribute("data-pk"); copyLabel = null; renderPack(); return; }
     if (e.target.id === "pasteImport"){
       const v = ($("#pasteArea") || {value: ""}).value;
       addDoc("pasted.md", v, false);
@@ -869,6 +928,8 @@
       } else if (op.getAttribute("data-op") === "reload"){
         const tgt = findTarget(sel.t);
         if (tgt && tgt.kind === "doc") reloadDoc(tgt.doc);
+      } else if (op.getAttribute("data-op") === "copypack"){
+        copyPack();
       }
     }
   });
@@ -932,6 +993,10 @@
     booting = false;
     renderAll();
   });
+  // The packs load once, beside the corpus. They are the skill's own files,
+  // not the working tree, so a new pack shows on the next reload rather
+  // than on the corpus tick.
+  S.loadPacks(u => fetch(u)).then(p => { packs = p; renderPack(); });
 })();
 </script>
 </body>

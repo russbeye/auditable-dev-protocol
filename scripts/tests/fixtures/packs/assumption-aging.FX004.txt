@@ -1,0 +1,13 @@
+=== ADP PACK assumption-aging/v1 · 2026-11-20 ===
+corpus: fixture-corpus · 7 tickets · open decisions, oldest first
+
+- 142d  AV090 DL-001 [LOW] Only decision · watch: OT-1
+- 70d  FX004 DL-002 [LOW] Companions sit after the ticket list · watch: OT-FX004-1
+- undated  FX001 DL-002 [MEDIUM] Fixture decision two · watch: OT-FX001-1
+
+An open decision is an assumption nobody has closed, and the oldest carry
+the most drift. For each, from the top: re-read the entry's Monitoring
+signal against what the code does today. If the evidence exists, rule the
+entry with a DL CLOSED ledger line. If it has no live watch, open a ticket
+in its log's Obligation Ticket List so the age stops growing unwatched.
+=== END PACK ===

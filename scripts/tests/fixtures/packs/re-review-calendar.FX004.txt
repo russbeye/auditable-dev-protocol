@@ -1,0 +1,18 @@
+=== ADP PACK re-review-calendar/v1 · 2026-11-20 ===
+corpus: fixture-corpus · 7 tickets · dated live watches in due order
+
+2026-10-13  FX004 OT-FX004-1  [OVERDUE 38D]  Companions sit after the ticket list
+2026-10-15  FX001 OT-FX001-1  [OVERDUE 36D]  The second option holds
+2026-12-01  FX002 OT-FX002-1  [11D LEFT]  Prefix headings attribute truly
+2026-12-01  FX003 OT-FX003-3  [11D LEFT]  The live watch stays live
+2026-12-24  FX003 OT-FX003-2  [34D LEFT]  The relative window gains its date
+
+Each line is a date the record committed to. On the date, or at once for
+a line already past it, open the ticket's log, read the watch's exit
+condition, and rule the watch with a CLOSED ledger line. Before the date,
+only a fired signal closes a watch. A re-review that finds no new
+observable closes VALIDATED, the acceptance recorded in its closing note.
+Undated watches are not on this calendar: a watch with a relative window,
+or a dated exit condition beside a dash window, gains its date with a
+RE-ANCHORED line; a watch with neither stays undated.
+=== END PACK ===

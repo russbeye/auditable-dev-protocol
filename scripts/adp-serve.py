@@ -8,7 +8,9 @@ exposes the audit log at /<its basename>, read fresh from disk on every request.
 Also exposes the corpus that contains the log: /corpus.json lists every file
 path under the .adp directory, and /corpus/<relpath> serves the raw file. The
 shell builds its index in the browser from those, so no index is ever written
-to disk here. Prints one line, the URL to open, and then serves until
+to disk here. The skill's resume packs ride the same way: /packs.json lists
+the .pack.md files under the skill's packs directory and /packs/<name> serves
+one of them. Prints one line, the URL to open, and then serves until
 interrupted. Port 0 (the default) picks any free port.
 """
 import http.server
@@ -18,6 +20,18 @@ import sys
 import urllib.parse
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+PACKS_DIR = os.path.join(os.path.dirname(SCRIPTS_DIR), "packs")
+
+
+def pack_names():
+    """The pack files the skill ships, sorted, or None when the directory is
+    absent. This listing is also the allow-list for /packs/<name>, so a name
+    with a path separator or a traversal in it can never reach the disk."""
+    try:
+        return sorted(fn for fn in os.listdir(PACKS_DIR)
+                      if fn.endswith(".pack.md") and os.path.isfile(os.path.join(PACKS_DIR, fn)))
+    except OSError:
+        return None
 
 
 def main():
@@ -96,6 +110,24 @@ def main():
                 with open(target, "rb") as f:
                     body = f.read()
                 self.send_bytes(body, "text/plain; charset=utf-8")
+                return
+            if route == "/packs.json":
+                names = pack_names()
+                if names is None:
+                    self.send_error(404, "no packs directory")
+                    return
+                body = json.dumps({"packs": names}).encode("utf-8")
+                self.send_bytes(body, "application/json; charset=utf-8")
+                return
+            if route.startswith("/packs/"):
+                name = urllib.parse.unquote(route[len("/packs/"):])
+                names = pack_names()
+                if names is None or name not in names:
+                    self.send_error(404, "not a pack")
+                    return
+                with open(os.path.join(PACKS_DIR, name), "rb") as f:
+                    body = f.read()
+                self.send_bytes(body, "text/markdown; charset=utf-8")
                 return
             super().do_GET()
 

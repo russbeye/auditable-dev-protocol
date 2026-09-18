@@ -1503,3 +1503,206 @@ test("a served page waiting for its corpus carries the ticket link through its h
   assert.ok(entry(h, "AA1").classList.contains("is-sel"));
   assert.equal(h.$("#scrWatch").classList.contains("is-on"), true);
 });
+
+// ---- the resume pack ----
+
+/* The pack tests serve the shipped packs from disk through the fetch stub,
+   so the screen renders the real files. The corpus is the board's staged
+   pair, which carries an open decision, live and settled watches, and an
+   overdue one. */
+const P = require("../adp-parser-lib.js");
+const PACKS_ROOT = path.join(__dirname, "..", "..", "packs");
+const PACK_FILES = fs.readdirSync(PACKS_ROOT).filter(f => f.endsWith(".pack.md")).sort();
+const PACK_NAMES = PACK_FILES.map(f => f.replace(/\.pack\.md$/, ""));
+const packText = f => fs.readFileSync(path.join(PACKS_ROOT, f), "utf8");
+function packsFetch(inner, listing){
+  return u => {
+    if (u === "packs.json") return Promise.resolve({ok: true, json: async () => listing || {packs: PACK_FILES}});
+    if (u.startsWith("packs/")){
+      const f = decodeURIComponent(u.slice("packs/".length));
+      if (PACK_FILES.includes(f)) return Promise.resolve({ok: true, text: async () => packText(f)});
+      return Promise.resolve({ok: false});
+    }
+    return inner(u);
+  };
+}
+const bootPacks = opts => bootShell(Object.assign(
+  {stored: "dark", fetch: packsFetch(corpusFetch(LISTING_WB, TEXTS_WB))}, opts));
+const packTab = h => h.click(h.$$(".mtab")[4]);
+// The mini-DOM resolves one class per selector, so the marked entry and the
+// marked pack are read through classList.
+const selectedKey = h => h.$$(".rentry").find(r => r.classList.contains("is-sel")).getAttribute("data-key");
+const selectedPacks = h => h.$$(".pk").filter(b => b.classList.contains("is-on")).map(b => b.getAttribute("data-pk"));
+
+// What the page must show for a ticket: the same corpus built the same way
+// the seam builds it, filled by the lib for that ticket on the index's day.
+function expectedPack(name, key){
+  const index = B.buildIndex(
+    LISTING_WB.files.map(p => (p in TEXTS_WB ? {path: p, text: TEXTS_WB[p]} : {path: p})),
+    {project: "demo", generated: S.localDate(), source: "working-tree"});
+  const t = index.tickets.find(x => (x.id || x.dir) === key);
+  return S.fillPack(packText(name + ".pack.md"), S.packContext(index, t, index.generated));
+}
+
+test("loadPacks returns every listed pack in listing order, with its name, file, and text", async () => {
+  const got = await S.loadPacks(packsFetch(() => Promise.resolve({ok: false})));
+  assert.deepEqual(got.map(p => [p.name, p.file]), PACK_FILES.map(f => [f.replace(/\.pack\.md$/, ""), "packs/" + f]));
+  assert.equal(got[0].text, packText(PACK_FILES[0]));
+});
+
+test("loadPacks resolves null on every failure shape, all-or-null", async t => {
+  const warn = t.mock.method(console, "warn", () => {});
+  // A probe that never answers and a not-ok probe are both the quiet
+  // no-packs mode; the corpus seam already traces a dead server.
+  assert.equal(await S.loadPacks(() => Promise.reject(new Error("down"))), null);
+  assert.equal(await S.loadPacks(() => Promise.resolve({ok: false})), null);
+  assert.equal(warn.mock.callCount(), 0);
+  assert.equal(await S.loadPacks(() => Promise.resolve({ok: true, json: async () => ({})})), null);
+  // One listed pack the server cannot serve fails the whole load.
+  assert.equal(await S.loadPacks(packsFetch(() => Promise.resolve({ok: false}),
+    {packs: PACK_FILES.concat("ghost.pack.md")})), null);
+  assert.equal(warn.mock.callCount(), 2);
+  assert.match(String(warn.mock.calls[1].arguments.join(" ")), /unreadable pack: ghost/);
+});
+
+test("the pack screen rows every pack in listing order with resume-ticket selected by default", async () => {
+  const h = bootPacks();
+  await h.settle();
+  packTab(h);
+  assert.deepEqual(h.$$(".pk").map(b => b.getAttribute("data-pk")), PACK_NAMES);
+  assert.deepEqual(selectedPacks(h), ["resume-ticket"]);
+  assert.match(h.$(".packsrc").innerHTML, /source: packs\/resume-ticket\.pack\.md/);
+  assert.match(h.$("#scrPack").innerHTML, /add your own pack/);
+  assert.match(h.$(".slotlist").innerHTML, /\{\{index\.generated\}\}/);
+});
+
+test("the block carries the lib's fill for the selected ticket, and a rail pick refills it in place", async () => {
+  const h = bootPacks();
+  await h.settle();
+  packTab(h);
+  const first = selectedKey(h);
+  assert.equal(h.$("#packText").innerHTML, P.esc(expectedPack("resume-ticket", first)));
+  const other = first === "BB2" ? "AA1" : "BB2";
+  pick(h, other);
+  assert.equal(h.$("#scrPack").classList.contains("is-on"), true);
+  assert.equal(h.$("#packText").innerHTML, P.esc(expectedPack("resume-ticket", other)));
+  assert.notEqual(expectedPack("resume-ticket", first), expectedPack("resume-ticket", other));
+});
+
+test("a pack button switches the pack, refills the block, and keeps the keyboard", async () => {
+  const h = bootPacks();
+  await h.settle();
+  packTab(h);
+  const key = selectedKey(h);
+  const btn = h.$$(".pk").find(b => b.getAttribute("data-pk") === "audit-sweep");
+  btn.focus();
+  h.click(btn);
+  assert.deepEqual(selectedPacks(h), ["audit-sweep"]);
+  assert.match(h.$(".packsrc").innerHTML, /audit-sweep\.pack\.md/);
+  assert.equal(h.$("#packText").innerHTML, P.esc(expectedPack("audit-sweep", key)));
+  assert.equal(h.document.activeElement.getAttribute("data-pk"), "audit-sweep");
+});
+
+test("copy writes the block's text to the clipboard and the label reports it, then rests", async () => {
+  const h = bootPacks();
+  await h.settle();
+  packTab(h);
+  const key = selectedKey(h);
+  const copy = () => h.$$(".op").find(b => b.getAttribute("data-op") === "copypack");
+  h.click(copy());
+  await h.settle();
+  assert.deepEqual(h.clipboard, [expectedPack("resume-ticket", key)]);
+  assert.equal(copy().innerHTML, "copied");
+  h.runTimeouts();
+  assert.equal(copy().innerHTML, "⧉ copy pack");
+});
+
+test("a denied clipboard write says so and copies nothing", async () => {
+  const h = bootPacks({clipboardRejects: true});
+  await h.settle();
+  packTab(h);
+  h.click(h.$$(".op").find(b => b.getAttribute("data-op") === "copypack"));
+  await h.settle();
+  assert.deepEqual(h.clipboard, []);
+  assert.match(h.$$(".op").find(b => b.getAttribute("data-op") === "copypack").innerHTML, /copy failed/);
+});
+
+test("a resume pack deep link boots to the screen and a tab visit writes its token", async () => {
+  const h = bootPacks({hash: "#v=resume%20pack"});
+  await h.settle();
+  assert.equal(h.$("#scrPack").classList.contains("is-on"), true);
+  assert.ok(h.$("#packText"));
+  const h2 = bootPacks();
+  await h2.settle();
+  packTab(h2);
+  assert.match(h2.hashes[h2.hashes.length - 1], /^#v=resume%20pack/);
+});
+
+test("with no packs behind the page the screen says so and rows nothing", async () => {
+  const h = bootBoard();
+  await h.settle();
+  packTab(h);
+  const scr = h.$("#scrPack").innerHTML;
+  assert.match(scr, /no packs behind this page/);
+  assert.equal(h.$$(".pk").length, 0);
+  assert.equal(h.$("#packText"), null);
+});
+
+test("an empty packs directory is named as empty, not as absent", async () => {
+  const h = bootShell({stored: "dark",
+    fetch: packsFetch(corpusFetch(LISTING_WB, TEXTS_WB), {packs: []})});
+  await h.settle();
+  packTab(h);
+  assert.match(h.$("#scrPack").innerHTML, /packs directory is empty/);
+});
+
+test("with packs but no corpus the screen rows the packs and says there is no corpus to fill from", async () => {
+  const h = bootShell({stored: "dark", fetch: packsFetch(() => Promise.resolve({ok: false}))});
+  await h.settle();
+  packTab(h);
+  assert.equal(h.$$(".pk").length, PACK_NAMES.length);
+  assert.match(h.$("#scrPack").innerHTML, /no corpus behind this page/);
+  assert.equal(h.$("#packText"), null);
+});
+
+test("an opened document is unindexed, so the screen says so instead of filling from it", async () => {
+  const h = bootPacks();
+  await h.settle();
+  h.click(h.$$(".op").find(b => b.getAttribute("data-op") === "paste"));
+  h.$("#pasteArea").value = LOG;
+  h.click(h.$("#pasteImport"));
+  packTab(h);
+  assert.match(h.$("#scrPack").innerHTML, /opened documents are unindexed/);
+  assert.equal(h.$("#packText"), null);
+  // Picking an indexed ticket again fills the pack without leaving the screen.
+  pick(h, "AA1");
+  assert.equal(h.$("#scrPack").classList.contains("is-on"), true);
+  assert.equal(h.$("#packText").innerHTML, P.esc(expectedPack("resume-ticket", "AA1")));
+});
+
+test("a corpus-wide pack fills with no ticket selected, and a ticket pack still asks for one", async () => {
+  const h = bootPacks({hash: "#t=ZZZ"});
+  await h.settle();
+  packTab(h);
+  assert.match(h.$("#scrPack").innerHTML, /"ZZZ" is not in this corpus/);
+  assert.equal(h.$("#packText"), null);
+  h.click(h.$$(".pk").find(b => b.getAttribute("data-pk") === "watch-audit"));
+  assert.equal(h.$("#packText").innerHTML, P.esc(expectedPack("watch-audit", null)));
+  assert.doesNotMatch(h.$("#scrPack").innerHTML, /select a ticket/);
+  h.click(h.$$(".pk").find(b => b.getAttribute("data-pk") === "close-watch"));
+  assert.equal(h.$("#packText"), null);
+});
+
+test("a hidden pack screen skips its rebuild and pays it on entry", async () => {
+  const h = bootPacks();
+  await h.settle();
+  packTab(h);
+  const before = h.$$(".pk")[0];
+  h.click(h.$$(".mtab")[0]);
+  // A full re-render while the pack screen is hidden must leave its DOM alone.
+  pick(h, "BB2");
+  assert.equal(h.$$(".pk")[0], before);
+  packTab(h);
+  assert.notEqual(h.$$(".pk")[0], before);
+  assert.equal(h.$("#packText").innerHTML, P.esc(expectedPack("resume-ticket", "BB2")));
+});

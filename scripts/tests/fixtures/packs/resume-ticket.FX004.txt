@@ -1,0 +1,16 @@
+=== ADP PACK resume-ticket/v1 · 2026-11-20 ===
+ticket: 20260911-FX004-section-vocabulary
+state: closed (inferred) · log reached phase 9
+sections missing: none
+
+OPEN DECISIONS
+- [LOW] DL-002 Companions sit after the ticket list · watch: OT-FX004-1
+
+LIVE WATCHES
+- OT-FX004-1 Companions sit after the ticket list · due 2026-10-13 · OVERDUE 38D
+
+Resume this ticket from the phase its log reached. Read
+.adp/20260911-FX004-section-vocabulary/audit-log.md before writing code, the Decision Log first.
+Log every non-trivial decision as you make it. Never rewrite an entry: a
+changed decision is a new entry whose Supersedes field names the old one.
+=== END PACK ===

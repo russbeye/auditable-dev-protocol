@@ -262,7 +262,12 @@ function bootShell(opts){
     }
   };
   const clipboard = [];
-  const navigator = {clipboard: {writeText(t){ clipboard.push(String(t)); return Promise.resolve(); }}};
+  // opts.clipboardRejects models a denied write, which a real browser
+  // answers with a rejected promise and no text on the clipboard.
+  const navigator = {clipboard: {writeText(t){
+    if (opts.clipboardRejects) return Promise.reject(new Error("clipboard denied"));
+    clipboard.push(String(t)); return Promise.resolve();
+  }}};
 
   // Timers are captured, never scheduled: h.tick() runs the poll loop once
   // and timeouts run on demand, so tests stay synchronous-by-choice.
