@@ -462,8 +462,9 @@ ticket watching a signal covers three outcomes: the signal fires — close, entr
 window ends with the signal wired and quiet — close, entry VALIDATED; the window ends with the
 signal never emitted — close, entry UNKNOWN, and the closing note names the instrumentation gap.
 For an UNOBSERVABLE assumption the exit condition is the re-review the window dates, named there
-once and not copied into the exit condition, whose default disposition is recorded acceptance,
-unless a newly available observable reopens the entry with a signal.
+once and not copied into the exit condition, whose default disposition is recorded acceptance:
+the entry closes VALIDATED, the closing note naming the acceptance, unless a newly available
+observable reopens the entry with a signal.
 
 **Decision Log status:** CLOSED   **Closed by:** [developer]   **Date:** [date]
 ```
