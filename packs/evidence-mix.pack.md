@@ -20,8 +20,9 @@ WITH NO BASIS STATED
 {{/basis_none}}
 A basis is classified by its leading phrase. An assertion rests on one
 person's word: confirm it with that person or find the evidence. An
-inference rests on a convention: name where the record states it, or lower
-the confidence. An entry with no basis predates the field or skipped it:
-add a dated status note that names one. Direct evidence needs no action
-here; its count is the corpus's calibration base.
+inference rests on a convention: name where the record states it, or record
+the weaker footing in a dated status note; a changed decision is a new entry
+whose Supersedes field names the old one. An entry with no basis predates
+the field or skipped it: add a dated status note that names one. Direct
+evidence needs no action here; its count is the corpus's calibration base.
 === END PACK ===

@@ -515,7 +515,9 @@
     let notice = null;
     packText = "";
     if (!corpus) notice = "no corpus behind this page — a pack fills from the served corpus index.";
-    else if (!t) notice = tgt
+    // A corpus-wide pack reads no ticket slot, so it fills whether or not a
+    // ticket is selected. Only a pack that reads one waits for the rail.
+    else if (!t && S.packReadsTicket(pack.text)) notice = tgt
       ? "opened documents are unindexed — a pack fills from the corpus index. select a ticket from the rail."
       : bootNotice || "select a ticket from the rail to fill this pack.";
     else packText = S.fillPack(pack.text, S.packContext(corpus.index, t, today()));

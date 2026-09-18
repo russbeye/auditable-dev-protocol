@@ -13,7 +13,8 @@ LIVE WATCHES, MOST OVERDUE FIRST
 
 Audit each watch against its own exit condition in its ticket's Obligation
 Ticket List: the signal fired, the window ended with the signal wired and
-quiet, or the signal was never wired. Close a watch only with a CLOSED
+quiet, the signal was never wired, or, for an UNOBSERVABLE assumption, the
+re-review its window dates came due. Close a watch only with a CLOSED
 ledger line appended under that list, and rule the entries it covers with
 their own lines. A watch whose window must move closes with a disposition
 and a successor row opens; a closed watch never re-anchors.

@@ -50,6 +50,20 @@ test("fillPack leaves every other brace construct verbatim", () => {
   assert.equal(S.fillPack(tpl, {a: "A"}), "{{! note}} {{> partial}} {{a|b}} {{ spaced }} {{#x}}{{/y}} {A}");
 });
 
+test("fillPack never reads an inserted value as a construct, inside a list or an inverse", () => {
+  const ctx = {index: {generated: "2026-11-20"}, rows: [{title: "quotes {{index.generated}} and {{path}}"}],
+    top: "quotes {{index.generated}}", none: []};
+  assert.equal(S.fillPack("{{#rows}}- {{title}}\n{{/rows}}", ctx), "- quotes {{index.generated}} and {{path}}\n");
+  assert.equal(S.fillPack("{{^none}}{{top}}{{/none}}", ctx), "quotes {{index.generated}}");
+  assert.equal(S.fillPack("{{#top}}{{top}}{{/top}}", ctx), "quotes {{index.generated}}");
+});
+
+test("packReadsTicket is true exactly when a pack reads a slot filled from the selected ticket", () => {
+  assert.equal(S.packReadsTicket("{{index.generated}} {{#live_watches}}{{wid}}{{/live_watches}} {{watch_counts.live}}"), false);
+  for (const slot of ["{{ticket.id}}", "{{#ticket.pr}}x{{/ticket.pr}}", "{{missing}}", "{{^open_decisions}}none{{/open_decisions}}", "{{#watches}}{{wid}}{{/watches}}"])
+    assert.equal(S.packReadsTicket("corpus {{ticket_count}} " + slot), true, slot);
+});
+
 test("packSlots lists each construct once in first-use order, closers excluded", () => {
   const tpl = "{{a}} {{#rows}}{{a}} {{b}}{{/rows}} {{^rows}}none{{/rows}} {{a}}";
   assert.deepEqual(S.packSlots(tpl), ["{{a}}", "{{#rows}}", "{{b}}", "{{^rows}}"]);

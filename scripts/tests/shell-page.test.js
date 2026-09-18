@@ -1680,6 +1680,19 @@ test("an opened document is unindexed, so the screen says so instead of filling 
   assert.equal(h.$("#packText").innerHTML, P.esc(expectedPack("resume-ticket", "AA1")));
 });
 
+test("a corpus-wide pack fills with no ticket selected, and a ticket pack still asks for one", async () => {
+  const h = bootPacks({hash: "#t=ZZZ"});
+  await h.settle();
+  packTab(h);
+  assert.match(h.$("#scrPack").innerHTML, /"ZZZ" is not in this corpus/);
+  assert.equal(h.$("#packText"), null);
+  h.click(h.$$(".pk").find(b => b.getAttribute("data-pk") === "watch-audit"));
+  assert.equal(h.$("#packText").innerHTML, P.esc(expectedPack("watch-audit", null)));
+  assert.doesNotMatch(h.$("#scrPack").innerHTML, /select a ticket/);
+  h.click(h.$$(".pk").find(b => b.getAttribute("data-pk") === "close-watch"));
+  assert.equal(h.$("#packText"), null);
+});
+
 test("a hidden pack screen skips its rebuild and pays it on entry", async () => {
   const h = bootPacks();
   await h.settle();

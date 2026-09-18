@@ -19,7 +19,9 @@ OPEN DECISIONS WITH NO LIVE WATCH
 {{/unwatched}}
 Work the lists top to bottom, each item in its own ticket's log. Close a
 watch with one CLOSED ledger line and rule each entry it covers with its
-own line; never batch outcomes into one entry. Give an unanchored watch its
-date with a RE-ANCHORED line. Open a ticket in the Obligation Ticket List
-for every open decision that no live watch covers.
+own line; never batch outcomes into one entry. A watch with a relative
+window, or a dated exit condition beside a dash window, gains its date with
+a RE-ANCHORED line; a watch with neither stays undated. Open a ticket in
+the Obligation Ticket List for every open decision that no live watch
+covers.
 === END PACK ===

@@ -381,35 +381,51 @@
      inserts one value. {{#name}}…{{/name}} repeats its body per item of a
      list, with the item's keys laid over the context, or renders it once
      when name holds a present value. {{^name}}…{{/name}} renders its body
-     only when the list is empty or the value is missing. Sections resolve
-     first, then inverse sections, then values, so an inverse block that
-     follows its section never sees the section's own closing tag. A path
-     that resolves to nothing renders empty, and any other brace text stays
+     only when the list is empty or the value is missing. The fill walks the
+     template once, left to right. A section's body runs to the first closer
+     that names it. An inserted value lands as a literal that is never read
+     again, so a title that quotes a slot keeps its braces. A path that
+     resolves to nothing renders empty, and any other brace text stays
      verbatim: the fill never invents a value and never interprets a
      construct it does not know. */
   function packGet(ctx, path){
     return path.split(".").reduce((o, k) => o == null ? o : o[k], ctx);
   }
   function fillPack(tpl, ctx){
-    tpl = String(tpl).replace(/\{\{#([\w.]+)\}\}([\s\S]*?)\{\{\/\1\}\}/g, (_, p, body) => {
+    tpl = String(tpl);
+    const tag = /\{\{([#^])?([\w.]+)\}\}/g;
+    let out = "", at = 0, m;
+    while ((m = tag.exec(tpl))){
+      const [whole, mark, p] = m;
       const v = packGet(ctx, p);
-      if (Array.isArray(v)) return v.map(item => fillPack(body, Object.assign({}, ctx, item))).join("");
-      return v ? fillPack(body, ctx) : "";
-    });
-    tpl = tpl.replace(/\{\{\^([\w.]+)\}\}([\s\S]*?)\{\{\/\1\}\}/g, (_, p, body) => {
-      const v = packGet(ctx, p);
-      return (Array.isArray(v) ? !v.length : !v) ? fillPack(body, ctx) : "";
-    });
-    return tpl.replace(/\{\{([\w.]+)\}\}/g, (_, p) => {
-      const v = packGet(ctx, p);
-      return v == null ? "" : String(v);
-    });
+      out += tpl.slice(at, m.index);
+      at = tag.lastIndex;
+      if (!mark){ out += v == null ? "" : String(v); continue; }
+      const closer = "{{/" + p + "}}";
+      const end = tpl.indexOf(closer, at);
+      // An opener with no closer is not a construct, so it stays as written.
+      if (end < 0){ out += whole; continue; }
+      const body = tpl.slice(at, end);
+      const empty = Array.isArray(v) ? !v.length : !v;
+      if (mark === "#" && Array.isArray(v))
+        out += v.map(item => fillPack(body, Object.assign({}, ctx, item))).join("");
+      else if (mark === "#" ? !empty : empty) out += fillPack(body, ctx);
+      at = tag.lastIndex = end + closer.length;
+    }
+    return out + tpl.slice(at);
   }
 
   // The constructs a pack uses, each once, in first-use order. The screen
   // lists them so an author can see what a pack reads.
   function packSlots(tpl){
     return [...new Set(String(tpl).match(/\{\{[#^]?[\w.]+\}\}/g) || [])];
+  }
+
+  // The slots packContext fills from the selected ticket alone. A pack that
+  // reads none of them is corpus-wide and fills with no ticket selected.
+  const TICKET_SLOTS = /^\{\{[#^]?(ticket(\.[\w.]+)?|missing|open_decisions|watches)\}\}$/;
+  function packReadsTicket(tpl){
+    return packSlots(tpl).some(s => TICKET_SLOTS.test(s));
   }
 
   /* The one context every pack fills from. Every classified value comes
@@ -556,7 +572,7 @@
     loadCorpus, railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml,
     docPaneHtml, rawPaneHtml, pillsHtml, decisionsPanelHtml, watchesPanelHtml,
     statusPillsHtml, watchboardHtml, assumptionLedgerHtml, fullLogHtml,
-    fillPack, packSlots, packBasisKind, packContext, loadPacks, packScreenHtml};
+    fillPack, packSlots, packReadsTicket, packBasisKind, packContext, loadPacks, packScreenHtml};
   if (isNode){ module.exports = ADPShellLib; }
   else { global.ADPShellLib = ADPShellLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);
