@@ -542,7 +542,7 @@ test("calibrationModel rows an unclassified confidence under other with its toke
   const other = m.buckets[3];
   // The parser places a token by prefix, so MED and Medium are medium; the
   // other bucket takes what matched no prefix, named as written.
-  assert.deepEqual(other.tokens, ["CERTAIN", "—"]);
+  assert.deepEqual(other.tokens, ["CERTAIN", "none stated"]);
   assert.deepEqual(other.counts, {validated: 1, invalidated: 0, open: 1, unknown: 0, other: 0});
   const medium = m.buckets[1];
   assert.deepEqual(medium.tokens, ["Medium", "MED"]);
@@ -557,4 +557,12 @@ test("calibrationModel over an empty corpus tiles zeros and rows the three canon
   const m = D.calibrationModel([], TODAY);
   assert.deepEqual(m.tiles, {tickets: 0, shipped: 0, decisions: 0, overdue: 0, unanchored: 0});
   assert.deepEqual(m.buckets.map(b => b.total), [0, 0, 0]);
+});
+
+test("the kind vocabularies are exported and match what the classifiers can return", () => {
+  assert.deepEqual(D.CONF_KINDS, ["high", "medium", "low", "other"]);
+  assert.deepEqual(D.STATUS_KINDS, ["validated", "invalidated", "open", "unknown", "other"]);
+  const m = D.calibrationModel([ticket({decisions: [decision({confidence: "CERTAIN", status: "PARKED"})]})], TODAY);
+  assert.deepEqual(m.buckets.map(b => b.kind), D.CONF_KINDS);
+  assert.deepEqual(Object.keys(m.buckets[0].counts), D.STATUS_KINDS);
 });

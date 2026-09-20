@@ -167,11 +167,13 @@
 .rawpre{font-family:var(--mono);font-size:11px;color:var(--dim);white-space:pre-wrap;
   overflow-x:auto;margin:0;max-height:420px;overflow-y:auto}
 
-.ipanel{border:1px solid var(--line);background:var(--panel);padding:12px 14px;margin:0 0 14px}
+/* The heading's pill row floats right. flow-root keeps the float inside the
+   panel's border, and everything after the heading clears it, so neither a
+   table nor an empty-state notice runs down beside a wide row. */
+.ipanel{border:1px solid var(--line);background:var(--panel);padding:12px 14px;margin:0 0 14px;display:flow-root}
+.ipanel h2 ~ *{clear:both}
 .ipanel h2{margin:0 0 10px}
-/* The heading's pill row floats right; a row wider than the heading's line
-   would otherwise run down beside the table and squeeze it to a sliver. */
-.tblwrap{overflow-x:auto;clear:both}
+.tblwrap{overflow-x:auto}
 .ipanel table{width:100%;border-collapse:collapse;font-size:11.5px}
 .ipanel th{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--faint);text-align:left;padding:4px 10px 6px 6px;border-bottom:1px solid var(--line);

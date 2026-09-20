@@ -448,8 +448,8 @@
      inspector. The hidden-screen debt flag works the way the board's does. */
   let lgStale = true;
   // Every kind either classifier can return, so no entry is unreachable by pill.
-  const LG_STATUS_KEYS = ["all", "open", "validated", "invalidated", "unknown", "other"];
-  const LG_CONF_KEYS = ["all", "high", "medium", "low", "other"];
+  const LG_STATUS_KEYS = ["all"].concat(D.STATUS_KINDS);
+  const LG_CONF_KEYS = ["all"].concat(D.CONF_KINDS);
   function renderLedgers(){
     if (selScreen !== "ledgers"){ lgStale = true; return; }
     lgStale = false;

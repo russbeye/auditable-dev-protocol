@@ -292,6 +292,9 @@
      could not place, and a count alone would hide which token that was.
      The other bucket rows only when it has entries, so a corpus written to
      the protocol shows the three canonical rows and nothing more. */
+  // The closed sets the parser's classifiers return, in the order the
+  // calibration bars and the ledger pills present them. Exported so a kind
+  // added to a classifier is added here once and every consumer follows.
   const CONF_KINDS = ["high", "medium", "low", "other"];
   const STATUS_KINDS = ["validated", "invalidated", "open", "unknown", "other"];
   function calibrationModel(tickets, today){
@@ -310,7 +313,9 @@
       for (const d of t.decisions){
         decisions++;
         const b = byKind[P.dlConfKind(d.confidence)];
-        const word = P.dlChipSplit(String(d.confidence == null ? "" : d.confidence)).word || "—";
+        // A card with no confidence line is named in words, because a dash
+        // is the glyph the counts column uses for nothing.
+        const word = P.dlChipSplit(String(d.confidence == null ? "" : d.confidence)).word || "none stated";
         if (!b.tokens.includes(word)) b.tokens.push(word);
         const kind = decisionKind(d);
         b.counts[kind]++;
@@ -342,7 +347,7 @@
     });
   }
 
-  const ADPDeriveLib = {GROUPS, daysUntil, dueState, dueLabel, statusKind,
+  const ADPDeriveLib = {GROUPS, CONF_KINDS, STATUS_KINDS, daysUntil, dueState, dueLabel, statusKind,
     decisionKind, coveringWatch, settledWatch, canonicalSection,
     unwatchedOpen, attentionReasons, needsAttention, ribbonModel, railGroups,
     sectionEntries, sectionState, sectionItems, citingSections,

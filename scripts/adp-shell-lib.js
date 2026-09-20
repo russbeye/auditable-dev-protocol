@@ -393,7 +393,7 @@
      floor width, so one entry beside forty stays visible. */
   const CAL_TILES = [["tickets", "tickets indexed"], ["shipped", "shipped or closed"],
     ["decisions", "decisions logged"], ["watches", "watches overdue + unanchored"]];
-  const CAL_KINDS = ["validated", "invalidated", "open", "unknown", "other"];
+  const CAL_KINDS = D.STATUS_KINDS;
   function calibrationHtml(m){
     const head = `<h2>calibration <span class="isub">does stated confidence predict outcomes</span></h2>`;
     if (!m.model)
