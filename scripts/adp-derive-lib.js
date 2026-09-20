@@ -283,6 +283,54 @@
     return {decisions};
   }
 
+  /* The calibration model: does stated confidence predict outcomes. One
+     bucket per confidence kind in a fixed order, each folding its decisions
+     by outcome kind. Both classifications are the ledger's own: dlConfKind
+     by prefix, decisionKind with a ruling over the card. So the screen and
+     the ledger cannot disagree about an entry. A bucket keeps the verbatim
+     tokens it met, because the other bucket exists to show what the parser
+     could not place, and a count alone would hide which token that was.
+     The other bucket rows only when it has entries, so a corpus written to
+     the protocol shows the three canonical rows and nothing more. */
+  const CONF_KINDS = ["high", "medium", "low", "other"];
+  const STATUS_KINDS = ["validated", "invalidated", "open", "unknown", "other"];
+  function calibrationModel(tickets, today){
+    const buckets = CONF_KINDS.map(kind => {
+      const counts = {};
+      STATUS_KINDS.forEach(k => { counts[k] = 0; });
+      return {kind, tokens: [], counts, total: 0, ruled: {validated: 0, ruled: 0}};
+    });
+    const byKind = {};
+    buckets.forEach(b => { byKind[b.kind] = b; });
+    let decisions = 0, shipped = 0;
+    for (const t of tickets){
+      // A closed log shipped first: the contract's ladder puts closed above
+      // shipped, so the tile counts both.
+      if (t.state === "shipped" || t.state === "closed") shipped++;
+      for (const d of t.decisions){
+        decisions++;
+        const b = byKind[P.dlConfKind(d.confidence)];
+        const word = P.dlChipSplit(String(d.confidence == null ? "" : d.confidence)).word || "—";
+        if (!b.tokens.includes(word)) b.tokens.push(word);
+        const kind = decisionKind(d);
+        b.counts[kind]++;
+        b.total++;
+        // Only a ruling is an outcome. Open, unknown, and other entries are
+        // not evidence either way, so the ruled share leaves them out.
+        if (kind === "validated" || kind === "invalidated"){
+          b.ruled.ruled++;
+          if (kind === "validated") b.ruled.validated++;
+        }
+      }
+    }
+    const wb = watchboardRows(tickets, today).counts;
+    return {
+      tiles: {tickets: tickets.length, shipped, decisions,
+        overdue: wb.overdue, unanchored: wb.unanchored},
+      buckets: buckets.filter(b => b.kind !== "other" || b.total > 0)
+    };
+  }
+
   // One sorter serves every table: accessors map a column key to a value and
   // d flips the direction. Rows never mutate; presentation order is ours.
   function sortRows(rows, k, d, acc){
@@ -298,7 +346,7 @@
     decisionKind, coveringWatch, settledWatch, canonicalSection,
     unwatchedOpen, attentionReasons, needsAttention, ribbonModel, railGroups,
     sectionEntries, sectionState, sectionItems, citingSections,
-    watchboardRows, ledgerRows, sortRows};
+    watchboardRows, ledgerRows, calibrationModel, sortRows};
   if (isNode){ module.exports = ADPDeriveLib; }
   else { global.ADPDeriveLib = ADPDeriveLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

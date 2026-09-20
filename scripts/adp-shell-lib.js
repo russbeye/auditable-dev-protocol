@@ -375,6 +375,48 @@
         + `<div class="fbody">${s.bodyHtml}</div></details>`).join("");
   }
 
+  // ---- calibration ----
+
+  /* Every number on the screen is the model's; this builder only draws. A
+     bar's length is its bucket's share of the largest bucket, and its
+     segments split that length by outcome, so a bar reads against the
+     corpus and not against its own row. The stylesheet gives a segment a
+     floor width, so one entry beside forty stays visible. */
+  const CAL_TILES = [["tickets", "tickets indexed"], ["shipped", "shipped or closed"],
+    ["decisions", "decisions logged"], ["watches", "watches overdue + unanchored"]];
+  const CAL_KINDS = ["validated", "invalidated", "open", "unknown", "other"];
+  function calibrationHtml(m){
+    const head = `<h2>calibration <span class="isub">does stated confidence predict outcomes</span></h2>`;
+    if (!m.model)
+      return head + `<div class="ipanel"><p class="dnotice">${esc(m.notice)}</p></div>`;
+    const {tiles, buckets} = m.model;
+    const tileText = k => k === "watches" ? `${tiles.overdue}+${tiles.unanchored}` : String(tiles[k]);
+    const tilesHtml = `<div class="caltiles">` + CAL_TILES.map(([k, label]) =>
+      `<div class="caltile" data-tile="${k}"><div class="caltile-n">${esc(tileText(k))}</div>`
+      + `<div class="caltile-l">${esc(label)}</div></div>`).join("") + `</div>`;
+    const panelHead = `<h2>decision outcomes by stated confidence</h2>`;
+    if (!tiles.decisions)
+      return head + tilesHtml + `<div class="ipanel">${panelHead}<p class="dnotice">${esc(m.notice)}</p></div>`;
+    const maxN = Math.max(...buckets.map(b => b.total), 1);
+    const rows = buckets.map(b => {
+      // The other bucket has no word of its own, so it names the tokens it met.
+      const label = b.kind === "other" ? b.tokens.join(", ") : b.kind.toUpperCase();
+      const segs = CAL_KINDS.filter(k => b.counts[k]).map(k =>
+        `<span class="calseg calseg-${k}" style="flex:${b.counts[k]}"></span>`).join("");
+      const counts = CAL_KINDS.filter(k => b.counts[k]).map(k =>
+        `<span class="calnw">${b.counts[k]} ${k}</span>`).join(" · ") || "—";
+      const share = b.ruled.ruled
+        ? `${b.ruled.validated} of ${b.ruled.ruled} ruled validated` : "none ruled yet";
+      return `<div class="calrow" data-conf="${escAttr(b.kind)}">`
+        + `<span class="callab"><span class="cf-${b.kind}">${esc(label)}</span></span>`
+        + `<div class="calbar" style="width:${Math.round(b.total / maxN * 1000) / 10}%">${segs}</div>`
+        + `<span class="calcnt">${counts}<br><span class="calshare">${esc(share)}</span></span></div>`;
+    }).join("");
+    const legend = `<div class="callegend">` + CAL_KINDS.map(k =>
+      `<span><i class="calseg-${k}"></i>${k}</span>`).join("") + `</div>`;
+    return head + tilesHtml + `<div class="ipanel">${panelHead}${rows}${legend}</div>`;
+  }
+
   // ---- resume packs ----
 
   /* A pack is plain text plus three constructs and nothing else. {{path}}
@@ -571,7 +613,7 @@
     projectChitText, applyTheme, hashRead, hashWrite, logPaths, corpusUrl,
     loadCorpus, railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml,
     docPaneHtml, rawPaneHtml, pillsHtml, decisionsPanelHtml, watchesPanelHtml,
-    statusPillsHtml, watchboardHtml, assumptionLedgerHtml, fullLogHtml,
+    statusPillsHtml, watchboardHtml, assumptionLedgerHtml, fullLogHtml, calibrationHtml,
     fillPack, packSlots, packReadsTicket, packBasisKind, packContext, loadPacks, packScreenHtml};
   if (isNode){ module.exports = ADPShellLib; }
   else { global.ADPShellLib = ADPShellLib; }

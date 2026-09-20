@@ -487,6 +487,27 @@
     refocus(keep);
   }
 
+  // ---- calibration ----
+
+  /* The calibration screen reads the corpus index only, like the board and
+     the ledgers: an opened document is unindexed, so it never counts here.
+     Every number is the derive lib's; the page draws the model and nothing
+     else. The screen has no controls, so no focus survives a render. The
+     hidden-screen debt flag works the way the ledgers' does. */
+  let cbStale = true;
+  function renderCalib(){
+    if (selScreen !== "calibration"){ cbStale = true; return; }
+    cbStale = false;
+    const scr = $("#scrCalib");
+    if (!corpus){
+      scr.innerHTML = S.calibrationHtml({model: null, notice: "no corpus behind this page — "
+        + "calibration reads the served corpus index. open, paste, or drop a document to see its record in the inspector."});
+      return;
+    }
+    scr.innerHTML = S.calibrationHtml({model: D.calibrationModel(corpus.index.tickets, today()),
+      notice: "no decisions on record — no ticket in this corpus has logged an entry."});
+  }
+
   // ---- resume pack ----
 
   /* The pack screen reads the corpus index only, like the board and the
@@ -580,7 +601,7 @@
   }
 
   function renderAll(){
-    render(); renderRail(); renderInspector(); renderWatch(); renderLedgers(); renderPack(); syncHash();
+    render(); renderRail(); renderInspector(); renderWatch(); renderLedgers(); renderCalib(); renderPack(); syncHash();
   }
 
   // ---- opened documents ----
@@ -805,6 +826,7 @@
       render();
       if (selScreen === "watchboard" && wbStale) renderWatch();
       if (selScreen === "ledgers" && lgStale) renderLedgers();
+      if (selScreen === "calibration" && cbStale) renderCalib();
       if (selScreen === "resume pack" && pkStale) renderPack();
       syncHash();
       return;

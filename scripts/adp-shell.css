@@ -219,6 +219,32 @@
   padding:8px 12px;cursor:pointer;color:var(--ink)}
 .fbody{padding:4px 18px 14px}
 
+/* ---- calibration ---- */
+
+.caltiles{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin:0 0 14px}
+@media(max-width:900px){.caltiles{grid-template-columns:repeat(2,1fr)}}
+.caltile{border:1px solid var(--line);background:var(--panel);padding:12px 14px}
+.caltile-n{font-family:var(--mono);font-size:26px;font-weight:700}
+.caltile-l{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-top:2px}
+.calrow{display:grid;grid-template-columns:110px 1fr 210px;gap:12px;align-items:center;margin:0 0 10px}
+.callab{font-family:var(--mono);font-size:11px}
+/* The bar's width is its bucket's share of the largest bucket; the segments
+   split it by flex. The floor keeps a one-entry segment visible, and the bar
+   clips instead of growing when several floors crowd a short bar. */
+.calbar{display:flex;height:16px;gap:2px;overflow:hidden}
+.calseg{min-width:8px}
+.calseg-validated{background:var(--ok)}
+.calseg-invalidated{background:var(--bad)}
+.calseg-open{background:var(--warn)}
+.calseg-unknown{background:var(--unk)}
+.calseg-other{background:var(--line-bright)}
+.calcnt{font-family:var(--mono);font-size:10.5px;color:var(--dim);text-align:right;line-height:1.6}
+.calshare{color:var(--faint)}
+.calnw{white-space:nowrap}
+.callegend{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--dim);margin-top:10px}
+.callegend i{display:inline-block;width:9px;height:9px;margin-right:5px}
+
 /* ---- resume pack ---- */
 
 .packrow{display:flex;gap:2px;margin:0 0 10px;flex-wrap:wrap}

@@ -508,3 +508,53 @@ test("ledgerRows breaks equal ranks by directory then entry id", () => {
   assert.deepEqual(D.ledgerRows(tie, TODAY).decisions.map(r => r.tid + "/" + r.id),
     ["A/DL-001", "B/DL-001", "B/DL-002"]);
 });
+
+// ---- calibration ----
+
+test("calibrationModel folds decisions by confidence and outcome through the ledger's classifications", () => {
+  const m = D.calibrationModel(ledgerTickets(), TODAY);
+  // Both fixture tickets are closed, and a closed log shipped first. The
+  // watch tiles read the board's own counts.
+  assert.deepEqual(m.tiles, {tickets: 2, shipped: 2, decisions: 6, overdue: 0, unanchored: 1});
+  // The three canonical buckets always row, in order; other rows only with entries.
+  assert.deepEqual(m.buckets.map(b => b.kind), ["high", "medium", "low"]);
+  const high = m.buckets[0];
+  // The entry ruled INVALIDATED over an OPEN card counts by its ruling.
+  assert.deepEqual(high.counts, {validated: 1, invalidated: 1, open: 2, unknown: 1, other: 1});
+  assert.equal(high.total, 6);
+  assert.deepEqual(high.tokens, ["HIGH"]);
+  // Only rulings are outcomes: the open, unknown, and PARKED entries stay out.
+  assert.deepEqual(high.ruled, {validated: 1, ruled: 2});
+  assert.equal(m.buckets[1].total, 0);
+  assert.deepEqual(m.buckets[1].ruled, {validated: 0, ruled: 0});
+});
+
+test("calibrationModel rows an unclassified confidence under other with its tokens, and drops nothing", () => {
+  const ts = [ticket({state: "shipped", decisions: [
+    decision({id: "DL-001", confidence: "CERTAIN", status: "VALIDATED"}),
+    decision({id: "DL-002", confidence: "", status: "OPEN"}),
+    decision({id: "DL-003", confidence: "Medium — leaning", status: "RETIRED"}),
+    decision({id: "DL-004", confidence: "MED", status: "OPEN"}),
+    decision({id: "DL-005", confidence: "LOW", status: "UNKNOWN"})]})];
+  const m = D.calibrationModel(ts, TODAY);
+  assert.deepEqual(m.tiles, {tickets: 1, shipped: 1, decisions: 5, overdue: 0, unanchored: 0});
+  assert.deepEqual(m.buckets.map(b => b.kind), ["high", "medium", "low", "other"]);
+  const other = m.buckets[3];
+  // The parser places a token by prefix, so MED and Medium are medium; the
+  // other bucket takes what matched no prefix, named as written.
+  assert.deepEqual(other.tokens, ["CERTAIN", "—"]);
+  assert.deepEqual(other.counts, {validated: 1, invalidated: 0, open: 1, unknown: 0, other: 0});
+  const medium = m.buckets[1];
+  assert.deepEqual(medium.tokens, ["Medium", "MED"]);
+  assert.deepEqual(medium.counts, {validated: 0, invalidated: 0, open: 1, unknown: 0, other: 1});
+  assert.deepEqual(m.buckets[2].counts, {validated: 0, invalidated: 0, open: 0, unknown: 1, other: 0});
+  // The invariant the tiles state: every decision lands in exactly one cell.
+  const sum = m.buckets.reduce((n, b) => n + Object.values(b.counts).reduce((a, c) => a + c, 0), 0);
+  assert.equal(sum, m.tiles.decisions);
+});
+
+test("calibrationModel over an empty corpus tiles zeros and rows the three canonical buckets", () => {
+  const m = D.calibrationModel([], TODAY);
+  assert.deepEqual(m.tiles, {tickets: 0, shipped: 0, decisions: 0, overdue: 0, unanchored: 0});
+  assert.deepEqual(m.buckets.map(b => b.total), [0, 0, 0]);
+});
