@@ -1730,6 +1730,9 @@ test("the calibration screen tiles the corpus and rows every confidence with the
   assert.match(scr, /1 validated/);
   assert.match(scr, /1 of 1 ruled validated/);
   assert.match(scr, /none ruled yet/);
+  // The separator leads the count it belongs to, so no line can end on one.
+  assert.match(scr, /<span class="calnw">· 1 open<\/span>/);
+  assert.ok(!/·\s*<\/span>/.test(scr));
   // Segments carry both classes; the legend's swatches carry the kind alone.
   const segs = k => (scr.match(new RegExp(`class="calseg calseg-${k}"`, "g")) || []).length;
   assert.equal(segs("open"), 2);

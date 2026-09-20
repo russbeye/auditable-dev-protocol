@@ -403,8 +403,10 @@
       const label = b.kind === "other" ? b.tokens.join(", ") : b.kind.toUpperCase();
       const segs = CAL_KINDS.filter(k => b.counts[k]).map(k =>
         `<span class="calseg calseg-${k}" style="flex:${b.counts[k]}"></span>`).join("");
-      const counts = CAL_KINDS.filter(k => b.counts[k]).map(k =>
-        `<span class="calnw">${b.counts[k]} ${k}</span>`).join(" · ") || "—";
+      // The separator rides inside the span that follows it, so a wrapped
+      // count string breaks between whole counts and never ends in a dot.
+      const counts = CAL_KINDS.filter(k => b.counts[k]).map((k, i) =>
+        `<span class="calnw">${i ? "· " : ""}${b.counts[k]} ${k}</span>`).join(" ") || "—";
       const share = b.ruled.ruled
         ? `${b.ruled.validated} of ${b.ruled.ruled} ruled validated` : "none ruled yet";
       return `<div class="calrow" data-conf="${escAttr(b.kind)}">`
