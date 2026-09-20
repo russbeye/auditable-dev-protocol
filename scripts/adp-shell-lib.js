@@ -247,12 +247,21 @@
 
   // attr names the data mark the pills carry, so the inspector's filter and
   // the ledger's filter route to different state through one delegated path.
-  function pillsHtml(counts, active, attr){
+  // The default keys are the inspector's three statuses. A caller that counts
+  // more kinds passes its own list; a key with no count never renders.
+  const PILL_KEYS = ["all", "open", "validated", "invalidated"];
+  function pillsHtml(counts, active, attr, keys){
     const a = attr || "data-dlf";
-    return ["all", "open", "validated", "invalidated"]
+    return (keys || PILL_KEYS)
       .filter(f => f === "all" || counts[f])
       .map(f => `<button type="button" class="fpill${active === f ? " is-on" : ""}" ${a}="${f}">${f} ${counts[f]}</button>`)
       .join(" ");
+  }
+
+  // Two pill groups side by side each start with an "all", so a group label
+  // says which axis the pill filters.
+  function pillGroupHtml(label, pills){
+    return `<span class="pillgrp"><span class="pilllab">${esc(label)}</span> ${pills}</span>`;
   }
 
   // A decision's coverage cell, shared by the inspector and the ledger. The
@@ -401,8 +410,14 @@
     const rows = buckets.map(b => {
       // The other bucket has no word of its own, so it names the tokens it met.
       const label = b.kind === "other" ? b.tokens.join(", ") : b.kind.toUpperCase();
+      // A segment is a button that lands the ledger filtered to its cell.
+      // The name carries the count, so a screen reader hears what a sighted
+      // reader infers from the bar's length.
       const segs = CAL_KINDS.filter(k => b.counts[k]).map(k =>
-        `<span class="calseg calseg-${k}" style="flex:${b.counts[k]}"></span>`).join("");
+        `<button type="button" class="calseg calseg-${k}" style="flex:${b.counts[k]}"`
+        + ` data-calc="${escAttr(b.kind)}" data-calk="${k}"`
+        + ` title="${escAttr(`${b.counts[k]} ${k} at ${label} — open in the ledger`)}"`
+        + ` aria-label="${escAttr(`${b.counts[k]} ${k} at ${label} — open in the ledger`)}"></button>`).join("");
       // The separator rides inside the span that follows it, so a wrapped
       // count string breaks between whole counts and never ends in a dot.
       const counts = CAL_KINDS.filter(k => b.counts[k]).map((k, i) =>
@@ -614,7 +629,7 @@
   const ADPShellLib = {SCREENS, TAB_SCREENS, localDate, tabsHtml, footerText,
     projectChitText, applyTheme, hashRead, hashWrite, logPaths, corpusUrl,
     loadCorpus, railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml,
-    docPaneHtml, rawPaneHtml, pillsHtml, decisionsPanelHtml, watchesPanelHtml,
+    docPaneHtml, rawPaneHtml, pillsHtml, pillGroupHtml, decisionsPanelHtml, watchesPanelHtml,
     statusPillsHtml, watchboardHtml, assumptionLedgerHtml, fullLogHtml, calibrationHtml,
     fillPack, packSlots, packReadsTicket, packBasisKind, packContext, loadPacks, packScreenHtml};
   if (isNode){ module.exports = ADPShellLib; }

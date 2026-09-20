@@ -1811,3 +1811,68 @@ test("a hidden calibration screen skips its rebuild and pays it on entry", async
   assert.notEqual(h.$$(".caltile")[0], before);
   assert.equal(h.$$(".caltile-n")[0].innerHTML, "2");
 });
+
+test("a bar segment lands the ledger filtered to its cell, with focus on the status pill", async () => {
+  const h = bootBoard();
+  await h.settle();
+  calTab(h);
+  const seg = h.$$(".calseg").find(s =>
+    s.getAttribute("data-calc") === "high" && s.getAttribute("data-calk") === "open");
+  assert.match(seg.getAttribute("aria-label"), /^1 open at HIGH/);
+  h.click(seg);
+  assert.equal(h.$("#scrLedgers").classList.contains("is-on"), true);
+  assert.match(h.hashes[h.hashes.length - 1], /^#v=ledgers/);
+  // Only the one HIGH open entry rows; both pill groups read on.
+  assert.deepEqual(
+    h.$$(".lgrow").filter(r => r.getAttribute("data-dl")).map(r => r.getAttribute("data-t") + "/" + r.getAttribute("data-dl")),
+    ["BB2/DL-001"]);
+  const on = attr => h.$$(".fpill").find(p => p.getAttribute(attr) && p.classList.contains("is-on"));
+  assert.match(on("data-lgf").innerHTML, /^open 2/);
+  assert.match(on("data-lgc").innerHTML, /^high 2/);
+  assert.equal(h.$("#scrLedgers").innerHTML.includes("pilllab"), true);
+  assert.equal(h.document.activeElement, on("data-lgf"));
+  // Widening the confidence back to all keeps the status cut.
+  h.click(h.$$(".fpill").find(p => p.getAttribute("data-lgc") === "all"));
+  assert.deepEqual(
+    h.$$(".lgrow").filter(r => r.getAttribute("data-dl")).map(r => r.getAttribute("data-dl")),
+    ["DL-002", "DL-001"]);
+  // The confidence filter is ledger state: it holds across a tab round trip.
+  h.click(h.$$(".fpill").find(p => p.getAttribute("data-lgc") === "low"));
+  h.click(h.$$(".mtab")[0]);
+  h.click(h.$$(".mtab")[2]);
+  assert.match(on("data-lgc").innerHTML, /^low 1/);
+  assert.deepEqual(h.$$(".lgrow").filter(r => r.getAttribute("data-dl")).map(r => r.getAttribute("data-dl")), ["DL-002"]);
+});
+
+test("the ledger pills row every kind the record holds, so no segment lands on an empty pill", async () => {
+  const log = [
+    "# Audit Log — CC3 gamma", "", "## Decision Log", "",
+    "### [DL-001] Parked", "- **Decision:** a", "- **Confidence:** CERTAIN", "- **Status:** PARKED", "",
+    "### [DL-002] Unjudged", "- **Decision:** b", "- **Confidence:** LOW", "- **Status:** UNKNOWN", ""
+  ].join("\n");
+  const h = bootShell({stored: "dark", fetch: corpusFetch(
+    {root: "demo", files: ["20260103-CC3-gamma/audit-log.md"]},
+    {"20260103-CC3-gamma/audit-log.md": log})});
+  await h.settle();
+  calTab(h);
+  h.click(h.$$(".calseg").find(s => s.getAttribute("data-calc") === "other"));
+  const pills = h.$$(".fpill").map(p => p.innerHTML);
+  assert.ok(pills.includes("other 1") && pills.includes("unknown 1"));
+  assert.deepEqual(h.$$(".lgrow").filter(r => r.getAttribute("data-dl")).map(r => r.getAttribute("data-dl")), ["DL-001"]);
+});
+
+test("a poll rebuild hands focus to the rebuilt segment", async () => {
+  const texts = Object.assign({}, TEXTS_WB);
+  const h = bootShell({stored: "dark", fetch: corpusFetch(LISTING_WB, texts)});
+  await h.settle();
+  calTab(h);
+  const seg = () => h.$$(".calseg").find(s => s.getAttribute("data-calc") === "low");
+  seg().focus();
+  const before = seg();
+  // A changed corpus on the poll tick rebuilds the screen under the reader.
+  texts["20260102-BB2-beta/audit-log.md"] = LOG_B + "\n## Amendment Notes\n\nlate news.\n";
+  h.tick();
+  await h.settle();
+  assert.notEqual(seg(), before);
+  assert.equal(h.document.activeElement, seg());
+});
