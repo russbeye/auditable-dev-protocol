@@ -604,19 +604,29 @@
   const NT_DRAFT_KEY = "adp-mc-draft", NT_DRAFT_MS = 400;
   const blankDoc = () => { const d = PL.blankDocument(); d.task.date = S.localDate(); return d; };
   const freshNt = () => ({slug: "", slugEdited: false, showYaml: false, pasteOpen: false,
-    report: null, copyLabel: null, clearLabel: null});
+    report: null, copyLabel: null, clearLabel: null, pending: null});
   let doc = blankDoc(), nt = freshNt();
   // The builder only writes 1.0 documents, so an adopted document carries
   // that version whatever its text said; the import report names a
   // foreign version before it is stamped.
-  function adopt(parsed){ const d = PL.normalize(parsed); d.schema_version = "1.0"; return d; }
+  function adopt(parsed){
+    const d = PL.normalize(parsed);
+    d.schema_version = "1.0";
+    // A value the select cannot show is cleared, so the form and the bytes
+    // agree; the standalone's select does the same when it is assigned one.
+    if (!PL.FORMATS.includes(d.output.format)) d.output.format = "";
+    if (Array.isArray(d.protocol.defers))
+      d.protocol.defers.forEach(x => { if (x && !PL.PHASES.includes(x.phase)) x.phase = ""; });
+    return d;
+  }
   const ntSlug = () => nt.slugEdited ? nt.slug : S.slugOf(doc.task.title);
   const ntIssues = () => PL.validate(PL.asExported(JSON.parse(JSON.stringify(doc))));
   function ntModel(){
     const slug = ntSlug();
     return {slug, dir: S.promptDir(doc, slug), issues: ntIssues(), yaml: PL.buildYaml(doc),
       showYaml: nt.showYaml, pasteOpen: nt.pasteOpen, report: nt.report,
-      copyLabel: nt.copyLabel, clearLabel: nt.clearLabel};
+      copyLabel: nt.copyLabel, clearLabel: nt.clearLabel,
+      pending: nt.pending ? nt.pending.label : null};
   }
   function renderNew(){
     const keep = focusMark(document.activeElement);
@@ -721,18 +731,32 @@
       issues.push(`schema_version is "${String(obj.schema_version)}" (this builder writes 1.0); fields may not line up`);
     issues.push.apply(issues, skipped);
     issues.push.apply(issues, S.unknownKeys(obj));
-    doc = adopt(obj);
-    nt.slugEdited = false; nt.slug = ""; nt.pasteOpen = false;
-    nt.report = issues.length
-      ? {tone: "warn", text: `imported ${source} with ${issues.length} issue${issues.length === 1 ? "" : "s"}: ${issues.join("; ")}`}
-      : {tone: "ok", text: `imported ${source} — all recognized fields.`};
-    renderNew(); showNew(); ntDraftNow();
+    issues.push.apply(issues, S.unknownValues(obj));
+    replaceForm(source, () => {
+      doc = adopt(obj);
+      nt.slugEdited = false; nt.slug = ""; nt.pasteOpen = false;
+      nt.report = issues.length
+        ? {tone: "warn", text: `imported ${source} with ${issues.length} issue${issues.length === 1 ? "" : "s"}: ${issues.join("; ")}`}
+        : {tone: "ok", text: `imported ${source} — all recognized fields.`};
+    });
     return true;
   }
   function ntExample(){
-    doc = adopt(PL.exampleDocument());
-    nt.slugEdited = false; nt.slug = ""; nt.report = null;
-    renderNew(); ntDraftNow();
+    replaceForm("the example", () => {
+      doc = adopt(PL.exampleDocument());
+      nt.slugEdited = false; nt.slug = ""; nt.report = null;
+    });
+  }
+  /* A form in progress is not replaced on a drop, an open, a paste, or the
+     example without a word: the question waits in the ops row with a
+     replace and a keep button, and the old draft stands until the reader
+     answers. A blank form takes the document at once. */
+  const dirty = () => nt.slugEdited || JSON.stringify(doc) !== JSON.stringify(blankDoc());
+  function replaceForm(label, apply){
+    const go = () => { nt.pending = null; apply(); renderNew(); showNew(); ntDraftNow(); };
+    if (!dirty()){ go(); return; }
+    nt.pending = {label, go};
+    renderNewOps(); showNew();
   }
   // Clear needs a second click inside the window; the first arms the button
   // in place and the timer disarms it. No modal: one blocks the page.
@@ -1142,6 +1166,8 @@
       importPrompt(($("#ntPaste") || {value: ""}).value, "the paste");
       return;
     }
+    if (e.target.id === "ntReplace"){ if (nt.pending) nt.pending.go(); return; }
+    if (e.target.id === "ntKeep"){ nt.pending = null; renderNewOps(); return; }
     const op = hit(".op");
     if (op){
       const nop = op.getAttribute("data-op") || "";
@@ -1202,6 +1228,9 @@
     }
     const t = e.target;
     if (!t || !t.getAttribute) return;
+    // A toggle flips its own label in place and never rebuilds the inputs,
+    // so the keyboard stays on the box it pressed.
+    const lit = () => { const lab = t.closest(".nt-tog") || t.closest(".nt-chip"); if (lab) lab.classList.toggle("is-on", !!t.checked); };
     const art = t.getAttribute("data-nart");
     if (art){
       // The chips keep the lib's artifact order whatever order they were
@@ -1209,13 +1238,18 @@
       const on = new Set(doc.protocol.artifacts || []);
       t.checked ? on.add(art) : on.delete(art);
       doc.protocol.artifacts = PL.ARTIFACTS.filter(a => on.has(a));
-      renderNew(); ntDraft();
+      lit(); renderNewSide(); ntDraft();
       return;
     }
     const f = t.getAttribute("data-nf");
     if (!f) return;
-    if (t.getAttribute("type") === "checkbox"){ setPath(f, !!t.checked); renderNew(); ntDraft(); }
-    else { setPath(f, t.value); renderNewSide(); ntDraft(); }
+    if (t.getAttribute("type") === "checkbox"){ setPath(f, !!t.checked); lit(); }
+    else {
+      setPath(f, t.value);
+      // The placeholder color follows the value, as the standalone's does.
+      if (t.tagName === "SELECT") t.classList.toggle("is-unset", !t.value);
+    }
+    renderNewSide(); ntDraft();
   });
 
   // Every text field writes the path it names; the slug writes screen state.

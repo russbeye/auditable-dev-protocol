@@ -680,6 +680,22 @@
     return out;
   }
 
+  // An enum value the form's selects cannot show, named the way the report
+  // names a stranger key. The page clears it on adoption, so the bytes and
+  // the form agree.
+  function unknownValues(obj){
+    const out = [];
+    const o = obj && obj.output;
+    if (o && typeof o === "object" && !Array.isArray(o) && typeof o.format === "string" && o.format && !PL.FORMATS.includes(o.format))
+      out.push(`output.format "${o.format}" is not a format; cleared`);
+    const defers = obj && obj.protocol && Array.isArray(obj.protocol.defers) ? obj.protocol.defers : [];
+    defers.forEach((d, i) => {
+      if (d && typeof d === "object" && typeof d.phase === "string" && d.phase && !PL.PHASES.includes(d.phase))
+        out.push(`protocol.defers[${i}].phase "${d.phase}" is not a phase; cleared`);
+    });
+    return out;
+  }
+
   const ntLabel = (text, forId) => `<label class="nt-lbl"${forId ? ` for="${forId}"` : ""}>${esc(text)}</label>`;
   const ntText = (path, v, ph, id) =>
     `<input type="text" class="nt-in"${id ? ` id="${id}"` : ""} data-nf="${path}" value="${escAttr(v || "")}" placeholder="${escAttr(ph || "")}" aria-label="${escAttr(ph || path)}">`;
@@ -707,6 +723,9 @@
       + (m.pasteOpen ? `<div class="drawer"><label for="ntPaste">paste a prompt.yaml</label>`
         + `<textarea id="ntPaste" placeholder="paste prompt.yaml…"></textarea>`
         + `<button type="button" class="op" id="ntImport">import into form</button></div>` : "")
+      + (m.pending ? `<p class="nt-report is-warn" role="status">a form is in progress — replace it with ${esc(m.pending)}? `
+        + `<button type="button" class="op" id="ntReplace">replace the form</button> `
+        + `<button type="button" class="op" id="ntKeep">keep the form</button></p>` : "")
       + (m.report ? `<p class="nt-report is-${m.report.tone}" role="status">${esc(m.report.text)}</p>` : "");
   }
 
@@ -808,7 +827,7 @@
     docPaneHtml, rawPaneHtml, pillsHtml, pillGroupHtml, decisionsPanelHtml, watchesPanelHtml,
     statusPillsHtml, watchboardHtml, assumptionLedgerHtml, fullLogHtml, calibrationHtml,
     fillPack, packSlots, packReadsTicket, packBasisKind, packContext, loadPacks, packScreenHtml,
-    slugOf, promptDir, blankRow, unknownKeys, builderOpsHtml, builderSideHtml, builderHtml};
+    slugOf, promptDir, blankRow, unknownKeys, unknownValues, builderOpsHtml, builderSideHtml, builderHtml};
   if (isNode){ module.exports = ADPShellLib; }
   else { global.ADPShellLib = ADPShellLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

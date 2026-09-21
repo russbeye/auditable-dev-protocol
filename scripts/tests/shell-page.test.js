@@ -1885,8 +1885,14 @@ const newTab = h => h.click(h.$("#newTaskBtn"));
 const ntOp = (h, op) => h.click(h.$$(".op").find(o => o.getAttribute("data-op") === op));
 const field = (h, nf) => h.$$(".nt-in").find(el => el.getAttribute("data-nf") === nf);
 const nfSet = (h, nf, v) => h.input(field(h, nf), v);
-// A failed import leaves the drawer open, so the helper opens it only when it is closed.
-const pasteIn = (h, text) => { if (!h.$("#ntPaste")) ntOp(h, "ntpaste"); h.$("#ntPaste").value = text; h.click(h.$("#ntImport")); };
+// A failed import leaves the drawer open, so the helper opens it only when it
+// is closed; a form in progress asks before it is replaced, and the helper
+// answers yes.
+const pasteIn = (h, text) => {
+  if (!h.$("#ntPaste")) ntOp(h, "ntpaste");
+  h.$("#ntPaste").value = text; h.click(h.$("#ntImport"));
+  if (h.$("#ntReplace")) h.click(h.$("#ntReplace"));
+};
 const preview = h => { if (!h.$("#ntYamlPre")) ntOp(h, "ntyaml"); return h.$("#ntYamlPre").textContent; };
 const stamped = d => { d.schema_version = "1.0"; return d; };
 
@@ -1981,6 +1987,8 @@ test("a dropped or opened .yaml lands in the builder and a .md still opens as a 
   y.files = [{name: "q.yml", __text: GOLDEN.replace("GROW-6687", "GROW-7")}];
   h.change(y);
   await h.settle();
+  // The first import left a form in progress, so this one asks first.
+  h.click(h.$("#ntReplace"));
   assert.equal(field(h, "task.id").value, "GROW-7-email-validation");
   assert.equal(h.$("#scrNew").classList.contains("is-on"), true);
   assert.equal(y.value, "");
@@ -2135,4 +2143,88 @@ test("a poll re-render never rebuilds the form under a typing reader", async () 
   assert.equal(field(h, "task.title"), title);
   assert.equal(title.value, "half a ti");
   assert.equal(h.document.activeElement, title);
+});
+
+// ---- the page: new task, review round one ----
+
+test("a switch or chip toggles in place and keeps the keyboard", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  const sw = h.$$("input").find(i => i.getAttribute("data-nf") === "protocol.apply");
+  sw.focus();
+  sw.checked = false; h.change(sw);
+  assert.equal(h.document.activeElement, sw);
+  assert.equal(h.$$("input").find(i => i.getAttribute("data-nf") === "protocol.apply"), sw);
+  assert.equal(sw.parent.classList.contains("is-on"), false);
+  assert.match(preview(h), /apply: false/);
+  const chip = h.$$("input").find(i => i.getAttribute("data-nart") === "premortem");
+  chip.focus();
+  chip.checked = true; h.change(chip);
+  assert.equal(h.document.activeElement, chip);
+  assert.equal(chip.parent.classList.contains("is-on"), true);
+  assert.match(preview(h), /- premortem\n/);
+});
+
+test("a select drops its placeholder color on a pick and takes it back on a clear", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  const fmt = field(h, "output.format");
+  assert.equal(fmt.classList.contains("is-unset"), true);
+  h.change(fmt, "patch");
+  assert.equal(fmt.classList.contains("is-unset"), false);
+  h.change(fmt, "");
+  assert.equal(fmt.classList.contains("is-unset"), true);
+});
+
+test("an imported format or phase the form cannot show is cleared and named, so the bytes match the form", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN.replace('format: "patch"', 'format: "docx"').replace('phase: "communication"', 'phase: "deploy"'));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 2 issues/);
+  assert.match(ops, /output\.format "docx" is not a format/);
+  assert.match(ops, /protocol\.defers\[0\]\.phase "deploy" is not a phase/);
+  assert.equal(field(h, "output.format").value, "");
+  assert.equal(field(h, "protocol.defers.0.phase").value, "");
+  const y = preview(h);
+  assert.ok(!/format:/.test(y));
+  assert.ok(!/phase: "deploy"/.test(y));
+  assert.match(y, /- phase: ""\n/);
+  assert.match(h.$("#ntSide").innerHTML, /<code>output\.format<\/code>/);
+});
+
+test("a drop or open onto a form in progress waits for a confirmation before it replaces the form and its draft", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  nfSet(h, "task.id", "MINE-1");
+  h.runTimeouts();
+  h.click(h.$$(".mtab")[0]);
+  h.fireWindow("drop", {dataTransfer: {files: [{name: "p.yaml", __text: GOLDEN}]}});
+  await h.settle();
+  // The builder shows, the form and the draft stand, the question is asked.
+  assert.equal(h.$("#scrNew").classList.contains("is-on"), true);
+  assert.equal(field(h, "task.id").value, "MINE-1");
+  assert.equal(JSON.parse(h.storage.get("adp-mc-draft")).doc.task.id, "MINE-1");
+  assert.match(h.$("#ntOps").innerHTML, /replace it with p\.yaml/);
+  h.click(h.$("#ntKeep"));
+  assert.equal(field(h, "task.id").value, "MINE-1");
+  assert.ok(!/replace it with/.test(h.$("#ntOps").innerHTML));
+  h.fireWindow("drop", {dataTransfer: {files: [{name: "p.yaml", __text: GOLDEN}]}});
+  await h.settle();
+  h.click(h.$("#ntReplace"));
+  assert.equal(field(h, "task.id").value, "GROW-6687-email-validation");
+  assert.equal(JSON.parse(h.storage.get("adp-mc-draft")).doc.task.id, "GROW-6687-email-validation");
+  // A blank form takes an import at once; so does the example over a blank form.
+  const h2 = bootShell({stored: "dark"});
+  await h2.settle();
+  h2.fireWindow("drop", {dataTransfer: {files: [{name: "p.yaml", __text: GOLDEN}]}});
+  await h2.settle();
+  assert.equal(field(h2, "task.id").value, "GROW-6687-email-validation");
+  // The example over a filled form asks the same question.
+  ntOp(h2, "ntexample");
+  assert.match(h2.$("#ntOps").innerHTML, /replace it with the example/);
 });
