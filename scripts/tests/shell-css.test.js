@@ -22,6 +22,22 @@ function classesIn(cssText){
   return out;
 }
 
+/* The declarations of one rule, by exact selector text. The page harness
+   has no layout engine, so a layout rule is pinned here by what it declares:
+   an edit that drops the declaration fails a test instead of a browser check. */
+function declarationsOf(cssText, selector){
+  const noComments = cssText.replace(/\/\*[\s\S]*?\*\//g, "");
+  const out = {};
+  for (const m of noComments.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (m[1].trim() !== selector) continue;
+    for (const d of m[2].split(";")) {
+      const i = d.indexOf(":");
+      if (i > 0) out[d.slice(0, i).trim()] = d.slice(i + 1).trim();
+    }
+  }
+  return out;
+}
+
 test("adp-shell.css and adp-theme.css share no class name", () => {
   const shell = classesIn(read("adp-shell.css"));
   const theme = classesIn(read("adp-theme.css"));
@@ -45,4 +61,15 @@ test("the shell page and its tab strip use only adp-shell.css classes", () => {
   const allowed = new Set(["md"]);
   const orphans = [...used].filter(c => !shell.has(c) && !allowed.has(c)).sort();
   assert.deepEqual(orphans, []);
+});
+
+
+test("the ledger panel contains its floated pill row and every child after the heading clears it", () => {
+  const css = read("adp-shell.css");
+  // flow-root keeps a wide pill row inside the panel's border; the sibling
+  // clear puts the table or the empty-state notice below it, never beside.
+  assert.equal(declarationsOf(css, ".ipanel").display, "flow-root");
+  assert.equal(declarationsOf(css, ".ipanel h2 ~ *").clear, "both");
+  // A one-entry segment keeps a visible floor beside a forty-entry one.
+  assert.equal(declarationsOf(css, ".calseg")["min-width"], "8px");
 });
