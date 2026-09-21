@@ -188,7 +188,7 @@ test("mission-control.html carries the frame the harness models", () => {
   const srcs = [...HTML.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
   assert.deepEqual(srcs,
     ["adp-parser-lib.js", "adp-index-lib.js", "adp-index-builder-lib.js",
-     "adp-derive-lib.js", "adp-shell-lib.js"]);
+     "adp-derive-lib.js", "adp-prompt-lib.js", "adp-shell-lib.js"]);
   const screens = [...HTML.matchAll(/<section class="screen" data-s="([^"]+)"/g)].map(m => m[1]);
   assert.deepEqual(screens, S.SCREENS);
   assert.match(HTML, /<span class="chit poll poll-idle" id="liveChit" role="status">/);
@@ -1875,4 +1875,264 @@ test("a poll rebuild hands focus to the rebuilt segment", async () => {
   await h.settle();
   assert.notEqual(seg(), before);
   assert.equal(h.document.activeElement, seg());
+});
+
+// ---- the page: new task ----
+
+const PL = require("../adp-prompt-lib.js");
+const GOLDEN = fs.readFileSync(path.join(__dirname, "fixtures", "builder-example.yaml"), "utf8");
+const newTab = h => h.click(h.$("#newTaskBtn"));
+const ntOp = (h, op) => h.click(h.$$(".op").find(o => o.getAttribute("data-op") === op));
+const field = (h, nf) => h.$$(".nt-in").find(el => el.getAttribute("data-nf") === nf);
+const nfSet = (h, nf, v) => h.input(field(h, nf), v);
+// A failed import leaves the drawer open, so the helper opens it only when it is closed.
+const pasteIn = (h, text) => { if (!h.$("#ntPaste")) ntOp(h, "ntpaste"); h.$("#ntPaste").value = text; h.click(h.$("#ntImport")); };
+const preview = h => { if (!h.$("#ntYamlPre")) ntOp(h, "ntyaml"); return h.$("#ntYamlPre").textContent; };
+const stamped = d => { d.schema_version = "1.0"; return d; };
+
+test("the new task screen carries the standalone's field set and boots with today's date", async () => {
+  const h = bootShell({stored: "dark", hash: "#v=new%20task"});
+  await h.settle();
+  assert.equal(h.$("#scrNew").classList.contains("is-on"), true);
+  assert.equal(h.$("#newTaskBtn").classList.contains("is-on"), true);
+  ntOp(h, "ntexample");
+  const nfs = h.$$(".nt-in").map(el => el.getAttribute("data-nf")).filter(Boolean);
+  for (const k of ["task.id", "task.title", "task.author", "task.date", "preamble", "role.lens",
+    "role.priorities.0", "prompt", "constraints.out_of_scope.0", "constraints.must_not.0",
+    "context.background", "context.references.0.path", "context.references.0.lines",
+    "context.references.0.note", "context.links.0", "lessons_learned.0.context",
+    "lessons_learned.0.takeaway", "output.format", "output.destination", "output.structure",
+    "requirements.0.id", "requirements.0.statement", "requirements.0.verify",
+    "protocol.defers.0.phase", "protocol.defers.0.reason"]) assert.ok(nfs.includes(k), k);
+  const sw = h.$$("input").filter(i => /^protocol\.(apply|stake_single_recommendation|log_assumptions|flag_low_confidence)$/.test(i.getAttribute("data-nf") || ""));
+  assert.equal(sw.length, 4);
+  assert.deepEqual(h.$$("input").map(i => i.getAttribute("data-nart")).filter(Boolean), PL.ARTIFACTS);
+  // Every path names a key the lib's document holds.
+  const doc = stamped(PL.exampleDocument());
+  for (const nf of nfs) {
+    const v = nf.split(".").reduce((o, k) => (o == null ? undefined : o[k]), doc);
+    assert.notEqual(v, undefined, nf);
+  }
+  // A fresh boot is blank apart from the date, and the badge counts the blank.
+  const h2 = bootShell({stored: "dark"});
+  await h2.settle();
+  newTab(h2);
+  assert.equal(field(h2, "task.date").value, S.localDate());
+  assert.equal(field(h2, "task.id").value, "");
+  assert.match(h2.$("#ntSide").innerHTML, /7 protocol checks unmet/);
+  assert.match(h2.$("#ntSide").innerHTML, /<li>[^<]*<code>task\.id<\/code>/);
+  assert.match(h2.$("#ntSide").innerHTML, /— required/);
+  assert.match(h2.hashes[h2.hashes.length - 1], /^#v=new%20task/);
+});
+
+test("a prompt.yaml the standalone wrote imports and previews byte for byte", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN);
+  assert.match(h.$("#ntOps").innerHTML, /imported the paste — all recognized fields\./);
+  assert.equal(field(h, "task.id").value, "GROW-6687-email-validation");
+  assert.equal(field(h, "protocol.defers.1.reason").value, "Follow-up obligations ride the GROW-6688 cleanup ticket");
+  assert.equal(preview(h), GOLDEN);
+  assert.equal(preview(h), PL.buildYaml(stamped(PL.normalize(PL.parseYAML(GOLDEN)))));
+  assert.match(h.$("#ntSide").innerHTML, /valid · schema 1\.0/);
+  // The example loads to the same bytes from the lib's own copy.
+  const h2 = bootShell({stored: "dark"});
+  await h2.settle();
+  newTab(h2);
+  ntOp(h2, "ntexample");
+  assert.equal(preview(h2), GOLDEN);
+});
+
+test("an import reports the keys it could not place and a failed parse leaves the form alone", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN + "\nfoo: bar\n");
+  assert.match(h.$("#ntOps").innerHTML, /imported the paste with 1 issue: foo/);
+  assert.equal(field(h, "task.id").value, "GROW-6687-email-validation");
+  // Not YAML: the form keeps the import, the report says so.
+  nfSet(h, "task.title", "kept");
+  pasteIn(h, ":::\n  - [");
+  assert.match(h.$("#ntOps").innerHTML, /couldn&#39;t parse the paste as YAML|couldn't parse the paste as YAML/);
+  assert.equal(field(h, "task.title").value, "kept");
+  pasteIn(h, "   ");
+  assert.match(h.$("#ntOps").innerHTML, /nothing to import/);
+  // A foreign version is named before the builder stamps its own.
+  pasteIn(h, GOLDEN.replace('schema_version: "1.0"', 'schema_version: "2.0"'));
+  assert.match(h.$("#ntOps").innerHTML, /schema_version is "2\.0"/);
+  assert.match(preview(h), /^schema_version: "1\.0"/);
+});
+
+test("a dropped or opened .yaml lands in the builder and a .md still opens as a document", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  h.fireWindow("drop", {dataTransfer: {files: [{name: "p.yaml", __text: GOLDEN}]}});
+  await h.settle();
+  assert.equal(h.$("#scrNew").classList.contains("is-on"), true);
+  assert.match(h.$("#ntOps").innerHTML, /imported p\.yaml/);
+  assert.equal(h.$$(".rentry").length, 0);
+  h.fireWindow("drop", {dataTransfer: {files: [{name: "log.md", __text: LOG}]}});
+  await h.settle();
+  assert.equal(h.$("#scrInspector").classList.contains("is-on"), true);
+  assert.equal(h.$$(".rentry").length, 1);
+  // The hidden yaml input and the document input route by name too.
+  const y = h.$("#openYaml");
+  y.files = [{name: "q.yml", __text: GOLDEN.replace("GROW-6687", "GROW-7")}];
+  h.change(y);
+  await h.settle();
+  assert.equal(field(h, "task.id").value, "GROW-7-email-validation");
+  assert.equal(h.$("#scrNew").classList.contains("is-on"), true);
+  assert.equal(y.value, "");
+});
+
+test("copy, download, and the directory line carry the export bytes and the convention's name", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  const today = S.localDate().replace(/-/g, "");
+  assert.equal(h.$("#ntDir").innerHTML, `.adp/${today}-<TASKID>-<slug>/prompt.yaml`);
+  nfSet(h, "task.title", "Shared shell chrome, extracted!");
+  nfSet(h, "task.id", "AV-016");
+  assert.equal(h.$("#ntSlug").value, "");
+  assert.equal(h.$("#ntDir").innerHTML, `.adp/${today}-AV016-shared-shell-chrome-extracted/prompt.yaml`);
+  h.input(h.$("#ntSlug"), "custom");
+  assert.equal(h.$("#ntDir").innerHTML, `.adp/${today}-AV016-custom/prompt.yaml`);
+  h.input(h.$("#ntSlug"), "");
+  assert.equal(h.$("#ntDir").innerHTML, `.adp/${today}-AV016-shared-shell-chrome-extracted/prompt.yaml`);
+  // The slug never reaches the yaml.
+  assert.ok(!/slug/.test(preview(h)));
+  // Copy writes the preview's bytes and reports, then rests.
+  ntOp(h, "ntcopy");
+  await h.settle();
+  assert.equal(h.clipboard[h.clipboard.length - 1], preview(h));
+  assert.match(h.$("#ntSide").innerHTML, /copied/);
+  h.runTimeouts();
+  assert.match(h.$("#ntSide").innerHTML, /⧉ copy yaml/);
+  ntOp(h, "ntdl");
+  assert.equal(h.downloads.length, 1);
+  assert.equal(h.downloads[0].download, "AV-016.yaml");
+  assert.equal(h.blobText(h.downloads[0].href), preview(h));
+  // A denied write says so.
+  const h2 = bootShell({stored: "dark", clipboardRejects: true});
+  await h2.settle();
+  newTab(h2);
+  ntOp(h2, "ntcopy");
+  await h2.settle();
+  assert.match(h2.$("#ntSide").innerHTML, /copy failed — select the text/);
+  assert.equal(h2.clipboard.length, 0);
+});
+
+test("rows add and remove by path, an emptied defers editor drops the key, and chips keep the lib's order", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.click(h.$$(".nt-add").find(b => b.getAttribute("data-nadd") === "requirements"));
+  assert.equal(h.document.activeElement, field(h, "requirements.0.id"));
+  nfSet(h, "requirements.0.id", "R1");
+  nfSet(h, "requirements.0.statement", "it works");
+  nfSet(h, "requirements.0.verify", "run it");
+  h.click(h.$$(".nt-add").find(b => b.getAttribute("data-nadd") === "protocol.defers"));
+  h.change(field(h, "protocol.defers.0.phase"), "analysis");
+  nfSet(h, "protocol.defers.0.reason", "manual pass");
+  assert.match(preview(h), /defers:\n    - phase: "analysis"\n      reason: "manual pass"/);
+  h.click(h.$$(".nt-del").find(b => b.getAttribute("data-ndel") === "protocol.defers.0"));
+  assert.ok(!/defers/.test(preview(h)));
+  assert.match(preview(h), /- id: "R1"\n    statement: "it works"\n    verify: "run it"/);
+  // Artifacts tick in any order and export in the lib's.
+  const chip = a => h.$$("input").find(i => i.getAttribute("data-nart") === a);
+  chip("problem_statement").checked = true; h.change(chip("problem_statement"));
+  chip("decision_log").checked = false; h.change(chip("decision_log"));
+  assert.match(preview(h), /artifacts:\n    - problem_statement\n    - test_adversary\n/);
+  const sw = h.$$("input").find(i => i.getAttribute("data-nf") === "protocol.apply");
+  sw.checked = false; h.change(sw);
+  assert.match(preview(h), /apply: false/);
+  h.change(field(h, "output.format"), "patch");
+  assert.match(preview(h), /format: "patch"/);
+});
+
+test("a draft saves on a pause, flushes on pagehide, restores on the next boot, and clear needs a second click", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  nfSet(h, "task.id", "AV-016");
+  nfSet(h, "task.title", "A title");
+  h.input(h.$("#ntSlug"), "own-slug");
+  assert.equal(h.storage.has("adp-mc-draft"), false);
+  h.runTimeouts();
+  const saved = JSON.parse(h.storage.get("adp-mc-draft"));
+  assert.equal(saved.doc.task.id, "AV-016");
+  assert.equal(saved.slug, "own-slug");
+  nfSet(h, "task.author", "rbeye");
+  h.fireWindow("pagehide");
+  assert.equal(JSON.parse(h.storage.get("adp-mc-draft")).doc.task.author, "rbeye");
+  const h2 = bootShell({stored: "dark", draft: h.storage.get("adp-mc-draft")});
+  await h2.settle();
+  newTab(h2);
+  assert.equal(field(h2, "task.id").value, "AV-016");
+  assert.equal(h2.$("#ntSlug").value, "own-slug");
+  assert.equal(h2.$("#ntDir").innerHTML, `.adp/${S.localDate().replace(/-/g, "")}-AV016-own-slug/prompt.yaml`);
+  // One click arms, the timer disarms; two clicks wipe and drop the key.
+  ntOp(h2, "ntclear");
+  assert.match(h2.$("#ntOps").innerHTML, /confirm clear/);
+  assert.equal(field(h2, "task.id").value, "AV-016");
+  h2.runTimeouts();
+  assert.ok(!/confirm clear/.test(h2.$("#ntOps").innerHTML));
+  ntOp(h2, "ntclear");
+  ntOp(h2, "ntclear");
+  assert.equal(field(h2, "task.id").value, "");
+  assert.equal(field(h2, "task.date").value, S.localDate());
+  assert.equal(h2.storage.has("adp-mc-draft"), false);
+});
+
+test("a blocked storage and an unreadable draft both boot the blank form", async () => {
+  const h = bootShell({stored: "dark", storageThrows: true});
+  await h.settle();
+  newTab(h);
+  assert.equal(field(h, "task.id").value, "");
+  nfSet(h, "task.id", "X-1");
+  h.runTimeouts();
+  // The seam's own no-network trace is the only warning; storage says nothing.
+  assert.deepEqual(h.warns.filter(w => !/corpus load failed/.test(w)), []);
+  const h2 = bootShell({stored: "dark", draft: "{not json"});
+  await h2.settle();
+  newTab(h2);
+  assert.equal(field(h2, "task.id").value, "");
+  assert.equal(h2.storage.has("adp-mc-draft"), false);
+  // A draft in an older shape adopts what normalize reads.
+  const h3 = bootShell({stored: "dark", draft: JSON.stringify({doc: {task: {id: "OLD-1"}, lessons_learned: [null]}})});
+  await h3.settle();
+  newTab(h3);
+  assert.equal(field(h3, "task.id").value, "OLD-1");
+});
+
+test("the builder renders the full form over file:// with no corpus", async () => {
+  const h = bootShell({stored: "dark", href: "file:///x/mission-control.html", hash: "#v=new%20task"});
+  await h.settle();
+  assert.equal(h.$("#scrNew").classList.contains("is-on"), true);
+  // The blank form's twelve scalar fields; the lists start empty.
+  assert.equal(h.$$(".nt-in").length, 12);
+  assert.match(h.$("#ntSide").innerHTML, /7 protocol checks unmet/);
+  assert.equal(field(h, "task.date").value, S.localDate());
+});
+
+test("a poll re-render never rebuilds the form under a typing reader", async () => {
+  const handle = makeHandle("w.md", LOG);
+  const h = bootCorpus({picker: async () => [handle]});
+  await h.settle();
+  h.click(h.$$(".op").find(o => o.getAttribute("data-op") === "openwatch"));
+  await h.settle();
+  newTab(h);
+  const title = field(h, "task.title");
+  h.input(title, "half a ti");
+  title.focus();
+  handle._text = LOG + "\n## Amendment Notes\n\nlate news.\n";
+  h.tick();
+  await h.settle();
+  // The watched document did change and the inspector did rebuild.
+  assert.match(h.$("#secSel").innerHTML, /Amendment Notes/);
+  // The form's input is the same element, with its value and the keyboard.
+  assert.equal(field(h, "task.title"), title);
+  assert.equal(title.value, "half a ti");
+  assert.equal(h.document.activeElement, title);
 });

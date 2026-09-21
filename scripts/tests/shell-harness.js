@@ -13,6 +13,10 @@ const vm = require("node:vm");
 
 // ---- element stubs ----
 
+// Downloads an anchor click would start, one record per click, read back
+// by the boot handle. Each boot starts with none.
+let downloads = [];
+
 // Focus is one slot, like a browser's. focus() claims it, and the document
 // stub reads it back as activeElement, so tests can pin who holds the
 // keyboard across a rebuild. Each boot starts with nothing focused.
@@ -44,6 +48,11 @@ function makeEl(tag, attrs){
   };
   el.className = el.attrs.class || "";
   el.id = el.attrs.id || "";
+  // A parsed input starts with its value attribute and a checkbox with its
+  // checked attribute, the way a browser materializes them; a textarea
+  // takes its body when its close tag lands.
+  if (el.tagName === "INPUT" && "value" in el.attrs) el.value = el.attrs.value;
+  if ("checked" in el.attrs) el.checked = true;
   el.classList = {
     contains(c){ return el.className.split(/\s+/).includes(c); },
     add(c){ if (!el.classList.contains(c)) el.className = (el.className + " " + c).trim(); },
@@ -75,7 +84,9 @@ function makeEl(tag, attrs){
   el.addEventListener = (type, fn) => {
     (el.listeners[type] = el.listeners[type] || []).push(fn);
   };
-  el.click = () => {};
+  // An anchor click records the download it would start; the page's
+  // download path is asserted from that record.
+  el.click = () => { if (el.tagName === "A") downloads.push({href: el.href, download: el.download}); };
   el.focus = () => { lastFocused = el; };
   // The page scrolls a jumped-to section into view; tests read the counter.
   el.scrollIntoView = () => { el._scrolled = (el._scrolled || 0) + 1; };
@@ -116,13 +127,16 @@ function parseInto(parent, html){
   while ((m = re.exec(html))) {
     const top = stack[stack.length - 1];
     if (m[4] !== undefined){
-      top.textContent += m[4];
+      top.textContent += m[4].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
       continue;
     }
     const tag = m[2].toLowerCase();
     if (m[1]){
       // A stray close tag never pops past the parse root.
-      if (stack.length > 1) stack.pop();
+      if (stack.length > 1){
+        const closed = stack.pop();
+        if (closed.tagName === "TEXTAREA") closed.value = closed.textContent;
+      }
       continue;
     }
     const el = makeEl(tag, parseAttrs(m[3] || ""));
@@ -191,7 +205,7 @@ function buildTree(){
 
 const HTML_PATH = path.join(__dirname, "..", "mission-control.html");
 const LIBS = ["adp-parser-lib.js", "adp-index-lib.js", "adp-index-builder-lib.js",
-  "adp-derive-lib.js", "adp-shell-lib.js"];
+  "adp-derive-lib.js", "adp-prompt-lib.js", "adp-shell-lib.js"];
 
 function inlineScripts(){
   const html = fs.readFileSync(HTML_PATH, "utf8");
@@ -216,12 +230,17 @@ function bootShell(opts){
   opts = opts || {};
   const storage = new Map();
   if (opts.stored !== undefined) storage.set("adp-theme", opts.stored);
+  // opts.draft seeds the builder's draft key, which is how a reload test
+  // models a return to the page.
+  if (opts.draft !== undefined) storage.set("adp-mc-draft", opts.draft);
   const root = buildTree();
   const documentElement = makeEl("html");
 
   lastFocused = null;
+  downloads = [];
   const document = {
     documentElement,
+    createElement: tag => makeEl(tag),
     get activeElement(){ return lastFocused; },
     getElementById: id => findAll(root, "#" + id)[0] || null,
     querySelector: sel => findAll(root, sel)[0] || null,
@@ -236,6 +255,10 @@ function bootShell(opts){
     setItem(k, v){
       if (opts.storageThrows) throw new Error("storage blocked");
       storage.set(k, String(v));
+    },
+    removeItem(k){
+      if (opts.storageThrows) throw new Error("storage blocked");
+      storage.delete(k);
     }
   };
 
@@ -293,10 +316,22 @@ function bootShell(opts){
   // The seam warns to the console when a load fails. We capture those lines,
   // so a test can assert the trace instead of spilling it into the runner.
   const warns = [];
+  // A Blob keeps its parts, and an object URL names the blob it was made
+  // from, so a download record can be read back to the bytes it carries.
+  const blobs = [];
+  function Blob(parts, o){ this.parts = parts; this.type = o && o.type; blobs.push(this); }
+  const URL = {
+    createObjectURL(b){ return "blob:" + (blobs.indexOf(b) + 1); },
+    revokeObjectURL(){}
+  };
+  const blobText = u => (blobs[Number(String(u).replace("blob:", "")) - 1] || {parts: []}).parts.join("");
+
   const sandbox = {
     document,
     localStorage,
     window,
+    Blob,
+    URL,
     location,
     history,
     navigator,
@@ -359,6 +394,15 @@ function bootShell(opts){
     (root.listeners.change || []).forEach(fn => fn(ev));
   }
 
+  // input fires on the element then reaches the document's delegated
+  // listener, the same route as change.
+  function input(el, value){
+    if (value !== undefined) el.value = value;
+    const ev = {target: el, preventDefault(){}};
+    (el.listeners.input || []).forEach(fn => fn(ev));
+    (root.listeners.input || []).forEach(fn => fn(ev));
+  }
+
   function fireWindow(type, ev){
     (windowListeners[type] || []).forEach(fn => fn(Object.assign({preventDefault(){}}, ev)));
   }
@@ -378,9 +422,9 @@ function bootShell(opts){
     for (let i = 0; i < 4; i++) await new Promise(r => setImmediate(r));
   }
 
-  return {document, documentElement, $, $$, storage, click, key, change,
+  return {document, documentElement, $, $$, storage, click, key, change, input,
     fireWindow, tick, runTimeouts, settle, warns, hashes, clipboard, location,
-    intervals};
+    intervals, downloads, blobText};
 }
 
 module.exports = {bootShell};

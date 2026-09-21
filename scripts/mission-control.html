@@ -45,11 +45,12 @@
 <script src="adp-index-lib.js"></script>
 <script src="adp-index-builder-lib.js"></script>
 <script src="adp-derive-lib.js"></script>
+<script src="adp-prompt-lib.js"></script>
 <script src="adp-shell-lib.js"></script>
 <script>
 (function(){
   "use strict";
-  const S = ADPShellLib, D = ADPDeriveLib, P = ADPParserLib, B = ADPIndexBuilder, I = ADPIndexLib;
+  const S = ADPShellLib, D = ADPDeriveLib, P = ADPParserLib, B = ADPIndexBuilder, I = ADPIndexLib, PL = ADPPromptLib;
   const $ = sel => document.querySelector(sel);
 
   let selScreen = "inspector";
@@ -168,7 +169,7 @@
   const FOCUS_MARKS = ["data-op", "data-view", "data-secstep", "data-dlf", "data-lgf", "data-lgc",
     "data-calc", "data-calk",
     "data-ws", "data-exp", "data-permalink", "data-t", "data-k", "data-key", "data-item",
-    "data-close", "data-pk"];
+    "data-close", "data-pk", "data-nadd", "data-ndel"];
   function focusMark(el){
     if (!el || !el.getAttribute) return null;
     if (el.id) return {id: el.id};
@@ -591,6 +592,180 @@
     setTimeout(() => { copyLabel = null; renderPack(); }, 1200);
   }
 
+  // ---- new task ----
+
+  /* The builder holds one lib document and one screen-state object. The
+     document is the form: every input names a dotted path into it, the
+     preview is buildYaml over it, and the badge is validate over its export
+     image. The screen renders on entry and on structural changes only; a
+     keystroke rebuilds the side card and the preview, never the inputs, and
+     no poll reaches it, so a served-file change cannot take the caret from
+     a person mid-word. */
+  const NT_DRAFT_KEY = "adp-mc-draft", NT_DRAFT_MS = 400;
+  const blankDoc = () => { const d = PL.blankDocument(); d.task.date = S.localDate(); return d; };
+  const freshNt = () => ({slug: "", slugEdited: false, showYaml: false, pasteOpen: false,
+    report: null, copyLabel: null, clearLabel: null});
+  let doc = blankDoc(), nt = freshNt();
+  // The builder only writes 1.0 documents, so an adopted document carries
+  // that version whatever its text said; the import report names a
+  // foreign version before it is stamped.
+  function adopt(parsed){ const d = PL.normalize(parsed); d.schema_version = "1.0"; return d; }
+  const ntSlug = () => nt.slugEdited ? nt.slug : S.slugOf(doc.task.title);
+  const ntIssues = () => PL.validate(PL.asExported(JSON.parse(JSON.stringify(doc))));
+  function ntModel(){
+    const slug = ntSlug();
+    return {slug, dir: S.promptDir(doc, slug), issues: ntIssues(), yaml: PL.buildYaml(doc),
+      showYaml: nt.showYaml, pasteOpen: nt.pasteOpen, report: nt.report,
+      copyLabel: nt.copyLabel, clearLabel: nt.clearLabel};
+  }
+  function renderNew(){
+    const keep = focusMark(document.activeElement);
+    $("#scrNew").innerHTML = S.builderHtml(doc, ntModel());
+    refocus(keep);
+  }
+  function renderNewOps(){
+    const keep = focusMark(document.activeElement);
+    $("#ntOps").innerHTML = S.builderOpsHtml(ntModel());
+    refocus(keep);
+  }
+  function renderNewSide(){
+    const keep = focusMark(document.activeElement);
+    const m = ntModel();
+    $("#ntSide").innerHTML = S.builderSideHtml(m);
+    const pre = $("#ntYamlPre");
+    if (pre) pre.textContent = m.yaml;
+    refocus(keep);
+  }
+  function showNew(){ selScreen = "new task"; render(); syncHash(); }
+
+  // A dotted path into the document; a numeric segment indexes a list.
+  function setPath(path, v){
+    const ks = path.split(".");
+    let o = doc;
+    for (let i = 0; i < ks.length - 1; i++) o = o[ks[i]];
+    o[ks[ks.length - 1]] = v;
+  }
+  function getList(list){
+    if (list === "protocol.defers") return doc.protocol.defers || (doc.protocol.defers = []);
+    const ks = list.split(".");
+    return ks.length === 2 ? doc[ks[0]][ks[1]] : doc[ks[0]];
+  }
+  function ntAddRow(list){
+    getList(list).push(S.blankRow(list));
+    renderNew(); ntDraft();
+    // The keyboard lands in the row it asked for, as the standalone does.
+    const row = `${list}.${getList(list).length - 1}`;
+    const first = Array.from(document.querySelectorAll(".nt-in")).find(el => {
+      const f = el.getAttribute("data-nf") || "";
+      return f === row || f.indexOf(row + ".") === 0;
+    });
+    if (first && first.focus) try{ first.focus(); }catch(e){}
+  }
+  function ntDelRow(path){
+    const i = path.lastIndexOf(".");
+    const list = path.slice(0, i), at = Number(path.slice(i + 1));
+    getList(list).splice(at, 1);
+    // An absent defers key means nothing is deferred, so an emptied editor
+    // drops the key and the export stays byte-identical to a pre-editor one.
+    if (list === "protocol.defers" && !doc.protocol.defers.length) delete doc.protocol.defers;
+    renderNew(); ntDraft();
+  }
+
+  // ---- draft ----
+  // One implicit draft under the shell's own key, the standalone's stance:
+  // storage that is unavailable degrades to no persistence, never to
+  // breakage. A typing pause saves; a tab close mid-pause flushes.
+  let ntTimer = null;
+  function ntDraftNow(){
+    ntTimer = null;
+    try{ localStorage.setItem(NT_DRAFT_KEY, JSON.stringify({doc, slug: nt.slug, slugEdited: nt.slugEdited})); }catch(e){}
+  }
+  function ntDraft(){ clearTimeout(ntTimer); ntTimer = setTimeout(ntDraftNow, NT_DRAFT_MS); }
+  function ntDraftDelete(){
+    clearTimeout(ntTimer); ntTimer = null;
+    try{ localStorage.removeItem(NT_DRAFT_KEY); }catch(e){}
+  }
+  function ntRestore(){
+    let d = null;
+    try{ d = JSON.parse(localStorage.getItem(NT_DRAFT_KEY)); }
+    catch(e){ ntDraftDelete(); return; }
+    if (!d || typeof d !== "object") return;
+    // A draft an older shape wrote is adopted as far as normalize reads it;
+    // one that cannot be read at all is dropped, and the screen boots blank.
+    try{
+      doc = adopt(d.doc);
+      nt.slug = String(d.slug || ""); nt.slugEdited = !!d.slugEdited && !!nt.slug;
+    }catch(e){ ntDraftDelete(); doc = blankDoc(); nt = freshNt(); }
+  }
+  window.addEventListener("pagehide", () => { if (ntTimer != null){ clearTimeout(ntTimer); ntDraftNow(); } });
+
+  // ---- import and export ----
+  const isYamlName = name => /\.ya?ml$/i.test(String(name || ""));
+  const isObj = x => x && typeof x === "object" && !Array.isArray(x);
+  /* An import adopts a document only after a clean parse, so a text that is
+     not YAML leaves the form as it was and says so. What could not be placed
+     is reported: the keys the parser skipped and the keys the schema does
+     not know, in the standalone's wording. */
+  function importPrompt(text, source){
+    if (!String(text).trim()){ nt.report = {tone: "warn", text: "nothing to import — paste YAML first."}; renderNewOps(); return false; }
+    const skipped = [];
+    let obj = null;
+    try{ obj = PL.parseYAML(text, skipped); }catch(e){ obj = null; }
+    if (!isObj(obj) || !Object.keys(obj).length){
+      nt.report = {tone: "warn", text: `couldn't parse ${source} as YAML — check indentation and structure.`};
+      renderNewOps(); showNew();
+      return false;
+    }
+    const issues = [];
+    if ("schema_version" in obj && String(obj.schema_version) !== "1.0")
+      issues.push(`schema_version is "${String(obj.schema_version)}" (this builder writes 1.0); fields may not line up`);
+    issues.push.apply(issues, skipped);
+    issues.push.apply(issues, S.unknownKeys(obj));
+    doc = adopt(obj);
+    nt.slugEdited = false; nt.slug = ""; nt.pasteOpen = false;
+    nt.report = issues.length
+      ? {tone: "warn", text: `imported ${source} with ${issues.length} issue${issues.length === 1 ? "" : "s"}: ${issues.join("; ")}`}
+      : {tone: "ok", text: `imported ${source} — all recognized fields.`};
+    renderNew(); showNew(); ntDraftNow();
+    return true;
+  }
+  function ntExample(){
+    doc = adopt(PL.exampleDocument());
+    nt.slugEdited = false; nt.slug = ""; nt.report = null;
+    renderNew(); ntDraftNow();
+  }
+  // Clear needs a second click inside the window; the first arms the button
+  // in place and the timer disarms it. No modal: one blocks the page.
+  function ntClear(){
+    if (nt.clearLabel){
+      ntDraftDelete();
+      doc = blankDoc(); nt = freshNt();
+      renderNew();
+      return;
+    }
+    nt.clearLabel = "confirm clear";
+    renderNewOps();
+    setTimeout(() => { if (nt.clearLabel){ nt.clearLabel = null; renderNewOps(); } }, 1200);
+  }
+  // The label reports what the clipboard did, the pack screen's pattern.
+  function ntCopy(){
+    let write;
+    try{ write = navigator.clipboard.writeText(PL.buildYaml(doc)); }
+    catch(e){ write = Promise.reject(e); }
+    Promise.resolve(write).then(
+      () => { nt.copyLabel = "copied"; renderNewSide(); },
+      () => { nt.copyLabel = "copy failed — select the text"; renderNewSide(); });
+    setTimeout(() => { nt.copyLabel = null; renderNewSide(); }, 1200);
+  }
+  function ntDownload(){
+    const id = String(doc.task.id || "").replace(/[^A-Za-z0-9_.-]/g, "-") || "prompt";
+    const blob = new Blob([PL.buildYaml(doc)], {type: "text/yaml"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = id + ".yaml";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   // ---- chrome ----
 
   // The tab strip is built once. Renders flip state on the buttons in place,
@@ -657,10 +832,13 @@
   }
 
   // A File with no filesystem handle reads once and opens as a one-shot
-  // document; the input path and the handle-less drop path share it.
+  // document; the input path and the handle-less drop path share it. A
+  // .yaml is a prompt: it imports into the builder instead of opening.
   function readDocFile(f){
     const rd = new FileReader();
-    rd.onload = () => addDoc(f.name, String(rd.result), false);
+    rd.onload = () => isYamlName(f.name)
+      ? importPrompt(String(rd.result), f.name)
+      : addDoc(f.name, String(rd.result), false);
     rd.readAsText(f);
   }
 
@@ -956,8 +1134,27 @@
     if (sth){ thSort(sth); return; }
     const dlrow = hit(".dlrow");
     if (dlrow){ sel.item = dlrow.getAttribute("data-dl"); paneJump = true; renderInspector(); syncHash(); return; }
+    const nadd = hit(".nt-add");
+    if (nadd){ ntAddRow(nadd.getAttribute("data-nadd")); return; }
+    const ndel = hit(".nt-del");
+    if (ndel){ ntDelRow(ndel.getAttribute("data-ndel")); return; }
+    if (e.target.id === "ntImport"){
+      importPrompt(($("#ntPaste") || {value: ""}).value, "the paste");
+      return;
+    }
     const op = hit(".op");
     if (op){
+      const nop = op.getAttribute("data-op") || "";
+      if (nop.indexOf("nt") === 0){
+        if (nop === "ntopen") $("#openYaml").click();
+        else if (nop === "ntpaste"){ nt.pasteOpen = !nt.pasteOpen; renderNewOps(); if (nt.pasteOpen){ const pa = $("#ntPaste"); if (pa && pa.focus) pa.focus(); } }
+        else if (nop === "ntexample") ntExample();
+        else if (nop === "ntclear") ntClear();
+        else if (nop === "ntcopy") ntCopy();
+        else if (nop === "ntdl") ntDownload();
+        else if (nop === "ntyaml"){ nt.showYaml = !nt.showYaml; renderNew(); }
+        return;
+      }
       if (op.getAttribute("data-secstep")){
         const tgt = findTarget(sel.t);
         if (!tgt) return;
@@ -998,10 +1195,43 @@
       renderInspector(); syncHash();
       return;
     }
-    if (e.target.id === "openDoc"){
+    if (e.target.id === "openDoc" || e.target.id === "openYaml"){
       Array.from(e.target.files || []).forEach(readDocFile);
       e.target.value = "";
+      return;
     }
+    const t = e.target;
+    if (!t || !t.getAttribute) return;
+    const art = t.getAttribute("data-nart");
+    if (art){
+      // The chips keep the lib's artifact order whatever order they were
+      // ticked in, so two forms with the same ticks export the same bytes.
+      const on = new Set(doc.protocol.artifacts || []);
+      t.checked ? on.add(art) : on.delete(art);
+      doc.protocol.artifacts = PL.ARTIFACTS.filter(a => on.has(a));
+      renderNew(); ntDraft();
+      return;
+    }
+    const f = t.getAttribute("data-nf");
+    if (!f) return;
+    if (t.getAttribute("type") === "checkbox"){ setPath(f, !!t.checked); renderNew(); ntDraft(); }
+    else { setPath(f, t.value); renderNewSide(); ntDraft(); }
+  });
+
+  // Every text field writes the path it names; the slug writes screen state.
+  // A keystroke never rebuilds the inputs, only the card and the preview.
+  document.addEventListener("input", e => {
+    const t = e.target;
+    if (!t || !t.getAttribute) return;
+    if (t.id === "ntSlug"){
+      nt.slug = t.value; nt.slugEdited = !!t.value;
+      renderNewSide(); ntDraft();
+      return;
+    }
+    const f = t.getAttribute("data-nf");
+    if (!f || t.getAttribute("type") === "checkbox") return;
+    setPath(f, t.value);
+    renderNewSide(); ntDraft();
   });
 
   // Drop anywhere opens the files as unindexed documents, viewer-style. A
@@ -1019,7 +1249,9 @@
           const h = await it.getAsFileSystemHandle();
           if (h && h.kind === "file"){
             const f = await h.getFile();
-            addDoc(f.name, await f.text(), true, h);
+            // A prompt is imported, not watched, so its handle is dropped.
+            if (isYamlName(f.name)) importPrompt(await f.text(), f.name);
+            else addDoc(f.name, await f.text(), true, h);
           }
         }catch(err){ console.warn("drop failed:", err); }
       });
@@ -1035,6 +1267,10 @@
      no-corpus chrome and the same render fills everything in when the
      index resolves. */
   renderAll();
+  // The builder renders once here and again only on its own events; it is
+  // no corpus view, so the seam and the poll never rebuild it.
+  ntRestore();
+  renderNew();
   corpusLoading = true;
   S.loadCorpus(u => fetch(u)).then(c => {
     corpusLoading = false;

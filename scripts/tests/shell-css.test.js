@@ -102,3 +102,20 @@ test("the rule reader returns the top-level rule, not its media override", () =>
   assert.deepEqual(declarationsOf("@media(max-width:1px){.x{a:1}} .x{a:2}", ".x"), {a: "2"});
   assert.deepEqual(declarationsOf("@supports(a:b){@media(c){.x{a:1}}}", ".x"), {});
 });
+
+test("the new task block scopes its element rules and prefixes its classes", () => {
+  const css = read("adp-shell.css");
+  const noComments = stripAtRules(css.replace(/\/\*[\s\S]*?\*\//g, ""));
+  // A bare element selector at the top level would restyle the inspector's
+  // paste textarea and the section select; every element rule sits under
+  // the form.
+  const selectors = noComments.split(/\{[^{}]*\}/).map(s => s.trim()).filter(Boolean);
+  const bare = selectors.flatMap(s => s.split(",").map(x => x.trim()))
+    .filter(s => /^(input|textarea|select|label)\b/.test(s));
+  assert.deepEqual(bare, []);
+  // The block's own classes take the nt- prefix; the one shell class it
+  // modifies is the ops button's armed state.
+  const block = css.slice(css.indexOf("/* ---- new task ---- */"));
+  const own = [...classesIn(block)].filter(c => !c.startsWith("nt-")).sort();
+  assert.deepEqual(own, ["is-armed", "is-bad", "is-ok", "is-on", "is-unset", "is-warn", "op"]);
+});
