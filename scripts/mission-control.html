@@ -65,7 +65,7 @@
   let viewMode = "section", dlFilter = "all", pasteOpen = false;
   // The ledger's pill filter is corpus-scoped, so it never resets on a rail
   // selection the way the inspector's per-ticket filter does.
-  let lgFilter = "all";
+  let lgFilter = "all", lgConf = "all";
   let missNotice = null, bootNotice = null;
   // The loaded packs, null until the boot load answers or when it failed.
   // The selected pack is a name; null means the default, which is
@@ -165,7 +165,8 @@
      Matching walks candidates and compares attributes instead of composing a
      selector, so a harvested value in a mark never turns into query syntax.
      A control that did not survive the rebuild simply stays unfocused. */
-  const FOCUS_MARKS = ["data-op", "data-view", "data-secstep", "data-dlf", "data-lgf",
+  const FOCUS_MARKS = ["data-op", "data-view", "data-secstep", "data-dlf", "data-lgf", "data-lgc",
+    "data-calc", "data-calk",
     "data-ws", "data-exp", "data-permalink", "data-t", "data-k", "data-key", "data-item",
     "data-close", "data-pk"];
   function focusMark(el){
@@ -446,6 +447,9 @@
      are unindexed by the stage-4 ruling and their record renders in the
      inspector. The hidden-screen debt flag works the way the board's does. */
   let lgStale = true;
+  // Every kind either classifier can return, so no entry is unreachable by pill.
+  const LG_STATUS_KEYS = ["all"].concat(D.STATUS_KINDS);
+  const LG_CONF_KEYS = ["all"].concat(D.CONF_KINDS);
   function renderLedgers(){
     if (selScreen !== "ledgers"){ lgStale = true; return; }
     lgStale = false;
@@ -459,13 +463,19 @@
       return;
     }
     const lg = D.ledgerRows(corpus.index.tickets, today());
-    // The pills count the whole record; the filter cuts rows, never counts.
-    const counts = {all: lg.decisions.length,
-      open: lg.decisions.filter(r => r.kind === "open").length,
-      validated: lg.decisions.filter(r => r.kind === "validated").length,
-      invalidated: lg.decisions.filter(r => r.kind === "invalidated").length};
-    const shown = lgFilter === "all" ? lg.decisions
-      : lg.decisions.filter(r => r.kind === lgFilter);
+    // The pills count the whole record; the filters cut rows, never counts.
+    // Both axes read the classifications the calibration screen counts by,
+    // so a segment click lands exactly the entries its cell counted.
+    const tally = (keys, of) => {
+      const c = {all: lg.decisions.length};
+      keys.forEach(k => { c[k] = lg.decisions.filter(r => of(r) === k).length; });
+      return c;
+    };
+    const counts = tally(LG_STATUS_KEYS.slice(1), r => r.kind);
+    const confCounts = tally(LG_CONF_KEYS.slice(1), r => P.dlConfKind(r.confidence));
+    const shown = lg.decisions.filter(r =>
+      (lgFilter === "all" || r.kind === lgFilter)
+      && (lgConf === "all" || P.dlConfKind(r.confidence) === lgConf));
     const confRank = {high: 3, medium: 2, low: 1};
     const aRows = D.sortRows(shown, sortState.la.k, sortState.la.d, {
       tid: r => r.tid, id: r => r.id, title: r => r.title,
@@ -481,10 +491,52 @@
       ageText: r.age == null ? "—" : r.age + "d"}));
     scr.innerHTML = head
       + S.assumptionLedgerHtml({sort: sortState.la, rows: aRows,
-        pills: S.pillsHtml(counts, lgFilter, "data-lgf"),
-        empty: counts.all ? "nothing under this filter — the pills count what exists."
+        pills: S.pillGroupHtml("status", S.pillsHtml(counts, lgFilter, "data-lgf", LG_STATUS_KEYS))
+          + S.pillGroupHtml("confidence", S.pillsHtml(confCounts, lgConf, "data-lgc", LG_CONF_KEYS)),
+        empty: counts.all ? "nothing under these filters — the pills count what exists."
           : "no decisions on record — no ticket in this corpus has logged an entry."});
     refocus(keep);
+  }
+
+  // ---- calibration ----
+
+  /* The calibration screen reads the corpus index only, like the board and
+     the ledgers: an opened document is unindexed, so it never counts here.
+     Every number is the derive lib's; the page draws the model and nothing
+     else. The bar segments are the screen's controls, and a poll tick
+     rebuilds them, so a focused segment is handed to its rebuilt twin the
+     way every screen's controls are. The hidden-screen debt flag works the
+     way the ledgers' does. */
+  let cbStale = true;
+  function renderCalib(){
+    if (selScreen !== "calibration"){ cbStale = true; return; }
+    cbStale = false;
+    const scr = $("#scrCalib");
+    const keep = focusMark(document.activeElement);
+    if (!corpus){
+      scr.innerHTML = S.calibrationHtml({model: null, notice: "no corpus behind this page — "
+        + "calibration reads the served corpus index. open, paste, or drop a document to see its record in the inspector."});
+      refocus(keep);
+      return;
+    }
+    scr.innerHTML = S.calibrationHtml({model: D.calibrationModel(corpus.index.tickets, today()),
+      notice: "no decisions on record — no ticket in this corpus has logged an entry."});
+    refocus(keep);
+  }
+
+  // A segment lands the ledger on its cell: both filters set, the screen
+  // switched, and focus handed to the status pill that now reads on, so the
+  // keyboard arrives where the eye does instead of staying on a hidden bar.
+  function openLedgerCell(seg){
+    lgConf = seg.getAttribute("data-calc");
+    lgFilter = seg.getAttribute("data-calk");
+    selScreen = "ledgers";
+    render();
+    renderLedgers();
+    const pill = Array.from(document.querySelectorAll(".fpill"))
+      .find(p => p.getAttribute("data-lgf") === lgFilter);
+    if (pill && pill.focus) pill.focus();
+    syncHash();
   }
 
   // ---- resume pack ----
@@ -580,7 +632,7 @@
   }
 
   function renderAll(){
-    render(); renderRail(); renderInspector(); renderWatch(); renderLedgers(); renderPack(); syncHash();
+    render(); renderRail(); renderInspector(); renderWatch(); renderLedgers(); renderCalib(); renderPack(); syncHash();
   }
 
   // ---- opened documents ----
@@ -805,6 +857,7 @@
       render();
       if (selScreen === "watchboard" && wbStale) renderWatch();
       if (selScreen === "ledgers" && lgStale) renderLedgers();
+      if (selScreen === "calibration" && cbStale) renderCalib();
       if (selScreen === "resume pack" && pkStale) renderPack();
       syncHash();
       return;
@@ -849,11 +902,15 @@
       // set membership; the other two are single-select.
       const ws = pill.getAttribute("data-ws");
       const lgf = pill.getAttribute("data-lgf");
+      const lgc = pill.getAttribute("data-lgc");
       if (ws){ wbShow.has(ws) ? wbShow.delete(ws) : wbShow.add(ws); renderWatch(); }
       else if (lgf){ lgFilter = lgf; renderLedgers(); }
+      else if (lgc){ lgConf = lgc; renderLedgers(); }
       else { dlFilter = pill.getAttribute("data-dlf"); renderInspector(); }
       return;
     }
+    const seg = hit(".calseg");
+    if (seg){ openLedgerCell(seg); return; }
     const pc = hit(".pc");
     if (pc){ sel.s = pc.getAttribute("data-key"); sel.item = null; missNotice = null; paneJump = true; renderInspector(); syncHash(); return; }
     const wbl = hit(".wbl");

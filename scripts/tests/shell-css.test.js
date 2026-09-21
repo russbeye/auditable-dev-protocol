@@ -22,6 +22,42 @@ function classesIn(cssText){
   return out;
 }
 
+/* The declarations of one top-level rule, by exact selector text. The page
+   harness has no layout engine, so a layout rule is pinned here by what it
+   declares: an edit that drops the declaration fails a test instead of a
+   browser check. At-rule blocks are stripped first, so a media override
+   never reads as the rule it overrides. */
+function stripAtRules(cssText){
+  let out = "", depth = 0, i = 0;
+  while (i < cssText.length) {
+    if (depth === 0 && cssText[i] === "@") {
+      // Skip to the block's matching close brace, counting nested pairs.
+      while (i < cssText.length && cssText[i] !== "{") i++;
+      depth = 1; i++;
+      while (i < cssText.length && depth > 0) {
+        if (cssText[i] === "{") depth++;
+        else if (cssText[i] === "}") depth--;
+        i++;
+      }
+      continue;
+    }
+    out += cssText[i++];
+  }
+  return out;
+}
+function declarationsOf(cssText, selector){
+  const noComments = stripAtRules(cssText.replace(/\/\*[\s\S]*?\*\//g, ""));
+  const out = {};
+  for (const m of noComments.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (m[1].trim() !== selector) continue;
+    for (const d of m[2].split(";")) {
+      const i = d.indexOf(":");
+      if (i > 0) out[d.slice(0, i).trim()] = d.slice(i + 1).trim();
+    }
+  }
+  return out;
+}
+
 test("adp-shell.css and adp-theme.css share no class name", () => {
   const shell = classesIn(read("adp-shell.css"));
   const theme = classesIn(read("adp-theme.css"));
@@ -45,4 +81,24 @@ test("the shell page and its tab strip use only adp-shell.css classes", () => {
   const allowed = new Set(["md"]);
   const orphans = [...used].filter(c => !shell.has(c) && !allowed.has(c)).sort();
   assert.deepEqual(orphans, []);
+});
+
+
+test("the ledger panel contains its floated pill row and every child after the heading clears it", () => {
+  const css = read("adp-shell.css");
+  // flow-root keeps a wide pill row inside the panel's border; the sibling
+  // clear puts the table or the empty-state notice below it, never beside.
+  assert.equal(declarationsOf(css, ".ipanel").display, "flow-root");
+  assert.equal(declarationsOf(css, ".ipanel h2 ~ *").clear, "both");
+  // A one-entry segment keeps a visible floor beside a forty-entry one.
+  assert.equal(declarationsOf(css, ".calseg")["min-width"], "8px");
+});
+
+test("the rule reader returns the top-level rule, not its media override", () => {
+  const css = read("adp-shell.css");
+  // The tile grid is four columns on the desktop and two under the phone
+  // media query; a reader that folded nested rules in would return two.
+  assert.equal(declarationsOf(css, ".caltiles")["grid-template-columns"], "repeat(4,1fr)");
+  assert.deepEqual(declarationsOf("@media(max-width:1px){.x{a:1}} .x{a:2}", ".x"), {a: "2"});
+  assert.deepEqual(declarationsOf("@supports(a:b){@media(c){.x{a:1}}}", ".x"), {});
 });

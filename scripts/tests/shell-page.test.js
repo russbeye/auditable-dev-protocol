@@ -1706,3 +1706,173 @@ test("a hidden pack screen skips its rebuild and pays it on entry", async () => 
   assert.notEqual(h.$$(".pk")[0], before);
   assert.equal(h.$("#packText").innerHTML, P.esc(expectedPack("resume-ticket", "BB2")));
 });
+
+// ---- calibration ----
+
+const calTab = h => h.click(h.$$(".mtab")[3]);
+
+test("the calibration screen tiles the corpus and rows every confidence with the ledger's counts", async () => {
+  const h = bootBoard();
+  await h.settle();
+  calTab(h);
+  const scr = h.$("#scrCalib").innerHTML;
+  // Two shipped tickets, three decisions, and the board's own watch counts:
+  // the overdue count moves with the real date, so the board's chip states it.
+  h.click(h.$$(".mtab")[1]);
+  const overdue = h.$$(".fpill").find(p => p.getAttribute("data-ws") === "overdue").innerHTML.match(/overdue (\d+)/)[1];
+  calTab(h);
+  assert.deepEqual(h.$$(".caltile-n").map(t => t.innerHTML), ["2", "2", "3", overdue + "+1"]);
+  assert.deepEqual(h.$$(".caltile").map(t => t.getAttribute("data-tile")),
+    ["tickets", "shipped", "decisions", "watches"]);
+  assert.deepEqual(h.$$(".calrow").map(r => r.getAttribute("data-conf")), ["high", "medium", "low"]);
+  // HIGH holds one validated and one open entry; the ruled share reads the
+  // one ruling. MEDIUM is empty and says so. LOW holds the one open entry.
+  assert.match(scr, /1 validated/);
+  assert.match(scr, /1 of 1 ruled validated/);
+  assert.match(scr, /none ruled yet/);
+  // The separator leads the count it belongs to, so no line can end on one.
+  assert.match(scr, /<span class="calnw">· 1 open<\/span>/);
+  assert.ok(!/·\s*<\/span>/.test(scr));
+  // Segments carry both classes; the legend's swatches carry the kind alone.
+  const segs = k => (scr.match(new RegExp(`class="calseg calseg-${k}"`, "g")) || []).length;
+  assert.equal(segs("open"), 2);
+  assert.equal(segs("validated"), 1);
+  assert.equal(segs("invalidated"), 0);
+  // The legend names every segment the model can produce.
+  for (const k of ["validated", "invalidated", "open", "unknown", "other"])
+    assert.match(scr, new RegExp(`<i class="calseg-${k}"></i>${k}`));
+  // The open count agrees with the ledger's pill on the same corpus.
+  const open = (scr.match(/(\d+) open</g) || []).reduce((n, s) => n + parseInt(s, 10), 0);
+  h.click(h.$$(".mtab")[2]);
+  assert.match(h.$("#scrLedgers").innerHTML, new RegExp(`open ${open}`));
+});
+
+test("the calibration screen counts a ruled entry by its ruling, never its card", async () => {
+  const log = [
+    "# Audit Log — CC3 gamma", "", "## Decision Log", "",
+    "### [DL-001] Ruled off the card", "- **Decision:** pick d", "- **Confidence:** MEDIUM",
+    "- **Status:** OPEN", "", "- **DL-001 CLOSED 2026-08-10 → VALIDATED.** The ruling.", ""
+  ].join("\n");
+  const h = bootShell({stored: "dark", fetch: corpusFetch(
+    {root: "demo", files: ["20260103-CC3-gamma/audit-log.md"]},
+    {"20260103-CC3-gamma/audit-log.md": log})});
+  await h.settle();
+  calTab(h);
+  const scr = h.$("#scrCalib").innerHTML;
+  assert.match(scr, /1 validated/);
+  assert.match(scr, /1 of 1 ruled validated/);
+  assert.ok(!scr.includes('class="calseg calseg-open"'));
+});
+
+test("a calibration deep link boots to the screen and a tab visit writes its token", async () => {
+  const h = bootBoard({hash: "#v=calibration"});
+  await h.settle();
+  assert.equal(h.$("#scrCalib").classList.contains("is-on"), true);
+  assert.equal(h.$$(".caltile").length, 4);
+  const h2 = bootBoard();
+  await h2.settle();
+  calTab(h2);
+  assert.match(h2.hashes[h2.hashes.length - 1], /^#v=calibration/);
+});
+
+test("with no corpus the calibration screen says so instead of tiling zeros", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  calTab(h);
+  const scr = h.$("#scrCalib").innerHTML;
+  assert.match(scr, /no corpus behind this page/);
+  assert.equal(h.$$(".caltile").length, 0);
+  assert.equal(h.$$(".calrow").length, 0);
+});
+
+test("a corpus with no decisions tiles its zeros and names the empty record", async () => {
+  const log = "# Audit Log — CC3 gamma\n\n## Problem Statement\n\n**What the problem is:** empty.\n";
+  const h = bootShell({stored: "dark", fetch: corpusFetch(
+    {root: "demo", files: ["20260103-CC3-gamma/audit-log.md"]},
+    {"20260103-CC3-gamma/audit-log.md": log})});
+  await h.settle();
+  calTab(h);
+  const scr = h.$("#scrCalib").innerHTML;
+  assert.deepEqual(h.$$(".caltile-n").map(t => t.innerHTML), ["1", "0", "0", "0+0"]);
+  assert.match(scr, /no decisions on record/);
+  assert.equal(h.$$(".calrow").length, 0);
+});
+
+test("a hidden calibration screen skips its rebuild and pays it on entry", async () => {
+  const h = bootBoard();
+  await h.settle();
+  calTab(h);
+  const before = h.$$(".caltile")[0];
+  h.click(h.$$(".mtab")[0]);
+  // A full re-render while the screen is hidden must leave its DOM alone.
+  pick(h, "BB2");
+  assert.equal(h.$$(".caltile")[0], before);
+  calTab(h);
+  assert.notEqual(h.$$(".caltile")[0], before);
+  assert.equal(h.$$(".caltile-n")[0].innerHTML, "2");
+});
+
+test("a bar segment lands the ledger filtered to its cell, with focus on the status pill", async () => {
+  const h = bootBoard();
+  await h.settle();
+  calTab(h);
+  const seg = h.$$(".calseg").find(s =>
+    s.getAttribute("data-calc") === "high" && s.getAttribute("data-calk") === "open");
+  assert.match(seg.getAttribute("aria-label"), /^1 open at HIGH/);
+  h.click(seg);
+  assert.equal(h.$("#scrLedgers").classList.contains("is-on"), true);
+  assert.match(h.hashes[h.hashes.length - 1], /^#v=ledgers/);
+  // Only the one HIGH open entry rows; both pill groups read on.
+  assert.deepEqual(
+    h.$$(".lgrow").filter(r => r.getAttribute("data-dl")).map(r => r.getAttribute("data-t") + "/" + r.getAttribute("data-dl")),
+    ["BB2/DL-001"]);
+  const on = attr => h.$$(".fpill").find(p => p.getAttribute(attr) && p.classList.contains("is-on"));
+  assert.match(on("data-lgf").innerHTML, /^open 2/);
+  assert.match(on("data-lgc").innerHTML, /^high 2/);
+  assert.equal(h.$("#scrLedgers").innerHTML.includes("pilllab"), true);
+  assert.equal(h.document.activeElement, on("data-lgf"));
+  // Widening the confidence back to all keeps the status cut.
+  h.click(h.$$(".fpill").find(p => p.getAttribute("data-lgc") === "all"));
+  assert.deepEqual(
+    h.$$(".lgrow").filter(r => r.getAttribute("data-dl")).map(r => r.getAttribute("data-dl")),
+    ["DL-002", "DL-001"]);
+  // The confidence filter is ledger state: it holds across a tab round trip.
+  h.click(h.$$(".fpill").find(p => p.getAttribute("data-lgc") === "low"));
+  h.click(h.$$(".mtab")[0]);
+  h.click(h.$$(".mtab")[2]);
+  assert.match(on("data-lgc").innerHTML, /^low 1/);
+  assert.deepEqual(h.$$(".lgrow").filter(r => r.getAttribute("data-dl")).map(r => r.getAttribute("data-dl")), ["DL-002"]);
+});
+
+test("the ledger pills row every kind the record holds, so no segment lands on an empty pill", async () => {
+  const log = [
+    "# Audit Log — CC3 gamma", "", "## Decision Log", "",
+    "### [DL-001] Parked", "- **Decision:** a", "- **Confidence:** CERTAIN", "- **Status:** PARKED", "",
+    "### [DL-002] Unjudged", "- **Decision:** b", "- **Confidence:** LOW", "- **Status:** UNKNOWN", ""
+  ].join("\n");
+  const h = bootShell({stored: "dark", fetch: corpusFetch(
+    {root: "demo", files: ["20260103-CC3-gamma/audit-log.md"]},
+    {"20260103-CC3-gamma/audit-log.md": log})});
+  await h.settle();
+  calTab(h);
+  h.click(h.$$(".calseg").find(s => s.getAttribute("data-calc") === "other"));
+  const pills = h.$$(".fpill").map(p => p.innerHTML);
+  assert.ok(pills.includes("other 1") && pills.includes("unknown 1"));
+  assert.deepEqual(h.$$(".lgrow").filter(r => r.getAttribute("data-dl")).map(r => r.getAttribute("data-dl")), ["DL-001"]);
+});
+
+test("a poll rebuild hands focus to the rebuilt segment", async () => {
+  const texts = Object.assign({}, TEXTS_WB);
+  const h = bootShell({stored: "dark", fetch: corpusFetch(LISTING_WB, texts)});
+  await h.settle();
+  calTab(h);
+  const seg = () => h.$$(".calseg").find(s => s.getAttribute("data-calc") === "low");
+  seg().focus();
+  const before = seg();
+  // A changed corpus on the poll tick rebuilds the screen under the reader.
+  texts["20260102-BB2-beta/audit-log.md"] = LOG_B + "\n## Amendment Notes\n\nlate news.\n";
+  h.tick();
+  await h.settle();
+  assert.notEqual(seg(), before);
+  assert.equal(h.document.activeElement, seg());
+});
