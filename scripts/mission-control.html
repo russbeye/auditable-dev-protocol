@@ -34,7 +34,7 @@
       <section class="screen" data-s="ledgers" id="scrLedgers"></section>
       <section class="screen" data-s="calibration" id="scrCalib"></section>
       <section class="screen" data-s="resume pack" id="scrPack"></section>
-      <section class="screen" data-s="new task" id="scrNew"></section>
+      <section class="screen nt-wide" data-s="new task" id="scrNew"></section>
     </main>
   </div>
   <footer id="foot"></footer>
@@ -1183,7 +1183,9 @@
         else if (nop === "ntclear") ntClear();
         else if (nop === "ntcopy") ntCopy();
         else if (nop === "ntdl") ntDownload();
-        else if (nop === "ntyaml"){ nt.showYaml = !nt.showYaml; renderNew(); }
+        // The panel sits under the form, so a show scrolls the stage to
+        // the bytes. The card is sticky, so hide stays in reach.
+        else if (nop === "ntyaml"){ nt.showYaml = !nt.showYaml; renderNew(); if (nt.showYaml) $("#ntYaml").scrollIntoView(); }
         return;
       }
       if (op.getAttribute("data-secstep")){

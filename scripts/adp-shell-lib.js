@@ -740,7 +740,7 @@
     // Every row prints its key and the fixed word required, the standalone's
     // panel wording, so no message can outgrow the card.
     const list = n ? `<ul class="nt-checks">` + m.issues.map(([k]) => `<li><code>${esc(k)}</code> — required</li>`).join("") + `</ul>` : "";
-    return `<h2>output</h2>${chit}${list}`
+    return `<h2>export</h2>${chit}${list}`
       + `<div class="nt-dir" id="ntDir">${esc(m.dir)}</div>`
       + `<div class="nt-sidebtns">`
       + `<button type="button" class="op op-acc" data-op="ntcopy">${esc(m.copyLabel || "⧉ copy yaml")}</button>`
@@ -753,7 +753,9 @@
     const t = doc.task, r = doc.role, c = doc.context, o = doc.output, p = doc.protocol;
     const defers = Array.isArray(p.defers) ? p.defers : [];
     const artifacts = Array.isArray(p.artifacts) ? p.artifacts : [];
-    const head = `<h2>new task <span class="isub">writes ${esc(m.dir)}</span></h2>`;
+    // The path prints once, in the card, since a keystroke redraws the card
+    // and the heading rule would show a slug in capitals.
+    const head = `<h2>new task</h2>`;
     const task = `<div class="ipanel"><h2>task</h2><div class="nt-row nt-row4">`
       + `<div>${ntLabel("id", "nt_id")}${ntText("task.id", t.id, "AV-016", "nt_id")}</div>`
       + `<div>${ntLabel("title", "nt_title")}${ntText("task.title", t.title, "One line naming the task", "nt_title")}</div>`
@@ -814,11 +816,12 @@
       + `<div class="nt-sub">artifacts · which to produce</div><div class="nt-chips">${chips}</div>`
       + `<div class="nt-sub">defers · phases this task defers, with a reason each</div>` + deferRows + ntAdd("protocol.defers", "add deferral")
       + `</div>`;
+    // The yaml panel sits in the form column. The card sticks over the
+    // whole grid, so a panel in a row of its own would slide under the card.
+    const yaml = m.showYaml ? `<div class="ipanel" id="ntYaml"><h2>prompt.yaml</h2><pre class="packpre" id="ntYamlPre">${esc(m.yaml)}</pre></div>` : "";
     return head + `<div id="ntOps">${builderOpsHtml(m)}</div>`
-      + `<div class="nt-grid"><div class="nt-form">${task}${role}${context}${lessons}${reqs}${output}${protocol}</div>`
-      + `<div class="ipanel nt-side" id="ntSide">${builderSideHtml(m)}</div>`
-      + (m.showYaml ? `<div class="nt-yamlwrap"><div class="ipanel"><h2>prompt.yaml</h2><pre class="packpre" id="ntYamlPre">${esc(m.yaml)}</pre></div></div>` : "")
-      + `</div>`;
+      + `<div class="nt-grid"><div class="nt-form">${task}${role}${context}${lessons}${reqs}${output}${protocol}${yaml}</div>`
+      + `<div class="ipanel nt-side" id="ntSide">${builderSideHtml(m)}</div></div>`;
   }
 
   const ADPShellLib = {SCREENS, TAB_SCREENS, localDate, tabsHtml, footerText,

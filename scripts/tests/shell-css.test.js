@@ -58,6 +58,24 @@ function declarationsOf(cssText, selector){
   return out;
 }
 
+/* The declarations of one rule inside a media block, by the query text and
+   the rule's exact selector text. */
+function mediaDeclarationsOf(cssText, query, selector){
+  const noComments = cssText.replace(/\/\*[\s\S]*?\*\//g, "");
+  const out = {};
+  for (const m of noComments.matchAll(/@media\(([^)]*)\)\{((?:[^{}]*\{[^{}]*\})*)\s*\}/g)) {
+    if (m[1] !== query) continue;
+    for (const r of m[2].matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (r[1].trim() !== selector) continue;
+      for (const d of r[2].split(";")) {
+        const i = d.indexOf(":");
+        if (i > 0) out[d.slice(0, i).trim()] = d.slice(i + 1).trim();
+      }
+    }
+  }
+  return out;
+}
+
 test("adp-shell.css and adp-theme.css share no class name", () => {
   const shell = classesIn(read("adp-shell.css"));
   const theme = classesIn(read("adp-theme.css"));
@@ -113,9 +131,33 @@ test("the new task block scopes its element rules and prefixes its classes", () 
   const bare = selectors.flatMap(s => s.split(",").map(x => x.trim()))
     .filter(s => /^(input|textarea|select|label)\b/.test(s));
   assert.deepEqual(bare, []);
-  // The block's own classes take the nt- prefix; the one shell class it
-  // modifies is the ops button's armed state.
+  // The block's own classes take the nt- prefix; the shell classes it
+  // modifies are the ops button's armed state and the screen's width cap.
   const block = css.slice(css.indexOf("/* ---- new task ---- */"));
   const own = [...classesIn(block)].filter(c => !c.startsWith("nt-")).sort();
-  assert.deepEqual(own, ["is-armed", "is-bad", "is-ok", "is-on", "is-unset", "is-warn", "op"]);
+  assert.deepEqual(own, ["is-armed", "is-bad", "is-ok", "is-on", "is-unset", "is-warn", "op", "screen"]);
+});
+
+test("the builder's columns are fractions of the stage and fold before the task row starves", () => {
+  const css = read("adp-shell.css");
+  // The builder lifts the screen cap and shares the stage two to one with
+  // the card, so no column carries a fixed width the stage cannot pay.
+  assert.equal(declarationsOf(css, ".screen.nt-wide")["max-width"], "1400px");
+  assert.equal(declarationsOf(css, ".nt-grid")["grid-template-columns"], "minmax(0,2fr) minmax(280px,1fr)");
+  assert.equal(declarationsOf(css, ".nt-row4")["grid-template-columns"], "minmax(0,1fr) minmax(0,2fr) minmax(0,1fr) 120px");
+  // The rail takes 240px of the viewport, so the grid folds at 1290px,
+  // where the stage is 1050px wide.
+  assert.equal(mediaDeclarationsOf(css, "max-width:1290px", ".nt-grid")["grid-template-columns"], "1fr");
+  // Each row shape folds on its own. The task row has no delete cell and
+  // keeps two columns. The three-input rows stack with the delete last.
+  assert.equal(mediaDeclarationsOf(css, "max-width:1000px", ".nt-row4")["grid-template-columns"], "1fr 1fr");
+  assert.equal(mediaDeclarationsOf(css, "max-width:1000px", ".nt-row3,.nt-rowr")["grid-template-columns"], "1fr");
+  assert.equal(mediaDeclarationsOf(css, "max-width:1000px", ".nt-row3 .nt-del,.nt-rowr .nt-del")["justify-self"], "end");
+  assert.deepEqual(mediaDeclarationsOf(css, "max-width:1000px", ".nt-row4,.nt-row3,.nt-rowr"), {});
+  // The card's path breaks inside a token only when a whole token cannot
+  // fit. The yaml panel has no grid row of its own.
+  const dir = declarationsOf(css, ".nt-dir");
+  assert.equal(dir["overflow-wrap"], "anywhere");
+  assert.equal(dir["word-break"], undefined);
+  assert.equal(classesIn(css).has("nt-yamlwrap"), false);
 });

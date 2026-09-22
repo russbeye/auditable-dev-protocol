@@ -273,13 +273,14 @@
 
 /* ---- new task ---- */
 
-/* The form owns the width; the side card is a slim sticky column that
-   holds the badge and the export controls. Under the phone query the card
-   drops below the form. */
-.nt-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start}
-@media(max-width:1000px){.nt-grid{grid-template-columns:1fr}}
+/* The builder lifts the screen cap and shares the stage with the card two
+   to one, so a wide stage widens the inputs instead of leaving a margin.
+   The card sticks over the whole grid. The rail takes 240px of the
+   viewport, so the grid folds at 1290px, where the stage is 1050px wide. */
+.screen.nt-wide{max-width:1400px}
+.nt-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:16px;align-items:start}
+@media(max-width:1290px){.nt-grid{grid-template-columns:1fr}}
 .nt-side{position:sticky;top:0}
-.nt-yamlwrap{grid-column:1/-1}
 /* Element rules stay inside the form, so the inspector's paste drawer and
    the section select keep their own look. */
 .nt-form .nt-lbl,.nt-sub{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
@@ -291,14 +292,20 @@
 .nt-form textarea.nt-short{min-height:60px}
 .nt-form select.is-unset{color:var(--faint)}
 .nt-row{display:grid;gap:8px;margin-bottom:8px;align-items:start}
-.nt-row4{grid-template-columns:140px minmax(0,1.2fr) 140px 140px}
+.nt-row4{grid-template-columns:minmax(0,1fr) minmax(0,2fr) minmax(0,1fr) 120px}
 .nt-row1{grid-template-columns:minmax(0,1fr) 24px}
 .nt-row2{grid-template-columns:1fr 1fr 24px}
 .nt-row3{grid-template-columns:1fr 90px 1fr 24px}
 .nt-rowr{grid-template-columns:70px 1.2fr 1fr 24px}
 .nt-rowo{grid-template-columns:minmax(0,1fr) 140px}
 .nt-rowd{grid-template-columns:150px minmax(0,1fr) 24px}
-@media(max-width:1000px){.nt-row4,.nt-row3,.nt-rowr{grid-template-columns:1fr 24px}}
+/* Each row shape folds on its own. The task row has no delete cell and
+   keeps two columns. The three-input rows stack, with the delete last. */
+@media(max-width:1000px){
+  .nt-row4{grid-template-columns:1fr 1fr}
+  .nt-row3,.nt-rowr{grid-template-columns:1fr}
+  .nt-row3 .nt-del,.nt-rowr .nt-del{justify-self:end}
+}
 .nt-del{font-family:var(--mono);color:var(--faint);border:1px solid var(--line);background:none;cursor:pointer;height:32px}
 .nt-del:hover{color:var(--bad);border-color:var(--bad)}
 .nt-add{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
@@ -314,7 +321,7 @@
 .nt-vchit.is-bad{color:var(--warn);border-color:var(--warn)}
 .nt-checks{font-family:var(--mono);font-size:11px;color:var(--warn);line-height:1.9;margin:0 0 8px;padding:0;list-style:none}
 .nt-checks code{font-family:var(--mono)}
-.nt-dir{font-family:var(--mono);font-size:11px;color:var(--ok);margin-top:8px;word-break:break-all}
+.nt-dir{font-family:var(--mono);font-size:11px;color:var(--ok);margin-top:8px;overflow-wrap:anywhere}
 .nt-sidebtns{display:flex;flex-direction:column;gap:8px;margin-top:10px}
 .nt-sidebtns .op{width:100%;text-align:left}
 .nt-autosave{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-top:10px}

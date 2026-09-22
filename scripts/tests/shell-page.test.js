@@ -189,7 +189,7 @@ test("mission-control.html carries the frame the harness models", () => {
   assert.deepEqual(srcs,
     ["adp-parser-lib.js", "adp-index-lib.js", "adp-index-builder-lib.js",
      "adp-derive-lib.js", "adp-prompt-lib.js", "adp-shell-lib.js"]);
-  const screens = [...HTML.matchAll(/<section class="screen" data-s="([^"]+)"/g)].map(m => m[1]);
+  const screens = [...HTML.matchAll(/<section class="screen[^"]*" data-s="([^"]+)"/g)].map(m => m[1]);
   assert.deepEqual(screens, S.SCREENS);
   assert.match(HTML, /<span class="chit poll poll-idle" id="liveChit" role="status">/);
   for (const id of ["projChit", "liveChit", "liveTxt", "themeBtn", "ttIcon", "tabs", "newTaskBtn", "rail", "foot", "shellmask"]) {
@@ -2271,4 +2271,36 @@ test("a restored draft of a blank form takes an import at once", async () => {
   ntOp(h2, "ntexample");
   assert.ok(!/replace it with/.test(h2.$("#ntOps").innerHTML));
   assert.equal(field(h2, "task.id").value, "GROW-6687-email-validation");
+});
+
+test("the yaml panel sits in the form column under the sticky card and scrolls into view on show", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  ntOp(h, "ntexample");
+  ntOp(h, "ntyaml");
+  // The card sticks over the whole grid. A panel in the form column keeps
+  // the card beside the bytes instead of letting it slide over them.
+  assert.ok(h.$("#ntYamlPre").closest(".nt-form"));
+  assert.equal(h.$("#ntYaml")._scrolled, 1);
+  ntOp(h, "ntyaml");
+  assert.equal(h.$("#ntYamlPre"), null);
+  ntOp(h, "ntyaml");
+  assert.equal(h.$("#ntYaml")._scrolled, 1);
+});
+
+test("the output path prints once, in the export card, under its own heading", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  ntOp(h, "ntexample");
+  const dir = h.$("#ntDir").textContent;
+  assert.match(dir, /prompt\.yaml$/);
+  assert.equal(h.$("#scrNew").innerHTML.split(dir).length - 1, 1);
+  assert.match(h.$("#scrNew").innerHTML, /^<h2>new task<\/h2>/);
+  // The card and the document block cannot share a heading, or the unmet
+  // list's output.format key reads as a line about the card.
+  assert.match(h.$("#ntSide").innerHTML, /^<h2>export<\/h2>/);
+  nfSet(h, "task.id", "AV-099");
+  assert.match(h.$("#ntDir").textContent, /AV099/);
 });
