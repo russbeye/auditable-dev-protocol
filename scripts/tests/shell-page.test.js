@@ -2228,3 +2228,47 @@ test("a drop or open onto a form in progress waits for a confirmation before it 
   ntOp(h2, "ntexample");
   assert.match(h2.$("#ntOps").innerHTML, /replace it with the example/);
 });
+
+// ---- the page: new task, review round two ----
+
+test("the paste drawer keeps its text through a failed parse, a disarmed clear, and a kept form", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  ntOp(h, "ntpaste");
+  h.input(h.$("#ntPaste"), ":::\n  - [");
+  h.click(h.$("#ntImport"));
+  assert.match(h.$("#ntOps").innerHTML, /couldn/);
+  assert.equal(h.$("#ntPaste").value, ":::\n  - [");
+  // The clear arm's timer redraws the ops row around the drawer.
+  ntOp(h, "ntclear");
+  h.runTimeouts();
+  assert.equal(h.$("#ntPaste").value, ":::\n  - [");
+  // A kept form redraws it too.
+  nfSet(h, "task.id", "MINE-1");
+  h.input(h.$("#ntPaste"), GOLDEN);
+  h.click(h.$("#ntImport"));
+  h.click(h.$("#ntKeep"));
+  assert.equal(h.$("#ntPaste").value, GOLDEN);
+  // A successful adoption closes the drawer and lets the text go.
+  h.click(h.$("#ntImport"));
+  h.click(h.$("#ntReplace"));
+  assert.equal(h.$("#ntPaste"), null);
+  ntOp(h, "ntpaste");
+  assert.equal(h.$("#ntPaste").value, "");
+});
+
+test("a restored draft of a blank form takes an import at once", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  nfSet(h, "task.id", "x");
+  nfSet(h, "task.id", "");
+  h.runTimeouts();
+  const h2 = bootShell({stored: "dark", draft: h.storage.get("adp-mc-draft")});
+  await h2.settle();
+  newTab(h2);
+  ntOp(h2, "ntexample");
+  assert.ok(!/replace it with/.test(h2.$("#ntOps").innerHTML));
+  assert.equal(field(h2, "task.id").value, "GROW-6687-email-validation");
+});

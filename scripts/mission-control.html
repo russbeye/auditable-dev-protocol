@@ -603,8 +603,10 @@
      a person mid-word. */
   const NT_DRAFT_KEY = "adp-mc-draft", NT_DRAFT_MS = 400;
   const blankDoc = () => { const d = PL.blankDocument(); d.task.date = S.localDate(); return d; };
+  // The drawer's text is screen state, so an ops-row redraw around it (a
+  // failed parse, a disarmed clear, a kept form) hands it back to the textarea.
   const freshNt = () => ({slug: "", slugEdited: false, showYaml: false, pasteOpen: false,
-    report: null, copyLabel: null, clearLabel: null, pending: null});
+    pasteText: "", report: null, copyLabel: null, clearLabel: null, pending: null});
   let doc = blankDoc(), nt = freshNt();
   // The builder only writes 1.0 documents, so an adopted document carries
   // that version whatever its text said; the import report names a
@@ -624,7 +626,7 @@
   function ntModel(){
     const slug = ntSlug();
     return {slug, dir: S.promptDir(doc, slug), issues: ntIssues(), yaml: PL.buildYaml(doc),
-      showYaml: nt.showYaml, pasteOpen: nt.pasteOpen, report: nt.report,
+      showYaml: nt.showYaml, pasteOpen: nt.pasteOpen, pasteText: nt.pasteText, report: nt.report,
       copyLabel: nt.copyLabel, clearLabel: nt.clearLabel,
       pending: nt.pending ? nt.pending.label : null};
   }
@@ -734,7 +736,7 @@
     issues.push.apply(issues, S.unknownValues(obj));
     replaceForm(source, () => {
       doc = adopt(obj);
-      nt.slugEdited = false; nt.slug = ""; nt.pasteOpen = false;
+      nt.slugEdited = false; nt.slug = ""; nt.pasteOpen = false; nt.pasteText = "";
       nt.report = issues.length
         ? {tone: "warn", text: `imported ${source} with ${issues.length} issue${issues.length === 1 ? "" : "s"}: ${issues.join("; ")}`}
         : {tone: "ok", text: `imported ${source} — all recognized fields.`};
@@ -751,7 +753,9 @@
      example without a word: the question waits in the ops row with a
      replace and a keep button, and the old draft stands until the reader
      answers. A blank form takes the document at once. */
-  const dirty = () => nt.slugEdited || JSON.stringify(doc) !== JSON.stringify(blankDoc());
+  // Dirty means the export differs: a restored draft has normalize's key
+  // order and would never equal the blank object graph, but its bytes do.
+  const dirty = () => nt.slugEdited || PL.buildYaml(doc) !== PL.buildYaml(blankDoc());
   function replaceForm(label, apply){
     const go = () => { nt.pending = null; apply(); renderNew(); showNew(); ntDraftNow(); };
     if (!dirty()){ go(); return; }
@@ -1163,7 +1167,8 @@
     const ndel = hit(".nt-del");
     if (ndel){ ntDelRow(ndel.getAttribute("data-ndel")); return; }
     if (e.target.id === "ntImport"){
-      importPrompt(($("#ntPaste") || {value: ""}).value, "the paste");
+      nt.pasteText = ($("#ntPaste") || {value: ""}).value;
+      importPrompt(nt.pasteText, "the paste");
       return;
     }
     if (e.target.id === "ntReplace"){ if (nt.pending) nt.pending.go(); return; }
@@ -1262,6 +1267,7 @@
       renderNewSide(); ntDraft();
       return;
     }
+    if (t.id === "ntPaste"){ nt.pasteText = t.value; return; }
     const f = t.getAttribute("data-nf");
     if (!f || t.getAttribute("type") === "checkbox") return;
     setPath(f, t.value);

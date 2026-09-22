@@ -721,7 +721,7 @@
       + `<button type="button" class="op${m.clearLabel ? " is-armed" : ""}" data-op="ntclear">${esc(clear)}</button>`
       + `<span class="chit drophint">drag &amp; drop .yaml anywhere</span></div>`
       + (m.pasteOpen ? `<div class="drawer"><label for="ntPaste">paste a prompt.yaml</label>`
-        + `<textarea id="ntPaste" placeholder="paste prompt.yaml…"></textarea>`
+        + `<textarea id="ntPaste" placeholder="paste prompt.yaml…">${esc(m.pasteText || "")}</textarea>`
         + `<button type="button" class="op" id="ntImport">import into form</button></div>` : "")
       + (m.pending ? `<p class="nt-report is-warn" role="status">a form is in progress — replace it with ${esc(m.pending)}? `
         + `<button type="button" class="op" id="ntReplace">replace the form</button> `
