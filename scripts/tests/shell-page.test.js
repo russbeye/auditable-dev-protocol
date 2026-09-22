@@ -2304,3 +2304,58 @@ test("the output path prints once, in the export card, under its own heading", a
   nfSet(h, "task.id", "AV-099");
   assert.match(h.$("#ntDir").textContent, /AV099/);
 });
+
+// ---- the page: new task, review round four ----
+
+test("a deferral item that is not a mapping is dropped and named on import, and a draft holding one boots the form", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN.replace("  defers:\n", "  defers:\n    -\n    - communication\n"));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 2 issues/);
+  assert.match(ops, /protocol\.defers\[0\] is not a map; skipped/);
+  assert.match(ops, /protocol\.defers\[1\] is not a map; skipped/);
+  assert.equal(h.$("#ntPaste"), null);
+  assert.equal(field(h, "protocol.defers.0.phase").value, "communication");
+  assert.equal(field(h, "protocol.defers.2.phase"), undefined);
+  h.runTimeouts();
+  assert.deepEqual(JSON.parse(h.storage.get("adp-mc-draft")).doc.protocol.defers.map(d => d.phase), ["communication", "obligations"]);
+  // A draft an earlier page saved with such items boots the form it holds;
+  // the boot line sits outside ntRestore's catch, so a throw there is a
+  // dead shell until the key is removed by hand.
+  const h2 = bootShell({stored: "dark", draft: JSON.stringify({doc: {task: {id: "D-1"},
+    protocol: {apply: true, defers: [null, "communication", {phase: "analysis", reason: "r"}]}}})});
+  await h2.settle();
+  newTab(h2);
+  assert.equal(field(h2, "task.id").value, "D-1");
+  assert.equal(field(h2, "protocol.defers.0.phase").value, "analysis");
+  assert.equal(field(h2, "protocol.defers.1.phase"), undefined);
+  assert.ok(h2.intervals.length >= 1);
+});
+
+test("a restored draft that differs from the blank only by its date takes an import at once", async () => {
+  const h = bootShell({stored: "dark", draft: JSON.stringify({doc: {task: {date: "2020-01-01"}}})});
+  await h.settle();
+  newTab(h);
+  assert.equal(field(h, "task.date").value, "2020-01-01");
+  ntOp(h, "ntexample");
+  assert.ok(!/replace it with/.test(h.$("#ntOps").innerHTML));
+  assert.equal(field(h, "task.id").value, "GROW-6687-email-validation");
+  // A field the reader typed beside the date still asks.
+  const h2 = bootShell({stored: "dark", draft: JSON.stringify({doc: {task: {date: "2020-01-01", id: "MINE-1"}}})});
+  await h2.settle();
+  newTab(h2);
+  ntOp(h2, "ntexample");
+  assert.match(h2.$("#ntOps").innerHTML, /replace it with the example/);
+});
+
+test("the directory line collapses only the id's leading letters-digits pair, so the index reads the name back", () => {
+  const B = require("../adp-index-builder-lib.js");
+  const line = S.promptDir({task: {id: "GROW-6687-email-validation", date: "2026-06-18"}}, "add-server-side-validation");
+  assert.equal(line, ".adp/20260618-GROW6687-email-validation-add-server-side-validation/prompt.yaml");
+  assert.deepEqual(B.parseDirName(line.split("/")[1]),
+    {id: "GROW6687", date: "2026-06-18", slug: "email-validation-add-server-side-validation"});
+  assert.equal(S.promptDir({task: {id: "AV-016", date: "2026-09-22"}}, "s"), ".adp/20260922-AV016-s/prompt.yaml");
+  assert.equal(S.promptDir({task: {id: "", date: ""}}, ""), ".adp/<yyyymmdd>-<TASKID>-<slug>/prompt.yaml");
+});

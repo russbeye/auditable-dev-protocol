@@ -639,12 +639,14 @@
     return String(title || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   }
 
-  // The umbrella's directory convention, with the id's dashes collapsed so
-  // the name splits on one dash into date, id, and slug. A blank part shows
+  // The umbrella's directory convention: the id's leading letters-digits
+  // pair loses its dash, so the index builder's parseDirName reads the name
+  // as date, id, and slug on the first two dashes. A word tail on the id,
+  // as in GROW-6687-email-validation, heads the slug. A blank part shows
   // its placeholder, so the line stays readable on an empty form.
   function promptDir(doc, slug){
     const date = String(doc.task.date || "").replace(/-/g, "") || "<yyyymmdd>";
-    const id = String(doc.task.id || "").replace(/-/g, "") || "<TASKID>";
+    const id = String(doc.task.id || "").replace(/^([A-Za-z]+)-(\d+)/, "$1$2") || "<TASKID>";
     return `.adp/${date}-${id}-${slug || "<slug>"}/prompt.yaml`;
   }
 
@@ -680,9 +682,10 @@
     return out;
   }
 
-  // An enum value the form's selects cannot show, named the way the report
-  // names a stranger key. The page clears it on adoption, so the bytes and
-  // the form agree.
+  // An enum value the form's selects cannot show, or a deferral with no
+  // fields to show, named the way the report names a stranger key. The page
+  // clears the value and drops the item on adoption, so the bytes and the
+  // form agree.
   function unknownValues(obj){
     const out = [];
     const o = obj && obj.output;
@@ -690,7 +693,8 @@
       out.push(`output.format "${o.format}" is not a format; cleared`);
     const defers = obj && obj.protocol && Array.isArray(obj.protocol.defers) ? obj.protocol.defers : [];
     defers.forEach((d, i) => {
-      if (d && typeof d === "object" && typeof d.phase === "string" && d.phase && !PL.PHASES.includes(d.phase))
+      if (!d || typeof d !== "object" || Array.isArray(d)) out.push(`protocol.defers[${i}] is not a map; skipped`);
+      else if (typeof d.phase === "string" && d.phase && !PL.PHASES.includes(d.phase))
         out.push(`protocol.defers[${i}].phase "${d.phase}" is not a phase; cleared`);
     });
     return out;

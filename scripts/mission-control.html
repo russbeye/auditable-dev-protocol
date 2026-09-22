@@ -617,8 +617,13 @@
     // A value the select cannot show is cleared, so the form and the bytes
     // agree; the standalone's select does the same when it is assigned one.
     if (!PL.FORMATS.includes(d.output.format)) d.output.format = "";
-    if (Array.isArray(d.protocol.defers))
-      d.protocol.defers.forEach(x => { if (x && !PL.PHASES.includes(x.phase)) x.phase = ""; });
+    // A deferral that is not a mapping has no phase to show or clear. The
+    // lib's buildYaml drops the same items, so the form and the bytes agree.
+    if (Array.isArray(d.protocol.defers)){
+      d.protocol.defers = d.protocol.defers.filter(isObj);
+      d.protocol.defers.forEach(x => { if (!PL.PHASES.includes(x.phase)) x.phase = ""; });
+      if (!d.protocol.defers.length) delete d.protocol.defers;
+    }
     return d;
   }
   const ntSlug = () => nt.slugEdited ? nt.slug : S.slugOf(doc.task.title);
@@ -755,7 +760,14 @@
      answers. A blank form takes the document at once. */
   // Dirty means the export differs: a restored draft has normalize's key
   // order and would never equal the blank object graph, but its bytes do.
-  const dirty = () => nt.slugEdited || PL.buildYaml(doc) !== PL.buildYaml(blankDoc());
+  // The blank takes the document's own date, so a draft saved on an earlier
+  // day stays blank until a person types a field.
+  const dirty = () => {
+    if (nt.slugEdited) return true;
+    const blank = blankDoc();
+    blank.task.date = doc.task.date;
+    return PL.buildYaml(doc) !== PL.buildYaml(blank);
+  };
   function replaceForm(label, apply){
     const go = () => { nt.pending = null; apply(); renderNew(); showNew(); ntDraftNow(); };
     if (!dirty()){ go(); return; }
