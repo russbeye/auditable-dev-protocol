@@ -2359,3 +2359,63 @@ test("the directory line collapses only the id's leading letters-digits pair, so
   assert.equal(S.promptDir({task: {id: "AV-016", date: "2026-09-22"}}, "s"), ".adp/20260922-AV016-s/prompt.yaml");
   assert.equal(S.promptDir({task: {id: "", date: ""}}, ""), ".adp/<yyyymmdd>-<TASKID>-<slug>/prompt.yaml");
 });
+
+// ---- the page: new task, review round five ----
+
+test("an import drops every wrong-shaped key and list item, names each one, and the bytes carry no blank row for them", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  const text = GOLDEN
+    .replace("  priorities:\n", "  priorities:\n    -\n")
+    .replace("  references:\n", "  references:\n    - \"src/bare.ts\"\n    -\n")
+    .replace("  links:\n    - \"https://example.atlassian.net/browse/GROW-6687\"\n", "  links: nope\n")
+    .replace(/lessons_learned:\n(  .*\n)+/, "lessons_learned: \"s\"\n")
+    .replace("requirements:\n", "requirements:\n  -\n")
+    .replace('format: "patch"', "format: true")
+    .replace('phase: "communication"', "phase: 5");
+  pasteIn(h, text);
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 8 issues/);
+  assert.match(ops, /role\.priorities\[0\] is not a plain value; skipped/);
+  assert.match(ops, /context\.references\[0\] is not a map; skipped/);
+  assert.match(ops, /context\.references\[1\] is not a map; skipped/);
+  assert.match(ops, /context\.links is not a list; skipped/);
+  assert.match(ops, /lessons_learned is not a list; skipped/);
+  assert.match(ops, /requirements\[0\] is not a map; skipped/);
+  assert.match(ops, /output\.format "true" is not a format; cleared/);
+  assert.match(ops, /protocol\.defers\[0\]\.phase "5" is not a phase; cleared/);
+  // The survivors sit at the head of each list, with no blank row before them.
+  assert.equal(field(h, "role.priorities.0").value, "Reject invalid input before it reaches the database");
+  assert.equal(field(h, "role.priorities.2"), undefined);
+  assert.equal(field(h, "context.references.0.path").value, "src/signup/handler.ts");
+  assert.equal(field(h, "context.references.1.path"), undefined);
+  assert.equal(field(h, "context.links.0"), undefined);
+  assert.equal(field(h, "lessons_learned.0.context"), undefined);
+  assert.equal(field(h, "requirements.0.id").value, "R1");
+  assert.equal(field(h, "requirements.1.id"), undefined);
+  assert.equal(field(h, "output.format").value, "");
+  assert.equal(field(h, "protocol.defers.0.phase").value, "");
+  const y = preview(h);
+  assert.match(y, /  references:\n    - path: "src\/signup\/handler.ts"\n/);
+  assert.ok(!/lessons_learned:/.test(y));
+  assert.ok(!/links:/.test(y));
+  assert.match(y, /requirements:\n  - id: "R1"\n/);
+  assert.ok(!/format:/.test(y));
+});
+
+test("placeable drops a block of the wrong shape, names it, and leaves its input as it was", () => {
+  const raw = {task: "x", prompt: {a: 1}, preamble: null, role: {priorities: ["a", 5, true, null]},
+    protocol: {apply: true, defers: "later"}};
+  const before = JSON.stringify(raw);
+  const {doc, issues} = S.placeable(raw);
+  assert.deepEqual(issues, ["prompt is not text; skipped", "task is not a map; skipped",
+    "role.priorities[3] is not a plain value; skipped", "protocol.defers is not a list; skipped"]);
+  assert.deepEqual(doc, {preamble: null, role: {priorities: ["a", 5, true]}, protocol: {apply: true}});
+  assert.equal(JSON.stringify(raw), before);
+  // A null key is nothing to place and nothing to drop, and an absent
+  // document places nothing.
+  assert.deepEqual(S.placeable({task: null, lessons_learned: null}).issues, []);
+  assert.deepEqual(S.placeable(null), {doc: {}, issues: []});
+  assert.deepEqual(S.unknownValues(PL.exampleDocument()), []);
+});

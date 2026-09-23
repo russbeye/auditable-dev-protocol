@@ -682,22 +682,65 @@
     return out;
   }
 
-  // An enum value the form's selects cannot show, or a deferral with no
-  // fields to show, named the way the report names a stranger key. The page
-  // clears the value and drops the item on adoption, so the bytes and the
-  // form agree.
+  const isMap = x => !!x && typeof x === "object" && !Array.isArray(x);
+  const isPlain = x => typeof x === "string" || typeof x === "number" || typeof x === "boolean";
+  // The shape each placed key takes: text, a map, a list of maps, or a list
+  // of plain values. A block precedes its keys, so its copy exists before
+  // a key under it is dropped.
+  const NT_SHAPES = [
+    ["preamble", "text"], ["prompt", "text"],
+    ["task", "map"], ["role", "map"], ["constraints", "map"], ["context", "map"], ["output", "map"], ["protocol", "map"],
+    ["role.priorities", "plains"], ["constraints.out_of_scope", "plains"], ["constraints.must_not", "plains"],
+    ["context.references", "maps"], ["context.links", "plains"],
+    ["lessons_learned", "maps"], ["requirements", "maps"], ["protocol.defers", "maps"]
+  ];
+  const SHAPE_OK = {text: x => typeof x === "string", map: isMap, maps: isMap, plains: isPlain};
+  const SHAPE_NAME = {text: "text", map: "a map", maps: "a map", plains: "a plain value"};
+  /* The document with every key and list item the form has no place for
+     dropped, and a line naming each drop in the standalone's wording. An
+     absent or null key is nothing to place and nothing to drop. The page
+     adopts the returned copy, so the form and the bytes agree on what an
+     import kept; the input is left as it was. */
+  function placeable(obj){
+    const issues = [];
+    const doc = isMap(obj) ? Object.assign({}, obj) : {};
+    for (const [path, shape] of NT_SHAPES){
+      const [blk, key] = path.includes(".") ? path.split(".") : ["", path];
+      const o = blk ? doc[blk] : doc;
+      if (!isMap(o) || o[key] == null) continue;
+      const v = o[key];
+      if (shape === "maps" || shape === "plains"){
+        if (!Array.isArray(v)){ issues.push(`${path} is not a list; skipped`); delete o[key]; continue; }
+        o[key] = v.filter((x, i) => {
+          if (SHAPE_OK[shape](x)) return true;
+          issues.push(`${path}[${i}] is not ${SHAPE_NAME[shape]}; skipped`);
+          return false;
+        });
+      } else if (!SHAPE_OK[shape](v)){
+        issues.push(`${path} is not ${SHAPE_NAME[shape]}; skipped`);
+        delete o[key];
+      } else if (shape === "map"){
+        doc[key] = Object.assign({}, v);
+      }
+    }
+    return {doc, issues};
+  }
+
+  // Every drop placeable() makes, then an enum value the form's selects
+  // cannot show, whatever its type; a YAML true is one. The page clears the
+  // value on adoption, so the bytes and the form agree. An empty value is
+  // the blank select and clears nothing.
   function unknownValues(obj){
-    const out = [];
-    const o = obj && obj.output;
-    if (o && typeof o === "object" && !Array.isArray(o) && typeof o.format === "string" && o.format && !PL.FORMATS.includes(o.format))
-      out.push(`output.format "${o.format}" is not a format; cleared`);
-    const defers = obj && obj.protocol && Array.isArray(obj.protocol.defers) ? obj.protocol.defers : [];
+    const issues = placeable(obj).issues;
+    const fmt = isMap(obj) && isMap(obj.output) ? obj.output.format : null;
+    if (fmt != null && fmt !== "" && !PL.FORMATS.includes(fmt))
+      issues.push(`output.format "${String(fmt)}" is not a format; cleared`);
+    const defers = isMap(obj) && isMap(obj.protocol) && Array.isArray(obj.protocol.defers) ? obj.protocol.defers : [];
     defers.forEach((d, i) => {
-      if (!d || typeof d !== "object" || Array.isArray(d)) out.push(`protocol.defers[${i}] is not a map; skipped`);
-      else if (typeof d.phase === "string" && d.phase && !PL.PHASES.includes(d.phase))
-        out.push(`protocol.defers[${i}].phase "${d.phase}" is not a phase; cleared`);
+      if (isMap(d) && d.phase != null && d.phase !== "" && !PL.PHASES.includes(d.phase))
+        issues.push(`protocol.defers[${i}].phase "${String(d.phase)}" is not a phase; cleared`);
     });
-    return out;
+    return issues;
   }
 
   const ntLabel = (text, forId) => `<label class="nt-lbl"${forId ? ` for="${forId}"` : ""}>${esc(text)}</label>`;
@@ -834,7 +877,7 @@
     docPaneHtml, rawPaneHtml, pillsHtml, pillGroupHtml, decisionsPanelHtml, watchesPanelHtml,
     statusPillsHtml, watchboardHtml, assumptionLedgerHtml, fullLogHtml, calibrationHtml,
     fillPack, packSlots, packReadsTicket, packBasisKind, packContext, loadPacks, packScreenHtml,
-    slugOf, promptDir, blankRow, unknownKeys, unknownValues, builderOpsHtml, builderSideHtml, builderHtml};
+    slugOf, promptDir, blankRow, unknownKeys, unknownValues, placeable, builderOpsHtml, builderSideHtml, builderHtml};
   if (isNode){ module.exports = ADPShellLib; }
   else { global.ADPShellLib = ADPShellLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

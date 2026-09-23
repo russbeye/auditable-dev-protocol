@@ -612,15 +612,14 @@
   // that version whatever its text said; the import report names a
   // foreign version before it is stamped.
   function adopt(parsed){
-    const d = PL.normalize(parsed);
+    // A key or list item the form has no place for is dropped before the
+    // fill, so normalize cannot blank it into a row the bytes never carry.
+    const d = PL.normalize(S.placeable(parsed).doc);
     d.schema_version = "1.0";
     // A value the select cannot show is cleared, so the form and the bytes
     // agree; the standalone's select does the same when it is assigned one.
     if (!PL.FORMATS.includes(d.output.format)) d.output.format = "";
-    // A deferral that is not a mapping has no phase to show or clear. The
-    // lib's buildYaml drops the same items, so the form and the bytes agree.
     if (Array.isArray(d.protocol.defers)){
-      d.protocol.defers = d.protocol.defers.filter(isObj);
       d.protocol.defers.forEach(x => { if (!PL.PHASES.includes(x.phase)) x.phase = ""; });
       if (!d.protocol.defers.length) delete d.protocol.defers;
     }

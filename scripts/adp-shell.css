@@ -276,11 +276,13 @@
 /* The builder lifts the screen cap and shares the stage with the card two
    to one, so a wide stage widens the inputs instead of leaving a margin.
    The card sticks over the whole grid. The rail takes 240px of the
-   viewport, so the grid folds at 1290px, where the stage is 1050px wide. */
+   viewport, so the grid folds at 1290px, where the stage is 1050px wide.
+   Under the fold the card heads the column and stops sticking, since a
+   sticky element below several screens of form never engages. */
 .screen.nt-wide{max-width:1400px}
 .nt-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:16px;align-items:start}
-@media(max-width:1290px){.nt-grid{grid-template-columns:1fr}}
 .nt-side{position:sticky;top:0}
+@media(max-width:1290px){.nt-grid{grid-template-columns:1fr}.nt-side{order:-1;position:static}}
 /* Element rules stay inside the form, so the inspector's paste drawer and
    the section select keep their own look. */
 .nt-form .nt-lbl,.nt-sub{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;

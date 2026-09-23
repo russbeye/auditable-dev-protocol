@@ -161,3 +161,13 @@ test("the builder's columns are fractions of the stage and fold before the task 
   assert.equal(dir["word-break"], undefined);
   assert.equal(classesIn(css).has("nt-yamlwrap"), false);
 });
+
+test("under the fold the export card heads the column and stops sticking", () => {
+  const css = read("adp-shell.css");
+  assert.equal(declarationsOf(css, ".nt-side")["position"], "sticky");
+  // A sticky element below the whole form never engages, so the card goes
+  // first and static once the grid is one column.
+  assert.deepEqual(mediaDeclarationsOf(css, "max-width:1290px", ".nt-side"), {order: "-1", position: "static"});
+  // The override has to follow the sticky rule, or the sticky rule wins.
+  assert.ok(css.indexOf(".nt-side{position:sticky") < css.indexOf(".nt-side{order:-1;position:static}"));
+});
