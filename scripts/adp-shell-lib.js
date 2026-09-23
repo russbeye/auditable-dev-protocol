@@ -626,12 +626,258 @@
       + `<div class="slotlist">${m.slots.map(esc).join("  ")}</div></div>`;
   }
 
+  // ---- new task ----
+
+  /* The builder screen writes a prompt.yaml through the prompt lib. The
+     document is the lib's own shape, so a field on the screen is a dotted
+     path into it: data-nf="context.references.0.note". The page's one input
+     listener writes e.target.value to that path, and a new key is a markup
+     change here, never a handler there. */
+  const PL = isNode ? require("./adp-prompt-lib.js") : global.ADPPromptLib;
+
+  function slugOf(title){
+    return String(title || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  }
+
+  // The umbrella's directory convention: the id's leading letters-digits
+  // pair loses its dash, so the index builder's parseDirName reads the name
+  // as date, id, and slug on the first two dashes. A word tail on the id,
+  // as in GROW-6687-email-validation, heads the slug. A blank part shows
+  // its placeholder, so the line stays readable on an empty form.
+  function promptDir(doc, slug){
+    const date = String(doc.task.date || "").replace(/-/g, "") || "<yyyymmdd>";
+    const id = String(doc.task.id || "").replace(/^([A-Za-z]+)-(\d+)/, "$1$2") || "<TASKID>";
+    return `.adp/${date}-${id}-${slug || "<slug>"}/prompt.yaml`;
+  }
+
+  // One blank row per list, in the lib's item shape.
+  function blankRow(list){
+    switch (list){
+      case "context.references": return {path: "", lines: "", note: ""};
+      case "lessons_learned": return {context: "", takeaway: ""};
+      case "requirements": return {id: "", statement: "", verify: ""};
+      case "protocol.defers": return {phase: "", reason: ""};
+      default: return "";
+    }
+  }
+
+  const NT_KEYS = {
+    "": ["schema_version", "task", "preamble", "role", "prompt", "constraints", "context", "lessons_learned", "output", "requirements", "protocol"],
+    task: ["id", "title", "author", "date"],
+    role: ["lens", "priorities"],
+    constraints: ["out_of_scope", "must_not"],
+    context: ["background", "references", "links"],
+    output: ["format", "destination", "structure"],
+    protocol: ["apply", "stake_single_recommendation", "log_assumptions", "flag_low_confidence", "artifacts", "defers"]
+  };
+  // The keys an import cannot place, named the way the standalone's report
+  // names them: a top-level stranger bare, a nested one under its block.
+  function unknownKeys(obj){
+    const out = [];
+    for (const blk of Object.keys(NT_KEYS)){
+      const o = blk ? obj[blk] : obj;
+      if (!o || typeof o !== "object" || Array.isArray(o)) continue;
+      Object.keys(o).forEach(k => { if (!NT_KEYS[blk].includes(k)) out.push(blk ? blk + "." + k : k); });
+    }
+    return out;
+  }
+
+  const isMap = x => !!x && typeof x === "object" && !Array.isArray(x);
+  const isPlain = x => typeof x === "string" || typeof x === "number" || typeof x === "boolean";
+  // The shape each placed key takes: text, a map, a list of maps, or a list
+  // of plain values. A block precedes its keys, so its copy exists before
+  // a key under it is dropped.
+  const NT_SHAPES = [
+    ["preamble", "text"], ["prompt", "text"],
+    ["task", "map"], ["role", "map"], ["constraints", "map"], ["context", "map"], ["output", "map"], ["protocol", "map"],
+    ["role.priorities", "plains"], ["constraints.out_of_scope", "plains"], ["constraints.must_not", "plains"],
+    ["context.references", "maps"], ["context.links", "plains"],
+    ["lessons_learned", "maps"], ["requirements", "maps"], ["protocol.defers", "maps"]
+  ];
+  const SHAPE_OK = {text: x => typeof x === "string", map: isMap, maps: isMap, plains: isPlain};
+  const SHAPE_NAME = {text: "text", map: "a map", maps: "a map", plains: "a plain value"};
+  /* The document with every key and list item the form has no place for
+     dropped, and a line naming each drop in the standalone's wording. An
+     absent or null key is nothing to place and nothing to drop. The page
+     adopts the returned copy, so the form and the bytes agree on what an
+     import kept; the input is left as it was. */
+  function placeable(obj){
+    const issues = [];
+    const doc = isMap(obj) ? Object.assign({}, obj) : {};
+    for (const [path, shape] of NT_SHAPES){
+      const [blk, key] = path.includes(".") ? path.split(".") : ["", path];
+      const o = blk ? doc[blk] : doc;
+      if (!isMap(o) || o[key] == null) continue;
+      const v = o[key];
+      if (shape === "maps" || shape === "plains"){
+        if (!Array.isArray(v)){ issues.push(`${path} is not a list; skipped`); delete o[key]; continue; }
+        o[key] = v.filter((x, i) => {
+          if (SHAPE_OK[shape](x)) return true;
+          issues.push(`${path}[${i}] is not ${SHAPE_NAME[shape]}; skipped`);
+          return false;
+        });
+      } else if (!SHAPE_OK[shape](v)){
+        issues.push(`${path} is not ${SHAPE_NAME[shape]}; skipped`);
+        delete o[key];
+      } else if (shape === "map"){
+        doc[key] = Object.assign({}, v);
+      }
+    }
+    return {doc, issues};
+  }
+
+  // Every drop placeable() makes, then an enum value the form's selects
+  // cannot show, whatever its type; a YAML true is one. The page clears the
+  // value on adoption, so the bytes and the form agree. An empty value is
+  // the blank select and clears nothing.
+  function unknownValues(obj){
+    const issues = placeable(obj).issues;
+    const fmt = isMap(obj) && isMap(obj.output) ? obj.output.format : null;
+    if (fmt != null && fmt !== "" && !PL.FORMATS.includes(fmt))
+      issues.push(`output.format "${String(fmt)}" is not a format; cleared`);
+    const defers = isMap(obj) && isMap(obj.protocol) && Array.isArray(obj.protocol.defers) ? obj.protocol.defers : [];
+    defers.forEach((d, i) => {
+      if (isMap(d) && d.phase != null && d.phase !== "" && !PL.PHASES.includes(d.phase))
+        issues.push(`protocol.defers[${i}].phase "${String(d.phase)}" is not a phase; cleared`);
+    });
+    return issues;
+  }
+
+  const ntLabel = (text, forId) => `<label class="nt-lbl"${forId ? ` for="${forId}"` : ""}>${esc(text)}</label>`;
+  const ntText = (path, v, ph, id) =>
+    `<input type="text" class="nt-in"${id ? ` id="${id}"` : ""} data-nf="${path}" value="${escAttr(v || "")}" placeholder="${escAttr(ph || "")}" aria-label="${escAttr(ph || path)}">`;
+  const ntArea = (path, v, ph, id, cls) =>
+    `<textarea class="nt-in${cls ? " " + cls : ""}"${id ? ` id="${id}"` : ""} data-nf="${path}" placeholder="${escAttr(ph || "")}" aria-label="${escAttr(ph || path)}">${esc(v || "")}</textarea>`;
+  const ntDel = (path) => `<button type="button" class="nt-del" data-ndel="${path}" aria-label="remove row">×</button>`;
+  const ntAdd = (list, text) => `<button type="button" class="nt-add" data-nadd="${list}">+ ${esc(text)}</button>`;
+
+  // A list of plain strings: one input and a remove button per row.
+  function ntList(list, items, label, ph){
+    return `<div class="nt-sub">${esc(label)}</div>`
+      + items.map((v, i) => `<div class="nt-row nt-row1">${ntText(`${list}.${i}`, v, ph)}${ntDel(`${list}.${i}`)}</div>`).join("")
+      + ntAdd(list, "add");
+  }
+
+  function builderOpsHtml(m){
+    const clear = m.clearLabel || "clear";
+    return `<div class="mops">`
+      + `<button type="button" class="op op-acc" data-op="ntopen" title="open a prompt.yaml">↑ open yaml</button>`
+      + `<button type="button" class="op" data-op="ntpaste">⌨ paste</button>`
+      + `<span class="mgap"></span>`
+      + `<button type="button" class="op" data-op="ntexample">load example</button>`
+      + `<button type="button" class="op${m.clearLabel ? " is-armed" : ""}" data-op="ntclear">${esc(clear)}</button>`
+      + `<span class="chit drophint">drag &amp; drop .yaml anywhere</span></div>`
+      + (m.pasteOpen ? `<div class="drawer"><label for="ntPaste">paste a prompt.yaml</label>`
+        + `<textarea id="ntPaste" placeholder="paste prompt.yaml…">${esc(m.pasteText || "")}</textarea>`
+        + `<button type="button" class="op" id="ntImport">import into form</button></div>` : "")
+      + (m.pending ? `<p class="nt-report is-warn" role="status">a form is in progress — replace it with ${esc(m.pending)}? `
+        + `<button type="button" class="op" id="ntReplace">replace the form</button> `
+        + `<button type="button" class="op" id="ntKeep">keep the form</button></p>` : "")
+      + (m.report ? `<p class="nt-report is-${m.report.tone}" role="status">${esc(m.report.text)}</p>` : "");
+  }
+
+  /* The side card: the badge, the unmet checks by key, the directory line,
+     and the export controls. The page rebuilds only this on a keystroke, so
+     the form's inputs keep their caret. */
+  function builderSideHtml(m){
+    const n = m.issues.length;
+    const chit = n
+      ? `<span class="nt-vchit is-bad">⚠ ${n} protocol check${n === 1 ? "" : "s"} unmet</span>`
+      : `<span class="nt-vchit">valid · schema 1.0</span>`;
+    // Every row prints its key and the fixed word required, the standalone's
+    // panel wording, so no message can outgrow the card.
+    const list = n ? `<ul class="nt-checks">` + m.issues.map(([k]) => `<li><code>${esc(k)}</code> — required</li>`).join("") + `</ul>` : "";
+    return `<h2>export</h2>${chit}${list}`
+      + `<div class="nt-dir" id="ntDir">${esc(m.dir)}</div>`
+      + `<div class="nt-sidebtns">`
+      + `<button type="button" class="op op-acc" data-op="ntcopy">${esc(m.copyLabel || "⧉ copy yaml")}</button>`
+      + `<button type="button" class="op" data-op="ntdl">↓ download</button>`
+      + `<button type="button" class="op tgl${m.showYaml ? " is-on" : ""}" data-op="ntyaml">${m.showYaml ? "hide yaml" : "view yaml"}</button>`
+      + `</div><div class="nt-autosave">draft autosaves locally · restored on return</div>`;
+  }
+
+  function builderHtml(doc, m){
+    const t = doc.task, r = doc.role, c = doc.context, o = doc.output, p = doc.protocol;
+    const defers = Array.isArray(p.defers) ? p.defers : [];
+    const artifacts = Array.isArray(p.artifacts) ? p.artifacts : [];
+    // The path prints once, in the card, since a keystroke redraws the card
+    // and the heading rule would show a slug in capitals.
+    const head = `<h2>new task</h2>`;
+    const task = `<div class="ipanel"><h2>task</h2><div class="nt-row nt-row4">`
+      + `<div>${ntLabel("id", "nt_id")}${ntText("task.id", t.id, "AV-016", "nt_id")}</div>`
+      + `<div>${ntLabel("title", "nt_title")}${ntText("task.title", t.title, "One line naming the task", "nt_title")}</div>`
+      + `<div>${ntLabel("author", "nt_author")}${ntText("task.author", t.author, "Who wrote this", "nt_author")}</div>`
+      + `<div>${ntLabel("date", "nt_date")}${ntText("task.date", t.date, "YYYY-MM-DD", "nt_date")}</div></div>`
+      + ntLabel("slug · directory name only, not in the yaml", "ntSlug")
+      + `<input type="text" class="nt-in" id="ntSlug" value="${escAttr(m.slug)}" placeholder="kebab-case-slug" aria-label="slug">`
+      + ntLabel("preamble", "nt_preamble") + ntArea("preamble", doc.preamble, "Instructions about how to read this prompt, before the task itself", "nt_preamble", "nt-short")
+      + ntLabel("prompt", "nt_prompt") + ntArea("prompt", doc.prompt, "What to do, and the outcome a person should see when it works", "nt_prompt")
+      + `</div>`;
+    const role = `<div class="ipanel"><h2>role</h2>`
+      + ntLabel("lens", "nt_lens") + ntText("role.lens", r.lens, "The seniority and specialty to reason from", "nt_lens")
+      + ntList("role.priorities", r.priorities, "priorities · what wins when goals conflict", "e.g. testability")
+      + `</div>`;
+    const refs = c.references.map((x, i) => `<div class="nt-row nt-row3">`
+      + ntText(`context.references.${i}.path`, x.path, "src/path/to/file.ts")
+      + ntText(`context.references.${i}.lines`, x.lines, "42-88")
+      + ntText(`context.references.${i}.note`, x.note, "Why this location matters")
+      + ntDel(`context.references.${i}`) + `</div>`).join("");
+    const context = `<div class="ipanel"><h2>context</h2>`
+      + ntLabel("background", "nt_bg") + ntArea("context.background", c.background, "System history, intent, org constraints", "nt_bg", "nt-short")
+      + ntList("constraints.out_of_scope", doc.constraints.out_of_scope, "out of scope · named exclusions", "What this task is not")
+      + ntList("constraints.must_not", doc.constraints.must_not, "must not · hard prohibitions", "The line not to cross")
+      + `<div class="nt-sub">references · path, lines, note</div>` + refs + ntAdd("context.references", "add reference")
+      + ntList("context.links", c.links, "links", "https://…")
+      + `</div>`;
+    const lessons = `<div class="ipanel"><h2>lessons learned</h2>`
+      + doc.lessons_learned.map((x, i) => `<div class="nt-row nt-row2">`
+        + ntText(`lessons_learned.${i}.context`, x.context, "What a prior session tried or surfaced")
+        + ntText(`lessons_learned.${i}.takeaway`, x.takeaway, "The dead end to avoid, or the fact now known")
+        + ntDel(`lessons_learned.${i}`) + `</div>`).join("")
+      + ntAdd("lessons_learned", "add lesson") + `</div>`;
+    const reqs = `<div class="ipanel"><h2>requirements <span class="isub">id + statement + how to verify</span></h2>`
+      + doc.requirements.map((x, i) => `<div class="nt-row nt-rowr">`
+        + ntText(`requirements.${i}.id`, x.id, "R1")
+        + ntText(`requirements.${i}.statement`, x.statement, "Requirement")
+        + ntText(`requirements.${i}.verify`, x.verify, "How to verify")
+        + ntDel(`requirements.${i}`) + `</div>`).join("")
+      + ntAdd("requirements", "add requirement") + `</div>`;
+    const fmtOpts = [""].concat(PL.FORMATS).map(f =>
+      `<option value="${f}"${o.format === f ? " selected" : ""}>${f || "choose…"}</option>`).join("");
+    const output = `<div class="ipanel"><h2>output</h2><div class="nt-row nt-rowo">`
+      + `<div>${ntLabel("destination", "nt_dest")}${ntText("output.destination", o.destination, "Where the work lands", "nt_dest")}</div>`
+      + `<div>${ntLabel("format", "nt_fmt")}<select class="nt-in${o.format ? "" : " is-unset"}" id="nt_fmt" data-nf="output.format" aria-label="format">${fmtOpts}</select></div></div>`
+      + ntLabel("structure", "nt_struct") + ntArea("output.structure", o.structure, "How the output is organized", "nt_struct", "nt-short")
+      + `</div>`;
+    const switches = [["apply", "apply protocol"], ["stake_single_recommendation", "stake recommendation"],
+      ["log_assumptions", "log assumptions"], ["flag_low_confidence", "flag low confidence"]].map(([k, text]) =>
+      `<label class="nt-tog${p[k] ? " is-on" : ""}"><input type="checkbox" data-nf="protocol.${k}"${p[k] ? " checked" : ""}> ${esc(text)}</label>`).join("");
+    const chips = PL.ARTIFACTS.map(a =>
+      `<label class="nt-chip${artifacts.includes(a) ? " is-on" : ""}"><input type="checkbox" data-nart="${a}"${artifacts.includes(a) ? " checked" : ""}> ${a}</label>`).join("");
+    const deferRows = defers.map((d, i) => `<div class="nt-row nt-rowd">`
+      + `<select class="nt-in${d.phase ? "" : " is-unset"}" data-nf="protocol.defers.${i}.phase" aria-label="phase">`
+      + [""].concat(PL.PHASES).map(ph => `<option value="${ph}"${d.phase === ph ? " selected" : ""}>${ph ? ph.replace(/_/g, " ") : "phase…"}</option>`).join("")
+      + `</select>` + ntText(`protocol.defers.${i}.reason`, d.reason, "Why this phase does not run")
+      + ntDel(`protocol.defers.${i}`) + `</div>`).join("");
+    const protocol = `<div class="ipanel"><h2>protocol</h2><div class="nt-togs">${switches}</div>`
+      + `<div class="nt-sub">artifacts · which to produce</div><div class="nt-chips">${chips}</div>`
+      + `<div class="nt-sub">defers · phases this task defers, with a reason each</div>` + deferRows + ntAdd("protocol.defers", "add deferral")
+      + `</div>`;
+    // The yaml panel sits in the form column. The card sticks over the
+    // whole grid, so a panel in a row of its own would slide under the card.
+    const yaml = m.showYaml ? `<div class="ipanel" id="ntYaml"><h2>prompt.yaml</h2><pre class="packpre" id="ntYamlPre">${esc(m.yaml)}</pre></div>` : "";
+    return head + `<div id="ntOps">${builderOpsHtml(m)}</div>`
+      + `<div class="nt-grid"><div class="nt-form">${task}${role}${context}${lessons}${reqs}${output}${protocol}${yaml}</div>`
+      + `<div class="ipanel nt-side" id="ntSide">${builderSideHtml(m)}</div></div>`;
+  }
+
   const ADPShellLib = {SCREENS, TAB_SCREENS, localDate, tabsHtml, footerText,
     projectChitText, applyTheme, hashRead, hashWrite, logPaths, corpusUrl,
     loadCorpus, railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml,
     docPaneHtml, rawPaneHtml, pillsHtml, pillGroupHtml, decisionsPanelHtml, watchesPanelHtml,
     statusPillsHtml, watchboardHtml, assumptionLedgerHtml, fullLogHtml, calibrationHtml,
-    fillPack, packSlots, packReadsTicket, packBasisKind, packContext, loadPacks, packScreenHtml};
+    fillPack, packSlots, packReadsTicket, packBasisKind, packContext, loadPacks, packScreenHtml,
+    slugOf, promptDir, blankRow, unknownKeys, unknownValues, placeable, builderOpsHtml, builderSideHtml, builderHtml};
   if (isNode){ module.exports = ADPShellLib; }
   else { global.ADPShellLib = ADPShellLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

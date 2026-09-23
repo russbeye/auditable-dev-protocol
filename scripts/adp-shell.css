@@ -270,3 +270,65 @@
 .packdocs p{font-size:12.5px;color:var(--dim);margin:0 0 10px;max-width:70ch}
 .packdocs code{font-family:var(--mono);font-size:11px;color:var(--ok)}
 .slotlist{font-family:var(--mono);font-size:11px;color:var(--faint);line-height:2;word-spacing:.6em}
+
+/* ---- new task ---- */
+
+/* The builder lifts the screen cap and shares the stage with the card two
+   to one, so a wide stage widens the inputs instead of leaving a margin.
+   The card sticks over the whole grid. The rail takes 240px of the
+   viewport, so the grid folds at 1290px, where the stage is 1050px wide.
+   Under the fold the card heads the column and stops sticking, since a
+   sticky element below several screens of form never engages. */
+.screen.nt-wide{max-width:1400px}
+.nt-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:16px;align-items:start}
+.nt-side{position:sticky;top:0}
+@media(max-width:1290px){.nt-grid{grid-template-columns:1fr}.nt-side{order:-1;position:static}}
+/* Element rules stay inside the form, so the inspector's paste drawer and
+   the section select keep their own look. */
+.nt-form .nt-lbl,.nt-sub{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--faint);margin:10px 0 4px}
+.nt-form .nt-in{width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);
+  font-family:var(--mono);font-size:12px;padding:7px 9px;outline:none;box-sizing:border-box}
+.nt-form .nt-in:focus{border-color:var(--accent)}
+.nt-form textarea.nt-in{resize:vertical;min-height:90px;line-height:1.55}
+.nt-form textarea.nt-short{min-height:60px}
+.nt-form select.is-unset{color:var(--faint)}
+.nt-row{display:grid;gap:8px;margin-bottom:8px;align-items:start}
+.nt-row4{grid-template-columns:minmax(0,1fr) minmax(0,2fr) minmax(0,1fr) 120px}
+.nt-row1{grid-template-columns:minmax(0,1fr) 24px}
+.nt-row2{grid-template-columns:1fr 1fr 24px}
+.nt-row3{grid-template-columns:1fr 90px 1fr 24px}
+.nt-rowr{grid-template-columns:70px 1.2fr 1fr 24px}
+.nt-rowo{grid-template-columns:minmax(0,1fr) 140px}
+.nt-rowd{grid-template-columns:150px minmax(0,1fr) 24px}
+/* Each row shape folds on its own. The task row has no delete cell and
+   keeps two columns. The three-input rows stack, with the delete last. */
+@media(max-width:1000px){
+  .nt-row4{grid-template-columns:1fr 1fr}
+  .nt-row3,.nt-rowr{grid-template-columns:1fr}
+  .nt-row3 .nt-del,.nt-rowr .nt-del{justify-self:end}
+}
+.nt-del{font-family:var(--mono);color:var(--faint);border:1px solid var(--line);background:none;cursor:pointer;height:32px}
+.nt-del:hover{color:var(--bad);border-color:var(--bad)}
+.nt-add{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  border:1px solid var(--line);background:none;color:var(--dim);padding:5px 11px;cursor:pointer;margin-top:2px}
+.nt-add:hover{color:var(--ink);border-color:var(--line-bright)}
+.nt-togs,.nt-chips{display:flex;gap:2px;flex-wrap:wrap;margin-top:4px}
+.nt-tog,.nt-chip{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  border:1px solid var(--line);background:var(--inset);color:var(--faint);padding:3px 9px;cursor:pointer}
+.nt-tog input,.nt-chip input{margin:0 4px 0 0;vertical-align:-1px}
+.nt-tog.is-on,.nt-chip.is-on{color:var(--ok);border-color:var(--ok)}
+.nt-vchit{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ok);
+  border:1px solid var(--ok);padding:2px 8px;display:inline-block;margin-bottom:10px}
+.nt-vchit.is-bad{color:var(--warn);border-color:var(--warn)}
+.nt-checks{font-family:var(--mono);font-size:11px;color:var(--warn);line-height:1.9;margin:0 0 8px;padding:0;list-style:none}
+.nt-checks code{font-family:var(--mono)}
+.nt-dir{font-family:var(--mono);font-size:11px;color:var(--ok);margin-top:8px;overflow-wrap:anywhere}
+.nt-sidebtns{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.nt-sidebtns .op{width:100%;text-align:left}
+.nt-autosave{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-top:10px}
+/* The armed clear reads as a warning until the timer disarms it. */
+.op.is-armed{color:var(--warn);border-color:var(--warn)}
+.nt-report{font-family:var(--mono);font-size:11px;margin:0 0 10px}
+.nt-report.is-ok{color:var(--ok)}
+.nt-report.is-warn{color:var(--warn)}
