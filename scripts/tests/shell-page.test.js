@@ -8,6 +8,9 @@ const S = require("../adp-shell-lib.js");
 const B = require("../adp-index-builder-lib.js");
 const I = require("../adp-index-lib.js");
 const {bootShell} = require("./shell-harness.js");
+// The standalone boots here too, so one test can hold the two exports to the
+// same bytes from the same form contents.
+const {bootBuilder} = require("./builder-harness.js");
 
 const HTML = fs.readFileSync(path.join(__dirname, "..", "mission-control.html"), "utf8");
 
@@ -2338,7 +2341,9 @@ test("a restored draft that differs from the blank only by its date takes an imp
   const h = bootShell({stored: "dark", draft: JSON.stringify({doc: {task: {date: "2020-01-01"}}})});
   await h.settle();
   newTab(h);
-  assert.equal(field(h, "task.date").value, "2020-01-01");
+  // The restore re-dates a draft nobody has typed into, so the field reads
+  // today whatever day the draft was saved on.
+  assert.equal(field(h, "task.date").value, S.localDate());
   ntOp(h, "ntexample");
   assert.ok(!/replace it with/.test(h.$("#ntOps").innerHTML));
   assert.equal(field(h, "task.id").value, "GROW-6687-email-validation");
@@ -2533,4 +2538,121 @@ test("the pending question stands alone, and keeping the form says the paste was
   assert.match(h.$("#ntOps").innerHTML, /kept the form — the paste was not imported\./);
   assert.equal(h.$("#ntPaste").value, GOLDEN);
   assert.equal(field(h, "task.id").value, "A-1");
+});
+
+// ---- the page: new task, review round seven ----
+
+test("a multiline value in a single-line field is flattened, named, and the bytes read back", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN.replace('  title: "Add server-side validation to the signup email field"',
+    "  title: |\n    line one\n    line two"));
+  assert.match(h.$("#ntOps").innerHTML, /imported the paste with 1 issue: task\.title \(multiline value flattened to one line\)/);
+  assert.equal(field(h, "task.title").value, "line one line two");
+  const y = preview(h);
+  assert.match(y, /  title: "line one line two"\n/);
+  assert.match(h.$("#ntSide").innerHTML, /valid · schema 1\.0/);
+  // The export the badge calls valid re-imports as the document it wrote.
+  const skipped = [];
+  assert.equal(PL.parseYAML(y, skipped).task.title, "line one line two");
+  assert.deepEqual(skipped, []);
+  // A textarea keeps its newlines, and a list item is a line like any input.
+  assert.deepEqual(S.placeable({prompt: "a\nb", task: {title: "a\nb"}, context: {links: ["a\nb"]}}),
+    {doc: {prompt: "a\nb", task: {title: "a b"}, context: {links: ["a b"]}},
+      issues: ["task.title (multiline value flattened to one line)",
+        "context.links[0] (multiline value flattened to one line)"]});
+});
+
+test("a map or a list where a block's own field belongs is dropped and named", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN
+    .replace('  title: "Add server-side validation to the signup email field"', "  title:\n    deep: 1")
+    .replace('  lens: "Staff engineer accountable for data integrity"', "  lens:\n    - a\n    - b")
+    .replace('  destination: "Edit files in place"', "  destination:\n    x: 1")
+    .replace('  format: "patch"', "  format:\n    x: 1")
+    .replace("  apply: true", "  apply:\n    x: 1"));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 5 issues/);
+  assert.match(ops, /task\.title is not a plain value; skipped/);
+  assert.match(ops, /role\.lens is not a plain value; skipped/);
+  assert.match(ops, /output\.destination is not a plain value; skipped/);
+  assert.match(ops, /output\.format is not a plain value; skipped/);
+  assert.match(ops, /protocol\.apply is not true or false; kept as true/);
+  assert.ok(!/\[object Object\]/.test(ops));
+  // Each field reads blank, the way the standalone's setLine leaves it.
+  for (const nf of ["task.title", "role.lens", "output.destination", "output.format"])
+    assert.equal(field(h, nf).value, "", nf);
+  const y = preview(h);
+  assert.ok(!/\[object Object\]/.test(y));
+  assert.ok(!/lens|destination|format:/.test(y));
+  assert.match(y, /  apply: true\n/);
+  assert.match(h.$("#ntDir").textContent, /-<slug>\/prompt\.yaml$/);
+});
+
+test("the export image trims every value and drops a blank row from a list of plain values", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  ntOp(h, "ntexample");
+  h.click(h.$$(".nt-add").find(b => b.getAttribute("data-nadd") === "context.links"));
+  h.input(field(h, "task.title"), "  padded title  ");
+  h.input(field(h, "task.author"), "   ");
+  // The form keeps what the reader typed, so a caret stays where it was.
+  assert.equal(field(h, "task.title").value, "  padded title  ");
+  assert.equal(field(h, "context.links.1").value, "");
+  const y = preview(h);
+  assert.match(y, /  title: "padded title"\n/);
+  assert.ok(!/author:/.test(y));
+  assert.ok(!/- ""/.test(y));
+  assert.match(h.$("#ntSide").innerHTML, /<code>task\.author<\/code>/);
+  // A form holding only padding carries no export bytes, so an import takes it
+  // without asking.
+  const h2 = bootShell({stored: "dark"});
+  await h2.settle();
+  newTab(h2);
+  h2.input(field(h2, "task.id"), "   ");
+  h2.input(field(h2, "task.date"), ` ${S.localDate()} `);
+  ntOp(h2, "ntexample");
+  assert.ok(!/replace it with/.test(h2.$("#ntOps").innerHTML));
+});
+
+test("the same form contents export the same bytes on both builders", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  ntOp(h, "ntexample");
+  h.click(h.$$(".nt-add").find(b => b.getAttribute("data-nadd") === "context.links"));
+  h.input(field(h, "task.title"), "  padded title  ");
+  h.input(field(h, "role.priorities.0"), " padded priority ");
+  const b = bootBuilder();
+  await b.click(b.$("#example"));
+  await b.addRow("links");
+  b.$("#t_title").value = "  padded title  ";
+  b.fireInput(b.$("#t_title"));
+  const prio = b.listEls("priorities")[0].querySelector("input");
+  prio.value = " padded priority ";
+  b.fireInput(prio);
+  assert.equal(preview(h), await b.exportYaml());
+});
+
+test("a draft nobody has typed into takes today's date, and one with content keeps its own", async () => {
+  const stale = JSON.stringify({doc: {task: {date: "2026-09-28"}}});
+  const h = bootShell({stored: "dark", draft: stale});
+  await h.settle();
+  newTab(h);
+  assert.equal(field(h, "task.date").value, S.localDate());
+  assert.match(h.$("#ntDir").textContent, new RegExp("^\\.adp/" + S.localDate().replace(/-/g, "") + "-"));
+  // A draft a person has typed into keeps the date its author gave it.
+  const h2 = bootShell({stored: "dark", draft: JSON.stringify({doc: {task: {id: "ZUP-1", date: "2026-09-28"}}})});
+  await h2.settle();
+  newTab(h2);
+  assert.equal(field(h2, "task.date").value, "2026-09-28");
+  // A typed slug is content too, even with every field blank.
+  const h3 = bootShell({stored: "dark", draft: JSON.stringify({doc: {task: {date: "2026-09-28"}}, slug: "mine", slugEdited: true})});
+  await h3.settle();
+  newTab(h3);
+  assert.equal(field(h3, "task.date").value, "2026-09-28");
 });

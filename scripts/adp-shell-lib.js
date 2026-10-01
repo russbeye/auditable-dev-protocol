@@ -684,19 +684,34 @@
 
   const isMap = x => !!x && typeof x === "object" && !Array.isArray(x);
   const isPlain = x => typeof x === "string" || typeof x === "number" || typeof x === "boolean";
-  // The shape each placed key takes: text, a map, a list of maps, or a list
-  // of plain values. A block precedes its keys, so its copy exists before
-  // a key under it is dropped.
+  /* The shape each placed key takes. A text key is a textarea and keeps its
+     newlines. A line key is one input, so it holds a plain value on one line.
+     The rest are a map, a list of maps, or a list of plain values, whose items
+     are lines themselves. A block precedes its keys, so its copy exists
+     before a key under it is dropped. */
   const NT_SHAPES = [
     ["preamble", "text"], ["prompt", "text"],
     ["task", "map"], ["role", "map"], ["constraints", "map"], ["context", "map"], ["output", "map"], ["protocol", "map"],
-    ["role.priorities", "plains"], ["constraints.out_of_scope", "plains"], ["constraints.must_not", "plains"],
-    ["context.references", "maps"], ["context.links", "plains"],
+    ["task.id", "line"], ["task.title", "line"], ["task.author", "line"], ["task.date", "line"],
+    ["role.lens", "line"], ["role.priorities", "plains"],
+    ["constraints.out_of_scope", "plains"], ["constraints.must_not", "plains"],
+    ["context.background", "text"], ["context.references", "maps"], ["context.links", "plains"],
     ["lessons_learned", "maps"], ["requirements", "maps"],
+    ["output.format", "line"], ["output.destination", "line"], ["output.structure", "text"],
     ["protocol.artifacts", "plains"], ["protocol.defers", "maps"]
   ];
-  const SHAPE_OK = {text: x => typeof x === "string", map: isMap, maps: isMap, plains: isPlain};
-  const SHAPE_NAME = {text: "text", map: "a map", maps: "a map", plains: "a plain value"};
+  const SHAPE_OK = {text: x => typeof x === "string", line: isPlain, map: isMap, maps: isMap, plains: isPlain};
+  const SHAPE_NAME = {text: "text", line: "a plain value", map: "a map", maps: "a map", plains: "a plain value"};
+  /* A value an input holds sits on one line, so the newlines of a block
+     scalar collapse to spaces and the change is named. This is the
+     standalone's setLine rule. An input strips the newlines itself, and a
+     single-line key writes its value between quotes, where a newline would
+     break the line the export writes. */
+  function placeLine(at, v, issues){
+    if (typeof v !== "string" || v.indexOf("\n") < 0) return v;
+    issues.push(`${at} (multiline value flattened to one line)`);
+    return v.replace(/\n+/g, " ");
+  }
   /* A field inside a list item holds a plain value, because one input holds
      it and the export quotes it. A map or a list under a field reaches the
      input as [object Object] and the bytes carry the same text, so the field
@@ -707,7 +722,8 @@
   function placeableRow(at, item, issues){
     const row = Object.assign({}, item);
     Object.keys(row).forEach(k => {
-      if (row[k] == null || isPlain(row[k])) return;
+      if (row[k] == null) return;
+      if (isPlain(row[k])){ row[k] = placeLine(`${at}.${k}`, row[k], issues); return; }
       issues.push(`${at}.${k} is not a plain value; skipped`);
       delete row[k];
     });
@@ -731,7 +747,7 @@
         const kept = [];
         v.forEach((x, i) => {
           if (!SHAPE_OK[shape](x)){ issues.push(`${path}[${i}] is not ${SHAPE_NAME[shape]}; skipped`); return; }
-          kept.push(shape === "maps" ? placeableRow(`${path}[${i}]`, x, issues) : x);
+          kept.push(shape === "maps" ? placeableRow(`${path}[${i}]`, x, issues) : placeLine(`${path}[${i}]`, x, issues));
         });
         o[key] = kept;
       } else if (!SHAPE_OK[shape](v)){
@@ -739,6 +755,8 @@
         delete o[key];
       } else if (shape === "map"){
         doc[key] = Object.assign({}, v);
+      } else if (shape === "line"){
+        o[key] = placeLine(path, v, issues);
       }
     }
     return {doc, issues};
@@ -767,8 +785,12 @@
       if (!PL.ARTIFACTS.includes(a)) issues.push(`protocol.artifacts "${String(a)}" is not an artifact; cleared`);
     });
     NT_SWITCHES.forEach(([k]) => {
-      if (k in proto && typeof proto[k] !== "boolean")
-        issues.push(`protocol.${k} "${String(proto[k])}" is not true or false; kept as ${!!proto[k]}`);
+      const v = proto[k];
+      if (!(k in proto) || typeof v === "boolean") return;
+      // A map or a list has no reading worth printing, so only a plain value
+      // is quoted back. The toggle keeps the state it draws either way.
+      const named = isPlain(v) ? `protocol.${k} "${String(v)}"` : `protocol.${k}`;
+      issues.push(`${named} is not true or false; kept as ${!!v}`);
     });
     const defers = Array.isArray(proto.defers) ? proto.defers : [];
     defers.forEach((d, i) => {

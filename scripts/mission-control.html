@@ -634,10 +634,26 @@
     return d;
   }
   const ntSlug = () => nt.slugEdited ? nt.slug : S.slugOf(doc.task.title);
-  const ntIssues = () => PL.validate(PL.asExported(JSON.parse(JSON.stringify(doc))));
+  /* One copy of the document with every value trimmed and a blank row dropped
+     from the four lists of plain values, which is what the standalone's
+     gather() hands its own export. The form keeps what the reader typed,
+     padding and all, so a caret stays where it was. Every surface that writes
+     or judges the export reads this one image. */
+  function ntExported(){
+    const clean = v => Array.isArray(v) ? v.map(clean)
+      : v && typeof v === "object" ? Object.keys(v).reduce((o, k) => { o[k] = clean(v[k]); return o; }, {})
+      : typeof v === "string" ? v.trim() : v;
+    const d = clean(doc);
+    [[d.role, "priorities"], [d.constraints, "out_of_scope"], [d.constraints, "must_not"], [d.context, "links"]]
+      .forEach(([o, k]) => { o[k] = o[k].filter(x => x !== ""); });
+    return d;
+  }
   function ntModel(){
-    const slug = ntSlug();
-    return {slug, dir: S.promptDir(doc, slug), issues: ntIssues(), yaml: PL.buildYaml(doc),
+    const slug = ntSlug(), exp = ntExported();
+    // buildYaml reads the image whole. asExported then spends it, since it
+    // edits the document in place to match what the export leaves out.
+    const yaml = PL.buildYaml(exp);
+    return {slug, dir: S.promptDir(exp, slug), issues: PL.validate(PL.asExported(exp)), yaml,
       showYaml: nt.showYaml, pasteOpen: nt.pasteOpen, pasteText: nt.pasteText, report: nt.report,
       copyLabel: nt.copyLabel, clearLabel: nt.clearLabel,
       pending: nt.pending ? nt.pending.label : null};
@@ -720,6 +736,11 @@
       doc = adopt(d.doc);
       nt.slug = String(d.slug || ""); nt.slugEdited = !!d.slugEdited && !!nt.slug;
     }catch(e){ ntDraftDelete(); doc = blankDoc(); nt = freshNt(); }
+    // A prompt is dated the day it is written, so a draft nobody has typed
+    // into takes today's date rather than the day it was saved. The directory
+    // line names that date, and a stale one would name a directory for a day
+    // the task did not start on.
+    if (!dirty()) doc.task.date = S.localDate();
   }
   window.addEventListener("pagehide", () => { if (ntTimer != null){ clearTimeout(ntTimer); ntDraftNow(); } });
 
@@ -771,9 +792,10 @@
   // day stays blank until a person types a field.
   const dirty = () => {
     if (nt.slugEdited) return true;
+    const exp = ntExported();
     const blank = blankDoc();
-    blank.task.date = doc.task.date;
-    return PL.buildYaml(doc) !== PL.buildYaml(blank);
+    blank.task.date = exp.task.date;
+    return PL.buildYaml(exp) !== PL.buildYaml(blank);
   };
   function replaceForm(label, apply){
     const go = () => { nt.pending = null; apply(); renderNew(); showNew(); ntDraftNow(); };
@@ -800,7 +822,7 @@
   // The label reports what the clipboard did, the pack screen's pattern.
   function ntCopy(){
     let write;
-    try{ write = navigator.clipboard.writeText(PL.buildYaml(doc)); }
+    try{ write = navigator.clipboard.writeText(PL.buildYaml(ntExported())); }
     catch(e){ write = Promise.reject(e); }
     Promise.resolve(write).then(
       () => { nt.copyLabel = "copied"; renderNewSide(); },
@@ -808,8 +830,9 @@
     setTimeout(() => { nt.copyLabel = null; renderNewSide(); }, 1200);
   }
   function ntDownload(){
-    const id = String(doc.task.id || "").replace(/[^A-Za-z0-9_.-]/g, "-") || "prompt";
-    const blob = new Blob([PL.buildYaml(doc)], {type: "text/yaml"});
+    const exp = ntExported();
+    const id = String(exp.task.id || "").replace(/[^A-Za-z0-9_.-]/g, "-") || "prompt";
+    const blob = new Blob([PL.buildYaml(exp)], {type: "text/yaml"});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = id + ".yaml";
     a.click();
