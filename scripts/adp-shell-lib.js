@@ -692,10 +692,27 @@
     ["task", "map"], ["role", "map"], ["constraints", "map"], ["context", "map"], ["output", "map"], ["protocol", "map"],
     ["role.priorities", "plains"], ["constraints.out_of_scope", "plains"], ["constraints.must_not", "plains"],
     ["context.references", "maps"], ["context.links", "plains"],
-    ["lessons_learned", "maps"], ["requirements", "maps"], ["protocol.defers", "maps"]
+    ["lessons_learned", "maps"], ["requirements", "maps"],
+    ["protocol.artifacts", "plains"], ["protocol.defers", "maps"]
   ];
   const SHAPE_OK = {text: x => typeof x === "string", map: isMap, maps: isMap, plains: isPlain};
   const SHAPE_NAME = {text: "text", map: "a map", maps: "a map", plains: "a plain value"};
+  /* A field inside a list item holds a plain value, because one input holds
+     it and the export quotes it. A map or a list under a field reaches the
+     input as [object Object] and the bytes carry the same text, so the field
+     is dropped and named. A stranger key on the row rides along unnamed,
+     because the export drops it and neither builder names it. The item is
+     copied before the drop, the way a block is. An empty field parses as null
+     and places nothing. */
+  function placeableRow(at, item, issues){
+    const row = Object.assign({}, item);
+    Object.keys(row).forEach(k => {
+      if (row[k] == null || isPlain(row[k])) return;
+      issues.push(`${at}.${k} is not a plain value; skipped`);
+      delete row[k];
+    });
+    return row;
+  }
   /* The document with every key and list item the form has no place for
      dropped, and a line naming each drop in the standalone's wording. An
      absent or null key is nothing to place and nothing to drop. The page
@@ -711,11 +728,12 @@
       const v = o[key];
       if (shape === "maps" || shape === "plains"){
         if (!Array.isArray(v)){ issues.push(`${path} is not a list; skipped`); delete o[key]; continue; }
-        o[key] = v.filter((x, i) => {
-          if (SHAPE_OK[shape](x)) return true;
-          issues.push(`${path}[${i}] is not ${SHAPE_NAME[shape]}; skipped`);
-          return false;
+        const kept = [];
+        v.forEach((x, i) => {
+          if (!SHAPE_OK[shape](x)){ issues.push(`${path}[${i}] is not ${SHAPE_NAME[shape]}; skipped`); return; }
+          kept.push(shape === "maps" ? placeableRow(`${path}[${i}]`, x, issues) : x);
         });
+        o[key] = kept;
       } else if (!SHAPE_OK[shape](v)){
         issues.push(`${path} is not ${SHAPE_NAME[shape]}; skipped`);
         delete o[key];
@@ -726,18 +744,35 @@
     return {doc, issues};
   }
 
-  // Every drop placeable() makes, then an enum value the form's selects
-  // cannot show, whatever its type; a YAML true is one. The page clears the
-  // value on adoption, so the bytes and the form agree. An empty value is
-  // the blank select and clears nothing.
+  // The four protocol switches, each with the label its toggle prints. The
+  // page reads the keys to coerce an imported value to the toggle's state.
+  const NT_SWITCHES = [["apply", "apply protocol"], ["stake_single_recommendation", "stake recommendation"],
+    ["log_assumptions", "log assumptions"], ["flag_low_confidence", "flag low confidence"]];
+  /* Every drop placeable() makes, then a value no control on the form can
+     show: the format select, a phase select, an artifact chip, or one of the
+     four protocol toggles. The type does not matter, and a YAML true is one
+     such value. The lines read the walk's copy, so a row number names the row
+     the form shows and a dropped item is named once. The page clears the
+     value on adoption, or reads it as the toggle's own state, so the bytes
+     and the form agree. An empty value is the blank select and clears
+     nothing. An absent toggle is left to the badge, which asks for it. */
   function unknownValues(obj){
-    const issues = placeable(obj).issues;
-    const fmt = isMap(obj) && isMap(obj.output) ? obj.output.format : null;
+    const {doc, issues} = placeable(obj);
+    const fmt = isMap(doc.output) ? doc.output.format : null;
     if (fmt != null && fmt !== "" && !PL.FORMATS.includes(fmt))
       issues.push(`output.format "${String(fmt)}" is not a format; cleared`);
-    const defers = isMap(obj) && isMap(obj.protocol) && Array.isArray(obj.protocol.defers) ? obj.protocol.defers : [];
+    const proto = isMap(doc.protocol) ? doc.protocol : {};
+    const artifacts = Array.isArray(proto.artifacts) ? proto.artifacts : [];
+    artifacts.forEach(a => {
+      if (!PL.ARTIFACTS.includes(a)) issues.push(`protocol.artifacts "${String(a)}" is not an artifact; cleared`);
+    });
+    NT_SWITCHES.forEach(([k]) => {
+      if (k in proto && typeof proto[k] !== "boolean")
+        issues.push(`protocol.${k} "${String(proto[k])}" is not true or false; kept as ${!!proto[k]}`);
+    });
+    const defers = Array.isArray(proto.defers) ? proto.defers : [];
     defers.forEach((d, i) => {
-      if (isMap(d) && d.phase != null && d.phase !== "" && !PL.PHASES.includes(d.phase))
+      if (d.phase != null && d.phase !== "" && !PL.PHASES.includes(d.phase))
         issues.push(`protocol.defers[${i}].phase "${String(d.phase)}" is not a phase; cleared`);
     });
     return issues;
@@ -849,8 +884,7 @@
       + `<div>${ntLabel("format", "nt_fmt")}<select class="nt-in${o.format ? "" : " is-unset"}" id="nt_fmt" data-nf="output.format" aria-label="format">${fmtOpts}</select></div></div>`
       + ntLabel("structure", "nt_struct") + ntArea("output.structure", o.structure, "How the output is organized", "nt_struct", "nt-short")
       + `</div>`;
-    const switches = [["apply", "apply protocol"], ["stake_single_recommendation", "stake recommendation"],
-      ["log_assumptions", "log assumptions"], ["flag_low_confidence", "flag low confidence"]].map(([k, text]) =>
+    const switches = NT_SWITCHES.map(([k, text]) =>
       `<label class="nt-tog${p[k] ? " is-on" : ""}"><input type="checkbox" data-nf="protocol.${k}"${p[k] ? " checked" : ""}> ${esc(text)}</label>`).join("");
     const chips = PL.ARTIFACTS.map(a =>
       `<label class="nt-chip${artifacts.includes(a) ? " is-on" : ""}"><input type="checkbox" data-nart="${a}"${artifacts.includes(a) ? " checked" : ""}> ${a}</label>`).join("");
@@ -871,7 +905,7 @@
       + `<div class="ipanel nt-side" id="ntSide">${builderSideHtml(m)}</div></div>`;
   }
 
-  const ADPShellLib = {SCREENS, TAB_SCREENS, localDate, tabsHtml, footerText,
+  const ADPShellLib = {NT_SWITCHES, SCREENS, TAB_SCREENS, localDate, tabsHtml, footerText,
     projectChitText, applyTheme, hashRead, hashWrite, logPaths, corpusUrl,
     loadCorpus, railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml,
     docPaneHtml, rawPaneHtml, pillsHtml, pillGroupHtml, decisionsPanelHtml, watchesPanelHtml,

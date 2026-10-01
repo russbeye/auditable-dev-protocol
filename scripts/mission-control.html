@@ -616,9 +616,17 @@
     // fill, so normalize cannot blank it into a row the bytes never carry.
     const d = PL.normalize(S.placeable(parsed).doc);
     d.schema_version = "1.0";
-    // A value the select cannot show is cleared, so the form and the bytes
-    // agree; the standalone's select does the same when it is assigned one.
+    // A value the select cannot show is cleared and a name no chip carries is
+    // dropped, so the form and the bytes agree. The standalone's select does
+    // the same when it is assigned one.
     if (!PL.FORMATS.includes(d.output.format)) d.output.format = "";
+    d.protocol.artifacts = d.protocol.artifacts.filter(a => PL.ARTIFACTS.includes(a));
+    // A toggle holds a boolean and reads a foreign value as on or off, so the
+    // document takes the state the toggle shows. An absent key stays absent,
+    // because the badge has to keep asking for it.
+    S.NT_SWITCHES.forEach(([k]) => {
+      if (k in d.protocol && typeof d.protocol[k] !== "boolean") d.protocol[k] = !!d.protocol[k];
+    });
     if (Array.isArray(d.protocol.defers)){
       d.protocol.defers.forEach(x => { if (!PL.PHASES.includes(x.phase)) x.phase = ""; });
       if (!d.protocol.defers.length) delete d.protocol.defers;
@@ -770,6 +778,9 @@
   function replaceForm(label, apply){
     const go = () => { nt.pending = null; apply(); renderNew(); showNew(); ntDraftNow(); };
     if (!dirty()){ go(); return; }
+    // The earlier import's report sits in the same row as the question, where
+    // a reader takes it for a summary of the file being offered.
+    nt.report = null;
     nt.pending = {label, go};
     renderNewOps(); showNew();
   }
@@ -1183,7 +1194,12 @@
       return;
     }
     if (e.target.id === "ntReplace"){ if (nt.pending) nt.pending.go(); return; }
-    if (e.target.id === "ntKeep"){ nt.pending = null; renderNewOps(); return; }
+    // Keeping the form drops the import, and the drawer still holds the text,
+    // so the line says what became of the file rather than leaving the row bare.
+    if (e.target.id === "ntKeep"){
+      if (nt.pending) nt.report = {tone: "ok", text: `kept the form — ${nt.pending.label} was not imported.`};
+      nt.pending = null; renderNewOps(); return;
+    }
     const op = hit(".op");
     if (op){
       const nop = op.getAttribute("data-op") || "";

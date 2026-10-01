@@ -2419,3 +2419,118 @@ test("placeable drops a block of the wrong shape, names it, and leaves its input
   assert.deepEqual(S.placeable(null), {doc: {}, issues: []});
   assert.deepEqual(S.unknownValues(PL.exampleDocument()), []);
 });
+
+// ---- the page: new task, review round six ----
+
+test("an artifact name no chip carries is named and dropped, and the export carries the ticked chips only", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  const ticked = () => h.$$("input").filter(i => i.checked && i.getAttribute("data-nart")).map(i => i.getAttribute("data-nart"));
+  pasteIn(h, GOLDEN.replace("    - decision_log\n",
+    "    - decision_log\n    - 7\n    - not_an_artifact\n    - a: 1\n"));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 3 issues/);
+  assert.match(ops, /protocol\.artifacts\[3\] is not a plain value; skipped/);
+  assert.match(ops, /protocol\.artifacts "7" is not an artifact; cleared/);
+  assert.match(ops, /protocol\.artifacts "not_an_artifact" is not an artifact; cleared/);
+  assert.deepEqual(ticked(), ["decision_log", "test_adversary"]);
+  const y = preview(h);
+  assert.match(y, /  artifacts:\n    - decision_log\n    - test_adversary\n/);
+  // The bytes read back as the chips the form ticks, with nothing stringified.
+  const skipped = [];
+  assert.deepEqual(PL.parseYAML(y, skipped).protocol.artifacts, ["decision_log", "test_adversary"]);
+  assert.deepEqual(skipped, []);
+});
+
+test("a map where a field's value belongs is dropped and named, and its row keeps its place", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN
+    .replace('    - path: "src/signup/handler.ts"', "    - path:\n        deep: 1")
+    .replace('  - id: "R1"', "  - id:\n      deep: 1"));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 2 issues/);
+  assert.match(ops, /context\.references\[0\]\.path is not a plain value; skipped/);
+  assert.match(ops, /requirements\[0\]\.id is not a plain value; skipped/);
+  // The row stands with the field blank, and the badge asks for it by key.
+  assert.equal(field(h, "context.references.0.path").value, "");
+  assert.equal(field(h, "context.references.0.lines").value, "42-88");
+  assert.equal(field(h, "requirements.0.id").value, "");
+  assert.equal(field(h, "requirements.0.statement").value, "A malformed email returns 422 and is not persisted");
+  assert.match(h.$("#ntSide").innerHTML, /<code>context\.references\[0\]\.path<\/code>/);
+  assert.match(h.$("#ntSide").innerHTML, /<code>requirements\[0\]\.id<\/code>/);
+  const y = preview(h);
+  assert.ok(!/\[object Object\]/.test(y));
+  assert.match(y, /    - path: ""\n      lines: "42-88"\n/);
+});
+
+test("placeable copies a list item before it drops a field, and an empty field places nothing", () => {
+  const raw = {context: {references: [{path: {deep: 1}, lines: "1-2"}]}, requirements: [{id: ["a"]}]};
+  const before = JSON.stringify(raw);
+  const {doc, issues} = S.placeable(raw);
+  assert.deepEqual(issues, ["context.references[0].path is not a plain value; skipped",
+    "requirements[0].id is not a plain value; skipped"]);
+  assert.deepEqual(doc.context.references, [{lines: "1-2"}]);
+  assert.deepEqual(doc.requirements, [{}]);
+  assert.equal(JSON.stringify(raw), before);
+  assert.deepEqual(S.placeable({requirements: [{id: null}]}), {doc: {requirements: [{id: null}]}, issues: []});
+  // A stranger key on the row rides along unnamed, the way both builders
+  // leave it, and the export drops it.
+  assert.deepEqual(S.placeable({requirements: [{id: "R1", bogus: "x"}]}),
+    {doc: {requirements: [{id: "R1", bogus: "x"}]}, issues: []});
+});
+
+test("a toggle value that is not true or false is named and read as the state the toggle shows", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN.replace("  apply: true", '  apply: "yes"').replace("  flag_low_confidence: true", "  flag_low_confidence: 0"));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 2 issues/);
+  assert.match(ops, /protocol\.apply "yes" is not true or false; kept as true/);
+  assert.match(ops, /protocol\.flag_low_confidence "0" is not true or false; kept as true/);
+  const sw = h.$$("input").filter(i => /^protocol\.(apply|flag_low_confidence)$/.test(i.getAttribute("data-nf") || ""));
+  assert.deepEqual(sw.map(i => i.checked), [true, true]);
+  const y = preview(h);
+  assert.match(y, /  apply: true\n/);
+  assert.match(y, /  flag_low_confidence: true\n/);
+  assert.equal(h.$("#ntSide").innerHTML.indexOf("protocol.apply"), -1);
+  // A toggle the paste leaves out is the badge's business, not the report's.
+  assert.deepEqual(S.unknownValues({protocol: {stake_single_recommendation: true}}), []);
+  assert.ok(PL.validate({protocol: {stake_single_recommendation: true}}).some(([k]) => k === "protocol.apply"));
+});
+
+test("the enum report numbers the row the form shows, not the row the paste held", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN.replace("  defers:\n", "  defers:\n    - later\n").replace('phase: "communication"', 'phase: "deploy"'));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 2 issues/);
+  assert.match(ops, /protocol\.defers\[0\] is not a map; skipped/);
+  assert.match(ops, /protocol\.defers\[0\]\.phase "deploy" is not a phase; cleared/);
+  assert.ok(!/protocol\.defers\[1\]\.phase/.test(ops));
+  assert.equal(field(h, "protocol.defers.0.phase").value, "");
+  assert.equal(field(h, "protocol.defers.1.phase").value, "obligations");
+});
+
+test("the pending question stands alone, and keeping the form says the paste was dropped", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, 'foo: 1\ntask:\n  id: "A-1"\n');
+  assert.match(h.$("#ntOps").innerHTML, /imported the paste with 1 issue: foo/);
+  ntOp(h, "ntpaste");
+  h.$("#ntPaste").value = GOLDEN;
+  h.click(h.$("#ntImport"));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /replace it with the paste\?/);
+  assert.equal((ops.match(/class="nt-report/g) || []).length, 1);
+  h.click(h.$("#ntKeep"));
+  // The form stands, the drawer still holds the text, and the line says so.
+  assert.match(h.$("#ntOps").innerHTML, /kept the form — the paste was not imported\./);
+  assert.equal(h.$("#ntPaste").value, GOLDEN);
+  assert.equal(field(h, "task.id").value, "A-1");
+});

@@ -460,18 +460,21 @@
      so an untouched form never flags a field its export leaves out. If you
      change an emission guard in buildYaml, change its rule here too. The
      argument is edited in place; a caller that keeps its document passes a
-     copy. */
+     copy. Each omission reads the shape it omits and leaves any other value
+     alone. That keeps us total over a document normalize() has not filled,
+     and it hands validate() a wrong-typed block to report itself. */
   function asExported(d){
+    if(!isObj(d)) return d;
     // buildYaml omits an all-blank role group, so the lens presence rule
     // must not see one.
-    if(!d.role.lens && !d.role.priorities.length) delete d.role;
+    if(isObj(d.role) && !d.role.lens && !asList(d.role.priorities).length) delete d.role;
     // buildYaml drops all-empty requirement rows. Filtering here keeps the
     // remaining rows on the same indexes the export gives them.
-    d.requirements=d.requirements.filter(r=>r.id||r.statement||r.verify);
+    if(Array.isArray(d.requirements)) d.requirements=d.requirements.filter(r=>!isObj(r)||r.id||r.statement||r.verify);
     // buildYaml drops all-empty lesson rows too, but filtering would shift
     // the index of a flagged row behind an empty one. A placeholder that
     // passes validation keeps every index where the panel already points.
-    d.lessons_learned=d.lessons_learned.map(x=>x.context||x.takeaway?x:{context:"-",takeaway:"-"});
+    if(Array.isArray(d.lessons_learned)) d.lessons_learned=d.lessons_learned.map(x=>!isObj(x)||x.context||x.takeaway?x:{context:"-",takeaway:"-"});
     return d;
   }
 

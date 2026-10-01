@@ -75,3 +75,15 @@ test("a partly filled form flags the same keys on the standalone and through the
   d.lessons_learned = [{context: "tried once", takeaway: ""}];
   assert.deepEqual(h.issueKeys(), keysOf(d));
 });
+
+test("asExported is total over a document normalize has not filled, and hides nothing from validate", () => {
+  // Each omission reads the shape it omits, so a raw document comes back as it
+  // went in and validate still judges the structure its author wrote.
+  const raws = [{task: {id: "T-1"}}, {role: {lens: "x"}}, {requirements: "x", lessons_learned: "s"},
+    {requirements: ["x", {id: "R1", statement: "s", verify: "v"}]}, {lessons_learned: [null]}, null, []];
+  for (const raw of raws){
+    const note = JSON.stringify(raw);
+    assert.deepEqual(lib.asExported(JSON.parse(JSON.stringify(raw))), raw, note);
+    assert.deepEqual(keysOf(raw), lib.validate(JSON.parse(JSON.stringify(raw))).map(([k]) => k), note);
+  }
+});
