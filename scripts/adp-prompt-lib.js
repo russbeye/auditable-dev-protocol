@@ -167,7 +167,10 @@
     const defers=Array.isArray(d.protocol.defers)?d.protocol.defers.filter(isObj):[];
     if(defers.length){
       L.push("  defers:");
-      defers.forEach(x=>{ L.push(`    - phase: ${qstr(x.phase)}`); L.push(`      reason: ${qstr(x.reason)}`); });
+      // A hand-written item can leave a field out, and qstr over undefined
+      // writes the text undefined into the file. An absent field is nothing
+      // written, so we write the empty string the builders both export.
+      defers.forEach(x=>{ L.push(`    - phase: ${qstr(x.phase||"")}`); L.push(`      reason: ${qstr(x.reason||"")}`); });
     }
     return L.join("\n").replace(/\n{3,}/g,"\n\n").replace(/\s+$/,"")+"\n";
   }
@@ -468,9 +471,15 @@
     // buildYaml omits an all-blank role group, so the lens presence rule
     // must not see one.
     if(isObj(d.role) && !d.role.lens && !asList(d.role.priorities).length) delete d.role;
-    // buildYaml drops all-empty requirement rows. Filtering here keeps the
-    // remaining rows on the same indexes the export gives them.
-    if(Array.isArray(d.requirements)) d.requirements=d.requirements.filter(r=>!isObj(r)||r.id||r.statement||r.verify);
+    // buildYaml drops all-empty requirement rows. Filtering would shift the
+    // index of a flagged row behind an empty one, so a placeholder that passes
+    // validation keeps every index where the panel points. A list with no real
+    // row keeps the filter, because the export then carries no requirement and
+    // the panel has to ask for one.
+    if(Array.isArray(d.requirements)){
+      const kept=d.requirements.filter(r=>!isObj(r)||r.id||r.statement||r.verify);
+      d.requirements=kept.length?d.requirements.map(r=>isObj(r)&&!r.id&&!r.statement&&!r.verify?{id:"-",statement:"-",verify:"-"}:r):kept;
+    }
     // buildYaml drops all-empty lesson rows too, but filtering would shift
     // the index of a flagged row behind an empty one. A placeholder that
     // passes validation keeps every index where the panel already points.

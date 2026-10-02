@@ -629,7 +629,15 @@
       if (k in d.protocol && typeof d.protocol[k] !== "boolean") d.protocol[k] = !!d.protocol[k];
     });
     if (Array.isArray(d.protocol.defers)){
-      d.protocol.defers.forEach(x => { if (!PL.PHASES.includes(x.phase)) x.phase = ""; });
+      // normalize fills a reference, a lesson, and a requirement row to the
+      // blank row's shape, and it passes a deferral through whole, so the
+      // fill happens here. A field the paste leaves out would reach the
+      // export as the text undefined.
+      d.protocol.defers = d.protocol.defers.map(x => {
+        const row = Object.assign(S.blankRow("protocol.defers"), x);
+        if (!PL.PHASES.includes(row.phase)) row.phase = "";
+        return row;
+      });
       if (!d.protocol.defers.length) delete d.protocol.defers;
     }
     return d;

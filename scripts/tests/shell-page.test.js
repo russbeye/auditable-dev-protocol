@@ -2719,3 +2719,48 @@ test("imported artifacts take the chip row's order with each name once", async (
   await b.importText(text);
   assert.equal(y, await b.exportYaml());
 });
+
+// ---- the page: new task, review round nine ----
+
+test("an imported deferral with no reason exports the blank, and both builders write the same bytes", async () => {
+  const text = GOLDEN.replace('      reason: "Ships behind the existing signup flag, so no deploy note goes out"\n', "");
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, text);
+  assert.equal(field(h, "protocol.defers.0.reason").value, "");
+  assert.equal(field(h, "protocol.defers.0.phase").value, "communication");
+  const y = preview(h);
+  assert.ok(!/undefined/.test(y));
+  assert.match(y, /    - phase: "communication"\n      reason: ""\n/);
+  // The badge still asks for the field the paste left out.
+  assert.match(h.$("#ntSide").innerHTML, /<code>protocol\.defers\[0\]\.reason<\/code>/);
+  const b = bootBuilder();
+  await b.importText(text);
+  assert.equal(y, await b.exportYaml());
+});
+
+test("the badge numbers a requirement row the way the form does", async () => {
+  const addReq = h => h.click(h.$$(".nt-add").find(b => b.getAttribute("data-nadd") === "requirements"));
+  const keysOf = h => (h.$("#ntSide").innerHTML.match(/<code>[^<]*<\/code>/g) || []).map(x => x.replace(/<\/?code>/g, ""));
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  addReq(h);
+  addReq(h);
+  h.input(field(h, "requirements.1.id"), "R9");
+  // The partial row sits second on the screen, so the panel names it second.
+  assert.ok(keysOf(h).includes("requirements[1].statement"));
+  assert.ok(!keysOf(h).some(k => /^requirements\[0\]/.test(k)));
+  const y = preview(h);
+  assert.match(y, /requirements:\n  - id: "R9"\n/);
+  assert.ok(!y.includes('id: "-"'));
+  // A list with no real row asks for a requirement rather than reading the
+  // placeholder as one.
+  const h2 = bootShell({stored: "dark"});
+  await h2.settle();
+  newTab(h2);
+  addReq(h2);
+  assert.ok(keysOf(h2).includes("requirements"));
+  assert.ok(!keysOf(h2).some(k => /^requirements\[/.test(k)));
+});

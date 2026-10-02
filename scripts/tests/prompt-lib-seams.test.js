@@ -23,13 +23,19 @@ test("exampleDocument equals the golden example fixture and hands out a fresh co
   assert.equal(lib.exampleDocument().task.id, fixture.task.id);
 });
 
-test("asExported drops an all-blank role, filters empty requirement rows, and placeholders empty lesson rows", () => {
+test("asExported drops an all-blank role and placeholders an empty requirement or lesson row", () => {
   const d = lib.blankDocument();
   d.requirements = [{id: "", statement: "", verify: ""}, {id: "R1", statement: "s", verify: "v"}];
   d.lessons_learned = [{context: "", takeaway: ""}, {context: "c", takeaway: ""}];
   const out = lib.asExported(JSON.parse(JSON.stringify(d)));
   assert.equal("role" in out, false);
-  assert.deepEqual(out.requirements, [{id: "R1", statement: "s", verify: "v"}]);
+  assert.deepEqual(out.requirements, [{id: "-", statement: "-", verify: "-"}, {id: "R1", statement: "s", verify: "v"}]);
+  // A list with no real row keeps the filter, so the panel asks for a
+  // requirement instead of reading a placeholder as one.
+  const e = lib.blankDocument();
+  e.requirements = [{id: "", statement: "", verify: ""}];
+  assert.deepEqual(lib.asExported(JSON.parse(JSON.stringify(e))).requirements, []);
+  assert.deepEqual(keysOf(e).filter(k => /requirements/.test(k)), ["requirements"]);
   // The empty row keeps its index as a passing placeholder, so the flagged
   // row behind it still reads lessons_learned[1].
   assert.deepEqual(out.lessons_learned, [{context: "-", takeaway: "-"}, {context: "c", takeaway: ""}]);
