@@ -616,11 +616,12 @@
     // fill, so normalize cannot blank it into a row the bytes never carry.
     const d = PL.normalize(S.placeable(parsed).doc);
     d.schema_version = "1.0";
-    // A value the select cannot show is cleared and a name no chip carries is
-    // dropped, so the form and the bytes agree. The standalone's select does
-    // the same when it is assigned one.
+    // A value the select cannot show is cleared, and the artifacts take the
+    // chip row's own order with each name once, so two forms ticking the same
+    // chips export the same bytes. A name no chip carries falls out of that
+    // filter. The standalone's select and checkboxes do the same.
     if (!PL.FORMATS.includes(d.output.format)) d.output.format = "";
-    d.protocol.artifacts = d.protocol.artifacts.filter(a => PL.ARTIFACTS.includes(a));
+    d.protocol.artifacts = PL.ARTIFACTS.filter(a => d.protocol.artifacts.includes(a));
     // A toggle holds a boolean and reads a foreign value as on or off, so the
     // document takes the state the toggle shows. An absent key stays absent,
     // because the badge has to keep asking for it.
@@ -826,7 +827,14 @@
     catch(e){ write = Promise.reject(e); }
     Promise.resolve(write).then(
       () => { nt.copyLabel = "copied"; renderNewSide(); },
-      () => { nt.copyLabel = "copy failed — select the text"; renderNewSide(); });
+      () => {
+        // The text the label sends the reader to is hidden until the yaml
+        // panel opens, so a denied write opens it and scrolls to it.
+        nt.copyLabel = "copy failed — select the text";
+        nt.showYaml = true;
+        renderNew();
+        $("#ntYaml").scrollIntoView();
+      });
     setTimeout(() => { nt.copyLabel = null; renderNewSide(); }, 1200);
   }
   function ntDownload(){

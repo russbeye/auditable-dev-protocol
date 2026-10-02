@@ -2031,6 +2031,9 @@ test("copy, download, and the directory line carry the export bytes and the conv
   ntOp(h2, "ntcopy");
   await h2.settle();
   assert.match(h2.$("#ntSide").innerHTML, /copy failed — select the text/);
+  // The label sends the reader to the text, so the panel holding it opens.
+  assert.ok(h2.$("#ntYamlPre"));
+  assert.equal(h2.$("#ntYamlPre").textContent, preview(h2));
   assert.equal(h2.clipboard.length, 0);
 });
 
@@ -2416,7 +2419,8 @@ test("placeable drops a block of the wrong shape, names it, and leaves its input
   const {doc, issues} = S.placeable(raw);
   assert.deepEqual(issues, ["prompt is not text; skipped", "task is not a map; skipped",
     "role.priorities[3] is not a plain value; skipped", "protocol.defers is not a list; skipped"]);
-  assert.deepEqual(doc, {preamble: null, role: {priorities: ["a", 5, true]}, protocol: {apply: true}});
+  // A list item reads as the text an input would show, the way setLine does.
+  assert.deepEqual(doc, {preamble: null, role: {priorities: ["a", "5", "true"]}, protocol: {apply: true}});
   assert.equal(JSON.stringify(raw), before);
   // A null key is nothing to place and nothing to drop, and an absent
   // document places nothing.
@@ -2471,7 +2475,7 @@ test("a map where a field's value belongs is dropped and named, and its row keep
   assert.match(y, /    - path: ""\n      lines: "42-88"\n/);
 });
 
-test("placeable copies a list item before it drops a field, and an empty field places nothing", () => {
+test("placeable copies a list item before it drops a field, and an empty field takes the blank the input shows", () => {
   const raw = {context: {references: [{path: {deep: 1}, lines: "1-2"}]}, requirements: [{id: ["a"]}]};
   const before = JSON.stringify(raw);
   const {doc, issues} = S.placeable(raw);
@@ -2480,7 +2484,9 @@ test("placeable copies a list item before it drops a field, and an empty field p
   assert.deepEqual(doc.context.references, [{lines: "1-2"}]);
   assert.deepEqual(doc.requirements, [{}]);
   assert.equal(JSON.stringify(raw), before);
-  assert.deepEqual(S.placeable({requirements: [{id: null}]}), {doc: {requirements: [{id: null}]}, issues: []});
+  // The export writes every field of a row it keeps, so an empty one is the
+  // blank string, not a null that reads back as the text null.
+  assert.deepEqual(S.placeable({requirements: [{id: null}]}), {doc: {requirements: [{id: ""}]}, issues: []});
   // A stranger key on the row rides along unnamed, the way both builders
   // leave it, and the export drops it.
   assert.deepEqual(S.placeable({requirements: [{id: "R1", bogus: "x"}]}),
@@ -2655,4 +2661,61 @@ test("a draft nobody has typed into takes today's date, and one with content kee
   await h3.settle();
   newTab(h3);
   assert.equal(field(h3, "task.date").value, "2026-09-28");
+});
+
+// ---- the page: new task, review round eight ----
+
+test("an empty field in an imported row exports blank, and both builders write the same bytes", async () => {
+  const text = GOLDEN.replace('    verify: "Integration test posts a bad address and asserts 422 plus no new row"', "    verify:");
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, text);
+  assert.equal(field(h, "requirements.0.verify").value, "");
+  const y = preview(h);
+  assert.match(y, /    verify: ""\n/);
+  assert.ok(!/"null"/.test(y));
+  // The badge and the bytes agree that the field is empty.
+  assert.match(h.$("#ntSide").innerHTML, /<code>requirements\[0\]\.verify<\/code>/);
+  const b = bootBuilder();
+  await b.importText(text);
+  assert.equal(y, await b.exportYaml());
+});
+
+test("a number or a boolean in a field reads as its text, and a block scalar takes one too", async () => {
+  const text = GOLDEN
+    .replace('  title: "Add server-side validation to the signup email field"', "  title: true")
+    .replace("  background: |\n    Signup currently trusts the client to validate. Bad addresses reach the users table.", "  background: 5");
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, text);
+  assert.match(h.$("#ntOps").innerHTML, /imported the paste — all recognized fields/);
+  assert.equal(field(h, "task.title").value, "true");
+  assert.equal(field(h, "context.background").value, "5");
+  assert.match(h.$("#ntSide").innerHTML, /valid · schema 1\.0/);
+  const y = preview(h);
+  assert.match(y, /  title: "true"\n/);
+  assert.match(y, /  background: \|\n    5\n/);
+  const b = bootBuilder();
+  await b.importText(text);
+  assert.equal(y, await b.exportYaml());
+  // The two keys that carry a whole prompt still take text only.
+  assert.deepEqual(S.placeable({preamble: 5}), {doc: {}, issues: ["preamble is not text; skipped"]});
+});
+
+test("imported artifacts take the chip row's order with each name once", async () => {
+  const text = GOLDEN.replace("    - decision_log\n    - test_adversary",
+    "    - test_adversary\n    - decision_log\n    - decision_log");
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, text);
+  assert.deepEqual(h.$$("input").filter(i => i.checked && i.getAttribute("data-nart")).map(i => i.getAttribute("data-nart")),
+    ["decision_log", "test_adversary"]);
+  const y = preview(h);
+  assert.match(y, /  artifacts:\n    - decision_log\n    - test_adversary\n/);
+  const b = bootBuilder();
+  await b.importText(text);
+  assert.equal(y, await b.exportYaml());
 });

@@ -684,45 +684,49 @@
 
   const isMap = x => !!x && typeof x === "object" && !Array.isArray(x);
   const isPlain = x => typeof x === "string" || typeof x === "number" || typeof x === "boolean";
-  /* The shape each placed key takes. A text key is a textarea and keeps its
-     newlines. A line key is one input, so it holds a plain value on one line.
-     The rest are a map, a list of maps, or a list of plain values, whose items
-     are lines themselves. A block precedes its keys, so its copy exists
-     before a key under it is dropped. */
+  /* The shape each placed key takes. A text key and a block key are both
+     textareas and keep their newlines, and the difference is what the
+     standalone accepts: text only for the two that carry a whole prompt, any
+     plain value for the other two. A line key is one input, so it holds a
+     plain value on one line. The rest are a map, a list of maps, or a list of
+     plain values, whose items are lines themselves. A block precedes its
+     keys, so its copy exists before a key under it is dropped. */
   const NT_SHAPES = [
     ["preamble", "text"], ["prompt", "text"],
     ["task", "map"], ["role", "map"], ["constraints", "map"], ["context", "map"], ["output", "map"], ["protocol", "map"],
     ["task.id", "line"], ["task.title", "line"], ["task.author", "line"], ["task.date", "line"],
     ["role.lens", "line"], ["role.priorities", "plains"],
     ["constraints.out_of_scope", "plains"], ["constraints.must_not", "plains"],
-    ["context.background", "text"], ["context.references", "maps"], ["context.links", "plains"],
+    ["context.background", "block"], ["context.references", "maps"], ["context.links", "plains"],
     ["lessons_learned", "maps"], ["requirements", "maps"],
-    ["output.format", "line"], ["output.destination", "line"], ["output.structure", "text"],
+    ["output.format", "line"], ["output.destination", "line"], ["output.structure", "block"],
     ["protocol.artifacts", "plains"], ["protocol.defers", "maps"]
   ];
-  const SHAPE_OK = {text: x => typeof x === "string", line: isPlain, map: isMap, maps: isMap, plains: isPlain};
-  const SHAPE_NAME = {text: "text", line: "a plain value", map: "a map", maps: "a map", plains: "a plain value"};
-  /* A value an input holds sits on one line, so the newlines of a block
-     scalar collapse to spaces and the change is named. This is the
-     standalone's setLine rule. An input strips the newlines itself, and a
-     single-line key writes its value between quotes, where a newline would
-     break the line the export writes. */
+  const SHAPE_OK = {text: x => typeof x === "string", block: isPlain, line: isPlain, map: isMap, maps: isMap, plains: isPlain};
+  const SHAPE_NAME = {text: "text", block: "a plain value", line: "a plain value", map: "a map", maps: "a map", plains: "a plain value"};
+  /* A value an input holds is text on one line, so a number or a boolean
+     reads as the input would show it and the newlines of a block scalar
+     collapse to spaces. This is the standalone's setLine rule. A field that
+     keeps its type would leave the badge asking for a field the export
+     fills, and a newline would break the line the export writes. */
   function placeLine(at, v, issues){
-    if (typeof v !== "string" || v.indexOf("\n") < 0) return v;
+    const s = String(v);
+    if (s.indexOf("\n") < 0) return s;
     issues.push(`${at} (multiline value flattened to one line)`);
-    return v.replace(/\n+/g, " ");
+    return s.replace(/\n+/g, " ");
   }
   /* A field inside a list item holds a plain value, because one input holds
      it and the export quotes it. A map or a list under a field reaches the
      input as [object Object] and the bytes carry the same text, so the field
      is dropped and named. A stranger key on the row rides along unnamed,
      because the export drops it and neither builder names it. The item is
-     copied before the drop, the way a block is. An empty field parses as null
-     and places nothing. */
+     copied before the drop, the way a block is. An empty field parses as
+     null, and the blank the input shows takes its place, because the export
+     writes every field of a row it keeps. */
   function placeableRow(at, item, issues){
     const row = Object.assign({}, item);
     Object.keys(row).forEach(k => {
-      if (row[k] == null) return;
+      if (row[k] == null){ row[k] = ""; return; }
       if (isPlain(row[k])){ row[k] = placeLine(`${at}.${k}`, row[k], issues); return; }
       issues.push(`${at}.${k} is not a plain value; skipped`);
       delete row[k];
@@ -757,6 +761,8 @@
         doc[key] = Object.assign({}, v);
       } else if (shape === "line"){
         o[key] = placeLine(path, v, issues);
+      } else if (shape === "block"){
+        o[key] = String(v);
       }
     }
     return {doc, issues};
