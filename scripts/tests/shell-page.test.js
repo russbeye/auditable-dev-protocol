@@ -2764,3 +2764,39 @@ test("the badge numbers a requirement row the way the form does", async () => {
   assert.ok(keysOf(h2).includes("requirements"));
   assert.ok(!keysOf(h2).some(k => /^requirements\[/.test(k)));
 });
+
+// ---- the page: new task, review round ten ----
+
+test("an artifacts key with no value imports as the untouched chip row on both builders", async () => {
+  const text = 'task:\n  id: "A-1"\nprotocol:\n  apply: true\n  artifacts:\n';
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, text);
+  assert.match(h.$("#ntOps").innerHTML, /imported the paste — all recognized fields/);
+  assert.equal(field(h, "task.id").value, "A-1");
+  assert.deepEqual(h.$$("input").filter(i => i.checked && i.getAttribute("data-nart")).map(i => i.getAttribute("data-nart")),
+    PL.DEFAULT_ARTIFACTS);
+  const b = bootBuilder();
+  await b.importText(text);
+  assert.equal(preview(h), await b.exportYaml());
+});
+
+test("the slug input holds the slug a person typed, and the directory line holds the name the export lands under", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.input(field(h, "task.title"), "First title");
+  h.click(h.$$(".nt-add").find(b => b.getAttribute("data-nadd") === "context.links"));
+  // The redraw leaves the input empty, so a later title cannot go stale in it.
+  assert.equal(h.$("#ntSlug").value, "");
+  assert.match(h.$("#ntDir").textContent, /-first-title\/prompt\.yaml$/);
+  h.input(field(h, "task.title"), "Second title");
+  assert.equal(h.$("#ntSlug").value, "");
+  assert.match(h.$("#ntDir").textContent, /-second-title\/prompt\.yaml$/);
+  // A typed slug owns the line, and clearing it hands the line back.
+  h.input(h.$("#ntSlug"), "mine");
+  assert.match(h.$("#ntDir").textContent, /-mine\/prompt\.yaml$/);
+  h.input(h.$("#ntSlug"), "");
+  assert.match(h.$("#ntDir").textContent, /-second-title\/prompt\.yaml$/);
+});

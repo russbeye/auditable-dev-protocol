@@ -621,7 +621,11 @@
     // chips export the same bytes. A name no chip carries falls out of that
     // filter. The standalone's select and checkboxes do the same.
     if (!PL.FORMATS.includes(d.output.format)) d.output.format = "";
-    d.protocol.artifacts = PL.ARTIFACTS.filter(a => d.protocol.artifacts.includes(a));
+    // A key written with no value parses as null, and normalize fills a
+    // default only for a key that is absent, so the artifacts read as the
+    // untouched chip row here. The standalone's checkboxes do the same.
+    const arts = Array.isArray(d.protocol.artifacts) ? d.protocol.artifacts : PL.DEFAULT_ARTIFACTS;
+    d.protocol.artifacts = PL.ARTIFACTS.filter(a => arts.includes(a));
     // A toggle holds a boolean and reads a foreign value as on or off, so the
     // document takes the state the toggle shows. An absent key stays absent,
     // because the badge has to keep asking for it.
@@ -658,11 +662,15 @@
     return d;
   }
   function ntModel(){
-    const slug = ntSlug(), exp = ntExported();
+    const exp = ntExported();
     // buildYaml reads the image whole. asExported then spends it, since it
     // edits the document in place to match what the export leaves out.
     const yaml = PL.buildYaml(exp);
-    return {slug, dir: S.promptDir(exp, slug), issues: PL.validate(PL.asExported(exp)), yaml,
+    // The input holds the slug a person typed, and the directory line holds
+    // the name the export lands under, which is the title's slug until then.
+    // A keystroke redraws the card alone, so an input fed the derived slug
+    // would hold an older title's name after the next full redraw.
+    return {slug: nt.slug, dir: S.promptDir(exp, ntSlug()), issues: PL.validate(PL.asExported(exp)), yaml,
       showYaml: nt.showYaml, pasteOpen: nt.pasteOpen, pasteText: nt.pasteText, report: nt.report,
       copyLabel: nt.copyLabel, clearLabel: nt.clearLabel,
       pending: nt.pending ? nt.pending.label : null};
