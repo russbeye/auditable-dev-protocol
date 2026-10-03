@@ -295,11 +295,14 @@ function bootShell(opts){
   // Timers are captured, never scheduled: h.tick() runs the poll loop once
   // and timeouts run on demand, so tests stay synchronous-by-choice.
   const intervals = [], timeouts = [];
+  let timerId = 0;
   const timers = {
     setInterval(fn, ms){ intervals.push({fn, ms}); return intervals.length; },
     clearInterval(){},
-    setTimeout(fn, ms){ timeouts.push({fn, ms}); return timeouts.length; },
-    clearTimeout(){}
+    // A cleared timer leaves the queue, so a page that cancels one can be
+    // held to it. runTimeouts reports how many callbacks it ran.
+    setTimeout(fn, ms){ timeouts.push({fn, ms, id: ++timerId}); return timerId; },
+    clearTimeout(id){ const i = timeouts.findIndex(t => t.id === id); if (i >= 0) timeouts.splice(i, 1); }
   };
 
   // A FileReader that resolves on the microtask queue, like the real one
@@ -414,6 +417,7 @@ function bootShell(opts){
   function runTimeouts(){
     const due = timeouts.splice(0);
     due.forEach(t => t.fn());
+    return due.length;
   }
 
   // Enough macrotask turns to drain the promise chains the seam and the

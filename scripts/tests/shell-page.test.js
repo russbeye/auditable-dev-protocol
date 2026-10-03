@@ -2837,3 +2837,48 @@ test("an empty yaml dropped from another screen brings the builder forward and n
   h.click(h.$("#ntImport"));
   assert.match(h.$("#ntOps").innerHTML, /nothing to import — the paste is empty\./);
 });
+
+// ---- the page: new task, review round twelve ----
+
+test("a typed slug reaches the directory line in the convention's kebab case", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.input(h.$("#ntSlug"), "My Slug!");
+  // The input keeps what the person typed, so the caret stays where it is.
+  assert.equal(h.$("#ntSlug").value, "My Slug!");
+  assert.match(h.$("#ntDir").textContent, /-my-slug\/prompt\.yaml$/);
+  // The index builder reads the name back as date, id, and slug.
+  const B = require("../adp-index-builder-lib.js");
+  h.input(field(h, "task.id"), "AV-016");
+  const dir = h.$("#ntDir").textContent.split("/")[1];
+  assert.deepEqual(B.parseDirName(dir).slug, "my-slug");
+});
+
+test("a .yaml chosen in the open and watch picker imports instead of opening as a document", async () => {
+  const h = bootCorpus({picker: async () => [makeHandle("GROW-6687.yaml", GOLDEN)]});
+  await h.settle();
+  h.click(h.$$(".op").find(o => o.getAttribute("data-op") === "openwatch"));
+  await h.settle();
+  // No watched document joins the rail, and the builder holds the prompt.
+  assert.ok(!/WATCHING FILE/.test(h.$("#rail").innerHTML));
+  assert.equal(h.$("#scrNew").classList.contains("is-on"), true);
+  newTab(h);
+  assert.equal(field(h, "task.id").value, "GROW-6687-email-validation");
+  assert.match(h.$("#ntOps").innerHTML, /imported GROW-6687\.yaml — all recognized fields/);
+});
+
+test("a confirmed clear takes its disarm timer with it", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.runTimeouts();
+  ntOp(h, "ntclear");
+  ntOp(h, "ntclear");
+  ntOp(h, "ntclear");
+  assert.match(h.$("#ntOps").innerHTML, /confirm clear/);
+  // One timer is pending, the new arm's own, so it holds the window the
+  // button promises instead of the leftover from the arm before it.
+  assert.equal(h.runTimeouts(), 1);
+  assert.ok(!/confirm clear/.test(h.$("#ntOps").innerHTML));
+});

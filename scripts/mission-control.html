@@ -667,10 +667,11 @@
     // edits the document in place to match what the export leaves out.
     const yaml = PL.buildYaml(exp);
     // The input holds the slug a person typed, and the directory line holds
-    // the name the export lands under, which is the title's slug until then.
+    // the name the export lands under, in the kebab case the convention names,
+    // which is the title's slug until a person types one.
     // A keystroke redraws the card alone, so an input fed the derived slug
     // would hold an older title's name after the next full redraw.
-    return {slug: nt.slug, dir: S.promptDir(exp, ntSlug()), issues: PL.validate(PL.asExported(exp)), yaml,
+    return {slug: nt.slug, dir: S.promptDir(exp, S.slugOf(ntSlug())), issues: PL.validate(PL.asExported(exp)), yaml,
       showYaml: nt.showYaml, pasteOpen: nt.pasteOpen, pasteText: nt.pasteText, report: nt.report,
       copyLabel: nt.copyLabel, clearLabel: nt.clearLabel,
       pending: nt.pending ? nt.pending.label : null};
@@ -831,8 +832,12 @@
   }
   // Clear needs a second click inside the window; the first arms the button
   // in place and the timer disarms it. No modal: one blocks the page.
+  let ntArmTimer = null;
   function ntClear(){
     if (nt.clearLabel){
+      // The arm's own timer outlives the confirm, and it would disarm the next
+      // arm early, so it goes with the label it was watching.
+      clearTimeout(ntArmTimer); ntArmTimer = null;
       ntDraftDelete();
       doc = blankDoc(); nt = freshNt();
       renderNew();
@@ -840,7 +845,10 @@
     }
     nt.clearLabel = "confirm clear";
     renderNewOps();
-    setTimeout(() => { if (nt.clearLabel){ nt.clearLabel = null; renderNewOps(); } }, 1200);
+    ntArmTimer = setTimeout(() => {
+      ntArmTimer = null;
+      if (nt.clearLabel){ nt.clearLabel = null; renderNewOps(); }
+    }, 1200);
   }
   // The label reports what the clipboard did, the pack screen's pattern.
   function ntCopy(){
@@ -979,7 +987,10 @@
     for (const h of handles){
       try{
         const f = await h.getFile();
-        addDoc(f.name, await f.text(), true, h);
+        // A .yaml is a prompt on every path that opens a file, so it imports
+        // into the builder and its watch handle goes with it.
+        if (isYamlName(f.name)) importPrompt(await f.text(), f.name);
+        else addDoc(f.name, await f.text(), true, h);
       }catch(e){ console.warn("open failed:", e); }
     }
   }
