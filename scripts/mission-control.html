@@ -772,6 +772,14 @@
      is reported: the keys the parser skipped and the keys the schema does
      not know, in the standalone's wording. */
   function importPrompt(text, source){
+    // A drop or a pick can carry several prompts, and one question can speak
+    // for one file. A prompt that arrives while a question waits is named and
+    // left alone, so no file leaves without a word.
+    if (nt.pending){
+      nt.report = {tone: "warn", text: `${source} not imported — one prompt at a time.`};
+      renderNewOps(); showNew();
+      return false;
+    }
     // A file reaches here from a drop or an open on any screen, so the builder
     // comes forward with the line, the way a failed parse does.
     if (!String(text).trim()){
@@ -853,6 +861,7 @@
     }, 1200);
   }
   // The label reports what the clipboard did, the pack screen's pattern.
+  let ntCopyTimer = null;
   function ntCopy(){
     let write;
     try{ write = navigator.clipboard.writeText(PL.buildYaml(ntExported())); }
@@ -867,7 +876,10 @@
         renderNew();
         $("#ntYaml").scrollIntoView();
       });
-    setTimeout(() => { nt.copyLabel = null; renderNewSide(); }, 1200);
+    // A second copy inside the window arms its own label, so the timer from
+    // the copy before it goes, the way a re-armed clear's does.
+    clearTimeout(ntCopyTimer);
+    ntCopyTimer = setTimeout(() => { ntCopyTimer = null; nt.copyLabel = null; renderNewSide(); }, 1200);
   }
   function ntDownload(){
     const exp = ntExported();

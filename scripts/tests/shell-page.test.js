@@ -2903,3 +2903,38 @@ test("a toggle written with no value keeps the blank document's state, as the st
     assert.equal(y, await b.exportYaml(), line);
   }
 });
+
+// ---- the page: new task, review round fourteen ----
+
+test("a second prompt in one drop is named, and the question keeps the first file", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.input(field(h, "task.title"), "typed");
+  h.fireWindow("drop", {dataTransfer: {files: [
+    {name: "first.yaml", __text: GOLDEN.replace("GROW-6687", "FIRST")},
+    {name: "second.yaml", __text: GOLDEN.replace("GROW-6687", "SECOND")}]}});
+  await h.settle();
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /replace it with first\.yaml\?/);
+  assert.match(ops, /second\.yaml not imported — one prompt at a time\./);
+  // The question still belongs to the first file, and the form takes it.
+  h.click(h.$("#ntReplace"));
+  assert.equal(field(h, "task.id").value, "FIRST-email-validation");
+});
+
+test("a second copy inside the window takes the label timer with it", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.runTimeouts();
+  ntOp(h, "ntcopy");
+  await h.settle();
+  ntOp(h, "ntcopy");
+  await h.settle();
+  assert.match(h.$("#ntSide").innerHTML, /copied/);
+  // One timer is pending, the second copy's own, so the label holds its full
+  // window instead of resting on the timer before it.
+  assert.equal(h.runTimeouts(), 1);
+  assert.match(h.$("#ntSide").innerHTML, /⧉ copy yaml/);
+});
