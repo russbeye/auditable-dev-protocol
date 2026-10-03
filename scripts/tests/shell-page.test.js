@@ -2938,3 +2938,64 @@ test("a second copy inside the window takes the label timer with it", async () =
   assert.equal(h.runTimeouts(), 1);
   assert.match(h.$("#ntSide").innerHTML, /⧉ copy yaml/);
 });
+
+// ---- the page: new task, review round fifteen ----
+
+test("two prompts dropped on a blank form keep the first file's report", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.fireWindow("drop", {dataTransfer: {files: [
+    {name: "first.yaml", __text: GOLDEN.replace("GROW-6687", "FIRST") + "stranger: 1\n"},
+    {name: "second.yaml", __text: GOLDEN.replace("GROW-6687", "SECOND")}]}});
+  await h.settle();
+  // The first file lands with its issues named, and no question erases them.
+  assert.equal(field(h, "task.id").value, "FIRST-email-validation");
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported first\.yaml with 1 issue: stranger/);
+  assert.match(ops, /second\.yaml not imported, one prompt at a time/);
+  assert.ok(!/replace it with/.test(ops));
+});
+
+test("three prompts dropped on a form in progress name every file that did not land", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.input(field(h, "task.title"), "typed");
+  h.fireWindow("drop", {dataTransfer: {files: [
+    {name: "first.yaml", __text: GOLDEN.replace("GROW-6687", "FIRST")},
+    {name: "second.yaml", __text: GOLDEN.replace("GROW-6687", "SECOND")},
+    {name: "third.yaml", __text: GOLDEN.replace("GROW-6687", "THIRD")}]}});
+  await h.settle();
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /replace it with first\.yaml\?/);
+  assert.match(ops, /second\.yaml, third\.yaml not imported — one prompt at a time\./);
+  h.click(h.$("#ntReplace"));
+  assert.equal(field(h, "task.id").value, "FIRST-email-validation");
+});
+
+test("the example and a confirmed clear name the file a waiting question asked about", async () => {
+  const drop = h => h.fireWindow("drop", {dataTransfer: {files: [{name: "first.yaml", __text: GOLDEN}]}});
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.input(field(h, "task.title"), "typed");
+  drop(h);
+  await h.settle();
+  ntOp(h, "ntexample");
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /replace it with the example\?/);
+  assert.match(ops, /first\.yaml was not imported\./);
+  // The clear takes the question with the form and names the file too.
+  const h2 = bootShell({stored: "dark"});
+  await h2.settle();
+  newTab(h2);
+  h2.input(field(h2, "task.title"), "typed");
+  drop(h2);
+  await h2.settle();
+  ntOp(h2, "ntclear");
+  ntOp(h2, "ntclear");
+  assert.equal(field(h2, "task.title").value, "");
+  assert.match(h2.$("#ntOps").innerHTML, /first\.yaml was not imported\./);
+  assert.ok(!/replace it with/.test(h2.$("#ntOps").innerHTML));
+});

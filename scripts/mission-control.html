@@ -771,19 +771,18 @@
      not YAML leaves the form as it was and says so. What could not be placed
      is reported: the keys the parser skipped and the keys the schema does
      not know, in the standalone's wording. */
-  function importPrompt(text, source){
-    // A drop or a pick can carry several prompts, and one question can speak
-    // for one file. A prompt that arrives while a question waits is named and
-    // left alone, so no file leaves without a word.
-    if (nt.pending){
-      nt.report = {tone: "warn", text: `${source} not imported — one prompt at a time.`};
-      renderNewOps(); showNew();
-      return false;
-    }
+  function importPrompt(text, source, refused){
+    // One gesture can carry several prompts and only one can land, so the rest
+    // are named in every line this import writes.
+    const names = (refused || []).filter(Boolean);
+    const line = names.length ? `${names.join(", ")} not imported — one prompt at a time.` : "";
+    // Beside a report the same fact rides in brackets, so it never reads as
+    // part of the issue list it follows.
+    const tail = names.length ? ` (${names.join(", ")} not imported, one prompt at a time)` : "";
     // A file reaches here from a drop or an open on any screen, so the builder
     // comes forward with the line, the way a failed parse does.
     if (!String(text).trim()){
-      nt.report = {tone: "warn", text: `nothing to import — ${source} is empty.`};
+      nt.report = {tone: "warn", text: `nothing to import — ${source} is empty.${tail}`};
       renderNewOps(); showNew();
       return false;
     }
@@ -791,7 +790,7 @@
     let obj = null;
     try{ obj = PL.parseYAML(text, skipped); }catch(e){ obj = null; }
     if (!isObj(obj) || !Object.keys(obj).length){
-      nt.report = {tone: "warn", text: `couldn't parse ${source} as YAML — check indentation and structure.`};
+      nt.report = {tone: "warn", text: `couldn't parse ${source} as YAML — check indentation and structure.${tail}`};
       renderNewOps(); showNew();
       return false;
     }
@@ -805,9 +804,12 @@
       doc = adopt(obj);
       nt.slugEdited = false; nt.slug = ""; nt.pasteOpen = false; nt.pasteText = "";
       nt.report = issues.length
-        ? {tone: "warn", text: `imported ${source} with ${issues.length} issue${issues.length === 1 ? "" : "s"}: ${issues.join("; ")}`}
-        : {tone: "ok", text: `imported ${source} — all recognized fields.`};
+        ? {tone: "warn", text: `imported ${source} with ${issues.length} issue${issues.length === 1 ? "" : "s"}: ${issues.join("; ")}${tail}`}
+        : {tone: "ok", text: `imported ${source} — all recognized fields.${tail}`};
     });
+    // A parked question hides the report it would have written, so the refused
+    // files are named beside the question while the reader decides.
+    if (line && nt.pending){ nt.report = {tone: "warn", text: line}; renderNewOps(); }
     return true;
   }
   function ntExample(){
@@ -835,8 +837,10 @@
     const go = () => { nt.pending = null; apply(); renderNew(); showNew(); ntDraftNow(); };
     if (!dirty()){ go(); return; }
     // The earlier import's report sits in the same row as the question, where
-    // a reader takes it for a summary of the file being offered.
-    nt.report = null;
+    // a reader takes it for a summary of the file being offered. A question
+    // this one displaces names its own file instead, so nothing the reader was
+    // asked about leaves the screen unexplained.
+    nt.report = nt.pending ? {tone: "warn", text: `${nt.pending.label} was not imported.`} : null;
     nt.pending = {label, go};
     renderNewOps(); showNew();
   }
@@ -848,8 +852,12 @@
       // The arm's own timer outlives the confirm, and it would disarm the next
       // arm early, so it goes with the label it was watching.
       clearTimeout(ntArmTimer); ntArmTimer = null;
+      // The clear takes the waiting question with the form, so the file it
+      // asked about is named in its place.
+      const waiting = nt.pending ? nt.pending.label : null;
       ntDraftDelete();
       doc = blankDoc(); nt = freshNt();
+      if (waiting) nt.report = {tone: "warn", text: `${waiting} was not imported.`};
       renderNew();
       return;
     }
@@ -956,15 +964,28 @@
     renderAll();
   }
 
-  // A File with no filesystem handle reads once and opens as a one-shot
-  // document; the input path and the handle-less drop path share it. A
-  // .yaml is a prompt: it imports into the builder instead of opening.
-  function readDocFile(f){
+  // A File with no filesystem handle reads once through a reader, which is
+  // how the input path and the handle-less drop path get their text.
+  const readFile = f => new Promise(res => {
     const rd = new FileReader();
-    rd.onload = () => isYamlName(f.name)
-      ? importPrompt(String(rd.result), f.name)
-      : addDoc(f.name, String(rd.result), false);
+    rd.onload = () => res(String(rd.result));
     rd.readAsText(f);
+  });
+
+  /* Every file one gesture carries, settled in one place. A document opens.
+     The first prompt imports and the rest are named with it, because the
+     builder holds one document and one question, and a second question would
+     erase the first file's report before anyone read it. */
+  async function openFiles(list){
+    const yamls = list.filter(x => isYamlName(x.name));
+    for (const x of list){
+      if (isYamlName(x.name)) continue;
+      try{ addDoc(x.name, await x.read(), !!x.handle, x.handle); }
+      catch(e){ console.warn("open failed:", e); }
+    }
+    if (!yamls.length) return;
+    try{ importPrompt(await yamls[0].read(), yamls[0].name, yamls.slice(1).map(x => x.name)); }
+    catch(e){ console.warn("open failed:", e); }
   }
 
   function updateDoc(doc, text){
@@ -998,15 +1019,14 @@
       handles = await window.showOpenFilePicker({multiple: true,
         types: [{description: "Markdown / text", accept: {"text/markdown": [".md", ".markdown"], "text/plain": [".txt"]}}]});
     }catch(e){ return; }
+    const list = [];
     for (const h of handles){
-      try{
-        const f = await h.getFile();
-        // A .yaml is a prompt on every path that opens a file, so it imports
-        // into the builder and its watch handle goes with it.
-        if (isYamlName(f.name)) importPrompt(await f.text(), f.name);
-        else addDoc(f.name, await f.text(), true, h);
-      }catch(e){ console.warn("open failed:", e); }
+      // A .yaml is a prompt on every path that opens a file, so it imports
+      // into the builder and its watch handle goes with it.
+      try{ const f = await h.getFile(); list.push({name: f.name, read: () => f.text(), handle: h}); }
+      catch(e){ console.warn("open failed:", e); }
     }
+    await openFiles(list);
   }
 
   async function reloadDoc(doc){
@@ -1334,7 +1354,7 @@
       return;
     }
     if (e.target.id === "openDoc" || e.target.id === "openYaml"){
-      Array.from(e.target.files || []).forEach(readDocFile);
+      openFiles(Array.from(e.target.files || []).map(f => ({name: f.name, read: () => readFile(f)})));
       e.target.value = "";
       return;
     }
@@ -1396,20 +1416,26 @@
     e.preventDefault(); dragDepth = 0; $("#shellmask").classList.remove("is-on");
     const items = e.dataTransfer && e.dataTransfer.items;
     if (items && items.length && items[0].getAsFileSystemHandle){
-      Array.from(items).forEach(async it => {
-        try{
-          const h = await it.getAsFileSystemHandle();
-          if (h && h.kind === "file"){
-            const f = await h.getFile();
-            // A prompt is imported, not watched, so its handle is dropped.
-            if (isYamlName(f.name)) importPrompt(await f.text(), f.name);
-            else addDoc(f.name, await f.text(), true, h);
-          }
-        }catch(err){ console.warn("drop failed:", err); }
-      });
+      // Every handle settles before a file is read, so the drop is one
+      // gesture to the builder. A prompt is imported, not watched, so its
+      // handle is dropped.
+      (async () => {
+        const list = [];
+        for (const it of Array.from(items)){
+          try{
+            const h = await it.getAsFileSystemHandle();
+            if (h && h.kind === "file"){
+              const f = await h.getFile();
+              list.push({name: f.name, read: () => f.text(), handle: h});
+            }
+          }catch(err){ console.warn("drop failed:", err); }
+        }
+        await openFiles(list);
+      })();
       return;
     }
-    Array.from(e.dataTransfer && e.dataTransfer.files || []).forEach(readDocFile);
+    openFiles(Array.from(e.dataTransfer && e.dataTransfer.files || [])
+      .map(f => ({name: f.name, read: () => readFile(f)})));
   });
 
   // ---- boot ----
