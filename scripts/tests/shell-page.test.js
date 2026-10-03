@@ -2882,3 +2882,24 @@ test("a confirmed clear takes its disarm timer with it", async () => {
   assert.equal(h.runTimeouts(), 1);
   assert.ok(!/confirm clear/.test(h.$("#ntOps").innerHTML));
 });
+
+// ---- the page: new task, review round thirteen ----
+
+test("a toggle written with no value keeps the blank document's state, as the standalone does", async () => {
+  for (const line of ["  apply:", '  apply: ""']) {
+    const text = `task:\n  id: "A-1"\nprotocol:\n${line}\n`;
+    const h = bootShell({stored: "dark"});
+    await h.settle();
+    newTab(h);
+    pasteIn(h, text);
+    assert.match(h.$("#ntOps").innerHTML, /protocol\.apply[^<]*is not true or false; kept as true/, line);
+    assert.equal(h.$$("input").find(i => i.getAttribute("data-nf") === "protocol.apply").checked, true, line);
+    const y = preview(h);
+    assert.match(y, /  apply: true\n/, line);
+    // A blank value must never read as the protocol turned off.
+    assert.ok(!/apply: false/.test(y), line);
+    const b = bootBuilder();
+    await b.importText(text);
+    assert.equal(y, await b.exportYaml(), line);
+  }
+});

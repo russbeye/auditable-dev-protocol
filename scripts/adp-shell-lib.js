@@ -790,13 +790,15 @@
     artifacts.forEach(a => {
       if (!PL.ARTIFACTS.includes(a)) issues.push(`protocol.artifacts "${String(a)}" is not an artifact; cleared`);
     });
+    const blankSwitches = PL.blankDocument().protocol;
     NT_SWITCHES.forEach(([k]) => {
       const v = proto[k];
       if (!(k in proto) || typeof v === "boolean") return;
       // A map or a list has no reading worth printing, so only a plain value
-      // is quoted back. The toggle keeps the state it draws either way.
+      // is quoted back. The page leaves the blank document's own state on the
+      // toggle, which is the state an untouched checkbox holds.
       const named = isPlain(v) ? `protocol.${k} "${String(v)}"` : `protocol.${k}`;
-      issues.push(`${named} is not true or false; kept as ${!!v}`);
+      issues.push(`${named} is not true or false; kept as ${blankSwitches[k]}`);
     });
     const defers = Array.isArray(proto.defers) ? proto.defers : [];
     defers.forEach((d, i) => {

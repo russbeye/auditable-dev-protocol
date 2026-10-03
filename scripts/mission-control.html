@@ -626,11 +626,13 @@
     // untouched chip row here. The standalone's checkboxes do the same.
     const arts = Array.isArray(d.protocol.artifacts) ? d.protocol.artifacts : PL.DEFAULT_ARTIFACTS;
     d.protocol.artifacts = PL.ARTIFACTS.filter(a => arts.includes(a));
-    // A toggle holds a boolean and reads a foreign value as on or off, so the
-    // document takes the state the toggle shows. An absent key stays absent,
-    // because the badge has to keep asking for it.
+    // A toggle holds a boolean, and a value it cannot read leaves the blank
+    // document's own state in place. That is the state an untouched checkbox
+    // holds, and a key written with no value must not turn the protocol off.
+    // An absent key stays absent, because the badge has to keep asking for it.
+    const blankSwitches = PL.blankDocument().protocol;
     S.NT_SWITCHES.forEach(([k]) => {
-      if (k in d.protocol && typeof d.protocol[k] !== "boolean") d.protocol[k] = !!d.protocol[k];
+      if (k in d.protocol && typeof d.protocol[k] !== "boolean") d.protocol[k] = blankSwitches[k];
     });
     if (Array.isArray(d.protocol.defers)){
       // normalize fills a reference, a lesson, and a requirement row to the
