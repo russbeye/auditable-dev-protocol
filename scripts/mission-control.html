@@ -808,8 +808,13 @@
         : {tone: "ok", text: `imported ${source} — all recognized fields.${tail}`};
     });
     // A parked question hides the report it would have written, so the refused
-    // files are named beside the question while the reader decides.
-    if (line && nt.pending){ nt.report = {tone: "warn", text: line}; renderNewOps(); }
+    // files are named beside the question while the reader decides. The line a
+    // displaced question left there stands, since both name a file nobody
+    // imported.
+    if (line && nt.pending){
+      nt.report = {tone: "warn", text: nt.report ? `${nt.report.text} ${line}` : line};
+      renderNewOps();
+    }
     return true;
   }
   function ntExample(){
@@ -1419,11 +1424,17 @@
       // Every handle settles before a file is read, so the drop is one
       // gesture to the builder. A prompt is imported, not watched, so its
       // handle is dropped.
+      // Every handle is asked for before the first await, because the drag
+      // data store closes to the page as soon as this listener yields, and a
+      // later request reads nothing.
+      const pending = Array.from(items).map(it => {
+        try{ return it.getAsFileSystemHandle(); }catch(err){ return Promise.reject(err); }
+      });
       (async () => {
         const list = [];
-        for (const it of Array.from(items)){
+        for (const p of pending){
           try{
-            const h = await it.getAsFileSystemHandle();
+            const h = await p;
             if (h && h.kind === "file"){
               const f = await h.getFile();
               list.push({name: f.name, read: () => f.text(), handle: h});

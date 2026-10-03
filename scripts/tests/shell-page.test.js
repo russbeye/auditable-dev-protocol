@@ -2999,3 +2999,56 @@ test("the example and a confirmed clear name the file a waiting question asked a
   assert.match(h2.$("#ntOps").innerHTML, /first\.yaml was not imported\./);
   assert.ok(!/replace it with/.test(h2.$("#ntOps").innerHTML));
 });
+
+// ---- the page: new task, review round sixteen ----
+
+/* An item hands over its handle only while the drop event is being handled,
+   the way the drag data store closes to the page once the listener yields. A
+   request made after the first await reads nothing. */
+function liveItems(files, state){
+  return files.map(f => ({
+    getAsFileSystemHandle: () => Promise.resolve(state.live
+      ? {kind: "file", getFile: async () => ({name: f.name, text: async () => f.__text})}
+      : null)
+  }));
+}
+
+test("every file of an item drop is asked for before the handler yields", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  const state = {live: true};
+  h.fireWindow("drop", {dataTransfer: {items: liveItems([
+    {name: "a.md", __text: LOG},
+    {name: "b.md", __text: LOG.replace("AA1 alpha", "AA9 omega")}], state)}});
+  state.live = false;
+  await h.settle();
+  assert.equal((h.$("#rail").innerHTML.match(/rentry/g) || []).length, 2);
+  // A prompt in the same drop still routes to the builder.
+  const h2 = bootShell({stored: "dark"});
+  await h2.settle();
+  const s2 = {live: true};
+  h2.fireWindow("drop", {dataTransfer: {items: liveItems([
+    {name: "a.md", __text: LOG},
+    {name: "p.yaml", __text: GOLDEN}], s2)}});
+  s2.live = false;
+  await h2.settle();
+  newTab(h2);
+  assert.equal(field(h2, "task.id").value, "GROW-6687-email-validation");
+  assert.equal((h2.$("#rail").innerHTML.match(/rentry/g) || []).length, 1);
+});
+
+test("a question that displaces another keeps its line beside the refused files", async () => {
+  const f = (n, id) => ({name: n, __text: GOLDEN.replace("GROW-6687", id)});
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.input(field(h, "task.title"), "typed");
+  h.fireWindow("drop", {dataTransfer: {files: [f("first.yaml", "FIRST")]}});
+  await h.settle();
+  h.fireWindow("drop", {dataTransfer: {files: [f("second.yaml", "SECOND"), f("third.yaml", "THIRD")]}});
+  await h.settle();
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /replace it with second\.yaml\?/);
+  assert.match(ops, /first\.yaml was not imported\./);
+  assert.match(ops, /third\.yaml not imported — one prompt at a time\./);
+});
