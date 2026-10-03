@@ -8,6 +8,9 @@ const S = require("../adp-shell-lib.js");
 const B = require("../adp-index-builder-lib.js");
 const I = require("../adp-index-lib.js");
 const {bootShell} = require("./shell-harness.js");
+// The standalone boots here too, so one test can hold the two exports to the
+// same bytes from the same form contents.
+const {bootBuilder} = require("./builder-harness.js");
 
 const HTML = fs.readFileSync(path.join(__dirname, "..", "mission-control.html"), "utf8");
 
@@ -188,8 +191,8 @@ test("mission-control.html carries the frame the harness models", () => {
   const srcs = [...HTML.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
   assert.deepEqual(srcs,
     ["adp-parser-lib.js", "adp-index-lib.js", "adp-index-builder-lib.js",
-     "adp-derive-lib.js", "adp-shell-lib.js"]);
-  const screens = [...HTML.matchAll(/<section class="screen" data-s="([^"]+)"/g)].map(m => m[1]);
+     "adp-derive-lib.js", "adp-prompt-lib.js", "adp-shell-lib.js"]);
+  const screens = [...HTML.matchAll(/<section class="screen[^"]*" data-s="([^"]+)"/g)].map(m => m[1]);
   assert.deepEqual(screens, S.SCREENS);
   assert.match(HTML, /<span class="chit poll poll-idle" id="liveChit" role="status">/);
   for (const id of ["projChit", "liveChit", "liveTxt", "themeBtn", "ttIcon", "tabs", "newTaskBtn", "rail", "foot", "shellmask"]) {
@@ -1875,4 +1878,1177 @@ test("a poll rebuild hands focus to the rebuilt segment", async () => {
   await h.settle();
   assert.notEqual(seg(), before);
   assert.equal(h.document.activeElement, seg());
+});
+
+// ---- the page: new task ----
+
+const PL = require("../adp-prompt-lib.js");
+const GOLDEN = fs.readFileSync(path.join(__dirname, "fixtures", "builder-example.yaml"), "utf8");
+const newTab = h => h.click(h.$("#newTaskBtn"));
+const ntOp = (h, op) => h.click(h.$$(".op").find(o => o.getAttribute("data-op") === op));
+const field = (h, nf) => h.$$(".nt-in").find(el => el.getAttribute("data-nf") === nf);
+const nfSet = (h, nf, v) => h.input(field(h, nf), v);
+// A failed import leaves the drawer open, so the helper opens it only when it
+// is closed; a form in progress asks before it is replaced, and the helper
+// answers yes.
+const pasteIn = (h, text) => {
+  if (!h.$("#ntPaste")) ntOp(h, "ntpaste");
+  h.$("#ntPaste").value = text; h.click(h.$("#ntImport"));
+  if (h.$("#ntReplace")) h.click(h.$("#ntReplace"));
+};
+const preview = h => { if (!h.$("#ntYamlPre")) ntOp(h, "ntyaml"); return h.$("#ntYamlPre").textContent; };
+const stamped = d => { d.schema_version = "1.0"; return d; };
+
+test("the new task screen carries the standalone's field set and boots with today's date", async () => {
+  const h = bootShell({stored: "dark", hash: "#v=new%20task"});
+  await h.settle();
+  assert.equal(h.$("#scrNew").classList.contains("is-on"), true);
+  assert.equal(h.$("#newTaskBtn").classList.contains("is-on"), true);
+  ntOp(h, "ntexample");
+  const nfs = h.$$(".nt-in").map(el => el.getAttribute("data-nf")).filter(Boolean);
+  for (const k of ["task.id", "task.title", "task.author", "task.date", "preamble", "role.lens",
+    "role.priorities.0", "prompt", "constraints.out_of_scope.0", "constraints.must_not.0",
+    "context.background", "context.references.0.path", "context.references.0.lines",
+    "context.references.0.note", "context.links.0", "lessons_learned.0.context",
+    "lessons_learned.0.takeaway", "output.format", "output.destination", "output.structure",
+    "requirements.0.id", "requirements.0.statement", "requirements.0.verify",
+    "protocol.defers.0.phase", "protocol.defers.0.reason"]) assert.ok(nfs.includes(k), k);
+  const sw = h.$$("input").filter(i => /^protocol\.(apply|stake_single_recommendation|log_assumptions|flag_low_confidence)$/.test(i.getAttribute("data-nf") || ""));
+  assert.equal(sw.length, 4);
+  assert.deepEqual(h.$$("input").map(i => i.getAttribute("data-nart")).filter(Boolean), PL.ARTIFACTS);
+  // Every path names a key the lib's document holds.
+  const doc = stamped(PL.exampleDocument());
+  for (const nf of nfs) {
+    const v = nf.split(".").reduce((o, k) => (o == null ? undefined : o[k]), doc);
+    assert.notEqual(v, undefined, nf);
+  }
+  // A fresh boot is blank apart from the date, and the badge counts the blank.
+  const h2 = bootShell({stored: "dark"});
+  await h2.settle();
+  newTab(h2);
+  assert.equal(field(h2, "task.date").value, S.localDate());
+  assert.equal(field(h2, "task.id").value, "");
+  assert.match(h2.$("#ntSide").innerHTML, /7 protocol checks unmet/);
+  assert.match(h2.$("#ntSide").innerHTML, /<li>[^<]*<code>task\.id<\/code>/);
+  assert.match(h2.$("#ntSide").innerHTML, /— required/);
+  assert.match(h2.hashes[h2.hashes.length - 1], /^#v=new%20task/);
+});
+
+test("a prompt.yaml the standalone wrote imports and previews byte for byte", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN);
+  assert.match(h.$("#ntOps").innerHTML, /imported the paste — all recognized fields\./);
+  assert.equal(field(h, "task.id").value, "GROW-6687-email-validation");
+  assert.equal(field(h, "protocol.defers.1.reason").value, "Follow-up obligations ride the GROW-6688 cleanup ticket");
+  assert.equal(preview(h), GOLDEN);
+  assert.equal(preview(h), PL.buildYaml(stamped(PL.normalize(PL.parseYAML(GOLDEN)))));
+  assert.match(h.$("#ntSide").innerHTML, /valid · schema 1\.0/);
+  // The example loads to the same bytes from the lib's own copy.
+  const h2 = bootShell({stored: "dark"});
+  await h2.settle();
+  newTab(h2);
+  ntOp(h2, "ntexample");
+  assert.equal(preview(h2), GOLDEN);
+});
+
+test("an import reports the keys it could not place and a failed parse leaves the form alone", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN + "\nfoo: bar\n");
+  assert.match(h.$("#ntOps").innerHTML, /imported the paste with 1 issue: foo/);
+  assert.equal(field(h, "task.id").value, "GROW-6687-email-validation");
+  // Not YAML: the form keeps the import, the report says so.
+  nfSet(h, "task.title", "kept");
+  pasteIn(h, ":::\n  - [");
+  assert.match(h.$("#ntOps").innerHTML, /couldn&#39;t parse the paste as YAML|couldn't parse the paste as YAML/);
+  assert.equal(field(h, "task.title").value, "kept");
+  pasteIn(h, "   ");
+  assert.match(h.$("#ntOps").innerHTML, /nothing to import/);
+  // A foreign version is named before the builder stamps its own.
+  pasteIn(h, GOLDEN.replace('schema_version: "1.0"', 'schema_version: "2.0"'));
+  assert.match(h.$("#ntOps").innerHTML, /schema_version is "2\.0"/);
+  assert.match(preview(h), /^schema_version: "1\.0"/);
+});
+
+test("a dropped or opened .yaml lands in the builder and a .md still opens as a document", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  h.fireWindow("drop", {dataTransfer: {files: [{name: "p.yaml", __text: GOLDEN}]}});
+  await h.settle();
+  assert.equal(h.$("#scrNew").classList.contains("is-on"), true);
+  assert.match(h.$("#ntOps").innerHTML, /imported p\.yaml/);
+  assert.equal(h.$$(".rentry").length, 0);
+  h.fireWindow("drop", {dataTransfer: {files: [{name: "log.md", __text: LOG}]}});
+  await h.settle();
+  assert.equal(h.$("#scrInspector").classList.contains("is-on"), true);
+  assert.equal(h.$$(".rentry").length, 1);
+  // The hidden yaml input and the document input route by name too.
+  const y = h.$("#openYaml");
+  y.files = [{name: "q.yml", __text: GOLDEN.replace("GROW-6687", "GROW-7")}];
+  h.change(y);
+  await h.settle();
+  // The first import left a form in progress, so this one asks first.
+  h.click(h.$("#ntReplace"));
+  assert.equal(field(h, "task.id").value, "GROW-7-email-validation");
+  assert.equal(h.$("#scrNew").classList.contains("is-on"), true);
+  assert.equal(y.value, "");
+});
+
+test("copy, download, and the directory line carry the export bytes and the convention's name", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  const today = S.localDate().replace(/-/g, "");
+  assert.equal(h.$("#ntDir").innerHTML, `.adp/${today}-<TASKID>-<slug>/prompt.yaml`);
+  nfSet(h, "task.title", "Shared shell chrome, extracted!");
+  nfSet(h, "task.id", "AV-016");
+  assert.equal(h.$("#ntSlug").value, "");
+  assert.equal(h.$("#ntDir").innerHTML, `.adp/${today}-AV016-shared-shell-chrome-extracted/prompt.yaml`);
+  h.input(h.$("#ntSlug"), "custom");
+  assert.equal(h.$("#ntDir").innerHTML, `.adp/${today}-AV016-custom/prompt.yaml`);
+  h.input(h.$("#ntSlug"), "");
+  assert.equal(h.$("#ntDir").innerHTML, `.adp/${today}-AV016-shared-shell-chrome-extracted/prompt.yaml`);
+  // The slug never reaches the yaml.
+  assert.ok(!/slug/.test(preview(h)));
+  // Copy writes the preview's bytes and reports, then rests.
+  ntOp(h, "ntcopy");
+  await h.settle();
+  assert.equal(h.clipboard[h.clipboard.length - 1], preview(h));
+  assert.match(h.$("#ntSide").innerHTML, /copied/);
+  h.runTimeouts();
+  assert.match(h.$("#ntSide").innerHTML, /⧉ copy yaml/);
+  ntOp(h, "ntdl");
+  assert.equal(h.downloads.length, 1);
+  assert.equal(h.downloads[0].download, "AV-016.yaml");
+  assert.equal(h.blobText(h.downloads[0].href), preview(h));
+  // A denied write says so.
+  const h2 = bootShell({stored: "dark", clipboardRejects: true});
+  await h2.settle();
+  newTab(h2);
+  ntOp(h2, "ntcopy");
+  await h2.settle();
+  assert.match(h2.$("#ntSide").innerHTML, /copy failed — select the text/);
+  // The label sends the reader to the text, so the panel holding it opens.
+  assert.ok(h2.$("#ntYamlPre"));
+  assert.equal(h2.$("#ntYamlPre").textContent, preview(h2));
+  assert.equal(h2.clipboard.length, 0);
+});
+
+test("rows add and remove by path, an emptied defers editor drops the key, and chips keep the lib's order", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.click(h.$$(".nt-add").find(b => b.getAttribute("data-nadd") === "requirements"));
+  assert.equal(h.document.activeElement, field(h, "requirements.0.id"));
+  nfSet(h, "requirements.0.id", "R1");
+  nfSet(h, "requirements.0.statement", "it works");
+  nfSet(h, "requirements.0.verify", "run it");
+  h.click(h.$$(".nt-add").find(b => b.getAttribute("data-nadd") === "protocol.defers"));
+  h.change(field(h, "protocol.defers.0.phase"), "analysis");
+  nfSet(h, "protocol.defers.0.reason", "manual pass");
+  assert.match(preview(h), /defers:\n    - phase: "analysis"\n      reason: "manual pass"/);
+  h.click(h.$$(".nt-del").find(b => b.getAttribute("data-ndel") === "protocol.defers.0"));
+  assert.ok(!/defers/.test(preview(h)));
+  assert.match(preview(h), /- id: "R1"\n    statement: "it works"\n    verify: "run it"/);
+  // Artifacts tick in any order and export in the lib's.
+  const chip = a => h.$$("input").find(i => i.getAttribute("data-nart") === a);
+  chip("problem_statement").checked = true; h.change(chip("problem_statement"));
+  chip("decision_log").checked = false; h.change(chip("decision_log"));
+  assert.match(preview(h), /artifacts:\n    - problem_statement\n    - test_adversary\n/);
+  const sw = h.$$("input").find(i => i.getAttribute("data-nf") === "protocol.apply");
+  sw.checked = false; h.change(sw);
+  assert.match(preview(h), /apply: false/);
+  h.change(field(h, "output.format"), "patch");
+  assert.match(preview(h), /format: "patch"/);
+});
+
+test("a draft saves on a pause, flushes on pagehide, restores on the next boot, and clear needs a second click", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  nfSet(h, "task.id", "AV-016");
+  nfSet(h, "task.title", "A title");
+  h.input(h.$("#ntSlug"), "own-slug");
+  assert.equal(h.storage.has("adp-mc-draft"), false);
+  h.runTimeouts();
+  const saved = JSON.parse(h.storage.get("adp-mc-draft"));
+  assert.equal(saved.doc.task.id, "AV-016");
+  assert.equal(saved.slug, "own-slug");
+  nfSet(h, "task.author", "rbeye");
+  h.fireWindow("pagehide");
+  assert.equal(JSON.parse(h.storage.get("adp-mc-draft")).doc.task.author, "rbeye");
+  const h2 = bootShell({stored: "dark", draft: h.storage.get("adp-mc-draft")});
+  await h2.settle();
+  newTab(h2);
+  assert.equal(field(h2, "task.id").value, "AV-016");
+  assert.equal(h2.$("#ntSlug").value, "own-slug");
+  assert.equal(h2.$("#ntDir").innerHTML, `.adp/${S.localDate().replace(/-/g, "")}-AV016-own-slug/prompt.yaml`);
+  // One click arms, the timer disarms; two clicks wipe and drop the key.
+  ntOp(h2, "ntclear");
+  assert.match(h2.$("#ntOps").innerHTML, /confirm clear/);
+  assert.equal(field(h2, "task.id").value, "AV-016");
+  h2.runTimeouts();
+  assert.ok(!/confirm clear/.test(h2.$("#ntOps").innerHTML));
+  ntOp(h2, "ntclear");
+  ntOp(h2, "ntclear");
+  assert.equal(field(h2, "task.id").value, "");
+  assert.equal(field(h2, "task.date").value, S.localDate());
+  assert.equal(h2.storage.has("adp-mc-draft"), false);
+});
+
+test("a blocked storage and an unreadable draft both boot the blank form", async () => {
+  const h = bootShell({stored: "dark", storageThrows: true});
+  await h.settle();
+  newTab(h);
+  assert.equal(field(h, "task.id").value, "");
+  nfSet(h, "task.id", "X-1");
+  h.runTimeouts();
+  // The seam's own no-network trace is the only warning; storage says nothing.
+  assert.deepEqual(h.warns.filter(w => !/corpus load failed/.test(w)), []);
+  const h2 = bootShell({stored: "dark", draft: "{not json"});
+  await h2.settle();
+  newTab(h2);
+  assert.equal(field(h2, "task.id").value, "");
+  assert.equal(h2.storage.has("adp-mc-draft"), false);
+  // A draft in an older shape adopts what normalize reads.
+  const h3 = bootShell({stored: "dark", draft: JSON.stringify({doc: {task: {id: "OLD-1"}, lessons_learned: [null]}})});
+  await h3.settle();
+  newTab(h3);
+  assert.equal(field(h3, "task.id").value, "OLD-1");
+});
+
+test("the builder renders the full form over file:// with no corpus", async () => {
+  const h = bootShell({stored: "dark", href: "file:///x/mission-control.html", hash: "#v=new%20task"});
+  await h.settle();
+  assert.equal(h.$("#scrNew").classList.contains("is-on"), true);
+  // The blank form's twelve scalar fields; the lists start empty.
+  assert.equal(h.$$(".nt-in").length, 12);
+  assert.match(h.$("#ntSide").innerHTML, /7 protocol checks unmet/);
+  assert.equal(field(h, "task.date").value, S.localDate());
+});
+
+test("a poll re-render never rebuilds the form under a typing reader", async () => {
+  const handle = makeHandle("w.md", LOG);
+  const h = bootCorpus({picker: async () => [handle]});
+  await h.settle();
+  h.click(h.$$(".op").find(o => o.getAttribute("data-op") === "openwatch"));
+  await h.settle();
+  newTab(h);
+  const title = field(h, "task.title");
+  h.input(title, "half a ti");
+  title.focus();
+  handle._text = LOG + "\n## Amendment Notes\n\nlate news.\n";
+  h.tick();
+  await h.settle();
+  // The watched document did change and the inspector did rebuild.
+  assert.match(h.$("#secSel").innerHTML, /Amendment Notes/);
+  // The form's input is the same element, with its value and the keyboard.
+  assert.equal(field(h, "task.title"), title);
+  assert.equal(title.value, "half a ti");
+  assert.equal(h.document.activeElement, title);
+});
+
+// ---- the page: new task, review round one ----
+
+test("a switch or chip toggles in place and keeps the keyboard", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  const sw = h.$$("input").find(i => i.getAttribute("data-nf") === "protocol.apply");
+  sw.focus();
+  sw.checked = false; h.change(sw);
+  assert.equal(h.document.activeElement, sw);
+  assert.equal(h.$$("input").find(i => i.getAttribute("data-nf") === "protocol.apply"), sw);
+  assert.equal(sw.parent.classList.contains("is-on"), false);
+  assert.match(preview(h), /apply: false/);
+  const chip = h.$$("input").find(i => i.getAttribute("data-nart") === "premortem");
+  chip.focus();
+  chip.checked = true; h.change(chip);
+  assert.equal(h.document.activeElement, chip);
+  assert.equal(chip.parent.classList.contains("is-on"), true);
+  assert.match(preview(h), /- premortem\n/);
+});
+
+test("a select drops its placeholder color on a pick and takes it back on a clear", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  const fmt = field(h, "output.format");
+  assert.equal(fmt.classList.contains("is-unset"), true);
+  h.change(fmt, "patch");
+  assert.equal(fmt.classList.contains("is-unset"), false);
+  h.change(fmt, "");
+  assert.equal(fmt.classList.contains("is-unset"), true);
+});
+
+test("an imported format or phase the form cannot show is cleared and named, so the bytes match the form", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN.replace('format: "patch"', 'format: "docx"').replace('phase: "communication"', 'phase: "deploy"'));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 2 issues/);
+  assert.match(ops, /output\.format "docx" is not a format/);
+  assert.match(ops, /protocol\.defers\[0\]\.phase "deploy" is not a phase/);
+  assert.equal(field(h, "output.format").value, "");
+  assert.equal(field(h, "protocol.defers.0.phase").value, "");
+  const y = preview(h);
+  assert.ok(!/format:/.test(y));
+  assert.ok(!/phase: "deploy"/.test(y));
+  assert.match(y, /- phase: ""\n/);
+  assert.match(h.$("#ntSide").innerHTML, /<code>output\.format<\/code>/);
+});
+
+test("a drop or open onto a form in progress waits for a confirmation before it replaces the form and its draft", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  nfSet(h, "task.id", "MINE-1");
+  h.runTimeouts();
+  h.click(h.$$(".mtab")[0]);
+  h.fireWindow("drop", {dataTransfer: {files: [{name: "p.yaml", __text: GOLDEN}]}});
+  await h.settle();
+  // The builder shows, the form and the draft stand, the question is asked.
+  assert.equal(h.$("#scrNew").classList.contains("is-on"), true);
+  assert.equal(field(h, "task.id").value, "MINE-1");
+  assert.equal(JSON.parse(h.storage.get("adp-mc-draft")).doc.task.id, "MINE-1");
+  assert.match(h.$("#ntOps").innerHTML, /replace it with p\.yaml/);
+  h.click(h.$("#ntKeep"));
+  assert.equal(field(h, "task.id").value, "MINE-1");
+  assert.ok(!/replace it with/.test(h.$("#ntOps").innerHTML));
+  h.fireWindow("drop", {dataTransfer: {files: [{name: "p.yaml", __text: GOLDEN}]}});
+  await h.settle();
+  h.click(h.$("#ntReplace"));
+  assert.equal(field(h, "task.id").value, "GROW-6687-email-validation");
+  assert.equal(JSON.parse(h.storage.get("adp-mc-draft")).doc.task.id, "GROW-6687-email-validation");
+  // A blank form takes an import at once; so does the example over a blank form.
+  const h2 = bootShell({stored: "dark"});
+  await h2.settle();
+  h2.fireWindow("drop", {dataTransfer: {files: [{name: "p.yaml", __text: GOLDEN}]}});
+  await h2.settle();
+  assert.equal(field(h2, "task.id").value, "GROW-6687-email-validation");
+  // The example over a filled form asks the same question.
+  ntOp(h2, "ntexample");
+  assert.match(h2.$("#ntOps").innerHTML, /replace it with the example/);
+});
+
+// ---- the page: new task, review round two ----
+
+test("the paste drawer keeps its text through a failed parse, a disarmed clear, and a kept form", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  ntOp(h, "ntpaste");
+  h.input(h.$("#ntPaste"), ":::\n  - [");
+  h.click(h.$("#ntImport"));
+  assert.match(h.$("#ntOps").innerHTML, /couldn/);
+  assert.equal(h.$("#ntPaste").value, ":::\n  - [");
+  // The clear arm's timer redraws the ops row around the drawer.
+  ntOp(h, "ntclear");
+  h.runTimeouts();
+  assert.equal(h.$("#ntPaste").value, ":::\n  - [");
+  // A kept form redraws it too.
+  nfSet(h, "task.id", "MINE-1");
+  h.input(h.$("#ntPaste"), GOLDEN);
+  h.click(h.$("#ntImport"));
+  h.click(h.$("#ntKeep"));
+  assert.equal(h.$("#ntPaste").value, GOLDEN);
+  // A successful adoption closes the drawer and lets the text go.
+  h.click(h.$("#ntImport"));
+  h.click(h.$("#ntReplace"));
+  assert.equal(h.$("#ntPaste"), null);
+  ntOp(h, "ntpaste");
+  assert.equal(h.$("#ntPaste").value, "");
+});
+
+test("a restored draft of a blank form takes an import at once", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  nfSet(h, "task.id", "x");
+  nfSet(h, "task.id", "");
+  h.runTimeouts();
+  const h2 = bootShell({stored: "dark", draft: h.storage.get("adp-mc-draft")});
+  await h2.settle();
+  newTab(h2);
+  ntOp(h2, "ntexample");
+  assert.ok(!/replace it with/.test(h2.$("#ntOps").innerHTML));
+  assert.equal(field(h2, "task.id").value, "GROW-6687-email-validation");
+});
+
+test("the yaml panel sits in the form column under the sticky card and scrolls into view on show", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  ntOp(h, "ntexample");
+  ntOp(h, "ntyaml");
+  // The card sticks over the whole grid. A panel in the form column keeps
+  // the card beside the bytes instead of letting it slide over them.
+  assert.ok(h.$("#ntYamlPre").closest(".nt-form"));
+  assert.equal(h.$("#ntYaml")._scrolled, 1);
+  ntOp(h, "ntyaml");
+  assert.equal(h.$("#ntYamlPre"), null);
+  ntOp(h, "ntyaml");
+  assert.equal(h.$("#ntYaml")._scrolled, 1);
+});
+
+test("the output path prints once, in the export card, under its own heading", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  ntOp(h, "ntexample");
+  const dir = h.$("#ntDir").textContent;
+  assert.match(dir, /prompt\.yaml$/);
+  assert.equal(h.$("#scrNew").innerHTML.split(dir).length - 1, 1);
+  assert.match(h.$("#scrNew").innerHTML, /^<h2>new task<\/h2>/);
+  // The card and the document block cannot share a heading, or the unmet
+  // list's output.format key reads as a line about the card.
+  assert.match(h.$("#ntSide").innerHTML, /^<h2>export<\/h2>/);
+  nfSet(h, "task.id", "AV-099");
+  assert.match(h.$("#ntDir").textContent, /AV099/);
+});
+
+// ---- the page: new task, review round four ----
+
+test("a deferral item that is not a mapping is dropped and named on import, and a draft holding one boots the form", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN.replace("  defers:\n", "  defers:\n    -\n    - communication\n"));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 2 issues/);
+  assert.match(ops, /protocol\.defers\[0\] is not a map; skipped/);
+  assert.match(ops, /protocol\.defers\[1\] is not a map; skipped/);
+  assert.equal(h.$("#ntPaste"), null);
+  assert.equal(field(h, "protocol.defers.0.phase").value, "communication");
+  assert.equal(field(h, "protocol.defers.2.phase"), undefined);
+  h.runTimeouts();
+  assert.deepEqual(JSON.parse(h.storage.get("adp-mc-draft")).doc.protocol.defers.map(d => d.phase), ["communication", "obligations"]);
+  // A draft an earlier page saved with such items boots the form it holds;
+  // the boot line sits outside ntRestore's catch, so a throw there is a
+  // dead shell until the key is removed by hand.
+  const h2 = bootShell({stored: "dark", draft: JSON.stringify({doc: {task: {id: "D-1"},
+    protocol: {apply: true, defers: [null, "communication", {phase: "analysis", reason: "r"}]}}})});
+  await h2.settle();
+  newTab(h2);
+  assert.equal(field(h2, "task.id").value, "D-1");
+  assert.equal(field(h2, "protocol.defers.0.phase").value, "analysis");
+  assert.equal(field(h2, "protocol.defers.1.phase"), undefined);
+  assert.ok(h2.intervals.length >= 1);
+});
+
+test("a restored draft that differs from the blank only by its date takes an import at once", async () => {
+  const h = bootShell({stored: "dark", draft: JSON.stringify({doc: {task: {date: "2020-01-01"}}})});
+  await h.settle();
+  newTab(h);
+  // The restore re-dates a draft nobody has typed into, so the field reads
+  // today whatever day the draft was saved on.
+  assert.equal(field(h, "task.date").value, S.localDate());
+  ntOp(h, "ntexample");
+  assert.ok(!/replace it with/.test(h.$("#ntOps").innerHTML));
+  assert.equal(field(h, "task.id").value, "GROW-6687-email-validation");
+  // A field the reader typed beside the date still asks.
+  const h2 = bootShell({stored: "dark", draft: JSON.stringify({doc: {task: {date: "2020-01-01", id: "MINE-1"}}})});
+  await h2.settle();
+  newTab(h2);
+  ntOp(h2, "ntexample");
+  assert.match(h2.$("#ntOps").innerHTML, /replace it with the example/);
+});
+
+test("the directory line collapses only the id's leading letters-digits pair, so the index reads the name back", () => {
+  const B = require("../adp-index-builder-lib.js");
+  const line = S.promptDir({task: {id: "GROW-6687-email-validation", date: "2026-06-18"}}, "add-server-side-validation");
+  assert.equal(line, ".adp/20260618-GROW6687-email-validation-add-server-side-validation/prompt.yaml");
+  assert.deepEqual(B.parseDirName(line.split("/")[1]),
+    {id: "GROW6687", date: "2026-06-18", slug: "email-validation-add-server-side-validation"});
+  assert.equal(S.promptDir({task: {id: "AV-016", date: "2026-09-22"}}, "s"), ".adp/20260922-AV016-s/prompt.yaml");
+  assert.equal(S.promptDir({task: {id: "", date: ""}}, ""), ".adp/<yyyymmdd>-<TASKID>-<slug>/prompt.yaml");
+});
+
+// ---- the page: new task, review round five ----
+
+test("an import drops every wrong-shaped key and list item, names each one, and the bytes carry no blank row for them", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  const text = GOLDEN
+    .replace("  priorities:\n", "  priorities:\n    -\n")
+    .replace("  references:\n", "  references:\n    - \"src/bare.ts\"\n    -\n")
+    .replace("  links:\n    - \"https://example.atlassian.net/browse/GROW-6687\"\n", "  links: nope\n")
+    .replace(/lessons_learned:\n(  .*\n)+/, "lessons_learned: \"s\"\n")
+    .replace("requirements:\n", "requirements:\n  -\n")
+    .replace('format: "patch"', "format: true")
+    .replace('phase: "communication"', "phase: 5");
+  pasteIn(h, text);
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 8 issues/);
+  assert.match(ops, /role\.priorities\[0\] is not a plain value; skipped/);
+  assert.match(ops, /context\.references\[0\] is not a map; skipped/);
+  assert.match(ops, /context\.references\[1\] is not a map; skipped/);
+  assert.match(ops, /context\.links is not a list; skipped/);
+  assert.match(ops, /lessons_learned is not a list; skipped/);
+  assert.match(ops, /requirements\[0\] is not a map; skipped/);
+  assert.match(ops, /output\.format "true" is not a format; cleared/);
+  assert.match(ops, /protocol\.defers\[0\]\.phase "5" is not a phase; cleared/);
+  // The survivors sit at the head of each list, with no blank row before them.
+  assert.equal(field(h, "role.priorities.0").value, "Reject invalid input before it reaches the database");
+  assert.equal(field(h, "role.priorities.2"), undefined);
+  assert.equal(field(h, "context.references.0.path").value, "src/signup/handler.ts");
+  assert.equal(field(h, "context.references.1.path"), undefined);
+  assert.equal(field(h, "context.links.0"), undefined);
+  assert.equal(field(h, "lessons_learned.0.context"), undefined);
+  assert.equal(field(h, "requirements.0.id").value, "R1");
+  assert.equal(field(h, "requirements.1.id"), undefined);
+  assert.equal(field(h, "output.format").value, "");
+  assert.equal(field(h, "protocol.defers.0.phase").value, "");
+  const y = preview(h);
+  assert.match(y, /  references:\n    - path: "src\/signup\/handler.ts"\n/);
+  assert.ok(!/lessons_learned:/.test(y));
+  assert.ok(!/links:/.test(y));
+  assert.match(y, /requirements:\n  - id: "R1"\n/);
+  assert.ok(!/format:/.test(y));
+});
+
+test("placeable drops a block of the wrong shape, names it, and leaves its input as it was", () => {
+  const raw = {task: "x", prompt: {a: 1}, preamble: null, role: {priorities: ["a", 5, true, null]},
+    protocol: {apply: true, defers: "later"}};
+  const before = JSON.stringify(raw);
+  const {doc, issues} = S.placeable(raw);
+  assert.deepEqual(issues, ["prompt is not text; skipped", "task is not a map; skipped",
+    "role.priorities[3] is not a plain value; skipped", "protocol.defers is not a list; skipped"]);
+  // A list item reads as the text an input would show, the way setLine does.
+  assert.deepEqual(doc, {preamble: null, role: {priorities: ["a", "5", "true"]}, protocol: {apply: true}});
+  assert.equal(JSON.stringify(raw), before);
+  // A null key is nothing to place and nothing to drop, and an absent
+  // document places nothing.
+  assert.deepEqual(S.placeable({task: null, lessons_learned: null}).issues, []);
+  assert.deepEqual(S.placeable(null), {doc: {}, issues: []});
+  assert.deepEqual(S.unknownValues(PL.exampleDocument()), []);
+});
+
+// ---- the page: new task, review round six ----
+
+test("an artifact name no chip carries is named and dropped, and the export carries the ticked chips only", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  const ticked = () => h.$$("input").filter(i => i.checked && i.getAttribute("data-nart")).map(i => i.getAttribute("data-nart"));
+  pasteIn(h, GOLDEN.replace("    - decision_log\n",
+    "    - decision_log\n    - 7\n    - not_an_artifact\n    - a: 1\n"));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 3 issues/);
+  assert.match(ops, /protocol\.artifacts\[3\] is not a plain value; skipped/);
+  assert.match(ops, /protocol\.artifacts "7" is not an artifact; cleared/);
+  assert.match(ops, /protocol\.artifacts "not_an_artifact" is not an artifact; cleared/);
+  assert.deepEqual(ticked(), ["decision_log", "test_adversary"]);
+  const y = preview(h);
+  assert.match(y, /  artifacts:\n    - decision_log\n    - test_adversary\n/);
+  // The bytes read back as the chips the form ticks, with nothing stringified.
+  const skipped = [];
+  assert.deepEqual(PL.parseYAML(y, skipped).protocol.artifacts, ["decision_log", "test_adversary"]);
+  assert.deepEqual(skipped, []);
+});
+
+test("a map where a field's value belongs is dropped and named, and its row keeps its place", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN
+    .replace('    - path: "src/signup/handler.ts"', "    - path:\n        deep: 1")
+    .replace('  - id: "R1"', "  - id:\n      deep: 1"));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 2 issues/);
+  assert.match(ops, /context\.references\[0\]\.path is not a plain value; skipped/);
+  assert.match(ops, /requirements\[0\]\.id is not a plain value; skipped/);
+  // The row stands with the field blank, and the badge asks for it by key.
+  assert.equal(field(h, "context.references.0.path").value, "");
+  assert.equal(field(h, "context.references.0.lines").value, "42-88");
+  assert.equal(field(h, "requirements.0.id").value, "");
+  assert.equal(field(h, "requirements.0.statement").value, "A malformed email returns 422 and is not persisted");
+  assert.match(h.$("#ntSide").innerHTML, /<code>context\.references\[0\]\.path<\/code>/);
+  assert.match(h.$("#ntSide").innerHTML, /<code>requirements\[0\]\.id<\/code>/);
+  const y = preview(h);
+  assert.ok(!/\[object Object\]/.test(y));
+  assert.match(y, /    - path: ""\n      lines: "42-88"\n/);
+});
+
+test("placeable copies a list item before it drops a field, and an empty field takes the blank the input shows", () => {
+  const raw = {context: {references: [{path: {deep: 1}, lines: "1-2"}]}, requirements: [{id: ["a"]}]};
+  const before = JSON.stringify(raw);
+  const {doc, issues} = S.placeable(raw);
+  assert.deepEqual(issues, ["context.references[0].path is not a plain value; skipped",
+    "requirements[0].id is not a plain value; skipped"]);
+  assert.deepEqual(doc.context.references, [{lines: "1-2"}]);
+  assert.deepEqual(doc.requirements, [{}]);
+  assert.equal(JSON.stringify(raw), before);
+  // The export writes every field of a row it keeps, so an empty one is the
+  // blank string, not a null that reads back as the text null.
+  assert.deepEqual(S.placeable({requirements: [{id: null}]}), {doc: {requirements: [{id: ""}]}, issues: []});
+  // A stranger key on the row rides along unnamed, the way both builders
+  // leave it, and the export drops it.
+  assert.deepEqual(S.placeable({requirements: [{id: "R1", bogus: "x"}]}),
+    {doc: {requirements: [{id: "R1", bogus: "x"}]}, issues: []});
+});
+
+test("a toggle value that is not true or false is named and read as the state the toggle shows", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN.replace("  apply: true", '  apply: "yes"').replace("  flag_low_confidence: true", "  flag_low_confidence: 0"));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 2 issues/);
+  assert.match(ops, /protocol\.apply "yes" is not true or false; kept as true/);
+  assert.match(ops, /protocol\.flag_low_confidence "0" is not true or false; kept as true/);
+  const sw = h.$$("input").filter(i => /^protocol\.(apply|flag_low_confidence)$/.test(i.getAttribute("data-nf") || ""));
+  assert.deepEqual(sw.map(i => i.checked), [true, true]);
+  const y = preview(h);
+  assert.match(y, /  apply: true\n/);
+  assert.match(y, /  flag_low_confidence: true\n/);
+  assert.equal(h.$("#ntSide").innerHTML.indexOf("protocol.apply"), -1);
+  // A toggle the paste leaves out is the badge's business, not the report's.
+  assert.deepEqual(S.unknownValues({protocol: {stake_single_recommendation: true}}), []);
+  assert.ok(PL.validate({protocol: {stake_single_recommendation: true}}).some(([k]) => k === "protocol.apply"));
+});
+
+test("the enum report numbers the row the form shows, not the row the paste held", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN.replace("  defers:\n", "  defers:\n    - later\n").replace('phase: "communication"', 'phase: "deploy"'));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 2 issues/);
+  assert.match(ops, /protocol\.defers\[0\] is not a map; skipped/);
+  assert.match(ops, /protocol\.defers\[0\]\.phase "deploy" is not a phase; cleared/);
+  assert.ok(!/protocol\.defers\[1\]\.phase/.test(ops));
+  assert.equal(field(h, "protocol.defers.0.phase").value, "");
+  assert.equal(field(h, "protocol.defers.1.phase").value, "obligations");
+});
+
+test("the pending question stands alone, and keeping the form says the paste was dropped", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, 'foo: 1\ntask:\n  id: "A-1"\n');
+  assert.match(h.$("#ntOps").innerHTML, /imported the paste with 1 issue: foo/);
+  ntOp(h, "ntpaste");
+  h.$("#ntPaste").value = GOLDEN;
+  h.click(h.$("#ntImport"));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /replace it with the paste\?/);
+  assert.equal((ops.match(/class="nt-report/g) || []).length, 1);
+  h.click(h.$("#ntKeep"));
+  // The form stands, the drawer still holds the text, and the line says so.
+  assert.match(h.$("#ntOps").innerHTML, /kept the form — the paste was not imported\./);
+  assert.equal(h.$("#ntPaste").value, GOLDEN);
+  assert.equal(field(h, "task.id").value, "A-1");
+});
+
+// ---- the page: new task, review round seven ----
+
+test("a multiline value in a single-line field is flattened, named, and the bytes read back", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN.replace('  title: "Add server-side validation to the signup email field"',
+    "  title: |\n    line one\n    line two"));
+  assert.match(h.$("#ntOps").innerHTML, /imported the paste with 1 issue: task\.title \(multiline value flattened to one line\)/);
+  assert.equal(field(h, "task.title").value, "line one line two");
+  const y = preview(h);
+  assert.match(y, /  title: "line one line two"\n/);
+  assert.match(h.$("#ntSide").innerHTML, /valid · schema 1\.0/);
+  // The export the badge calls valid re-imports as the document it wrote.
+  const skipped = [];
+  assert.equal(PL.parseYAML(y, skipped).task.title, "line one line two");
+  assert.deepEqual(skipped, []);
+  // A textarea keeps its newlines, and a list item is a line like any input.
+  assert.deepEqual(S.placeable({prompt: "a\nb", task: {title: "a\nb"}, context: {links: ["a\nb"]}}),
+    {doc: {prompt: "a\nb", task: {title: "a b"}, context: {links: ["a b"]}},
+      issues: ["task.title (multiline value flattened to one line)",
+        "context.links[0] (multiline value flattened to one line)"]});
+});
+
+test("a map or a list where a block's own field belongs is dropped and named", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, GOLDEN
+    .replace('  title: "Add server-side validation to the signup email field"', "  title:\n    deep: 1")
+    .replace('  lens: "Staff engineer accountable for data integrity"', "  lens:\n    - a\n    - b")
+    .replace('  destination: "Edit files in place"', "  destination:\n    x: 1")
+    .replace('  format: "patch"', "  format:\n    x: 1")
+    .replace("  apply: true", "  apply:\n    x: 1"));
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported the paste with 5 issues/);
+  assert.match(ops, /task\.title is not a plain value; skipped/);
+  assert.match(ops, /role\.lens is not a plain value; skipped/);
+  assert.match(ops, /output\.destination is not a plain value; skipped/);
+  assert.match(ops, /output\.format is not a plain value; skipped/);
+  assert.match(ops, /protocol\.apply is not true or false; kept as true/);
+  assert.ok(!/\[object Object\]/.test(ops));
+  // Each field reads blank, the way the standalone's setLine leaves it.
+  for (const nf of ["task.title", "role.lens", "output.destination", "output.format"])
+    assert.equal(field(h, nf).value, "", nf);
+  const y = preview(h);
+  assert.ok(!/\[object Object\]/.test(y));
+  assert.ok(!/lens|destination|format:/.test(y));
+  assert.match(y, /  apply: true\n/);
+  assert.match(h.$("#ntDir").textContent, /-<slug>\/prompt\.yaml$/);
+});
+
+test("the export image trims every value and drops a blank row from a list of plain values", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  ntOp(h, "ntexample");
+  h.click(h.$$(".nt-add").find(b => b.getAttribute("data-nadd") === "context.links"));
+  h.input(field(h, "task.title"), "  padded title  ");
+  h.input(field(h, "task.author"), "   ");
+  // The form keeps what the reader typed, so a caret stays where it was.
+  assert.equal(field(h, "task.title").value, "  padded title  ");
+  assert.equal(field(h, "context.links.1").value, "");
+  const y = preview(h);
+  assert.match(y, /  title: "padded title"\n/);
+  assert.ok(!/author:/.test(y));
+  assert.ok(!/- ""/.test(y));
+  assert.match(h.$("#ntSide").innerHTML, /<code>task\.author<\/code>/);
+  // A form holding only padding carries no export bytes, so an import takes it
+  // without asking.
+  const h2 = bootShell({stored: "dark"});
+  await h2.settle();
+  newTab(h2);
+  h2.input(field(h2, "task.id"), "   ");
+  h2.input(field(h2, "task.date"), ` ${S.localDate()} `);
+  ntOp(h2, "ntexample");
+  assert.ok(!/replace it with/.test(h2.$("#ntOps").innerHTML));
+});
+
+test("the same form contents export the same bytes on both builders", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  ntOp(h, "ntexample");
+  h.click(h.$$(".nt-add").find(b => b.getAttribute("data-nadd") === "context.links"));
+  h.input(field(h, "task.title"), "  padded title  ");
+  h.input(field(h, "role.priorities.0"), " padded priority ");
+  const b = bootBuilder();
+  await b.click(b.$("#example"));
+  await b.addRow("links");
+  b.$("#t_title").value = "  padded title  ";
+  b.fireInput(b.$("#t_title"));
+  const prio = b.listEls("priorities")[0].querySelector("input");
+  prio.value = " padded priority ";
+  b.fireInput(prio);
+  assert.equal(preview(h), await b.exportYaml());
+});
+
+test("a draft nobody has typed into takes today's date, and one with content keeps its own", async () => {
+  const stale = JSON.stringify({doc: {task: {date: "2026-09-28"}}});
+  const h = bootShell({stored: "dark", draft: stale});
+  await h.settle();
+  newTab(h);
+  assert.equal(field(h, "task.date").value, S.localDate());
+  assert.match(h.$("#ntDir").textContent, new RegExp("^\\.adp/" + S.localDate().replace(/-/g, "") + "-"));
+  // A draft a person has typed into keeps the date its author gave it.
+  const h2 = bootShell({stored: "dark", draft: JSON.stringify({doc: {task: {id: "ZUP-1", date: "2026-09-28"}}})});
+  await h2.settle();
+  newTab(h2);
+  assert.equal(field(h2, "task.date").value, "2026-09-28");
+  // A typed slug is content too, even with every field blank.
+  const h3 = bootShell({stored: "dark", draft: JSON.stringify({doc: {task: {date: "2026-09-28"}}, slug: "mine", slugEdited: true})});
+  await h3.settle();
+  newTab(h3);
+  assert.equal(field(h3, "task.date").value, "2026-09-28");
+});
+
+// ---- the page: new task, review round eight ----
+
+test("an empty field in an imported row exports blank, and both builders write the same bytes", async () => {
+  const text = GOLDEN.replace('    verify: "Integration test posts a bad address and asserts 422 plus no new row"', "    verify:");
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, text);
+  assert.equal(field(h, "requirements.0.verify").value, "");
+  const y = preview(h);
+  assert.match(y, /    verify: ""\n/);
+  assert.ok(!/"null"/.test(y));
+  // The badge and the bytes agree that the field is empty.
+  assert.match(h.$("#ntSide").innerHTML, /<code>requirements\[0\]\.verify<\/code>/);
+  const b = bootBuilder();
+  await b.importText(text);
+  assert.equal(y, await b.exportYaml());
+});
+
+test("a number or a boolean in a field reads as its text, and a block scalar takes one too", async () => {
+  const text = GOLDEN
+    .replace('  title: "Add server-side validation to the signup email field"', "  title: true")
+    .replace("  background: |\n    Signup currently trusts the client to validate. Bad addresses reach the users table.", "  background: 5");
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, text);
+  assert.match(h.$("#ntOps").innerHTML, /imported the paste — all recognized fields/);
+  assert.equal(field(h, "task.title").value, "true");
+  assert.equal(field(h, "context.background").value, "5");
+  assert.match(h.$("#ntSide").innerHTML, /valid · schema 1\.0/);
+  const y = preview(h);
+  assert.match(y, /  title: "true"\n/);
+  assert.match(y, /  background: \|\n    5\n/);
+  const b = bootBuilder();
+  await b.importText(text);
+  assert.equal(y, await b.exportYaml());
+  // The two keys that carry a whole prompt still take text only.
+  assert.deepEqual(S.placeable({preamble: 5}), {doc: {}, issues: ["preamble is not text; skipped"]});
+});
+
+test("imported artifacts take the chip row's order with each name once", async () => {
+  const text = GOLDEN.replace("    - decision_log\n    - test_adversary",
+    "    - test_adversary\n    - decision_log\n    - decision_log");
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, text);
+  assert.deepEqual(h.$$("input").filter(i => i.checked && i.getAttribute("data-nart")).map(i => i.getAttribute("data-nart")),
+    ["decision_log", "test_adversary"]);
+  const y = preview(h);
+  assert.match(y, /  artifacts:\n    - decision_log\n    - test_adversary\n/);
+  const b = bootBuilder();
+  await b.importText(text);
+  assert.equal(y, await b.exportYaml());
+});
+
+// ---- the page: new task, review round nine ----
+
+test("an imported deferral with no reason exports the blank, and both builders write the same bytes", async () => {
+  const text = GOLDEN.replace('      reason: "Ships behind the existing signup flag, so no deploy note goes out"\n', "");
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, text);
+  assert.equal(field(h, "protocol.defers.0.reason").value, "");
+  assert.equal(field(h, "protocol.defers.0.phase").value, "communication");
+  const y = preview(h);
+  assert.ok(!/undefined/.test(y));
+  assert.match(y, /    - phase: "communication"\n      reason: ""\n/);
+  // The badge still asks for the field the paste left out.
+  assert.match(h.$("#ntSide").innerHTML, /<code>protocol\.defers\[0\]\.reason<\/code>/);
+  const b = bootBuilder();
+  await b.importText(text);
+  assert.equal(y, await b.exportYaml());
+});
+
+test("the badge numbers a requirement row the way the form does", async () => {
+  const addReq = h => h.click(h.$$(".nt-add").find(b => b.getAttribute("data-nadd") === "requirements"));
+  const keysOf = h => (h.$("#ntSide").innerHTML.match(/<code>[^<]*<\/code>/g) || []).map(x => x.replace(/<\/?code>/g, ""));
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  addReq(h);
+  addReq(h);
+  h.input(field(h, "requirements.1.id"), "R9");
+  // The partial row sits second on the screen, so the panel names it second.
+  assert.ok(keysOf(h).includes("requirements[1].statement"));
+  assert.ok(!keysOf(h).some(k => /^requirements\[0\]/.test(k)));
+  const y = preview(h);
+  assert.match(y, /requirements:\n  - id: "R9"\n/);
+  assert.ok(!y.includes('id: "-"'));
+  // A list with no real row asks for a requirement rather than reading the
+  // placeholder as one.
+  const h2 = bootShell({stored: "dark"});
+  await h2.settle();
+  newTab(h2);
+  addReq(h2);
+  assert.ok(keysOf(h2).includes("requirements"));
+  assert.ok(!keysOf(h2).some(k => /^requirements\[/.test(k)));
+});
+
+// ---- the page: new task, review round ten ----
+
+test("an artifacts key with no value imports as the untouched chip row on both builders", async () => {
+  const text = 'task:\n  id: "A-1"\nprotocol:\n  apply: true\n  artifacts:\n';
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  pasteIn(h, text);
+  assert.match(h.$("#ntOps").innerHTML, /imported the paste — all recognized fields/);
+  assert.equal(field(h, "task.id").value, "A-1");
+  assert.deepEqual(h.$$("input").filter(i => i.checked && i.getAttribute("data-nart")).map(i => i.getAttribute("data-nart")),
+    PL.DEFAULT_ARTIFACTS);
+  const b = bootBuilder();
+  await b.importText(text);
+  assert.equal(preview(h), await b.exportYaml());
+});
+
+test("the slug input holds the slug a person typed, and the directory line holds the name the export lands under", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.input(field(h, "task.title"), "First title");
+  h.click(h.$$(".nt-add").find(b => b.getAttribute("data-nadd") === "context.links"));
+  // The redraw leaves the input empty, so a later title cannot go stale in it.
+  assert.equal(h.$("#ntSlug").value, "");
+  assert.match(h.$("#ntDir").textContent, /-first-title\/prompt\.yaml$/);
+  h.input(field(h, "task.title"), "Second title");
+  assert.equal(h.$("#ntSlug").value, "");
+  assert.match(h.$("#ntDir").textContent, /-second-title\/prompt\.yaml$/);
+  // A typed slug owns the line, and clearing it hands the line back.
+  h.input(h.$("#ntSlug"), "mine");
+  assert.match(h.$("#ntDir").textContent, /-mine\/prompt\.yaml$/);
+  h.input(h.$("#ntSlug"), "");
+  assert.match(h.$("#ntDir").textContent, /-second-title\/prompt\.yaml$/);
+});
+
+// ---- the page: new task, review round eleven ----
+
+test("a change on a text field leaves the export card's buttons in the document", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  const title = field(h, "task.title");
+  h.input(title, "Hello");
+  const copy = h.$$(".op").find(o => o.getAttribute("data-op") === "ntcopy");
+  // A browser fires change when the field loses focus, and that is the
+  // mousedown of the click on this button. A rebuild here would take the
+  // button out of the document before the mouseup.
+  h.change(title);
+  assert.equal(h.$$(".op").find(o => o.getAttribute("data-op") === "ntcopy"), copy);
+  assert.match(preview(h), /  title: "Hello"\n/);
+  // A select fires change on its own pick, so it keeps the redraw.
+  const before = h.$("#ntSide").innerHTML;
+  h.change(field(h, "output.format"), "patch");
+  assert.notEqual(h.$("#ntSide").innerHTML, before);
+  assert.match(preview(h), /  format: "patch"\n/);
+});
+
+test("an empty yaml dropped from another screen brings the builder forward and names the file", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  h.fireWindow("drop", {dataTransfer: {files: [{name: "e.yaml", __text: " \n"}]}});
+  await h.settle();
+  assert.equal(h.$("#scrNew").classList.contains("is-on"), true);
+  assert.match(h.$("#ntOps").innerHTML, /nothing to import — e\.yaml is empty\./);
+  // The paste drawer names itself the same way.
+  newTab(h);
+  ntOp(h, "ntpaste");
+  h.$("#ntPaste").value = "   ";
+  h.click(h.$("#ntImport"));
+  assert.match(h.$("#ntOps").innerHTML, /nothing to import — the paste is empty\./);
+});
+
+// ---- the page: new task, review round twelve ----
+
+test("a typed slug reaches the directory line in the convention's kebab case", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.input(h.$("#ntSlug"), "My Slug!");
+  // The input keeps what the person typed, so the caret stays where it is.
+  assert.equal(h.$("#ntSlug").value, "My Slug!");
+  assert.match(h.$("#ntDir").textContent, /-my-slug\/prompt\.yaml$/);
+  // The index builder reads the name back as date, id, and slug.
+  const B = require("../adp-index-builder-lib.js");
+  h.input(field(h, "task.id"), "AV-016");
+  const dir = h.$("#ntDir").textContent.split("/")[1];
+  assert.deepEqual(B.parseDirName(dir).slug, "my-slug");
+});
+
+test("a .yaml chosen in the open and watch picker imports instead of opening as a document", async () => {
+  const h = bootCorpus({picker: async () => [makeHandle("GROW-6687.yaml", GOLDEN)]});
+  await h.settle();
+  h.click(h.$$(".op").find(o => o.getAttribute("data-op") === "openwatch"));
+  await h.settle();
+  // No watched document joins the rail, and the builder holds the prompt.
+  assert.ok(!/WATCHING FILE/.test(h.$("#rail").innerHTML));
+  assert.equal(h.$("#scrNew").classList.contains("is-on"), true);
+  newTab(h);
+  assert.equal(field(h, "task.id").value, "GROW-6687-email-validation");
+  assert.match(h.$("#ntOps").innerHTML, /imported GROW-6687\.yaml — all recognized fields/);
+});
+
+test("a confirmed clear takes its disarm timer with it", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.runTimeouts();
+  ntOp(h, "ntclear");
+  ntOp(h, "ntclear");
+  ntOp(h, "ntclear");
+  assert.match(h.$("#ntOps").innerHTML, /confirm clear/);
+  // One timer is pending, the new arm's own, so it holds the window the
+  // button promises instead of the leftover from the arm before it.
+  assert.equal(h.runTimeouts(), 1);
+  assert.ok(!/confirm clear/.test(h.$("#ntOps").innerHTML));
+});
+
+// ---- the page: new task, review round thirteen ----
+
+test("a toggle written with no value keeps the blank document's state, as the standalone does", async () => {
+  for (const line of ["  apply:", '  apply: ""']) {
+    const text = `task:\n  id: "A-1"\nprotocol:\n${line}\n`;
+    const h = bootShell({stored: "dark"});
+    await h.settle();
+    newTab(h);
+    pasteIn(h, text);
+    assert.match(h.$("#ntOps").innerHTML, /protocol\.apply[^<]*is not true or false; kept as true/, line);
+    assert.equal(h.$$("input").find(i => i.getAttribute("data-nf") === "protocol.apply").checked, true, line);
+    const y = preview(h);
+    assert.match(y, /  apply: true\n/, line);
+    // A blank value must never read as the protocol turned off.
+    assert.ok(!/apply: false/.test(y), line);
+    const b = bootBuilder();
+    await b.importText(text);
+    assert.equal(y, await b.exportYaml(), line);
+  }
+});
+
+// ---- the page: new task, review round fourteen ----
+
+test("a second prompt in one drop is named, and the question keeps the first file", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.input(field(h, "task.title"), "typed");
+  h.fireWindow("drop", {dataTransfer: {files: [
+    {name: "first.yaml", __text: GOLDEN.replace("GROW-6687", "FIRST")},
+    {name: "second.yaml", __text: GOLDEN.replace("GROW-6687", "SECOND")}]}});
+  await h.settle();
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /replace it with first\.yaml\?/);
+  assert.match(ops, /second\.yaml not imported — one prompt at a time\./);
+  // The question still belongs to the first file, and the form takes it.
+  h.click(h.$("#ntReplace"));
+  assert.equal(field(h, "task.id").value, "FIRST-email-validation");
+});
+
+test("a second copy inside the window takes the label timer with it", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.runTimeouts();
+  ntOp(h, "ntcopy");
+  await h.settle();
+  ntOp(h, "ntcopy");
+  await h.settle();
+  assert.match(h.$("#ntSide").innerHTML, /copied/);
+  // One timer is pending, the second copy's own, so the label holds its full
+  // window instead of resting on the timer before it.
+  assert.equal(h.runTimeouts(), 1);
+  assert.match(h.$("#ntSide").innerHTML, /⧉ copy yaml/);
+});
+
+// ---- the page: new task, review round fifteen ----
+
+test("two prompts dropped on a blank form keep the first file's report", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.fireWindow("drop", {dataTransfer: {files: [
+    {name: "first.yaml", __text: GOLDEN.replace("GROW-6687", "FIRST") + "stranger: 1\n"},
+    {name: "second.yaml", __text: GOLDEN.replace("GROW-6687", "SECOND")}]}});
+  await h.settle();
+  // The first file lands with its issues named, and no question erases them.
+  assert.equal(field(h, "task.id").value, "FIRST-email-validation");
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /imported first\.yaml with 1 issue: stranger/);
+  assert.match(ops, /second\.yaml not imported, one prompt at a time/);
+  assert.ok(!/replace it with/.test(ops));
+});
+
+test("three prompts dropped on a form in progress name every file that did not land", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.input(field(h, "task.title"), "typed");
+  h.fireWindow("drop", {dataTransfer: {files: [
+    {name: "first.yaml", __text: GOLDEN.replace("GROW-6687", "FIRST")},
+    {name: "second.yaml", __text: GOLDEN.replace("GROW-6687", "SECOND")},
+    {name: "third.yaml", __text: GOLDEN.replace("GROW-6687", "THIRD")}]}});
+  await h.settle();
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /replace it with first\.yaml\?/);
+  assert.match(ops, /second\.yaml, third\.yaml not imported — one prompt at a time\./);
+  h.click(h.$("#ntReplace"));
+  assert.equal(field(h, "task.id").value, "FIRST-email-validation");
+});
+
+test("the example and a confirmed clear name the file a waiting question asked about", async () => {
+  const drop = h => h.fireWindow("drop", {dataTransfer: {files: [{name: "first.yaml", __text: GOLDEN}]}});
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.input(field(h, "task.title"), "typed");
+  drop(h);
+  await h.settle();
+  ntOp(h, "ntexample");
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /replace it with the example\?/);
+  assert.match(ops, /first\.yaml was not imported\./);
+  // The clear takes the question with the form and names the file too.
+  const h2 = bootShell({stored: "dark"});
+  await h2.settle();
+  newTab(h2);
+  h2.input(field(h2, "task.title"), "typed");
+  drop(h2);
+  await h2.settle();
+  ntOp(h2, "ntclear");
+  ntOp(h2, "ntclear");
+  assert.equal(field(h2, "task.title").value, "");
+  assert.match(h2.$("#ntOps").innerHTML, /first\.yaml was not imported\./);
+  assert.ok(!/replace it with/.test(h2.$("#ntOps").innerHTML));
+});
+
+// ---- the page: new task, review round sixteen ----
+
+/* An item hands over its handle only while the drop event is being handled,
+   the way the drag data store closes to the page once the listener yields. A
+   request made after the first await reads nothing. */
+function liveItems(files, state){
+  return files.map(f => ({
+    getAsFileSystemHandle: () => Promise.resolve(state.live
+      ? {kind: "file", getFile: async () => ({name: f.name, text: async () => f.__text})}
+      : null)
+  }));
+}
+
+test("every file of an item drop is asked for before the handler yields", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  const state = {live: true};
+  h.fireWindow("drop", {dataTransfer: {items: liveItems([
+    {name: "a.md", __text: LOG},
+    {name: "b.md", __text: LOG.replace("AA1 alpha", "AA9 omega")}], state)}});
+  state.live = false;
+  await h.settle();
+  assert.equal((h.$("#rail").innerHTML.match(/rentry/g) || []).length, 2);
+  // A prompt in the same drop still routes to the builder.
+  const h2 = bootShell({stored: "dark"});
+  await h2.settle();
+  const s2 = {live: true};
+  h2.fireWindow("drop", {dataTransfer: {items: liveItems([
+    {name: "a.md", __text: LOG},
+    {name: "p.yaml", __text: GOLDEN}], s2)}});
+  s2.live = false;
+  await h2.settle();
+  newTab(h2);
+  assert.equal(field(h2, "task.id").value, "GROW-6687-email-validation");
+  assert.equal((h2.$("#rail").innerHTML.match(/rentry/g) || []).length, 1);
+});
+
+test("a question that displaces another keeps its line beside the refused files", async () => {
+  const f = (n, id) => ({name: n, __text: GOLDEN.replace("GROW-6687", id)});
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  h.input(field(h, "task.title"), "typed");
+  h.fireWindow("drop", {dataTransfer: {files: [f("first.yaml", "FIRST")]}});
+  await h.settle();
+  h.fireWindow("drop", {dataTransfer: {files: [f("second.yaml", "SECOND"), f("third.yaml", "THIRD")]}});
+  await h.settle();
+  const ops = h.$("#ntOps").innerHTML;
+  assert.match(ops, /replace it with second\.yaml\?/);
+  assert.match(ops, /first\.yaml was not imported\./);
+  assert.match(ops, /third\.yaml not imported — one prompt at a time\./);
 });

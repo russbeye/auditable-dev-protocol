@@ -113,3 +113,21 @@ test("wrong-typed artifacts and empty defers items serialize instead of throwing
   assert.ok(!y.includes("artifacts:"));
   assert.ok(!y.includes("defers:"));
 });
+
+test("a deferral item missing a field writes the empty string, not the text undefined", () => {
+  const text = [
+    'schema_version: "1.0"',
+    "protocol:",
+    "  apply: true",
+    "  defers:",
+    '    - phase: "analysis"',
+    "",
+  ].join("\n");
+  const y = buildYaml(lib.parseYAML(text));
+  assert.match(y, /    - phase: "analysis"\n      reason: ""\n/);
+  assert.ok(!y.includes("undefined"));
+  // A phase left out reads the same way.
+  assert.match(buildYaml(lib.parseYAML([
+    'schema_version: "1.0"', "protocol:", "  apply: true", "  defers:", '    - reason: "r"', ""
+  ].join("\n"))), /    - phase: ""\n      reason: "r"\n/);
+});

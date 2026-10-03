@@ -162,7 +162,7 @@ test("an all-empty lessons row keeps a later flagged row on its own index", asyn
   assert.ok(!keys.includes("lessons_learned[0]"));
 });
 
-test("an all-empty requirement row before a partial one keeps the filtered index", async () => {
+test("an all-empty requirement row before a partial one takes the form's index", async () => {
   const h = bootBuilder();
   await h.addRow("requirements");
   await h.addRow("requirements");
@@ -170,9 +170,16 @@ test("an all-empty requirement row before a partial one keeps the filtered index
   rid.value = "R9";
   h.fireInput(rid);
   const keys = h.issueKeys();
-  assert.ok(keys.includes("requirements[0].statement"));
-  assert.ok(keys.includes("requirements[0].verify"));
+  // The partial row sits second on the screen, so the panel names it second.
+  assert.ok(keys.includes("requirements[1].statement"));
+  assert.ok(keys.includes("requirements[1].verify"));
+  assert.ok(!keys.some(k => /^requirements\[0\]/.test(k)));
   assert.ok(!keys.includes("requirements"));
+  // The export carries the one real row, so the file does not grow a
+  // placeholder.
+  const y = await h.exportYaml();
+  assert.match(y, /requirements:\n  - id: "R9"\n/);
+  assert.ok(!y.includes('id: "-"'));
 });
 
 test("every unmet check row prints its key and the fixed word required", async () => {
