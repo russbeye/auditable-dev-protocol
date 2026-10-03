@@ -769,7 +769,13 @@
      is reported: the keys the parser skipped and the keys the schema does
      not know, in the standalone's wording. */
   function importPrompt(text, source){
-    if (!String(text).trim()){ nt.report = {tone: "warn", text: "nothing to import — paste YAML first."}; renderNewOps(); return false; }
+    // A file reaches here from a drop or an open on any screen, so the builder
+    // comes forward with the line, the way a failed parse does.
+    if (!String(text).trim()){
+      nt.report = {tone: "warn", text: `nothing to import — ${source} is empty.`};
+      renderNewOps(); showNew();
+      return false;
+    }
     const skipped = [];
     let obj = null;
     try{ obj = PL.parseYAML(text, skipped); }catch(e){ obj = null; }
@@ -1324,12 +1330,17 @@
     }
     const f = t.getAttribute("data-nf");
     if (!f) return;
+    // A text field wrote its path and redrew the card on its input event
+    // already. A browser fires change on blur, which lands on the mousedown of
+    // the next click, so a rebuild here takes the button out of the document
+    // before the mouseup and the click never reaches it.
     if (t.getAttribute("type") === "checkbox"){ setPath(f, !!t.checked); lit(); }
-    else {
+    else if (t.tagName === "SELECT"){
       setPath(f, t.value);
       // The placeholder color follows the value, as the standalone's does.
-      if (t.tagName === "SELECT") t.classList.toggle("is-unset", !t.value);
+      t.classList.toggle("is-unset", !t.value);
     }
+    else return;
     renderNewSide(); ntDraft();
   });
 

@@ -2800,3 +2800,40 @@ test("the slug input holds the slug a person typed, and the directory line holds
   h.input(h.$("#ntSlug"), "");
   assert.match(h.$("#ntDir").textContent, /-second-title\/prompt\.yaml$/);
 });
+
+// ---- the page: new task, review round eleven ----
+
+test("a change on a text field leaves the export card's buttons in the document", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  newTab(h);
+  const title = field(h, "task.title");
+  h.input(title, "Hello");
+  const copy = h.$$(".op").find(o => o.getAttribute("data-op") === "ntcopy");
+  // A browser fires change when the field loses focus, and that is the
+  // mousedown of the click on this button. A rebuild here would take the
+  // button out of the document before the mouseup.
+  h.change(title);
+  assert.equal(h.$$(".op").find(o => o.getAttribute("data-op") === "ntcopy"), copy);
+  assert.match(preview(h), /  title: "Hello"\n/);
+  // A select fires change on its own pick, so it keeps the redraw.
+  const before = h.$("#ntSide").innerHTML;
+  h.change(field(h, "output.format"), "patch");
+  assert.notEqual(h.$("#ntSide").innerHTML, before);
+  assert.match(preview(h), /  format: "patch"\n/);
+});
+
+test("an empty yaml dropped from another screen brings the builder forward and names the file", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  h.fireWindow("drop", {dataTransfer: {files: [{name: "e.yaml", __text: " \n"}]}});
+  await h.settle();
+  assert.equal(h.$("#scrNew").classList.contains("is-on"), true);
+  assert.match(h.$("#ntOps").innerHTML, /nothing to import — e\.yaml is empty\./);
+  // The paste drawer names itself the same way.
+  newTab(h);
+  ntOp(h, "ntpaste");
+  h.$("#ntPaste").value = "   ";
+  h.click(h.$("#ntImport"));
+  assert.match(h.$("#ntOps").innerHTML, /nothing to import — the paste is empty\./);
+});
