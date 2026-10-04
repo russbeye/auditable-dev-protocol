@@ -2974,7 +2974,7 @@ test("three prompts dropped on a form in progress name every file that did not l
   assert.equal(field(h, "task.id").value, "FIRST-email-validation");
 });
 
-test("the example and a confirmed clear name the file a waiting question asked about", async () => {
+test("the example and a confirmed clear leave no word about a file nobody is dropping", async () => {
   const drop = h => h.fireWindow("drop", {dataTransfer: {files: [{name: "first.yaml", __text: GOLDEN}]}});
   const h = bootShell({stored: "dark"});
   await h.settle();
@@ -2983,10 +2983,11 @@ test("the example and a confirmed clear name the file a waiting question asked a
   drop(h);
   await h.settle();
   ntOp(h, "ntexample");
+  // The question the example parks speaks for the example alone.
   const ops = h.$("#ntOps").innerHTML;
   assert.match(ops, /replace it with the example\?/);
-  assert.match(ops, /first\.yaml was not imported\./);
-  // The clear takes the question with the form and names the file too.
+  assert.ok(!/first\.yaml/.test(ops));
+  // The clear takes the question with the form and says nothing more.
   const h2 = bootShell({stored: "dark"});
   await h2.settle();
   newTab(h2);
@@ -2996,7 +2997,7 @@ test("the example and a confirmed clear name the file a waiting question asked a
   ntOp(h2, "ntclear");
   ntOp(h2, "ntclear");
   assert.equal(field(h2, "task.title").value, "");
-  assert.match(h2.$("#ntOps").innerHTML, /first\.yaml was not imported\./);
+  assert.ok(!/first\.yaml/.test(h2.$("#ntOps").innerHTML));
   assert.ok(!/replace it with/.test(h2.$("#ntOps").innerHTML));
 });
 
@@ -3037,7 +3038,7 @@ test("every file of an item drop is asked for before the handler yields", async 
   assert.equal((h2.$("#rail").innerHTML.match(/rentry/g) || []).length, 1);
 });
 
-test("a question that displaces another keeps its line beside the refused files", async () => {
+test("a second drop's question names only the files that drop carried", async () => {
   const f = (n, id) => ({name: n, __text: GOLDEN.replace("GROW-6687", id)});
   const h = bootShell({stored: "dark"});
   await h.settle();
@@ -3049,6 +3050,13 @@ test("a question that displaces another keeps its line beside the refused files"
   await h.settle();
   const ops = h.$("#ntOps").innerHTML;
   assert.match(ops, /replace it with second\.yaml\?/);
-  assert.match(ops, /first\.yaml was not imported\./);
   assert.match(ops, /third\.yaml not imported — one prompt at a time\./);
+  // The question the first drop parked is gone, and so is its name.
+  assert.ok(!/first\.yaml/.test(ops));
+});
+
+test("the drop mask names both kinds of file a drop can carry", () => {
+  // The mask covers the whole page during a drag, so it speaks for every
+  // screen, where a screen's own chit names only its own kind.
+  assert.match(HTML, /<div class="maskmsg">▾ drop an audit log to open it, or a prompt\.yaml to import it<\/div>/);
 });

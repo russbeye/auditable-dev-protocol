@@ -13,7 +13,7 @@
 </script>
 </head>
 <body>
-<div class="shellmask" id="shellmask"><div class="maskmsg">▾ drop an audit log to open it</div></div>
+<div class="shellmask" id="shellmask"><div class="maskmsg">▾ drop an audit log to open it, or a prompt.yaml to import it</div></div>
 <div class="shell">
   <header>
     <span class="brand">ADP · <b>MISSION CONTROL</b></span>
@@ -807,14 +807,10 @@
         ? {tone: "warn", text: `imported ${source} with ${issues.length} issue${issues.length === 1 ? "" : "s"}: ${issues.join("; ")}${tail}`}
         : {tone: "ok", text: `imported ${source} — all recognized fields.${tail}`};
     });
-    // A parked question hides the report it would have written, so the refused
-    // files are named beside the question while the reader decides. The line a
-    // displaced question left there stands, since both name a file nobody
-    // imported.
-    if (line && nt.pending){
-      nt.report = {tone: "warn", text: nt.report ? `${nt.report.text} ${line}` : line};
-      renderNewOps();
-    }
+    // A parked question hides the report it would have written, so the files
+    // this gesture carried and could not place are named beside the question
+    // while the reader decides.
+    if (line && nt.pending){ nt.report = {tone: "warn", text: line}; renderNewOps(); }
     return true;
   }
   function ntExample(){
@@ -841,11 +837,10 @@
   function replaceForm(label, apply){
     const go = () => { nt.pending = null; apply(); renderNew(); showNew(); ntDraftNow(); };
     if (!dirty()){ go(); return; }
-    // The earlier import's report sits in the same row as the question, where
-    // a reader takes it for a summary of the file being offered. A question
-    // this one displaces names its own file instead, so nothing the reader was
-    // asked about leaves the screen unexplained.
-    nt.report = nt.pending ? {tone: "warn", text: `${nt.pending.label} was not imported.`} : null;
+    // The row speaks for the gesture in hand. An earlier import's report, or
+    // a question this one displaces, names a file nobody is dropping now, and
+    // a reader takes either for a word about the file being offered.
+    nt.report = null;
     nt.pending = {label, go};
     renderNewOps(); showNew();
   }
@@ -857,12 +852,8 @@
       // The arm's own timer outlives the confirm, and it would disarm the next
       // arm early, so it goes with the label it was watching.
       clearTimeout(ntArmTimer); ntArmTimer = null;
-      // The clear takes the waiting question with the form, so the file it
-      // asked about is named in its place.
-      const waiting = nt.pending ? nt.pending.label : null;
       ntDraftDelete();
       doc = blankDoc(); nt = freshNt();
-      if (waiting) nt.report = {tone: "warn", text: `${waiting} was not imported.`};
       renderNew();
       return;
     }
