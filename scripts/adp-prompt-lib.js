@@ -167,7 +167,10 @@
     const defers=Array.isArray(d.protocol.defers)?d.protocol.defers.filter(isObj):[];
     if(defers.length){
       L.push("  defers:");
-      defers.forEach(x=>{ L.push(`    - phase: ${qstr(x.phase)}`); L.push(`      reason: ${qstr(x.reason)}`); });
+      // A hand-written item can leave a field out, and qstr over undefined
+      // writes the text undefined into the file. An absent field is nothing
+      // written, so we write the empty string the builders both export.
+      defers.forEach(x=>{ L.push(`    - phase: ${qstr(x.phase||"")}`); L.push(`      reason: ${qstr(x.reason||"")}`); });
     }
     return L.join("\n").replace(/\n{3,}/g,"\n\n").replace(/\s+$/,"")+"\n";
   }
@@ -455,7 +458,64 @@
     };
   }
 
-  const ADPPromptLib={parseYAML,buildYaml,validate,blankDocument,normalize,createStatusAnnouncer,ARTIFACTS,FORMATS,DEFAULT_ARTIFACTS,PHASES};
+  /* The badge judges the document buildYaml will write, not the raw form
+     state. We apply the same omissions buildYaml applies when it serializes,
+     so an untouched form never flags a field its export leaves out. If you
+     change an emission guard in buildYaml, change its rule here too. The
+     argument is edited in place; a caller that keeps its document passes a
+     copy. Each omission reads the shape it omits and leaves any other value
+     alone. That keeps us total over a document normalize() has not filled,
+     and it hands validate() a wrong-typed block to report itself. */
+  function asExported(d){
+    if(!isObj(d)) return d;
+    // buildYaml omits an all-blank role group, so the lens presence rule
+    // must not see one.
+    if(isObj(d.role) && !d.role.lens && !asList(d.role.priorities).length) delete d.role;
+    // buildYaml drops all-empty requirement rows. Filtering would shift the
+    // index of a flagged row behind an empty one, so a placeholder that passes
+    // validation keeps every index where the panel points. A list with no real
+    // row keeps the filter, because the export then carries no requirement and
+    // the panel has to ask for one.
+    if(Array.isArray(d.requirements)){
+      const kept=d.requirements.filter(r=>!isObj(r)||r.id||r.statement||r.verify);
+      d.requirements=kept.length?d.requirements.map(r=>isObj(r)&&!r.id&&!r.statement&&!r.verify?{id:"-",statement:"-",verify:"-"}:r):kept;
+    }
+    // buildYaml drops all-empty lesson rows too, but filtering would shift
+    // the index of a flagged row behind an empty one. A placeholder that
+    // passes validation keeps every index where the panel already points.
+    if(Array.isArray(d.lessons_learned)) d.lessons_learned=d.lessons_learned.map(x=>!isObj(x)||x.context||x.takeaway?x:{context:"-",takeaway:"-"});
+    return d;
+  }
+
+  /* The one example document both builders load. The values are the
+     standalone builder's example, and the suite pins buildYaml over this
+     document to its golden fixture, so the bytes an example produces are
+     the same on either page. Callers get a fresh copy each time. */
+  const EXAMPLE={
+    task:{id:"GROW-6687-email-validation",title:"Add server-side validation to the signup email field",author:"rbeye",date:"2026-06-18"},
+    preamble:"Ignore prior memories about the visual config builder.\nAssume the reader knows the signup runtime, not the builder.",
+    role:{lens:"Staff engineer accountable for data integrity",
+      priorities:["Reject invalid input before it reaches the database","Keep the change small and reversible"]},
+    prompt:"Validate the signup email on the server so malformed addresses are rejected\nwith a 422 and a clear message, instead of being stored.",
+    constraints:{out_of_scope:["Client-side validation changes","Email deliverability or verification mail"],
+      must_not:["Change the public signup API response shape"]},
+    context:{background:"Signup currently trusts the client to validate. Bad addresses reach the users table.",
+      references:[{path:"src/signup/handler.ts",lines:"42-88",note:"Where the request body is parsed and persisted"}],
+      links:["https://example.atlassian.net/browse/GROW-6687"]},
+    lessons_learned:[{context:"A regex-only check was tried before",takeaway:"It rejected valid plus-addressed emails; use a parser, not a regex"}],
+    output:{format:"patch",destination:"Edit files in place",
+      structure:"A minimal diff to src/signup/handler.ts plus one test file.\nName each file and the functions touched."},
+    requirements:[{id:"R1",statement:"A malformed email returns 422 and is not persisted",verify:"Integration test posts a bad address and asserts 422 plus no new row"}],
+    protocol:{apply:true,stake_single_recommendation:true,log_assumptions:true,flag_low_confidence:true,
+      artifacts:["decision_log","test_adversary"],
+      defers:[
+        {phase:"communication",reason:"Ships behind the existing signup flag, so no deploy note goes out"},
+        {phase:"obligations",reason:"Follow-up obligations ride the GROW-6688 cleanup ticket"}
+      ]}
+  };
+  function exampleDocument(){ return JSON.parse(JSON.stringify(EXAMPLE)); }
+
+  const ADPPromptLib={parseYAML,buildYaml,validate,asExported,blankDocument,normalize,exampleDocument,createStatusAnnouncer,ARTIFACTS,FORMATS,DEFAULT_ARTIFACTS,PHASES};
   if(typeof module!=="undefined"&&module.exports){ module.exports=ADPPromptLib; }
   else{ global.ADPPromptLib=ADPPromptLib; }
 })(typeof globalThis!=="undefined"?globalThis:this);

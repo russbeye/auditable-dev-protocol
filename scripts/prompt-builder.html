@@ -599,9 +599,13 @@
     // buildYaml omits an all-blank role group, so the lens presence rule
     // must not see one.
     if(!d.role.lens && !d.role.priorities.length) delete d.role;
-    // buildYaml drops all-empty requirement rows. Filtering here keeps the
-    // remaining rows on the same indexes the export gives them.
-    d.requirements=d.requirements.filter(r=>r.id||r.statement||r.verify);
+    // buildYaml drops all-empty requirement rows. Filtering would shift the
+    // index of a flagged row behind an empty one, so a placeholder that passes
+    // validation keeps every index where the panel points. A list with no real
+    // row keeps the filter, because the export then carries no requirement and
+    // the panel has to ask for one.
+    const reqs=d.requirements.filter(r=>r.id||r.statement||r.verify);
+    d.requirements=reqs.length?d.requirements.map(r=>r.id||r.statement||r.verify?r:{id:"-",statement:"-",verify:"-"}):reqs;
     // buildYaml drops all-empty lesson rows too, but filtering would shift
     // the index of a flagged row behind an empty one. A placeholder that
     // passes validation keeps every index where the panel already points.
