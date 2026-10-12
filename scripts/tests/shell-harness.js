@@ -426,9 +426,14 @@ function bootShell(opts){
     for (let i = 0; i < 4; i++) await new Promise(r => setImmediate(r));
   }
 
+  /* The sandbox rides along so a test can count calls into a lib the page
+     holds by reference: the page reads a method off the global object at
+     call time, so a wrapper installed here is the one the page runs. That is
+     how a test asserts that work did not happen, which no rendered output
+     can show. */
   return {document, documentElement, $, $$, storage, click, key, change, input,
     fireWindow, tick, runTimeouts, settle, warns, hashes, clipboard, location,
-    intervals, downloads, blobText};
+    intervals, downloads, blobText, sandbox};
 }
 
 module.exports = {bootShell};

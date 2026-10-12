@@ -1,0 +1,68 @@
+{
+  "schema": "adp-index/1",
+  "project": "fixture",
+  "generated": "2026-10-12",
+  "source": "snapshot",
+  "tickets": [
+    {
+      "id": "FX011",
+      "dir": "20261012-FX011-signal-and-premortem",
+      "slug": "signal-and-premortem",
+      "date": "2026-10-12",
+      "title": null,
+      "state": "shipped",
+      "state_source": "inferred",
+      "pr": null,
+      "merged": null,
+      "phase": 9,
+      "sections": [
+        {
+          "key": "sec-pre-mortem-report",
+          "title": "Pre-Mortem Report",
+          "phase": 4,
+          "canonical": true
+        },
+        {
+          "key": "sec-decision-log",
+          "title": "Decision Log",
+          "phase": 5,
+          "canonical": true
+        },
+        {
+          "key": "sec-obligation-ticket-list",
+          "title": "Obligation Ticket List",
+          "phase": 9,
+          "canonical": true
+        }
+      ],
+      "refs": {},
+      "decisions": [
+        {
+          "id": "DL-001",
+          "title": "an entry naming its observable",
+          "confidence": "HIGH",
+          "basis": null,
+          "status": "OPEN",
+          "created": "2026-10-12",
+          "signal": "the pack prints a kind — fires at one row — distinguishes: a kind the sweep never reported"
+        }
+      ],
+      "watches": [],
+      "missing": [
+        "Problem Statement",
+        "Knowledge Gap",
+        "Recommendation Brief",
+        "Test Adversary",
+        "PR Summary",
+        "Deployment Risk"
+      ],
+      "premortem": [
+        {
+          "mode": "",
+          "likelihood": "L",
+          "implemented_at": "PENDING"
+        }
+      ]
+    }
+  ]
+}

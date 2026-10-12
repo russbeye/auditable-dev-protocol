@@ -71,7 +71,8 @@ test("packSlots lists each construct once in first-use order, closers excluded",
 
 // ---- the context ----
 
-const idx = R.buildFixtureIndex();
+const fx = R.buildFixtureCorpus();
+const idx = fx.index;
 const ticket = id => idx.tickets.find(t => t.id === id);
 
 test("a ruled entry and a closed watch are absent from the ticket's context", () => {
@@ -161,6 +162,99 @@ test("the evidence mix groups open entries by basis kind and counts them", () =>
   assert.deepEqual(ctx.basis_counts, {direct: 0, inference: 1, assertion: 1, other: 0, none: 1});
 });
 
+// Eight kinds over three tickets, deliberately out of order, so the grouping
+// and both tiebreaks are pinned without a corpus that stages every kind.
+const STAGED = [
+  {dir: "misc-notes", id: "misc-notes/audit-log.md", finding: "control-byte", offset: 49},
+  {dir: "20260815-FX001-declared-lifecycle", id: "sec-naming-note", finding: "misplaced", after: "sec-obligation-ticket-list"},
+  {dir: "20260827-FX003-closed-watches", id: "OT-FX003-9", finding: "phantom"},
+  {dir: "20260815-FX001-declared-lifecycle", id: "OT-FX001-1", finding: "undated-window"},
+  {dir: "20260827-FX003-closed-watches", id: "OT-FX003-1", finding: "contradiction"},
+  {dir: "20260815-FX001-declared-lifecycle", id: "OT-x y", finding: "wid-shape"},
+  {dir: "20260827-FX003-closed-watches", id: "DL-009", finding: "phantom"},
+  {dir: "20260827-FX003-closed-watches", id: "OT-FX003-3", finding: "dead-anchor"},
+  {dir: "20260827-FX003-closed-watches", id: "OT-FX003-1", finding: "near-miss"}];
+
+test("advisories group by the contract's kind order, then by ticket and id", () => {
+  const ctx = S.packContext(idx, null, idx.generated, STAGED);
+  assert.deepEqual(ctx.advisories.map(a => [a.kind, a.tid, a.id, a.detail]), [
+    ["phantom", "FX003", "DL-009", ""],
+    ["phantom", "FX003", "OT-FX003-9", ""],
+    ["contradiction", "FX003", "OT-FX003-1", ""],
+    ["dead-anchor", "FX003", "OT-FX003-3", ""],
+    ["near-miss", "FX003", "OT-FX003-1", ""],
+    ["wid-shape", "FX001", "OT-x y", ""],
+    ["misplaced", "FX001", "sec-naming-note", "after sec-obligation-ticket-list"],
+    ["control-byte", "misc-notes", "misc-notes/audit-log.md", "byte 49"],
+    ["undated-window", "FX001", "OT-FX001-1", ""]]);
+  assert.deepEqual(ctx.advisory_counts, {phantom: 2, contradiction: 1, dead_anchor: 1,
+    near_miss: 1, wid_shape: 1, misplaced: 1, control_byte: 1, undated_window: 1, total: 9});
+});
+
+test("a caller that passes no advisories gets the lists a clean sweep gives", () => {
+  for (const arg of [undefined, []]){
+    const ctx = S.packContext(idx, null, idx.generated, arg);
+    assert.deepEqual(ctx.advisories, []);
+    assert.equal(ctx.advisory_counts.total, 0);
+    assert.equal(ctx.advisory_counts.phantom, 0);
+  }
+});
+
+test("an advisory of an unknown kind counts in the total alone and leads the list", () => {
+  const ctx = S.packContext(idx, null, idx.generated,
+    [{dir: "misc-notes", id: "x", finding: "phantom"}, {dir: "misc-notes", id: "y", finding: "future-kind"}]);
+  assert.deepEqual(ctx.advisories.map(a => a.kind), ["future-kind", "phantom"]);
+  assert.equal(ctx.advisory_counts.total, 2);
+  assert.equal("future_kind" in ctx.advisory_counts, false);
+});
+
+test("packGapKind reads the gap off the signal's leading token", () => {
+  assert.equal(S.packGapKind(null), "no signal");
+  assert.equal(S.packGapKind("   "), "no signal");
+  assert.equal(S.packGapKind("UNOBSERVABLE — nobody can see it"), "UNOBSERVABLE");
+  assert.equal(S.packGapKind("unobservable — the same claim in lower case"), "UNOBSERVABLE");
+  assert.equal(S.packGapKind("The count test — fires at one kind"), null);
+  assert.equal(S.packGapKind("An UNOBSERVABLE assumption elsewhere in the sentence"), null);
+});
+
+test("the gap list is the ledger's open rows whose card names no observable", () => {
+  const ctx = S.packContext(idx, null, idx.generated);
+  assert.deepEqual(ctx.instrumentation_gaps.map(g => [g.tid, g.id, g.gap]), [
+    ["FX001", "DL-002", "no signal"],
+    ["FX004", "DL-002", "UNOBSERVABLE"]]);
+  assert.deepEqual(ctx.gap_counts, {missing: 1, unobservable: 1, total: 2, open: 3});
+});
+
+test("a recorded ruling settles a card before the gap list sees it", () => {
+  const B = require("../adp-index-builder-lib.js");
+  const log = ["# T", "", "## Decision Log", "",
+    "### [DL-001] unruled and unsignalled", "- **Decision:** x", "- **Confidence:** HIGH",
+    "- **Status:** OPEN", "",
+    "### [DL-002] ruled on the record, still OPEN on its card", "- **Decision:** y",
+    "- **Confidence:** HIGH", "- **Status:** OPEN", "",
+    "## Obligation Ticket List", "",
+    "| Ticket ID | Decision Log ref | Assumption to validate | Priority | Exit condition | Observation window |",
+    "|---|---|---|---|---|---|",
+    "| OT-GAP1-1 | DL-001 | it holds | HIGH | done → VALIDATED | 2026-12-01 |", "",
+    "- **DL-002 CLOSED 2026-11-02 → VALIDATED.** Quiet through the window.", ""].join("\n");
+  const one = B.buildIndex([{path: "20260901-GAP1-gaps/audit-log.md", text: log}],
+    {project: "p", generated: "2026-11-20", source: "snapshot"});
+  const ctx = S.packContext(one, null, "2026-11-20");
+  assert.deepEqual(ctx.instrumentation_gaps.map(g => g.id), ["DL-001"]);
+  assert.deepEqual(ctx.gap_counts, {missing: 1, unobservable: 0, total: 1, open: 1});
+});
+
+test("the pre-mortem lists split by the anchor cell, and an anchored row reaches no pack", () => {
+  const ctx = S.packContext(idx, null, idx.generated);
+  assert.deepEqual(ctx.pending_mitigations.map(r => [r.tid, r.likelihood, r.implemented_at]),
+    [["FX004", "M", "PENDING"]]);
+  assert.deepEqual(ctx.rebuttals.map(r => [r.tid, r.likelihood, r.implemented_at]),
+    [["FX004", "L", "—"]]);
+  // The anchored row is in the index for a consumer that can read the repo.
+  assert.deepEqual(ticket("FX004").premortem.map(r => r.implemented_at),
+    ["`renderViewerGolden`", "PENDING", "—"]);
+});
+
 test("tickets in review list their PR, open entries, and live watches; the fixtures have none", () => {
   assert.deepEqual(S.packContext(idx, null, idx.generated).in_review, []);
   const B = require("../adp-index-builder-lib.js");
@@ -201,7 +295,7 @@ test("the bootstrap pack states the record's watch convention, not the mockup's"
 });
 
 test("the shipped packs use only slots the context provides", () => {
-  const ctx = S.packContext(idx, ticket("FX004"), idx.generated);
+  const ctx = S.packContext(idx, ticket("FX004"), idx.generated, fx.advisories);
   const known = new Set(Object.keys(ctx));
   const watchKeys = ["tid", "wid", "what", "due", "state"];
   const entryKeys = ["tid", "id", "title", "confidence"];
@@ -211,7 +305,11 @@ test("the shipped packs use only slots the context provides", () => {
     unwatched: entryKeys, basis_direct: entryKeys, basis_inference: entryKeys,
     basis_assertion: entryKeys, basis_other: entryKeys, basis_none: entryKeys,
     open_by_age: entryKeys.concat("age", "watch"),
-    in_review: ["id", "dir", "pr", "open_count", "live_count"]};
+    in_review: ["id", "dir", "pr", "open_count", "live_count"],
+    advisories: ["kind", "tid", "id", "detail"],
+    instrumentation_gaps: entryKeys.concat("gap"),
+    pending_mitigations: ["tid", "mode", "likelihood", "implemented_at"],
+    rebuttals: ["tid", "mode", "likelihood", "implemented_at"]};
   for (const file of R.packFiles()){
     const tpl = fs.readFileSync(path.join(R.PACKS_DIR, file), "utf8");
     // Every opener goes on the stack and every closer pops one, so a value
@@ -234,7 +332,7 @@ test("every shipped pack fills to its golden byte for byte, and no golden is sta
   const packs = R.packFiles();
   assert.ok(packs.length >= 4, "the four packs ship");
   for (const file of packs){
-    const got = R.fillFixturePack(file, idx);
+    const got = R.fillFixturePack(file, fx);
     const want = fs.readFileSync(R.goldenPath(file), "utf8");
     assert.equal(got, want, file + " differs from its golden; regenerate deliberately");
   }
@@ -245,9 +343,7 @@ test("every shipped pack fills to its golden byte for byte, and no golden is sta
 
 test("the fill is a pure function of the index and the pack: same index in, same bytes out", () => {
   const files = R.readCorpus(R.CORPUS);
-  const shuffled = files.slice().reverse();
-  const B = require("../adp-index-builder-lib.js");
-  const again = B.buildIndex(shuffled, R.OPTS);
+  const again = R.buildFixtureCorpus(files.slice().reverse());
   for (const file of R.packFiles())
-    assert.equal(R.fillFixturePack(file, again), R.fillFixturePack(file, idx), file);
+    assert.equal(R.fillFixturePack(file, again), R.fillFixturePack(file, fx), file);
 });

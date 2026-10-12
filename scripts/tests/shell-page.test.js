@@ -1537,14 +1537,18 @@ const packTab = h => h.click(h.$$(".mtab")[4]);
 const selectedKey = h => h.$$(".rentry").find(r => r.classList.contains("is-sel")).getAttribute("data-key");
 const selectedPacks = h => h.$$(".pk").filter(b => b.classList.contains("is-on")).map(b => b.getAttribute("data-pk"));
 
-// What the page must show for a ticket: the same corpus built the same way
-// the seam builds it, filled by the lib for that ticket on the index's day.
-function expectedPack(name, key){
-  const index = B.buildIndex(
-    LISTING_WB.files.map(p => (p in TEXTS_WB ? {path: p, text: TEXTS_WB[p]} : {path: p})),
-    {project: "demo", generated: S.localDate(), source: "working-tree"});
+/* What the page must show for a ticket: the same corpus built the same way
+   the seam builds it, swept the same way the page sweeps it, filled by the
+   lib for that ticket on the index's day. texts defaults to the staged pair
+   and takes a changed corpus, which is how a test reads the fill the page
+   owes after a tick. */
+function expectedPack(name, key, texts){
+  const served = texts || TEXTS_WB;
+  const files = LISTING_WB.files.map(p => (p in served ? {path: p, text: served[p]} : {path: p}));
+  const index = B.buildIndex(files, {project: "demo", generated: S.localDate(), source: "working-tree"});
   const t = index.tickets.find(x => (x.id || x.dir) === key);
-  return S.fillPack(packText(name + ".pack.md"), S.packContext(index, t, index.generated));
+  return S.fillPack(packText(name + ".pack.md"),
+    S.packContext(index, t, index.generated, B.lintCorpus(files)));
 }
 
 test("loadPacks returns every listed pack in listing order, with its name, file, and text", async () => {
@@ -1639,6 +1643,69 @@ test("a resume pack deep link boots to the screen and a tab visit writes its tok
   await h2.settle();
   packTab(h2);
   assert.match(h2.hashes[h2.hashes.length - 1], /^#v=resume%20pack/);
+});
+
+// A record naming a ticket id with no card: the advisory sweep's phantom.
+const LOG_PHANTOM = LOG_B.replace(
+  "- **OT-BB2-3 CLOSED 2026-08-10 → VALIDATED.** The window ended quiet.",
+  "- **OT-BB2-3 CLOSED 2026-08-10 → VALIDATED.** The window ended quiet.\n- **OT-BB2-9 CLOSED 2026-08-11 → VALIDATED.** No row carries this id.");
+
+function selectPack(h, name){
+  h.click(h.$$(".pk").find(b => b.getAttribute("data-pk") === name));
+}
+
+test("the ledger-integrity pack fills from the sweep over the served corpus", async () => {
+  const live = {texts: Object.assign({}, TEXTS_WB)};
+  const h = bootShell({stored: "dark",
+    fetch: packsFetch(u => corpusFetch(LISTING_WB, live.texts)(u))});
+  await h.settle();
+  packTab(h);
+  selectPack(h, "ledger-integrity");
+  assert.equal(h.$("#packText").innerHTML, P.esc(expectedPack("ledger-integrity", selectedKey(h))));
+  assert.match(h.$("#packText").innerHTML, /the corpus linted clean/);
+  // A record appended under the watched log reaches the pack on the next tick.
+  live.texts["20260102-BB2-beta/audit-log.md"] = LOG_PHANTOM;
+  h.tick();
+  await h.settle();
+  assert.match(h.$("#packText").innerHTML, /\[phantom\] BB2 OT-BB2-9/);
+  assert.equal(h.$("#packText").innerHTML,
+    P.esc(expectedPack("ledger-integrity", selectedKey(h), live.texts)));
+});
+
+test("a poll tick that adopts nothing runs no advisory sweep", async () => {
+  const live = {texts: Object.assign({}, TEXTS_WB)};
+  const h = bootShell({stored: "dark",
+    fetch: packsFetch(u => corpusFetch(LISTING_WB, live.texts)(u))});
+  await h.settle();
+  packTab(h);
+  selectPack(h, "ledger-integrity");
+  /* The sweep costs a second walk of every log, so it belongs in the branch
+     that adopts a corpus and nowhere else. The page holds the lib by
+     reference and reads the method at call time, so a counting wrapper here
+     is the one the page runs. */
+  const real = h.sandbox.ADPIndexBuilder.lintCorpus;
+  let swept = 0;
+  h.sandbox.ADPIndexBuilder.lintCorpus = files => { swept++; return real(files); };
+  const before = h.$("#packText").innerHTML;
+  h.tick();
+  await h.settle();
+  assert.equal(swept, 0);
+  assert.equal(h.$("#packText").innerHTML, before);
+  live.texts["20260102-BB2-beta/audit-log.md"] = LOG_PHANTOM;
+  h.tick();
+  await h.settle();
+  assert.equal(swept, 1);
+  assert.notEqual(h.$("#packText").innerHTML, before);
+  h.sandbox.ADPIndexBuilder.lintCorpus = real;
+});
+
+test("a corpus that never loads leaves the sweep empty and the screen on its notice", async () => {
+  const h = bootShell({stored: "dark", fetch: packsFetch(() => Promise.resolve({ok: false}))});
+  await h.settle();
+  packTab(h);
+  selectPack(h, "ledger-integrity");
+  assert.match(h.$("#scrPack").innerHTML, /no corpus behind this page/);
+  assert.equal(h.$("#packText"), null);
 });
 
 test("with no packs behind the page the screen says so and rows nothing", async () => {

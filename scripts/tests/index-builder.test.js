@@ -423,6 +423,121 @@ test("a supersedes field harvests as a backlink, and a placeholder drops the key
   assert.equal("supersedes" in ticket(doc, "AV090").decisions[0], false);
 });
 
+// One log, built on its own, when the assertion is about a shape the fixture
+// corpus does not carry.
+function oneTicket(dir, lines){
+  return builder.buildIndex([{path: dir + "/audit-log.md", text: lines.join("\n")}], OPTS).tickets[0];
+}
+
+test("a monitoring signal harvests as the folded field line, and a card without one carries no key", () => {
+  const doc = fixtureDoc();
+  assert.equal(ticket(doc, "AV090").decisions[0].signal,
+    "A second decision card in this fixture — fires at one card — distinguishes: a card in another fixture log, which belongs to its own ticket.");
+  assert.equal(ticket(doc, "FX004").decisions[1].signal.startsWith("UNOBSERVABLE — "), true);
+  assert.equal("signal" in ticket(doc, "FX004").decisions[0], false);
+  assert.equal("signal" in ticket(doc, "FX001").decisions[0], false);
+});
+
+test("a wrapped monitoring signal folds to one space-joined line", () => {
+  const t = oneTicket("20260901-SIG1-wrapped", ["# T", "", "## Decision Log", "",
+    "### [DL-001] wrapped field", "- **Decision:** x", "- **Confidence:** HIGH",
+    "- **Monitoring signal:** the error rate on checkout above 2%",
+    "  for five minutes — fires at the fifth minute —",
+    "  distinguishes: a traffic spike, which moves the count and not the rate",
+    "- **Status:** OPEN", ""]);
+  assert.equal(t.decisions[0].signal,
+    "the error rate on checkout above 2% for five minutes — fires at the fifth minute — distinguishes: a traffic spike, which moves the count and not the rate");
+});
+
+test("a card that states no signal at all emits no key, blank field included", () => {
+  const t = oneTicket("20260901-SIG2-blank", ["# T", "", "## Decision Log", "",
+    "### [DL-001] blank field", "- **Decision:** x", "- **Confidence:** HIGH",
+    "- **Monitoring signal:**", "- **Status:** OPEN", ""]);
+  assert.equal("signal" in t.decisions[0], false);
+});
+
+test("every additive key on a card keeps ascending order however many land", () => {
+  const t = oneTicket("20260901-KO1-key-order", ["# T", "", "## Decision Log", "",
+    "### [DL-002] all four additive keys", "- **Supersedes:** DL-001",
+    "- **Decision:** x", "- **Confidence:** HIGH",
+    "- **Monitoring signal:** the count — fires at one",
+    "- **Created:** 2026-09-01 / Phase 5", "- **Status:** OPEN", "",
+    "- **DL-002 CLOSED 2026-09-10 → VALIDATED.** Ruled on the record.", ""]);
+  assert.deepEqual(Object.keys(t.decisions[0]),
+    ["id", "title", "confidence", "basis", "status", "created",
+     "closed", "outcome", "signal", "supersedes"]);
+  assert.deepEqual(indexLib.validateIndex(
+    builder.buildIndex([{path: "20260901-KO1-key-order/audit-log.md",
+      text: ["# T", "", "## Decision Log", "", "### [DL-002] all four additive keys",
+        "- **Supersedes:** DL-001", "- **Decision:** x", "- **Confidence:** HIGH",
+        "- **Monitoring signal:** the count — fires at one",
+        "- **Created:** 2026-09-01 / Phase 5", "- **Status:** OPEN", "",
+        "- **DL-002 CLOSED 2026-09-10 → VALIDATED.** Ruled on the record.", ""].join("\n")}],
+      OPTS)), []);
+});
+
+test("a Pre-Mortem table harvests every row with a failure mode, whatever its anchor cell says", () => {
+  const t = ticket(fixtureDoc(), "FX004");
+  assert.deepEqual(t.premortem, [
+    {mode: "A kind is missing from the fixture", likelihood: "L", implemented_at: "`renderViewerGolden`"},
+    {mode: "The fixture drifts from the registry after a vocabulary change", likelihood: "M", implemented_at: "PENDING"},
+    {mode: "A reader takes this fixture for a real run", likelihood: "L", implemented_at: "—"}]);
+});
+
+test("a log with no Pre-Mortem table carries no premortem key", () => {
+  const doc = fixtureDoc();
+  for (const id of ["FX001", "FX002", "FX003", "AV090", "misc-notes"])
+    assert.equal("premortem" in ticket(doc, id), false, id);
+});
+
+test("a renamed Pre-Mortem column harvests nothing rather than a wrong cell", () => {
+  const rows = ["| The build breaks | M | H | Mitigation: a test | the suite — fires at one | PENDING |", ""];
+  const named = oneTicket("20260901-PM1-named", ["# T", "", "## Pre-Mortem Report", "",
+    "| Failure mode | Likelihood | Impact | Developer response | Monitoring signal | Implemented at |",
+    "|---|---|---|---|---|---|"].concat(rows));
+  assert.deepEqual(named.premortem,
+    [{mode: "The build breaks", likelihood: "M", implemented_at: "PENDING"}]);
+  const renamed = oneTicket("20260901-PM2-renamed", ["# T", "", "## Pre-Mortem Report", "",
+    "| Failure mode | Likelihood | Impact | Developer response | Monitoring signal | Landed at |",
+    "|---|---|---|---|---|---|"].concat(rows));
+  assert.equal("premortem" in renamed, false);
+});
+
+test("Pre-Mortem columns resolve by name, so a reordered table harvests the right cells", () => {
+  const t = oneTicket("20260901-PM3-reordered", ["# T", "", "## Pre-Mortem Report", "",
+    "| Implemented at | Impact | Failure mode | Likelihood |",
+    "|---|---|---|---|",
+    "| PENDING | H | The build breaks | M |", ""]);
+  assert.deepEqual(t.premortem,
+    [{mode: "The build breaks", likelihood: "M", implemented_at: "PENDING"}]);
+});
+
+test("a table with no likelihood column harvests the empty string for it", () => {
+  const t = oneTicket("20260901-PM4-no-likelihood", ["# T", "", "## Pre-Mortem Report", "",
+    "| Failure mode | Implemented at |", "|---|---|",
+    "| The build breaks | PENDING |", ""]);
+  assert.deepEqual(t.premortem, [{mode: "The build breaks", likelihood: "", implemented_at: "PENDING"}]);
+});
+
+test("a Pre-Mortem table inside a fence harvests nothing, and an empty mode cell is an empty row", () => {
+  const t = oneTicket("20260901-PM5-fenced", ["# T", "", "## Pre-Mortem Report", "",
+    "```", "| Failure mode | Likelihood | Implemented at |", "|---|---|---|",
+    "| the template's own row | H/M/L | PENDING |", "```", "",
+    "| Failure mode | Likelihood | Implemented at |", "|---|---|---|",
+    "| | — | — |", "| The build breaks | M | PENDING |", ""]);
+  assert.deepEqual(t.premortem, [{mode: "The build breaks", likelihood: "M", implemented_at: "PENDING"}]);
+});
+
+test("a Pre-Mortem table harvests wherever it sits, in document order across tables", () => {
+  const t = oneTicket("20260901-PM6-two-tables", ["# T", "", "## Pre-Mortem Report", "",
+    "| Failure mode | Likelihood | Implemented at |", "|---|---|---|",
+    "| stage one fails | M | PENDING |", "",
+    "## Review addendum", "",
+    "| Failure mode | Likelihood | Implemented at |", "|---|---|---|",
+    "| stage two fails | L | — |", ""]);
+  assert.deepEqual(t.premortem.map(r => r.mode), ["stage one fails", "stage two fails"]);
+});
+
 test("block material after a card's fields never rides into a field value", () => {
   const doc = fixtureDoc();
   assert.equal(ticket(doc, "FX001").decisions[0].status, "VALIDATED");

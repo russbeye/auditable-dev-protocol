@@ -489,7 +489,8 @@
           "confidence": "LOW",
           "basis": "INFERENCE FROM CONVENTION — most logs on record append companions at the end.",
           "status": "OPEN",
-          "created": "2026-09-11"
+          "created": "2026-09-11",
+          "signal": "UNOBSERVABLE — no page reports where a companion section sits, and a reader of one log sees no convention to break."
         }
       ],
       "watches": [
@@ -516,7 +517,24 @@
           "outcome": "VALIDATED"
         }
       ],
-      "missing": []
+      "missing": [],
+      "premortem": [
+        {
+          "mode": "A kind is missing from the fixture",
+          "likelihood": "L",
+          "implemented_at": "`renderViewerGolden`"
+        },
+        {
+          "mode": "The fixture drifts from the registry after a vocabulary change",
+          "likelihood": "M",
+          "implemented_at": "PENDING"
+        },
+        {
+          "mode": "A reader takes this fixture for a real run",
+          "likelihood": "L",
+          "implemented_at": "—"
+        }
+      ]
     },
     {
       "id": "AV090",
@@ -575,7 +593,8 @@
           "confidence": "LOW",
           "basis": "DEVELOPER ASSERTION — fixture data.",
           "status": "OPEN",
-          "created": "2026-07-01"
+          "created": "2026-07-01",
+          "signal": "A second decision card in this fixture — fires at one card — distinguishes: a card in another fixture log, which belongs to its own ticket."
         }
       ],
       "watches": [

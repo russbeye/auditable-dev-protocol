@@ -107,7 +107,11 @@
      log failed to fetch as prompt-only, and a wrong dashboard is worse than
      an absent one. The index is metadata-only, so the raw texts ride along
      keyed by ticket dir — the inspector renders section bodies from them
-     without a second trip to the network. */
+     without a second trip to the network. The (path, text) pairs the index
+     was built from ride along too, because the advisory sweep takes the same
+     shape, and a caller that rebuilt the list from the texts would hold a
+     second copy of the corpus-file rule, able to drift from the one the
+     index was built under. */
   async function loadCorpus(fetchFn, opts){
     opts = opts || {};
     try{
@@ -130,7 +134,7 @@
       });
       const texts = {};
       for (const f of logs) texts[f.path.replace(/^\.\//, "").split("/")[0]] = f.text;
-      return {index, texts};
+      return {index, texts, files};
     }catch(e){
       // The chrome renders every failure as no-corpus, so the console keeps
       // the one trace that says which file or shape broke the load.
@@ -495,7 +499,10 @@
      rank. Dates come from due and anchored alone. A watch with no date
      shows its UNANCHORED label and never its window prose, so a pack never
      reads a date out of a sentence. The ticket may be null, in which case
-     every ticket slot renders empty. */
+     every ticket slot renders empty. The advisories are the fourth input,
+     not a derivation: the lint reads the corpus files, which the index does
+     not carry, so a caller that has them passes them and a caller that does
+     not gets the lists a clean sweep would give. */
   // A confidence basis is classified by its leading phrase, because the
   // field is one line that names its kind first and its evidence after a
   // dash. A mixed basis ("DIRECT EVIDENCE for X; inference for Y") takes
@@ -510,10 +517,29 @@
     return "other";
   }
 
-  function packContext(index, t, today){
+  /* An instrumentation gap is an open entry whose card names no observable:
+     no Monitoring signal field at all, or one that declares no observable
+     exists. The index carries the field as one verbatim line, so the kind is
+     read off the line's leading token and nothing else; a signal that names
+     an observable is not a gap however it is worded. */
+  function packGapKind(signal){
+    const s = String(signal || "").trim();
+    if (!s) return "no signal";
+    return /^UNOBSERVABLE\b/i.test(s) ? "UNOBSERVABLE" : null;
+  }
+
+  function packContext(index, t, today, advisories){
     const word = c => P.dlChipSplit(c).word;
     const watchRow = w => ({tid: w.tid, wid: w.wid, what: w.what,
       due: w.anchored ? w.due : "", state: w.label});
+    // A lint finding names a directory, and every other row names a ticket
+    // the way the ledger does, so the directory is read back through the
+    // index. A finding under a directory the index does not hold keeps the
+    // directory as its name rather than losing it.
+    const tidOf = dir => {
+      const own = index.tickets.find(x => x.dir === dir);
+      return own ? (own.id || own.dir) : dir;
+    };
     const wb = D.watchboardRows(index.tickets, today);
     const board = wb.rows;
     const live = board.filter(w => w.state !== "closed");
@@ -524,18 +550,60 @@
     // card has no age and sits last, named as undated rather than as zero.
     const byAge = open.slice().sort((a, b) =>
       (b.age == null ? -1 : b.age) - (a.age == null ? -1 : a.age));
-    // Ledger rows carry no basis, so the card is read back through its
-    // ticket for the one field the evidence mix classifies.
-    const basisOf = r => {
+    // Ledger rows carry neither the confidence basis nor the monitoring
+    // signal, so the card is read back through its ticket for the two fields
+    // these lists classify.
+    const cardOf = r => {
       const own = index.tickets.find(x => x.dir === r.dir);
-      const card = own && own.decisions.find(d => d.id === r.id);
-      return card ? card.basis : null;
+      return (own && own.decisions.find(d => d.id === r.id)) || null;
     };
     const basis = {};
     for (const k of ["direct", "inference", "assertion", "other", "none"]) basis[k] = [];
-    for (const r of open) basis[packBasisKind(basisOf(r))].push(entryRow(r));
+    const gaps = [];
+    for (const r of open){
+      const card = cardOf(r);
+      basis[packBasisKind(card && card.basis)].push(entryRow(r));
+      const gap = packGapKind(card && card.signal);
+      if (gap) gaps.push(Object.assign(entryRow(r), {gap: gap}));
+    }
     const counts = {};
     for (const k in basis) counts[k] = basis[k].length;
+    /* Advisories sort by kind in the order the contract documents them, then
+       by ticket and id, so the same corpus always lists them the same way and
+       the kinds read in the order a person learns them. A kind the list does
+       not know sorts ahead of all of them rather than silently last. The
+       detail is whatever its kind adds, rendered as one ready phrase: a pack
+       formats nothing. */
+    const kinds = B.ADVISORY_KINDS;
+    const detailOf = f => f.after ? "after " + f.after
+      : f.offset === undefined ? "" : "byte " + f.offset;
+    const found = (advisories || []).slice().sort((a, b) =>
+      kinds.indexOf(a.finding) - kinds.indexOf(b.finding)
+      || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0)
+      || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const advisoryCounts = {};
+    // A pack slot addresses word characters alone, so a count key writes the
+    // kind's hyphen as an underscore. The kind itself stays verbatim on the
+    // row, and a pack labels its own count line.
+    for (const k of kinds) advisoryCounts[k.replace(/-/g, "_")] = 0;
+    // A finding whose kind the list does not know counts in the total alone,
+    // so the buckets never grow a key no pack can address.
+    for (const f of found){
+      const k = String(f.finding).replace(/-/g, "_");
+      if (k in advisoryCounts) advisoryCounts[k]++;
+    }
+    advisoryCounts.total = found.length;
+    /* Every Pre-Mortem row the corpus carries, ticket by ticket in index
+       order and document order within a ticket, split by what its anchor
+       cell says. A PENDING row is promised work and a dashed row is an
+       argument nobody has revisited, and both age, so both reach a pack. An
+       anchored row stays in the index for a consumer that can read the
+       repository, because a pack cannot check the file an anchor names. */
+    const premortem = [];
+    for (const x of index.tickets)
+      for (const r of (x.premortem || []))
+        premortem.push({tid: x.id || x.dir, mode: r.mode, likelihood: r.likelihood,
+          implemented_at: r.implemented_at});
     return {
       index: {generated: index.generated, project: index.project},
       ticket: t ? {id: t.id, dir: t.dir, slug: t.slug, date: t.date, title: t.title,
@@ -569,7 +637,16 @@
         live_count: x.watches.filter(w => !w.closed).length})),
       basis_direct: basis.direct, basis_inference: basis.inference,
       basis_assertion: basis.assertion, basis_other: basis.other, basis_none: basis.none,
-      basis_counts: counts
+      basis_counts: counts,
+      advisories: found.map(f => ({kind: f.finding, tid: tidOf(f.dir), id: f.id,
+        detail: detailOf(f)})),
+      advisory_counts: advisoryCounts,
+      instrumentation_gaps: gaps,
+      gap_counts: {missing: gaps.filter(g => g.gap === "no signal").length,
+        unobservable: gaps.filter(g => g.gap === "UNOBSERVABLE").length,
+        total: gaps.length, open: open.length},
+      pending_mitigations: premortem.filter(r => /^PENDING\b/i.test(r.implemented_at)),
+      rebuttals: premortem.filter(r => r.implemented_at === "—")
     };
   }
 
@@ -940,7 +1017,7 @@
     loadCorpus, railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml,
     docPaneHtml, rawPaneHtml, pillsHtml, pillGroupHtml, decisionsPanelHtml, watchesPanelHtml,
     statusPillsHtml, watchboardHtml, assumptionLedgerHtml, fullLogHtml, calibrationHtml,
-    fillPack, packSlots, packReadsTicket, packBasisKind, packContext, loadPacks, packScreenHtml,
+    fillPack, packSlots, packReadsTicket, packBasisKind, packGapKind, packContext, loadPacks, packScreenHtml,
     slugOf, promptDir, blankRow, unknownKeys, unknownValues, placeable, builderOpsHtml, builderSideHtml, builderHtml};
   if (isNode){ module.exports = ADPShellLib; }
   else { global.ADPShellLib = ADPShellLib; }
