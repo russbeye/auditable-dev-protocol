@@ -48,7 +48,7 @@
     section: ["key", "title", "phase", "canonical"],
     decision: ["id", "title", "confidence", "basis", "status", "created"],
     watch: ["wid", "dl", "what", "due", "anchored", "window"],
-    premortem: ["mode", "likelihood", "implemented_at"]
+    premortem: ["mode", "likelihood", "signal", "implemented_at"]
   };
 
   const RE_DL = /^DL-\d+$/;
@@ -261,8 +261,8 @@
       const pr = p + "[" + i + "]";
       if (!isObj(row)){ flag("IDX-039", pr, "premortem row is not an object"); return; }
       checkKeys(row, KEY_ORDER.premortem, pr, flag);
-      if (!ne(row.mode) || typeof row.likelihood !== "string" || typeof row.implemented_at !== "string"){
-        flag("IDX-039", pr, "mode is a nonempty string; likelihood and implemented_at are strings");
+      if (!ne(row.mode) || ["likelihood", "signal", "implemented_at"].some(k => typeof row[k] !== "string")){
+        flag("IDX-039", pr, "mode is a nonempty string; likelihood, signal, and implemented_at are strings");
       }
     });
   }

@@ -219,7 +219,10 @@
      values a reader has to see, so the index carries the cell verbatim and
      a consumer decides which rows it wants. An unfilled cell carries the
      empty string, because the record really does hold rows whose author
-     named a failure mode and never answered it. */
+     named a failure mode and never answered it. The row's Monitoring signal
+     cell rides along, because a Decision Log card may point at this row
+     instead of stating a signal of its own, and then the row's cell is the
+     only signal on record for that entry. */
   function harvestPremortem(secs){
     const rows = [];
     for (const sec of secs){
@@ -239,6 +242,7 @@
         const atCol = header.findIndex(h => /implemented at/i.test(h));
         if (modeCol === -1 || atCol === -1) continue;
         const likeCol = header.findIndex(h => /likelihood/i.test(h));
+        const sigCol = header.findIndex(h => /monitoring signal/i.test(h));
         for (const r of table.slice(2)){
           const cells = P.splitRow(r);
           const mode = (cells[modeCol] || "").trim();
@@ -247,6 +251,7 @@
           rows.push({
             mode: mode,
             likelihood: likeCol === -1 ? "" : (cells[likeCol] || "").trim(),
+            signal: sigCol === -1 ? "" : (cells[sigCol] || "").trim(),
             implemented_at: (cells[atCol] || "").trim()
           });
         }

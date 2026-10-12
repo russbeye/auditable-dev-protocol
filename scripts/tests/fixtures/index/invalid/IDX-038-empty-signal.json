@@ -60,21 +60,25 @@
         {
           "mode": "the harvest reads the wrong cell",
           "likelihood": "L",
+          "signal": "",
           "implemented_at": "`harvestPremortem`"
         },
         {
           "mode": "the mitigation never lands",
           "likelihood": "M",
+          "signal": "",
           "implemented_at": "PENDING"
         },
         {
           "mode": "a reader takes a rebuttal for a mitigation",
           "likelihood": "L",
+          "signal": "",
           "implemented_at": "—"
         },
         {
           "mode": "an author names a mode and answers nothing",
           "likelihood": "L",
+          "signal": "",
           "implemented_at": ""
         }
       ]

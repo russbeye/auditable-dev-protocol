@@ -217,12 +217,63 @@ test("packGapKind reads the gap off the signal's leading token", () => {
   assert.equal(S.packGapKind("An UNOBSERVABLE assumption elsewhere in the sentence"), null);
 });
 
+/* The third signal form SKILL.md fixes: the card points at a Pre-Mortem row
+   and the row owns the signal. The quoted mode is matched verbatim, escapes
+   undone, against the ticket's own rows. */
+const PM_ROWS = [
+  {mode: 'a mode that quotes "something"', likelihood: "L",
+    signal: "UNOBSERVABLE — no reader can see it", implemented_at: "PENDING"},
+  {mode: "a plain mode", likelihood: "M",
+    signal: "the count — fires at one", implemented_at: "—"},
+  {mode: "a mode whose signal cell is blank", likelihood: "L", signal: "", implemented_at: "PENDING"}];
+
+test("a pointer-form signal resolves to the Pre-Mortem row that owns it", () => {
+  assert.equal(S.packGapKind('\u2192 Pre-Mortem: "a mode that quotes \\"something\\""', PM_ROWS),
+    "UNOBSERVABLE");
+  assert.equal(S.packGapKind('\u2192 Pre-Mortem: "a plain mode"', PM_ROWS), null);
+  assert.equal(S.packGapKind('\u2192 Pre-Mortem: "a mode whose signal cell is blank"', PM_ROWS),
+    "no signal");
+});
+
+test("a pointer naming no row of the ticket is its own kind of gap", () => {
+  assert.equal(S.packGapKind('\u2192 Pre-Mortem: "a mode nobody wrote"', PM_ROWS), "dangling pointer");
+  assert.equal(S.packGapKind("\u2192 Pre-Mortem: no quoted mode at all", PM_ROWS), "dangling pointer");
+  // A ticket with no Pre-Mortem table can resolve nothing.
+  assert.equal(S.packGapKind('\u2192 Pre-Mortem: "a plain mode"'), "dangling pointer");
+  assert.equal(S.packGapKind('\u2192 Pre-Mortem: "a plain mode"', []), "dangling pointer");
+  // A row whose own cell points onward ends the chain instead of looping.
+  assert.equal(S.packGapKind('\u2192 Pre-Mortem: "loops"',
+    [{mode: "loops", signal: '\u2192 Pre-Mortem: "loops"'}]), "dangling pointer");
+});
+
 test("the gap list is the ledger's open rows whose card names no observable", () => {
   const ctx = S.packContext(idx, null, idx.generated);
   assert.deepEqual(ctx.instrumentation_gaps.map(g => [g.tid, g.id, g.gap]), [
     ["FX001", "DL-002", "no signal"],
     ["FX004", "DL-002", "UNOBSERVABLE"]]);
-  assert.deepEqual(ctx.gap_counts, {missing: 1, unobservable: 1, total: 2, open: 3});
+  assert.deepEqual(ctx.gap_counts, {missing: 1, unobservable: 1, dangling: 0, total: 2, open: 3});
+});
+
+test("the gap list resolves each card's pointer against that card's own ticket", () => {
+  const B = require("../adp-index-builder-lib.js");
+  const head = ["| Failure mode | Likelihood | Monitoring signal | Implemented at |", "|---|---|---|---|"];
+  const log = dir => ["# T", "", "## Pre-Mortem Report", ""].concat(head, [
+    "| the quiet one | M | UNOBSERVABLE — no observable exists | PENDING |",
+    "| the loud one | L | the count — fires at one | — |", "",
+    "## Decision Log", "",
+    "### [DL-001] points at the quiet row", "- **Decision:** x", "- **Confidence:** HIGH",
+    '- **Monitoring signal:** \u2192 Pre-Mortem: "the quiet one"', "- **Status:** OPEN", "",
+    "### [DL-002] points at the loud row", "- **Decision:** y", "- **Confidence:** HIGH",
+    '- **Monitoring signal:** \u2192 Pre-Mortem: "the loud one"', "- **Status:** OPEN", "",
+    "### [DL-003] points at the other ticket's row", "- **Decision:** z", "- **Confidence:** LOW",
+    '- **Monitoring signal:** \u2192 Pre-Mortem: "' + dir + ' has no such row"',
+    "- **Status:** OPEN", ""]).join("\n");
+  const one = B.buildIndex([{path: "20260901-PTR1-pointers/audit-log.md", text: log("PTR1")}],
+    {project: "p", generated: "2026-11-20", source: "snapshot"});
+  const ctx = S.packContext(one, null, "2026-11-20");
+  assert.deepEqual(ctx.instrumentation_gaps.map(g => [g.id, g.gap]),
+    [["DL-001", "UNOBSERVABLE"], ["DL-003", "dangling pointer"]]);
+  assert.deepEqual(ctx.gap_counts, {missing: 0, unobservable: 1, dangling: 1, total: 2, open: 3});
 });
 
 test("a recorded ruling settles a card before the gap list sees it", () => {
@@ -241,7 +292,7 @@ test("a recorded ruling settles a card before the gap list sees it", () => {
     {project: "p", generated: "2026-11-20", source: "snapshot"});
   const ctx = S.packContext(one, null, "2026-11-20");
   assert.deepEqual(ctx.instrumentation_gaps.map(g => g.id), ["DL-001"]);
-  assert.deepEqual(ctx.gap_counts, {missing: 1, unobservable: 0, total: 1, open: 1});
+  assert.deepEqual(ctx.gap_counts, {missing: 1, unobservable: 0, dangling: 0, total: 1, open: 1});
 });
 
 test("the pre-mortem lists split by the anchor cell, and an anchored row reaches no pack", () => {
@@ -250,9 +301,22 @@ test("the pre-mortem lists split by the anchor cell, and an anchored row reaches
     [["FX004", "M", "PENDING"]]);
   assert.deepEqual(ctx.rebuttals.map(r => [r.tid, r.likelihood, r.implemented_at]),
     [["FX004", "L", "—"]]);
-  // The anchored row is in the index for a consumer that can read the repo.
+  // An anchored row is the one claim a person can settle, so the third list
+  // carries it with the anchor exactly as its author wrote it.
+  assert.deepEqual(ctx.anchored_mitigations.map(r => [r.tid, r.implemented_at]),
+    [["FX004", "`renderViewerGolden`"]]);
   assert.deepEqual(ticket("FX004").premortem.map(r => r.implemented_at),
     ["`renderViewerGolden`", "PENDING", "—"]);
+});
+
+test("every Pre-Mortem row on record reaches exactly one of the three lists", () => {
+  const ctx = S.packContext(idx, null, idx.generated);
+  const rows = idx.tickets.flatMap(t => t.premortem || []);
+  const listed = [ctx.pending_mitigations, ctx.rebuttals, ctx.anchored_mitigations];
+  assert.equal(listed.reduce((n, l) => n + l.length, 0), rows.length);
+  // A blank anchor cell would reach none of them, which DL-003 states and
+  // OT-MC004-3 watches; the fixture corpus carries no such row.
+  assert.equal(rows.some(r => !r.implemented_at), false);
 });
 
 test("tickets in review list their PR, open entries, and live watches; the fixtures have none", () => {
@@ -309,7 +373,8 @@ test("the shipped packs use only slots the context provides", () => {
     advisories: ["kind", "tid", "id", "detail"],
     instrumentation_gaps: entryKeys.concat("gap"),
     pending_mitigations: ["tid", "mode", "likelihood", "implemented_at"],
-    rebuttals: ["tid", "mode", "likelihood", "implemented_at"]};
+    rebuttals: ["tid", "mode", "likelihood", "implemented_at"],
+    anchored_mitigations: ["tid", "mode", "likelihood", "implemented_at"]};
   for (const file of R.packFiles()){
     const tpl = fs.readFileSync(path.join(R.PACKS_DIR, file), "utf8");
     // Every opener goes on the stack and every closer pops one, so a value

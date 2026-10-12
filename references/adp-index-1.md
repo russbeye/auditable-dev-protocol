@@ -124,18 +124,20 @@ a ticket with no attributable sections (a prompt-only ticket is a valid ticket).
 Additive since 2026-10-12: an optional `premortem` key, a nonempty array of the ticket's
 Pre-Mortem rows in document order, trailing the core keys per the unknown-key rule and absent
 from a log that writes no Pre-Mortem table. Each row holds `mode` (the failure mode cell),
-`likelihood` (the likelihood cell) and `implemented_at` (the Implemented at cell), each
-verbatim and each the empty string when the table omits that column or the row leaves the cell
-unfilled. The source is every table whose header
+`likelihood` (the likelihood cell), `signal` (the Monitoring signal cell) and `implemented_at`
+(the Implemented at cell), each verbatim and each the empty string when the table omits that
+column or the row leaves the cell unfilled. The source is every table whose header
 names both a failure mode column and an Implemented at column, wherever the table sits; columns
 resolve by header name, as watch columns do, and both must be found, so a log that renames one
 harvests nothing rather than a wrong cell. A row whose failure mode cell is empty harvests
 nothing. Every other row is a record, whatever its anchor cell says: SKILL.md's Phase 4 fixes
 `—` as the rebuttal marker and `PENDING` as promised work, and the index reports the cell rather
 than classifying it, so a consumer that wants one kind of row filters for it. The rows carry no
-ticket id and map to no watch, because a Pre-Mortem table is a run-level artifact. The
-Monitoring signal column is not harvested here: a row's signal belongs to the failure mode, and
-the signal the index carries is the Decision Log card's own field.
+ticket id and map to no watch, because a Pre-Mortem table is a run-level artifact. The row's
+`signal` is the failure mode's own signal, not an entry's: a Decision Log card may point at a
+row rather than state a signal of its own, and then the row's cell is the only signal on record
+for that entry. Resolving that pointer is a consumer's work, never the index's, so no row
+carries a decision id and no decision carries a row.
 
 ### Section
 
@@ -374,8 +376,8 @@ lacks a fixture.
   present `closed` is a date and a present `outcome` is a nonempty string.
 - **IDX-038** [fixture] When a decision carries a `signal` key, it is a nonempty string.
 - **IDX-039** [fixture] When a ticket carries a `premortem` key, it is a nonempty array of
-  objects each holding `mode`, `likelihood`, and `implemented_at`, with `mode` a nonempty
-  string and the other two strings.
+  objects each holding `mode`, `likelihood`, `signal`, and `implemented_at`, with `mode` a
+  nonempty string and the other three strings.
 - **IDX-040** [prose] Lint advisories reach a consumer as a declared input to the pack context
   and nowhere else: `packContext` takes the findings `lintCorpus` returned as its fourth
   argument, and no index document carries an advisory under any key.

@@ -478,10 +478,14 @@ test("every additive key on a card keeps ascending order however many land", () 
 
 test("a Pre-Mortem table harvests every row with a failure mode, whatever its anchor cell says", () => {
   const t = ticket(fixtureDoc(), "FX004");
-  assert.deepEqual(t.premortem, [
-    {mode: "A kind is missing from the fixture", likelihood: "L", implemented_at: "`renderViewerGolden`"},
-    {mode: "The fixture drifts from the registry after a vocabulary change", likelihood: "M", implemented_at: "PENDING"},
-    {mode: "A reader takes this fixture for a real run", likelihood: "L", implemented_at: "—"}]);
+  assert.deepEqual(t.premortem.map(r => [r.mode.slice(0, 24), r.likelihood, r.implemented_at]), [
+    ["A kind is missing from t", "L", "`renderViewerGolden`"],
+    ["The fixture drifts from ", "M", "PENDING"],
+    ["A reader takes this fixt", "L", "—"]]);
+  // The row's own Monitoring signal cell rides along, because a card may
+  // point at the row instead of stating a signal of its own.
+  assert.deepEqual(t.premortem.map(r => r.signal.slice(0, 14)),
+    ["The count test", "The count test", "A fixture meas"]);
 });
 
 test("a log with no Pre-Mortem table carries no premortem key", () => {
@@ -495,8 +499,8 @@ test("a renamed Pre-Mortem column harvests nothing rather than a wrong cell", ()
   const named = oneTicket("20260901-PM1-named", ["# T", "", "## Pre-Mortem Report", "",
     "| Failure mode | Likelihood | Impact | Developer response | Monitoring signal | Implemented at |",
     "|---|---|---|---|---|---|"].concat(rows));
-  assert.deepEqual(named.premortem,
-    [{mode: "The build breaks", likelihood: "M", implemented_at: "PENDING"}]);
+  assert.deepEqual(named.premortem, [{mode: "The build breaks", likelihood: "M",
+    signal: "the suite — fires at one", implemented_at: "PENDING"}]);
   const renamed = oneTicket("20260901-PM2-renamed", ["# T", "", "## Pre-Mortem Report", "",
     "| Failure mode | Likelihood | Impact | Developer response | Monitoring signal | Landed at |",
     "|---|---|---|---|---|---|"].concat(rows));
@@ -505,18 +509,20 @@ test("a renamed Pre-Mortem column harvests nothing rather than a wrong cell", ()
 
 test("Pre-Mortem columns resolve by name, so a reordered table harvests the right cells", () => {
   const t = oneTicket("20260901-PM3-reordered", ["# T", "", "## Pre-Mortem Report", "",
-    "| Implemented at | Impact | Failure mode | Likelihood |",
-    "|---|---|---|---|",
-    "| PENDING | H | The build breaks | M |", ""]);
-  assert.deepEqual(t.premortem,
-    [{mode: "The build breaks", likelihood: "M", implemented_at: "PENDING"}]);
+    "| Implemented at | Impact | Failure mode | Monitoring signal | Likelihood |",
+    "|---|---|---|---|---|",
+    "| PENDING | H | The build breaks | the suite — fires at one | M |", ""]);
+  assert.deepEqual(t.premortem, [{mode: "The build breaks", likelihood: "M",
+    signal: "the suite — fires at one", implemented_at: "PENDING"}]);
 });
 
 test("a table with no likelihood column harvests the empty string for it", () => {
   const t = oneTicket("20260901-PM4-no-likelihood", ["# T", "", "## Pre-Mortem Report", "",
     "| Failure mode | Implemented at |", "|---|---|",
     "| The build breaks | PENDING |", ""]);
-  assert.deepEqual(t.premortem, [{mode: "The build breaks", likelihood: "", implemented_at: "PENDING"}]);
+  // A column the table omits harvests the empty string, signal included.
+  assert.deepEqual(t.premortem,
+    [{mode: "The build breaks", likelihood: "", signal: "", implemented_at: "PENDING"}]);
 });
 
 test("a Pre-Mortem table inside a fence harvests nothing, and an empty mode cell is an empty row", () => {
@@ -525,7 +531,8 @@ test("a Pre-Mortem table inside a fence harvests nothing, and an empty mode cell
     "| the template's own row | H/M/L | PENDING |", "```", "",
     "| Failure mode | Likelihood | Implemented at |", "|---|---|---|",
     "| | — | — |", "| The build breaks | M | PENDING |", ""]);
-  assert.deepEqual(t.premortem, [{mode: "The build breaks", likelihood: "M", implemented_at: "PENDING"}]);
+  assert.deepEqual(t.premortem,
+    [{mode: "The build breaks", likelihood: "M", signal: "", implemented_at: "PENDING"}]);
 });
 
 test("a Pre-Mortem table harvests wherever it sits, in document order across tables", () => {

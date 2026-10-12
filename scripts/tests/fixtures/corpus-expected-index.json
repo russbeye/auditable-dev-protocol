@@ -522,16 +522,19 @@
         {
           "mode": "A kind is missing from the fixture",
           "likelihood": "L",
+          "signal": "The count test — fires at any kind not seen once",
           "implemented_at": "`renderViewerGolden`"
         },
         {
           "mode": "The fixture drifts from the registry after a vocabulary change",
           "likelihood": "M",
+          "signal": "The count test — fires at one kind not seen — distinguishes: a kind renamed in both places, which stays counted",
           "implemented_at": "PENDING"
         },
         {
           "mode": "A reader takes this fixture for a real run",
           "likelihood": "L",
+          "signal": "A fixture measurement cited as evidence — fires at one citation — distinguishes: a citation of the fixture as a fixture",
           "implemented_at": "—"
         }
       ]

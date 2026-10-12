@@ -45,6 +45,15 @@
           "status": "OPEN",
           "created": "2026-10-12",
           "signal": "the pack prints a kind — fires at one row — distinguishes: a kind the sweep never reported"
+        },
+        {
+          "id": "DL-002",
+          "title": "an entry pointing at a Pre-Mortem row",
+          "confidence": "MEDIUM",
+          "basis": null,
+          "status": "OPEN",
+          "created": "2026-10-12",
+          "signal": "→ Pre-Mortem: \"the mitigation never lands\""
         }
       ],
       "watches": [],
@@ -60,21 +69,25 @@
         {
           "mode": "the harvest reads the wrong cell",
           "likelihood": "L",
+          "signal": "the golden moves — fires at one byte — distinguishes: a deliberate regeneration",
           "implemented_at": "`harvestPremortem`"
         },
         {
           "mode": "the mitigation never lands",
           "likelihood": "M",
+          "signal": "UNOBSERVABLE — no reader can see that work happened twice",
           "implemented_at": "PENDING"
         },
         {
           "mode": "a reader takes a rebuttal for a mitigation",
           "likelihood": "L",
+          "signal": "a kind the sweep never reported — fires at one row",
           "implemented_at": "—"
         },
         {
           "mode": "an author names a mode and answers nothing",
           "likelihood": "L",
+          "signal": "",
           "implemented_at": ""
         }
       ]

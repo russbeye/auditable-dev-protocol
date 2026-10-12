@@ -520,11 +520,29 @@
   /* An instrumentation gap is an open entry whose card names no observable:
      no Monitoring signal field at all, or one that declares no observable
      exists. The index carries the field as one verbatim line, so the kind is
-     read off the line's leading token and nothing else; a signal that names
-     an observable is not a gap however it is worded. */
-  function packGapKind(signal){
+     read off the line's leading token and nothing else, and a signal that
+     names an observable is not a gap however it is worded.
+
+     A card may also point at a Pre-Mortem row instead of stating a signal of
+     its own. SKILL.md's Phase 5 template fixes that third form, and the row
+     it names owns the signal, so the pointer resolves against the ticket's
+     own Pre-Mortem rows before the kind is read. The pointer quotes the
+     failure mode verbatim, and a mode that quotes something carries its
+     escapes into the card, so the match takes the whole span between the
+     first quote and the last and undoes the escape. A pointer naming no row
+     of the ticket is a kind of its own: the entry's one signal of record
+     addresses nothing, which no reader can check. The row's own cell is read
+     with no rows to follow, so a chain of pointers ends at the first hop
+     instead of looping. */
+  function packGapKind(signal, rows){
     const s = String(signal || "").trim();
     if (!s) return "no signal";
+    if (/^→\s*Pre-Mortem\b/i.test(s)){
+      const at = s.indexOf('"'), end = s.lastIndexOf('"');
+      const mode = end > at ? s.slice(at + 1, end).replace(/\\"/g, '"').trim() : "";
+      const row = mode ? (rows || []).find(r => r.mode === mode) : null;
+      return row ? packGapKind(row.signal, null) : "dangling pointer";
+    }
     return /^UNOBSERVABLE\b/i.test(s) ? "UNOBSERVABLE" : null;
   }
 
@@ -552,7 +570,8 @@
       (b.age == null ? -1 : b.age) - (a.age == null ? -1 : a.age));
     // Ledger rows carry neither the confidence basis nor the monitoring
     // signal, so the card is read back through its ticket for the two fields
-    // these lists classify.
+    // these lists classify. The ticket comes back too, because a pointer-form
+    // signal resolves against that ticket's own Pre-Mortem rows.
     const cardOf = r => {
       const own = index.tickets.find(x => x.dir === r.dir);
       return (own && own.decisions.find(d => d.id === r.id)) || null;
@@ -563,7 +582,8 @@
     for (const r of open){
       const card = cardOf(r);
       basis[packBasisKind(card && card.basis)].push(entryRow(r));
-      const gap = packGapKind(card && card.signal);
+      const own = index.tickets.find(x => x.dir === r.dir);
+      const gap = packGapKind(card && card.signal, own && own.premortem);
       if (gap) gaps.push(Object.assign(entryRow(r), {gap: gap}));
     }
     const counts = {};
@@ -604,6 +624,8 @@
       for (const r of (x.premortem || []))
         premortem.push({tid: x.id || x.dir, mode: r.mode, likelihood: r.likelihood,
           implemented_at: r.implemented_at});
+    const isPending = r => /^PENDING\b/i.test(r.implemented_at);
+    const isRebuttal = r => r.implemented_at === "—";
     return {
       index: {generated: index.generated, project: index.project},
       ticket: t ? {id: t.id, dir: t.dir, slug: t.slug, date: t.date, title: t.title,
@@ -644,9 +666,15 @@
       instrumentation_gaps: gaps,
       gap_counts: {missing: gaps.filter(g => g.gap === "no signal").length,
         unobservable: gaps.filter(g => g.gap === "UNOBSERVABLE").length,
+        dangling: gaps.filter(g => g.gap === "dangling pointer").length,
         total: gaps.length, open: open.length},
-      pending_mitigations: premortem.filter(r => /^PENDING\b/i.test(r.implemented_at)),
-      rebuttals: premortem.filter(r => r.implemented_at === "—")
+      pending_mitigations: premortem.filter(isPending),
+      rebuttals: premortem.filter(isRebuttal),
+      // An anchored row is one whose cell is neither marker and not empty,
+      // so the cell is the anchor its author wrote. A pack prints it as
+      // written, because no page can open the file it names.
+      anchored_mitigations: premortem.filter(r =>
+        r.implemented_at && !isPending(r) && !isRebuttal(r))
     };
   }
 
