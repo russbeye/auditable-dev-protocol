@@ -301,14 +301,148 @@ test("a loose checkbox list keeps per-item task markup in one list", () => {
   assert.equal((html.match(/class="task"/g) || []).length, 2);
 });
 
-test("a tight mixed-kind run stays one list, as shipped", () => {
-  // CommonMark starts a new list when the marker kind changes. This renderer
-  // glues consecutive items into one list on purpose, so the kind decides
-  // continuation only across a blank gap.
+test("a tight mixed-kind run splits into two lists, as pinned", () => {
+  // CommonMark starts a new list when the marker kind changes, with or
+  // without a blank line between the items.
   const html = renderMarkdown("- a\n1. b");
   assert.equal((html.match(/<ul/g) || []).length, 1);
-  assert.equal((html.match(/<ol/g) || []).length, 0);
-  assert.equal((html.match(/<li>/g) || []).length, 2);
+  assert.equal((html.match(/<ol/g) || []).length, 1);
+  assert.equal(html, '<ul class="md-list"><li>a</li></ul><ol class="md-list"><li>b</li></ol>');
+  assert.equal(renderMarkdown("1. a\n- b"), '<ol class="md-list"><li>a</li></ol><ul class="md-list"><li>b</li></ul>');
+});
+
+// ---- CommonMark adherence: the rules we adopt ----
+
+test("a bullet-character change starts a new list, tight or loose", () => {
+  assert.equal((renderMarkdown("- a\n* b").match(/<ul/g) || []).length, 2);
+  assert.equal((renderMarkdown("- a\n\n+ b").match(/<ul/g) || []).length, 2);
+  assert.equal((renderMarkdown("* a\n* b").match(/<ul/g) || []).length, 1);
+});
+
+test("a paren-delimited run renders as an ordered list", () => {
+  assert.equal(renderMarkdown("1) a\n2) b"), '<ol class="md-list"><li>a</li><li>b</li></ol>');
+  assert.equal(renderMarkdown("3) c\n\n4) d"), '<ol class="md-list" style="counter-reset:li 2"><li>c</li><li>d</li></ol>');
+});
+
+test("a delimiter change starts a new list", () => {
+  assert.equal(renderMarkdown("1. a\n2) b"), '<ol class="md-list"><li>a</li></ol><ol class="md-list" style="counter-reset:li 1"><li>b</li></ol>');
+});
+
+test("a wrapped line starting with a number other than 1 stays in its paragraph", () => {
+  assert.equal(renderMarkdown("The index reports\n130. Carrying more"), "<p>The index reports<br>130. Carrying more</p>");
+  assert.equal(renderMarkdown("its log, line\n406) and more"), "<p>its log, line<br>406) and more</p>");
+});
+
+test("a 1. line still interrupts a paragraph", () => {
+  assert.equal(renderMarkdown("Steps:\n1. a"), '<p>Steps:</p><ol class="md-list"><li>a</li></ol>');
+  assert.equal(renderMarkdown("Steps:\n1) a"), '<p>Steps:</p><ol class="md-list"><li>a</li></ol>');
+  assert.equal(renderMarkdown("Notes:\n- a"), '<p>Notes:</p><ul class="md-list"><li>a</li></ul>');
+});
+
+test("a backslash escape renders the punctuation and blocks emphasis", () => {
+  assert.equal(inline("\\*not em\\*"), "&#42;not em&#42;");
+  assert.equal(inline("x \\| y"), "x | y");
+  assert.equal(inline('header \\"Ticket\\"'), 'header "Ticket"');
+  assert.equal(inline("\\<b\\> and \\&"), "&lt;b&gt; and &amp;");
+  assert.equal(inline("\\\\*a*"), "\\<em>a</em>");
+  assert.equal(inline("\\[x](https://e.com)"), "&#91;x](https://e.com)");
+  // A backslash before anything that is not ASCII punctuation is plain text.
+  assert.equal(inline("C:\\Users and \\d"), "C:\\Users and \\d");
+});
+
+test("an escaped character never builds a link the allowlist refuses", () => {
+  for (const src of ["[x](javascript\\:alert(1))", "[x](javascript:alert\\(1\\))",
+                     "[x\\](javascript:alert(1))"]){
+    assert.ok(!inline(src).includes("<a "), src);
+  }
+  assert.ok(inline("[x](https://e.com/a\\_b)").includes('<a href="https://e.com/a&#95;b"'));
+});
+
+test("a link URL is escaped exactly once", () => {
+  assert.ok(inline("[q](https://x.y/?a=1&b=2)").includes('<a href="https://x.y/?a=1&amp;b=2"'));
+});
+
+test("code-span content is escaped exactly once", () => {
+  assert.equal(inline("`a && b`"), "<code>a &amp;&amp; b</code>");
+  assert.equal(inline("`<br>` and `x > y`"), "<code>&lt;br&gt;</code> and <code>x &gt; y</code>");
+  assert.ok(renderMarkdown("| A |\n|---|\n| `a && b` |").includes("<td><code>a &amp;&amp; b</code></td>"));
+  assert.ok(renderDLCard({head: "[DL-001] t", lines: ["- **Decision:** use `a && b`"]}).includes("<code>a &amp;&amp; b</code>"));
+});
+
+test("a double-backtick span holds a single backtick and strips its padding", () => {
+  assert.equal(inline("`` a`b ``"), "<code>a`b</code>");
+  assert.equal(inline("` a `"), "<code>a</code>");
+  assert.equal(inline("`  `"), "<code>  </code>");
+  assert.equal(inline("`a``b`"), "<code>a``b</code>");
+  // Backslash escapes do nothing inside a span.
+  assert.equal(inline("`\\*`"), "<code>\\*</code>");
+  const html = renderMarkdown("| `` a | b `` | c |\n|---|---|\n| x | y |");
+  assert.ok(html.includes("<th><code>a | b</code></th><th>c</th>"));
+});
+
+test("a code span and bold pair across a wrapped paragraph line", () => {
+  assert.equal(renderMarkdown("A `span\nacross` lines"), "<p>A <code>span across</code> lines</p>");
+  assert.equal(renderMarkdown("**bold\nacross**"), "<p><strong>bold<br>across</strong></p>");
+  assert.equal(renderMarkdown("an *em\nacross* line"), "<p>an <em>em<br>across</em> line</p>");
+  assert.equal(renderMarkdown("HIGH first\nOPEN second"),
+    '<p><span class="pill p-high">HIGH</span> first<br><span class="pill p-open">OPEN</span> second</p>');
+});
+
+test("an escaped pipe in a table row stays in its cell as a pipe", () => {
+  const html = renderMarkdown("| H | I |\n|---|---|\n| one of a \\| b \\| c | z |");
+  assert.equal((html.match(/<td>/g) || []).length, 2);
+  assert.ok(html.includes("<td>one of a | b | c</td><td>z</td>"));
+});
+
+// ---- CommonMark adherence: the departures we keep ----
+
+test("an escaped pipe inside a table code span stays literal", () => {
+  const html = renderMarkdown("| H | I |\n|---|---|\n| GFM `\\|` backslash | z |");
+  assert.ok(html.includes("<td>GFM <code>\\|</code> backslash</td><td>z</td>"));
+});
+
+test("paragraph lines keep their line breaks", () => {
+  assert.equal(renderMarkdown("a\nb"), "<p>a<br>b</p>");
+});
+
+test("an unindented line after a list item starts a paragraph", () => {
+  assert.equal(renderMarkdown("- [ ] trigger\n**Staged rollout:** NO"),
+    '<ul class="md-list"><li class="task"><span class="cbx "></span><span>trigger</span></li></ul><p><strong>Staged rollout:</strong> NO</p>');
+});
+
+test("angle-bracket text renders as visible text", () => {
+  assert.equal(renderMarkdown("Phase <name> here"), "<p>Phase &lt;name&gt; here</p>");
+  assert.equal(renderMarkdown("<b>x</b>"), "<p>&lt;b&gt;x&lt;/b&gt;</p>");
+});
+
+test("an inner heading clamps to h3", () => {
+  assert.equal(renderMarkdown("# Big"), '<h3 class="sub">Big</h3>');
+  assert.equal(renderMarkdown("## Big"), '<h3 class="sub">Big</h3>');
+});
+
+test("an indented item renders flat in the same list", () => {
+  assert.equal(renderMarkdown("- a\n  - b"), '<ul class="md-list"><li>a</li><li>b</li></ul>');
+});
+
+test("constructs the corpus never uses keep their current output", () => {
+  const cases = {
+    "a &amp; b": "<p>a &amp;amp; b</p>",
+    "<https://x.y>": "<p>&lt;https://x.y&gt;</p>",
+    "![alt](https://x.y/i.png)": '<p>!<a href="https://x.y/i.png" target="_blank" rel="noopener noreferrer">alt</a></p>',
+    "[a][b]\n\n[b]: https://x.y": "<p>[a][b]</p><p>[b]: https://x.y</p>",
+    "Title\n===": "<p>Title<br>===</p>",
+    "~~~\ncode\n~~~": "<p>~~~<br>code<br>~~~</p>",
+    "para\n\n    code": "<p>para</p><p>    code</p>",
+    "_em_": "<p>_em_</p>",
+    "a  \nb": "<p>a  <br>b</p>",
+    "> q\nlazy": "<blockquote><p>q</p></blockquote><p>lazy</p>",
+    "| A |\n|:--|\n| x |": '<div class="tbl-wrap"><table class="md-tbl"><thead><tr><th>A</th></tr></thead><tbody><tr><td>x</td></tr></tbody></table></div>',
+    "-\ta": '<ul class="md-list"><li>a</li></ul>',
+    "~~x~~": "<p>~~x~~</p>",
+    // An escaped backtick still opens a span, because spans lift before escapes.
+    "\\`a` b": "<p>\\<code>a</code> b</p>",
+  };
+  for (const [src, want] of Object.entries(cases)) assert.equal(renderMarkdown(src), want, JSON.stringify(src));
 });
 
 // ---- decision-log cards (the chip rule, pinned here post-extraction) ----
@@ -463,4 +597,10 @@ test("the example's decision log counts one each of open, validated, unknown", (
   const spine = parseSections(example).secs.find(s => metaFor(s.title).spine);
   assert.deepEqual(dlStatusCounts(spine.body.join("\n")),
     {open: 1, validated: 1, invalidated: 0, unknown: 1, other: 0, total: 3});
+});
+
+test("an asterisk beside a space never opens or closes emphasis", () => {
+  assert.equal(renderMarkdown("the AV-* and\nPB-* run directories"), "<p>the AV-* and<br>PB-* run directories</p>");
+  assert.equal(inline("a * b * c"), "a * b * c");
+  assert.equal(inline("an *em* word"), "an <em>em</em> word");
 });
