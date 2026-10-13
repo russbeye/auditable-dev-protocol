@@ -394,6 +394,12 @@ test("an escaped pipe in a table row stays in its cell as a pipe", () => {
   assert.ok(html.includes("<td>one of a | b | c</td><td>z</td>"));
 });
 
+test("an escaped backslash before a pipe leaves the pipe a cell boundary", () => {
+  const html = renderMarkdown("| H | I |\n|---|---|\n| a \\\\| b |");
+  assert.ok(html.includes("<td>a \\</td><td>b</td>"), html);
+  assert.ok(renderMarkdown("| H | I |\n|---|---|\n| a \\\\\\| b | z |").includes("<td>a \\| b</td><td>z</td>"));
+});
+
 // ---- CommonMark adherence: the departures we keep ----
 
 test("an escaped pipe inside a table code span stays literal", () => {
@@ -441,6 +447,8 @@ test("constructs the corpus never uses keep their current output", () => {
     "~~x~~": "<p>~~x~~</p>",
     // An escaped backtick still opens a span, because spans lift before escapes.
     "\\`a` b": "<p>\\<code>a</code> b</p>",
+    "para\n- ": '<p>para</p><ul class="md-list"><li></li></ul>',
+    "a\\\nb": "<p>a\\<br>b</p>",
   };
   for (const [src, want] of Object.entries(cases)) assert.equal(renderMarkdown(src), want, JSON.stringify(src));
 });
@@ -603,4 +611,11 @@ test("an asterisk beside a space never opens or closes emphasis", () => {
   assert.equal(renderMarkdown("the AV-* and\nPB-* run directories"), "<p>the AV-* and<br>PB-* run directories</p>");
   assert.equal(inline("a * b * c"), "a * b * c");
   assert.equal(inline("an *em* word"), "an <em>em</em> word");
+});
+
+test("a bold run needs text against both of its delimiters", () => {
+  assert.equal(renderMarkdown("We compute 2 ** 8 here.\nThen 3 ** 2 there."), "<p>We compute 2 ** 8 here.<br>Then 3 ** 2 there.</p>");
+  assert.equal(renderMarkdown("Call foo__bar first.\nThen baz__qux."), "<p>Call foo__bar first.<br>Then baz__qux.</p>");
+  assert.equal(renderMarkdown("**bold\nacross**"), "<p><strong>bold<br>across</strong></p>");
+  assert.equal(inline("__init__ and a**b**c"), "<strong>init</strong> and a<strong>b</strong>c");
 });

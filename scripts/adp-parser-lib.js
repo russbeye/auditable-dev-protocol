@@ -66,8 +66,10 @@
     t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,(m,txt,url)=>safeLinkUrl(url)
       ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${txt}</a>`
       : m);
-    t = t.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
-    t = t.replace(/__([^_]+)__/g,'<strong>$1</strong>');
+    // Bold needs text against both of its delimiters, so "2 ** 8" stays
+    // prose. An underscore pair also stays out of words, as in foo__bar.
+    t = t.replace(/\*\*([^*\s](?:[^*]*[^*\s])?)\*\*/g,'<strong>$1</strong>');
+    t = t.replace(/(^|[^\w])__([^_\s](?:[^_]*[^_\s])?)__(?!\w)/g,'$1<strong>$2</strong>');
     // A single asterisk with a space beside it is prose, as in "AV-* and"
     // on one line with "PB-*" on the next, so emphasis needs text against
     // both of its asterisks.
@@ -118,8 +120,9 @@
 
   // A pipe inside a paired code span is cell content, not a boundary. We
   // find the spans with the same pattern that inline() pairs with, so the
-  // split and the rendering agree on which backticks pair. A pipe after a
-  // backslash is cell content too, and inline() later drops the backslash.
+  // split and the rendering agree on which backticks pair. A pipe after an
+  // odd run of backslashes is cell content too, and inline() later drops the
+  // escaping backslash. An even run is escaped backslashes, as in "C:\\|".
   // Inside a span the backslash stays, because authors write `\|` there to
   // name the escape itself. We slice each cell out of the original row and
   // rewrite nothing, which keeps every byte intact. Note: the edge trims may
@@ -131,7 +134,9 @@
     while((m=re.exec(t))) spans.push([m.index,m.index+m[0].length]);
     const cells=[]; let start=0;
     for(let i=0;i<t.length;i++){
-      if(t[i]==='|' && t[i-1]!=='\\' && !spans.some(([a,b])=>a<i&&i<b)){cells.push(t.slice(start,i));start=i+1;}
+      if(t[i]!=='|' || spans.some(([a,b])=>a<i&&i<b)) continue;
+      let k=i; while(t[k-1]==='\\') k--;
+      if((i-k)%2===0){cells.push(t.slice(start,i));start=i+1;}
     }
     cells.push(t.slice(start));
     return cells.map(c=>c.trim());
@@ -150,8 +155,10 @@
   }
 
   const LIST_ITEM=/^\s*([-*+]|\d+[.)])\s+/;
-  // We read an item line into the three things CommonMark keys a list on.
-  // The marker is the bullet character or the ordered delimiter.
+  // We read an item line into its marker, its kind, and its start number.
+  // The marker alone keys a list, and it is the bullet character or the
+  // ordered delimiter. The kind and number decide paragraph interruption
+  // and where the count starts.
   function listMarker(line){
     const m=LIST_ITEM.exec(line);
     if(!m) return null;
