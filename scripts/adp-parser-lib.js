@@ -32,22 +32,48 @@
     return !m || LINK_SCHEMES.includes(m[1].toLowerCase());
   }
 
-  // We escape the text first, so callers pass raw document text and never
-  // markup we already built. Code spans come out before the other rules run,
-  // because their contents must stay literal. Each one leaves a NUL-wrapped
-  // index behind and goes back in at the end.
+  // A code span opens on a run of backticks and closes on the next run of
+  // the same length, so a double-backtick span can hold a single backtick.
+  // splitRow() finds spans with this same pattern.
+  const CODE_SPAN=/(?<!`)(`+)(?!`)([\s\S]*?[^`])\1(?!`)/g;
+  // A line ending inside a span reads as a space. When the content both
+  // starts and ends with a space, we strip one from each side, so authors
+  // can write `` `x` `` to show a backtick next to the edge.
+  function spanText(c){
+    c=c.replace(/\n/g,' ');
+    return /^ [\s\S]* $/.test(c) && /[^ ]/.test(c) ? c.slice(1,-1) : c;
+  }
+  // These are the escaped characters that the link and emphasis rules below
+  // would read as syntax. We write them as numeric entities so those rules
+  // skip them. None of them can sit in a URL scheme, so an entity never hides
+  // a scheme from safeLinkUrl. Every other escaped character is plain text.
+  const SYNTAX_ESC={'*':'&#42;','_':'&#95;','[':'&#91;',']':'&#93;','(':'&#40;',')':'&#41;'};
+
+  // Callers pass raw document text and never markup we already built. Code
+  // spans come out of the raw text before anything else runs, because their
+  // contents must stay literal and must be escaped only once. Each one leaves
+  // a NUL-wrapped index behind and goes back in at the end. A backslash
+  // before ASCII punctuation outside a span makes that character literal.
   function inline(s){
-    let t = esc(s);
     const codes=[];
-    t = t.replace(/`([^`]+)`/g,(m,c)=>{codes.push(c);return '\u0000'+(codes.length-1)+'\u0000';});
+    let t = String(s).replace(CODE_SPAN,(m,run,c)=>{codes.push(spanText(c));return '\u0000'+(codes.length-1)+'\u0000';});
+    t = esc(t);
+    t = t.replace(/\\(&amp;|&lt;|&gt;|[!-\/:-@\[-`{-~])/g,(m,c)=>SYNTAX_ESC[c]||c);
     // We only build the anchor when safeLinkUrl passes. A rejected run stays
-    // in place as escaped plain text, so nothing silently vanishes.
+    // in place as escaped plain text, so nothing silently vanishes. The URL
+    // is already escaped here, so it goes into the href as it is. A second
+    // escape would turn the "&" of a query string into "&amp;amp;".
     t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,(m,txt,url)=>safeLinkUrl(url)
-      ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${txt}</a>`
+      ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${txt}</a>`
       : m);
-    t = t.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
-    t = t.replace(/__([^_]+)__/g,'<strong>$1</strong>');
-    t = t.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g,'$1<em>$2</em>');
+    // Bold needs text against both of its delimiters, so "2 ** 8" stays
+    // prose. An underscore pair also stays out of words, as in foo__bar.
+    t = t.replace(/\*\*([^*\s](?:[^*]*[^*\s])?)\*\*/g,'<strong>$1</strong>');
+    t = t.replace(/(^|[^\w])__([^_\s](?:[^_]*[^_\s])?)__(?!\w)/g,'$1<strong>$2</strong>');
+    // A single asterisk with a space beside it is prose, as in "AV-* and"
+    // on one line with "PB-*" on the next, so emphasis needs text against
+    // both of its asterisks.
+    t = t.replace(/(^|[^*\w])\*([^*\s](?:[^*]*[^*\s])?)\*(?!\w)/g,'$1<em>$2</em>');
     t = t.replace(/\u0000(\d+)\u0000/g,(m,i)=>`<code>${esc(codes[+i])}</code>`);
     return t;
   }
@@ -82,7 +108,10 @@
     if(/^\s*$/.test(l)) return true;
     if(/^\s*```/.test(l)) return true;
     if(/^#{1,6}\s/.test(l)) return true;
-    if(/^\s*([-*+]|\d+\.)\s+/.test(l)) return true;
+    // An ordered item may interrupt a paragraph only when it starts at 1, so
+    // a wrapped sentence that puts "130." at the start of a line stays prose.
+    const k=listMarker(l);
+    if(k && (!k.ordered || k.num===1)) return true;
     if(/^\s*>/.test(l)) return true;
     if(/^\s*([-*_])\1{2,}\s*$/.test(l)) return true;
     if(isTableStart(lines,i)) return true;
@@ -91,18 +120,23 @@
 
   // A pipe inside a paired code span is cell content, not a boundary. We
   // find the spans with the same pattern that inline() pairs with, so the
-  // split and the rendering agree on which backticks pair. We slice each
-  // cell out of the original row and rewrite nothing, which keeps every
-  // byte intact. Note: the edge trims may run before the span scan. A
-  // character inside a span has a backtick on each side, so the row never
-  // starts or ends inside one.
+  // split and the rendering agree on which backticks pair. A pipe after an
+  // odd run of backslashes is cell content too, and inline() later drops the
+  // escaping backslash. An even run is escaped backslashes, as in "C:\\|".
+  // Inside a span the backslash stays, because authors write `\|` there to
+  // name the escape itself. We slice each cell out of the original row and
+  // rewrite nothing, which keeps every byte intact. Note: the edge trims may
+  // run before the span scan. A character inside a span has a backtick on
+  // each side, so the row never starts or ends inside one.
   function splitRow(r){
     const t=r.trim().replace(/^\|/,'').replace(/\|$/,'');
-    const spans=[]; const re=/`[^`]+`/g; let m;
+    const spans=[]; const re=new RegExp(CODE_SPAN); let m;
     while((m=re.exec(t))) spans.push([m.index,m.index+m[0].length]);
     const cells=[]; let start=0;
     for(let i=0;i<t.length;i++){
-      if(t[i]==='|' && !spans.some(([a,b])=>a<i&&i<b)){cells.push(t.slice(start,i));start=i+1;}
+      if(t[i]!=='|' || spans.some(([a,b])=>a<i&&i<b)) continue;
+      let k=i; while(t[k-1]==='\\') k--;
+      if((i-k)%2===0){cells.push(t.slice(start,i));start=i+1;}
     }
     cells.push(t.slice(start));
     return cells.map(c=>c.trim());
@@ -120,20 +154,35 @@
     return `<div class="tbl-wrap"><table class="md-tbl"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></div>`;
   }
 
+  const LIST_ITEM=/^\s*([-*+]|\d+[.)])\s+/;
+  // We read an item line into its marker, its kind, and its start number.
+  // The marker alone keys a list, and it is the bullet character or the
+  // ordered delimiter. The kind and number decide paragraph interruption
+  // and where the count starts.
+  function listMarker(line){
+    const m=LIST_ITEM.exec(line);
+    if(!m) return null;
+    const ordered=/\d/.test(m[1]);
+    return {ordered, marker:m[1].slice(-1), num:ordered?parseInt(m[1],10):1};
+  }
+
   function renderList(lines,start){
-    let i=start; const ordered=/^\s*\d+\.\s/.test(lines[i]); const items=[];
-    const startNum=ordered?parseInt(lines[start].match(/^\s*(\d+)\./)[1],10):1;
-    while(i<lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])){
-      let content=lines[i].replace(/^\s*([-*+]|\d+\.)\s+/,''); i++;
-      while(i<lines.length && /^\s{2,}\S/.test(lines[i]) && !/^\s*([-*+]|\d+\.)\s+/.test(lines[i])){
+    let i=start; const first=listMarker(lines[i]); const ordered=first.ordered; const items=[];
+    const startNum=first.num;
+    // A list goes on only through items with the first item's marker. A
+    // change from "-" to "*", or from "1." to "1)", starts a new list.
+    const sameList=l=>{const k=listMarker(l); return !!k && k.marker===first.marker;};
+    while(i<lines.length && sameList(lines[i])){
+      let content=lines[i].replace(LIST_ITEM,''); i++;
+      while(i<lines.length && /^\s{2,}\S/.test(lines[i]) && !listMarker(lines[i])){
         content+=' '+lines[i].trim(); i++;
       }
       items.push(content);
       // A blank line inside a list separates items, the way authors write
       // multi-sentence lists. We continue past the blanks only into an item
-      // of the same kind, because a kind change or prose starts a new block.
+      // with the same marker, because a marker change or prose starts a new block.
       let j=i; while(j<lines.length && /^\s*$/.test(lines[j])) j++;
-      if(j>i && j<lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[j]) && /^\s*\d+\.\s/.test(lines[j])===ordered) i=j;
+      if(j>i && j<lines.length && sameList(lines[j])) i=j;
     }
     const lis=items.map(c=>{
       const cb=c.match(/^\[([ xX])\]\s+([\s\S]*)$/);
@@ -176,10 +225,13 @@
         const buf=[]; while(i<lines.length && /^\s*>/.test(lines[i])){buf.push(lines[i].replace(/^\s*>\s?/,''));i++;}
         html+=`<blockquote>${renderMarkdown(buf.join('\n'))}</blockquote>`; continue;
       }
-      if(/^\s*([-*+]|\d+\.)\s+/.test(line)){ const r=renderList(lines,i); html+=r.html; i=r.next; continue; }
+      if(listMarker(line)){ const r=renderList(lines,i); html+=r.html; i=r.next; continue; }
       const buf=[lines[i]]; i++;
       while(i<lines.length && !isBlockStart(lines,i)){buf.push(lines[i]);i++;}
-      html+=`<p>${buf.map(l=>decorate(inline(l))).join('<br>')}</p>`;
+      // We render the paragraph as one run, so a code span or bold that wraps
+      // across a line still pairs. Each line ending then becomes a <br>,
+      // because a hard-wrapped author meant those breaks.
+      html+=`<p>${decorate(inline(buf.join('\n'))).replace(/\n/g,'<br>')}</p>`;
     }
     return html;
   }
