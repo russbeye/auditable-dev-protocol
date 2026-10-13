@@ -18,13 +18,17 @@ happening, and the nearest benign condition that produces the same reading.
 Or rule the entry: append a CLOSED line with the date and the disposition,
 which settles it without editing its card.
 
-Read the three kinds differently. "no signal" means the card states nothing,
-which is the cheapest to fix. "UNOBSERVABLE" claims that no observable
-exists, which is a stronger claim than nobody wired one: test it against the
-ticket that carries it, because an UNOBSERVABLE assumption is validated by a
-dated re-review and not by silence, so its watch window must name a date and
-that date must still be ahead. "pointing at no row" means the card's signal
-quotes a Pre-Mortem failure mode that the ticket's own table does not carry,
-so the entry's one signal of record addresses nothing: find the row the
-author meant, or write the signal on the card.
+Read the three kinds differently. "no signal" means nothing on record names
+an observable for this entry. That covers a card with no Monitoring signal
+field, a card whose field holds only the no-value dash, and a card whose
+pointer reaches a Pre-Mortem row whose own signal cell is empty or only that
+dash. The repair goes wherever the blank is, so a pointed-at row is fixed in
+the row. "UNOBSERVABLE" claims that no observable exists, which is a stronger
+claim than nobody wired one: test it against the ticket that carries it,
+because an UNOBSERVABLE assumption is validated by a dated re-review and not
+by silence, so its watch window must name a date and that date must still be
+ahead. "pointing at no row" means the card's signal quotes a Pre-Mortem
+failure mode that the ticket's own table does not carry, so the entry's one
+signal of record addresses nothing: find the row the author meant, or write
+the signal on the card.
 === END PACK ===
