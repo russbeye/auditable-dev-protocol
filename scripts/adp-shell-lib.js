@@ -568,22 +568,23 @@
     // card has no age and sits last, named as undated rather than as zero.
     const byAge = open.slice().sort((a, b) =>
       (b.age == null ? -1 : b.age) - (a.age == null ? -1 : a.age));
-    // Ledger rows carry neither the confidence basis nor the monitoring
-    // signal, so the card is read back through its ticket for the two fields
-    // these lists classify. The ticket comes back too, because a pointer-form
-    // signal resolves against that ticket's own Pre-Mortem rows.
-    const cardOf = r => {
-      const own = index.tickets.find(x => x.dir === r.dir);
-      return (own && own.decisions.find(d => d.id === r.id)) || null;
+    /* A ledger row carries neither the confidence basis nor the monitoring
+       signal, so the entry's own ticket is read back: the card for the two
+       fields these lists classify, and the ticket's Pre-Mortem rows for a
+       pointer-form signal to resolve against. One lookup per open entry
+       returns both, because both come from the same ticket. */
+    const ownerOf = r => {
+      const own = index.tickets.find(x => x.dir === r.dir) || null;
+      return {ticket: own, card: (own && own.decisions.find(d => d.id === r.id)) || null};
     };
     const basis = {};
     for (const k of ["direct", "inference", "assertion", "other", "none"]) basis[k] = [];
     const gaps = [];
     for (const r of open){
-      const card = cardOf(r);
+      const owner = ownerOf(r);
+      const card = owner.card;
       basis[packBasisKind(card && card.basis)].push(entryRow(r));
-      const own = index.tickets.find(x => x.dir === r.dir);
-      const gap = packGapKind(card && card.signal, own && own.premortem);
+      const gap = packGapKind(card && card.signal, owner.ticket && owner.ticket.premortem);
       if (gap) gaps.push(Object.assign(entryRow(r), {gap: gap}));
     }
     const counts = {};
