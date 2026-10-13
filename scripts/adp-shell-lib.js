@@ -614,11 +614,14 @@
     }
     advisoryCounts.total = found.length;
     /* Every Pre-Mortem row the corpus carries, ticket by ticket in index
-       order and document order within a ticket, split by what its anchor
-       cell says. A PENDING row is promised work and a dashed row is an
-       argument nobody has revisited, and both age, so both reach a pack. An
-       anchored row stays in the index for a consumer that can read the
-       repository, because a pack cannot check the file an anchor names. */
+       order and document order within a ticket, split into three lists by
+       what its anchor cell says. A PENDING row is promised work, a dashed
+       row is an argument nobody has revisited, and an anchored row is a
+       claim a person can settle by opening the file the anchor names. All
+       three age, so all three reach a pack, which prints the anchor as
+       written and checks nothing: no page can read the repository. A row
+       whose cell is empty reaches none of the lists, because an unfilled
+       cell is neither a marker nor an anchor. */
     const premortem = [];
     for (const x of index.tickets)
       for (const r of (x.premortem || []))

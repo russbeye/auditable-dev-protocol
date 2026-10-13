@@ -256,24 +256,34 @@ test("the gap list is the ledger's open rows whose card names no observable", ()
 
 test("the gap list resolves each card's pointer against that card's own ticket", () => {
   const B = require("../adp-index-builder-lib.js");
-  const head = ["| Failure mode | Likelihood | Monitoring signal | Implemented at |", "|---|---|---|---|"];
-  const log = dir => ["# T", "", "## Pre-Mortem Report", ""].concat(head, [
-    "| the quiet one | M | UNOBSERVABLE — no observable exists | PENDING |",
-    "| the loud one | L | the count — fires at one | — |", "",
+  const QUIET = "UNOBSERVABLE — no observable exists";
+  const LOUD = "the count — fires at one";
+  /* Two tickets, and a mode each one alone carries. A pointer resolved
+     corpus-wide would find the other ticket's row, so a card pointing at the
+     other ticket's mode must read as dangling and the shared mode must read
+     each ticket's own cell. */
+  const log = (own, other, shared) => ["# T", "", "## Pre-Mortem Report", "",
+    "| Failure mode | Likelihood | Monitoring signal | Implemented at |", "|---|---|---|---|",
+    "| the shared mode | M | " + shared + " | PENDING |",
+    "| " + own + " | L | " + QUIET + " | PENDING |", "",
     "## Decision Log", "",
-    "### [DL-001] points at the quiet row", "- **Decision:** x", "- **Confidence:** HIGH",
-    '- **Monitoring signal:** \u2192 Pre-Mortem: "the quiet one"', "- **Status:** OPEN", "",
-    "### [DL-002] points at the loud row", "- **Decision:** y", "- **Confidence:** HIGH",
-    '- **Monitoring signal:** \u2192 Pre-Mortem: "the loud one"', "- **Status:** OPEN", "",
-    "### [DL-003] points at the other ticket's row", "- **Decision:** z", "- **Confidence:** LOW",
-    '- **Monitoring signal:** \u2192 Pre-Mortem: "' + dir + ' has no such row"',
-    "- **Status:** OPEN", ""]).join("\n");
-  const one = B.buildIndex([{path: "20260901-PTR1-pointers/audit-log.md", text: log("PTR1")}],
+    "### [DL-001] points at the shared mode", "- **Decision:** x", "- **Confidence:** HIGH",
+    '- **Monitoring signal:** → Pre-Mortem: "the shared mode"', "- **Status:** OPEN", "",
+    "### [DL-002] points at the other ticket's mode", "- **Decision:** y", "- **Confidence:** LOW",
+    '- **Monitoring signal:** → Pre-Mortem: "' + other + '"', "- **Status:** OPEN", ""].join("\n");
+  const two = B.buildIndex([
+    {path: "20260901-PTR1-first/audit-log.md", text: log("only in A", "only in B", QUIET)},
+    {path: "20260902-PTR2-second/audit-log.md", text: log("only in B", "only in A", LOUD)}],
     {project: "p", generated: "2026-11-20", source: "snapshot"});
-  const ctx = S.packContext(one, null, "2026-11-20");
-  assert.deepEqual(ctx.instrumentation_gaps.map(g => [g.id, g.gap]),
-    [["DL-001", "UNOBSERVABLE"], ["DL-003", "dangling pointer"]]);
-  assert.deepEqual(ctx.gap_counts, {missing: 0, unobservable: 1, dangling: 1, total: 2, open: 3});
+  const ctx = S.packContext(two, null, "2026-11-20");
+  /* A's shared row declares UNOBSERVABLE and B's names an observable, so the
+     same pointer text reads differently per ticket. Each DL-002 points at a
+     mode its own ticket does not carry. */
+  assert.deepEqual(ctx.instrumentation_gaps.map(g => [g.tid, g.id, g.gap]), [
+    ["PTR1", "DL-001", "UNOBSERVABLE"],
+    ["PTR1", "DL-002", "dangling pointer"],
+    ["PTR2", "DL-002", "dangling pointer"]]);
+  assert.deepEqual(ctx.gap_counts, {missing: 0, unobservable: 1, dangling: 2, total: 3, open: 4});
 });
 
 test("a recorded ruling settles a card before the gap list sees it", () => {
@@ -295,7 +305,7 @@ test("a recorded ruling settles a card before the gap list sees it", () => {
   assert.deepEqual(ctx.gap_counts, {missing: 1, unobservable: 0, dangling: 0, total: 1, open: 1});
 });
 
-test("the pre-mortem lists split by the anchor cell, and an anchored row reaches no pack", () => {
+test("the pre-mortem lists split by the anchor cell, each row reaching the list its cell names", () => {
   const ctx = S.packContext(idx, null, idx.generated);
   assert.deepEqual(ctx.pending_mitigations.map(r => [r.tid, r.likelihood, r.implemented_at]),
     [["FX004", "M", "PENDING"]]);
