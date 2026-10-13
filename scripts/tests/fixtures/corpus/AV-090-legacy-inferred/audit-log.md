@@ -16,6 +16,7 @@ DL-055 sits inside a fence and never becomes a citation.
 - **Decision:** We record one decision.
 - **Confidence:** LOW
 - **Confidence basis:** DEVELOPER ASSERTION — fixture data.
+- **Monitoring signal:** A second decision card in this fixture — fires at one card — distinguishes: a card in another fixture log, which belongs to its own ticket.
 - **Created:** 2026-07-01 / Phase 5
 - **Status:** OPEN
 

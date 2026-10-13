@@ -42,6 +42,14 @@ at the end (`closed`/`outcome` before `supersedes` is the live example). When a 
 key lands on any object, prefer teaching the validator a known-optional list — a real
 `KEY_ORDER` slot without requiredness — over relying on names that happen to sort right.
 
+That threshold passed on 2026-10-12: a decision now carries four optional keys, `closed`,
+`outcome`, `signal`, and `supersedes`. The known-optional list is still not built, because the
+four names sort into the order the builder must emit and the builder no longer depends on that
+coincidence: it re-emits every additive key an object carries in one sorted pass, so a name that
+sorts wrong lands in ascending order anyway and trips nothing. What stays unguarded is the
+reverse case — an optional key whose meaning wants a fixed, non-alphabetical slot. The next such
+key builds the list.
+
 ## The index document
 
 A JSON object. The normative key order for every object type is the order shown here, and every
@@ -112,6 +120,24 @@ ticket always carries null `pr` and `merged`.
 
 `phase` is the highest canonical phase with a section present in the log, 1 through 9, or 0 for
 a ticket with no attributable sections (a prompt-only ticket is a valid ticket).
+
+Additive since 2026-10-12: an optional `premortem` key, a nonempty array of the ticket's
+Pre-Mortem rows in document order, trailing the core keys per the unknown-key rule and absent
+from a log that writes no Pre-Mortem table. Each row holds `mode` (the failure mode cell),
+`likelihood` (the likelihood cell), `signal` (the Monitoring signal cell) and `implemented_at`
+(the Implemented at cell), each verbatim and each the empty string when the table omits that
+column or the row leaves the cell unfilled. The source is every table whose header
+names both a failure mode column and an Implemented at column, wherever the table sits; columns
+resolve by header name, as watch columns do, and both must be found, so a log that renames one
+harvests nothing rather than a wrong cell. A row whose failure mode cell is empty harvests
+nothing. Every other row is a record, whatever its anchor cell says: SKILL.md's Phase 4 fixes
+`—` as the rebuttal marker and `PENDING` as promised work, and the index reports the cell rather
+than classifying it, so a consumer that wants one kind of row filters for it. The rows carry no
+ticket id and map to no watch, because a Pre-Mortem table is a run-level artifact. The row's
+`signal` is the failure mode's own signal, not an entry's: a Decision Log card may point at a
+row rather than state a signal of its own, and then the row's cell is the only signal on record
+for that entry. Resolving that pointer is a consumer's work, never the index's, so no row
+carries a decision id and no decision carries a row.
 
 ### Section
 
@@ -209,6 +235,16 @@ settles an entry without editing its card, and consumers classify through the ru
 exists. A watch closure never settles the entries it covers; only a recorded ruling does.
 When a ruled entry also carries `supersedes`, the ruling pair precedes it, keeping unknown
 keys in ascending order.
+
+Additive since 2026-10-12: an optional `signal` key — the card's `Monitoring signal` field as one
+line, emitted only when the field holds a value, and trailing the core keys per the unknown-key
+rule. The value is the folded field line verbatim, the rule `basis` already lives under, so a
+wrapped signal reads as one space-joined line. The index never parses the observable, the
+threshold, or the look-alike out of that line, and never reads the `UNOBSERVABLE` token as a
+status: a consumer that classifies a signal classifies the string. The field is required only on
+an OPEN entry holding an assumption, so an absent key is the normal shape for a settled entry and
+is never by itself an instrumentation gap — openness is the closure ledger's reading, not the
+key's.
 
 ### Watch
 
@@ -338,3 +374,10 @@ lacks a fixture.
 - **IDX-036** [fixture] A present `outcome` matches the ledger token grammar.
 - **IDX-037** [fixture] A decision carries `closed` exactly when it carries `outcome`; a
   present `closed` is a date and a present `outcome` is a nonempty string.
+- **IDX-038** [fixture] When a decision carries a `signal` key, it is a nonempty string.
+- **IDX-039** [fixture] When a ticket carries a `premortem` key, it is a nonempty array of
+  objects each holding `mode`, `likelihood`, `signal`, and `implemented_at`, with `mode` a
+  nonempty string and the other three strings.
+- **IDX-040** [prose] Lint advisories reach a consumer as a declared input to the pack context
+  and nowhere else: `packContext` takes the findings `lintCorpus` returned as its fourth
+  argument, and no index document carries an advisory under any key.

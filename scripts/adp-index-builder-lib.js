@@ -86,6 +86,20 @@
      first card wins a repeated id, so an amendment that restates a card never
      forks the ledger. A head whose bracket is not a real DL id is template
      text and harvests nothing. */
+  /* Unknown keys serialize after the core keys in ascending order (IDX-002),
+     so every additive key an object carries is re-emitted in one sorted pass
+     rather than inserted at a slot the caller has to know. The caller names
+     the keys it is adding, and the keys already on the object join them. */
+  function placeAdditive(obj, core, add){
+    const all = Object.assign({}, add);
+    for (const k of Object.keys(obj)){
+      if (core.includes(k)) continue;
+      all[k] = obj[k];
+      delete obj[k];
+    }
+    for (const k of Object.keys(all).sort()) obj[k] = all[k];
+  }
+
   function harvestDecisions(secs){
     const decisions = [];
     const ids = new Set();
@@ -97,7 +111,7 @@
         const id = hm[1].trim();
         if (!I.RE_DL.test(id) || ids.has(id)) continue;
         ids.add(id);
-        let confidence = "", basis = "", status = "", created = "", supersedes = "";
+        let confidence = "", basis = "", status = "", created = "", supersedes = "", signal = "";
         for (const f of P.parseDLFields(P.dlSplitBody(entry.lines).fieldLines)){
           const k = f.label.toLowerCase();
           if (k === "confidence") confidence = f.value;
@@ -105,6 +119,7 @@
           else if (k === "status") status = f.value;
           else if (k === "created") created = f.value;
           else if (k === "supersedes") supersedes = f.value;
+          else if (k === "monitoring signal") signal = f.value;
         }
         const dec = {
           id: id,
@@ -116,10 +131,16 @@
           status: status,
           created: firstDate(created)
         };
-        // supersedes is an additive optional key, so it appears only when the
-        // card's field names at least one real decision id.
+        /* An additive optional key appears only when the card fills it:
+           supersedes when its field names at least one real decision id,
+           signal when the card states a monitoring signal at all. The value
+           is the folded field line verbatim, so a wrapped signal reads as
+           one line and the index never parses the observable out of it. */
         const sup = harvestTokens(supersedes, true);
-        if (sup.length) dec.supersedes = sup;
+        const add = {};
+        if (signal.trim()) add.signal = signal.trim();
+        if (sup.length) add.supersedes = sup;
+        placeAdditive(dec, I.KEY_ORDER.decision, add);
         decisions.push(dec);
       }
     }
@@ -186,6 +207,57 @@
       }
     });
     return {watches: watches, from: from, dashedExits: dashedExits};
+  }
+
+  /* Pre-Mortem rows harvest from every table whose header names both a
+     failure mode column and an Implemented at column, wherever the table
+     sits, in document order. Columns resolve by header name, the rule
+     watches already live under, and both columns must be found: a foreign
+     log that renames one harvests nothing rather than a wrong cell. Every
+     row with a failure mode is a record, whatever its anchor cell says. The
+     dash marks a rebuttal and PENDING marks promised work, and both are
+     values a reader has to see, so the index carries the cell verbatim and
+     a consumer decides which rows it wants. An unfilled cell carries the
+     empty string, because the record really does hold rows whose author
+     named a failure mode and never answered it. The row's Monitoring signal
+     cell rides along, because a Decision Log card may point at this row
+     instead of stating a signal of its own, and then the row's cell is the
+     only signal on record for that entry. */
+  function harvestPremortem(secs){
+    const rows = [];
+    for (const sec of secs){
+      const lines = sec.body;
+      let i = 0;
+      let fence = false;
+      while (i < lines.length){
+        if (/^\s*```/.test(lines[i])){ fence = !fence; i++; continue; }
+        if (fence || !P.isTableStart(lines, i)){ i++; continue; }
+        const table = [];
+        while (i < lines.length && lines[i].indexOf("|") > -1 && !/^\s*$/.test(lines[i])){
+          table.push(lines[i]);
+          i++;
+        }
+        const header = P.splitRow(table[0]);
+        const modeCol = header.findIndex(h => /failure mode/i.test(h));
+        const atCol = header.findIndex(h => /implemented at/i.test(h));
+        if (modeCol === -1 || atCol === -1) continue;
+        const likeCol = header.findIndex(h => /likelihood/i.test(h));
+        const sigCol = header.findIndex(h => /monitoring signal/i.test(h));
+        for (const r of table.slice(2)){
+          const cells = P.splitRow(r);
+          const mode = (cells[modeCol] || "").trim();
+          // An empty failure mode cell is an empty row, not a record.
+          if (!mode) continue;
+          rows.push({
+            mode: mode,
+            likelihood: likeCol === -1 ? "" : (cells[likeCol] || "").trim(),
+            signal: sigCol === -1 ? "" : (cells[sigCol] || "").trim(),
+            implemented_at: (cells[atCol] || "").trim()
+          });
+        }
+      }
+    }
+    return rows;
   }
 
   /* The closure ledger: one line closes or re-anchors an obligation ticket,
@@ -272,7 +344,7 @@
     let title = null, state = "open", stateSource = "inferred", pr = null, merged = null;
     let phase = 0;
     const sections = [], refs = {}, missing = [];
-    let decisions = [], watches = [];
+    let decisions = [], watches = [], premortem = [];
     const present = {};
 
     if (typeof logText === "string"){
@@ -298,6 +370,7 @@
         if (toks.length) refs[keys[i]] = toks;
       });
       decisions = harvestDecisions(parsed.secs);
+      premortem = harvestPremortem(parsed.secs);
       const hw = harvestWatches(parsed.secs);
       watches = hw.watches;
       /* Watch records harvest from the section holding the first watch table
@@ -316,15 +389,9 @@
       }
       for (const d of decisions){
         const r = ledger.rulings.get(d.id);
-        if (r){
-          // Unknown keys must serialize in ascending order, so the ruling
-          // pair slots in ahead of a supersedes key when the card has one.
-          const sup = d.supersedes;
-          if (sup !== undefined) delete d.supersedes;
-          d.closed = r.closed;
-          d.outcome = r.outcome;
-          if (sup !== undefined) d.supersedes = sup;
-        }
+        // The ruling pair joins whatever additive keys the card already
+        // carries, so all of them keep ascending order however many land.
+        if (r) placeAdditive(d, I.KEY_ORDER.decision, {closed: r.closed, outcome: r.outcome});
       }
 
       const scanText = withoutFences(fm.rest);
@@ -350,11 +417,15 @@
       if (!present[p]) missing.push(I.CANONICAL_ARTIFACTS[p - 1]);
     }
 
-    return {
+    const ticket = {
       id: name.id, dir: dir, slug: name.slug, date: name.date, title: title,
       state: state, state_source: stateSource, pr: pr, merged: merged, phase: phase,
       sections: sections, refs: refs, decisions: decisions, watches: watches, missing: missing
     };
+    // premortem is additive and optional, so a log with no Pre-Mortem table
+    // carries no key rather than an empty array.
+    if (premortem.length) ticket.premortem = premortem;
+    return ticket;
   }
 
   /* A ticket's text lives in its top-level audit-log.md alone. Every other
@@ -436,6 +507,12 @@
      carries after, the key of the section the companion should follow. A
      control-byte finding names the log in id and carries offset, the UTF-8
      byte offset of the byte. */
+  /* The advisory kinds this sweep reports, in the order adp-index-1.md
+     documents them. Exported so a consumer that groups or counts findings
+     adds a new kind here once instead of growing a second list. */
+  const ADVISORY_KINDS = ["phantom", "contradiction", "dead-anchor", "near-miss",
+    "wid-shape", "misplaced", "control-byte", "undated-window"];
+
   function lintCorpus(files){
     const findings = [];
     const byDir = groupByDir(files);
@@ -527,7 +604,7 @@
     return findings;
   }
 
-  const ADPIndexBuilder = {buildIndex, lintCorpus, parseDirName, isLogPath};
+  const ADPIndexBuilder = {ADVISORY_KINDS, buildIndex, lintCorpus, parseDirName, isLogPath};
   if (isNode){ module.exports = ADPIndexBuilder; }
   else { global.ADPIndexBuilder = ADPIndexBuilder; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

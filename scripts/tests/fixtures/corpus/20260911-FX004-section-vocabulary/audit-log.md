@@ -30,6 +30,8 @@ This fixture writes every section kind once: the fourteen canonical headings, on
 | Failure mode | Likelihood | Impact | Developer response (rebuttal or mitigation) | Monitoring signal | Implemented at |
 |--------------|------------|--------|---------------------------------------------|-------------------|----------------|
 | A kind is missing from the fixture | L | H | Mitigation: the parser suite counts kinds. | The count test — fires at any kind not seen once | `renderViewerGolden` |
+| The fixture drifts from the registry after a vocabulary change | M | M | Mitigation: the kind count is regenerated beside the registry. | The count test — fires at one kind not seen — distinguishes: a kind renamed in both places, which stays counted | PENDING |
+| A reader takes this fixture for a real run | L | L | Rebuttal: the Problem Statement says nothing here was measured, and every body is one sentence. | A fixture measurement cited as evidence — fires at one citation — distinguishes: a citation of the fixture as a fixture | — |
 
 ## Implementation Authorization
 All HIGH-likelihood items resolved: YES
@@ -48,6 +50,7 @@ Authorized by: the fixture author
 - **Decision:** We place every companion section after the Obligation Ticket List.
 - **Confidence:** LOW
 - **Confidence basis:** INFERENCE FROM CONVENTION — most logs on record append companions at the end.
+- **Monitoring signal:** UNOBSERVABLE — no page reports where a companion section sits, and a reader of one log sees no convention to break.
 - **Created:** 2026-09-11 / Phase 5
 - **Status:** OPEN
 

@@ -47,7 +47,8 @@
     ticket: ["id", "dir", "slug", "date", "title", "state", "state_source", "pr", "merged", "phase", "sections", "refs", "decisions", "watches", "missing"],
     section: ["key", "title", "phase", "canonical"],
     decision: ["id", "title", "confidence", "basis", "status", "created"],
-    watch: ["wid", "dl", "what", "due", "anchored", "window"]
+    watch: ["wid", "dl", "what", "due", "anchored", "window"],
+    premortem: ["mode", "likelihood", "signal", "implemented_at"]
   };
 
   const RE_DL = /^DL-\d+$/;
@@ -156,6 +157,9 @@
     }
     /* supersedes is additive-optional, so absence is never a finding; when
        the key exists it must carry at least one real decision id. */
+    if ("signal" in d && !ne(d.signal)){
+      flag("IDX-038", p + ".signal", "signal must be a nonempty string when present");
+    }
     if ("supersedes" in d){
       const ps = p + ".supersedes";
       if (!Array.isArray(d.supersedes) || d.supersedes.length === 0){
@@ -247,6 +251,22 @@
     });
   }
 
+    function validatePremortem(rows, path, flag){
+    const p = path + ".premortem";
+    if (!Array.isArray(rows) || rows.length === 0){
+      flag("IDX-039", p, "premortem must be a nonempty array when present");
+      return;
+    }
+    rows.forEach((row, i) => {
+      const pr = p + "[" + i + "]";
+      if (!isObj(row)){ flag("IDX-039", pr, "premortem row is not an object"); return; }
+      checkKeys(row, KEY_ORDER.premortem, pr, flag);
+      if (!ne(row.mode) || ["likelihood", "signal", "implemented_at"].some(k => typeof row[k] !== "string")){
+        flag("IDX-039", pr, "mode is a nonempty string; likelihood, signal, and implemented_at are strings");
+      }
+    });
+  }
+
   function validateTicket(t, i, flag){
     const path = "tickets[" + i + "]";
     if (!isObj(t)){ flag("IDX-006", path, "ticket is not an object"); return; }
@@ -286,6 +306,7 @@
       t.watches.forEach((w, j) => validateWatch(w, j, path, wids, flag));
     }
     validateMissing(t.missing, path, flag);
+    if ("premortem" in t) validatePremortem(t.premortem, path, flag);
   }
 
   /* We never throw on bad shapes; every defect becomes a finding. PB-011

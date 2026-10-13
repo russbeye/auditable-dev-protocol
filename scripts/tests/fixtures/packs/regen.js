@@ -40,8 +40,16 @@ function readCorpus(root){
   return files;
 }
 
+// A pack fills from the index and from the advisory sweep, and both are
+// functions of the same (path, text) pairs, so one read serves both and a
+// caller that wants to vary the file order varies it once.
+function buildFixtureCorpus(files){
+  const list = files || readCorpus(CORPUS);
+  return {index: B.buildIndex(list, OPTS), advisories: B.lintCorpus(list)};
+}
+
 function buildFixtureIndex(){
-  return B.buildIndex(readCorpus(CORPUS), OPTS);
+  return buildFixtureCorpus().index;
 }
 
 function packFiles(){
@@ -53,22 +61,22 @@ function goldenPath(file){
   return path.join(__dirname, file.replace(/\.pack\.md$/, "") + "." + TICKET + ".txt");
 }
 
-function fillFixturePack(file, index){
-  const idx = index || buildFixtureIndex();
-  const t = idx.tickets.find(x => x.id === TICKET);
+function fillFixturePack(file, corpus){
+  const c = corpus || buildFixtureCorpus();
+  const t = c.index.tickets.find(x => x.id === TICKET);
   const tpl = fs.readFileSync(path.join(PACKS_DIR, file), "utf8");
-  return S.fillPack(tpl, S.packContext(idx, t, idx.generated));
+  return S.fillPack(tpl, S.packContext(c.index, t, c.index.generated, c.advisories));
 }
 
 function regenerate(){
-  const idx = buildFixtureIndex();
+  const c = buildFixtureCorpus();
   for (const file of packFiles()){
-    fs.writeFileSync(goldenPath(file), fillFixturePack(file, idx), "utf8");
+    fs.writeFileSync(goldenPath(file), fillFixturePack(file, c), "utf8");
     console.log("wrote " + path.relative(ROOT, goldenPath(file)));
   }
 }
 
-module.exports = {ROOT, CORPUS, PACKS_DIR, OPTS, TICKET, readCorpus, buildFixtureIndex,
-  packFiles, goldenPath, fillFixturePack};
+module.exports = {ROOT, CORPUS, PACKS_DIR, OPTS, TICKET, readCorpus, buildFixtureCorpus,
+  buildFixtureIndex, packFiles, goldenPath, fillFixturePack};
 
 if (require.main === module) regenerate();

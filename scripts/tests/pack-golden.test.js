@@ -71,7 +71,8 @@ test("packSlots lists each construct once in first-use order, closers excluded",
 
 // ---- the context ----
 
-const idx = R.buildFixtureIndex();
+const fx = R.buildFixtureCorpus();
+const idx = fx.index;
 const ticket = id => idx.tickets.find(t => t.id === id);
 
 test("a ruled entry and a closed watch are absent from the ticket's context", () => {
@@ -161,6 +162,209 @@ test("the evidence mix groups open entries by basis kind and counts them", () =>
   assert.deepEqual(ctx.basis_counts, {direct: 0, inference: 1, assertion: 1, other: 0, none: 1});
 });
 
+// Eight kinds over three tickets, deliberately out of order, so the grouping
+// and both tiebreaks are pinned without a corpus that stages every kind.
+const STAGED = [
+  {dir: "misc-notes", id: "misc-notes/audit-log.md", finding: "control-byte", offset: 49},
+  {dir: "20260815-FX001-declared-lifecycle", id: "sec-naming-note", finding: "misplaced", after: "sec-obligation-ticket-list"},
+  {dir: "20260827-FX003-closed-watches", id: "OT-FX003-9", finding: "phantom"},
+  {dir: "20260815-FX001-declared-lifecycle", id: "OT-FX001-1", finding: "undated-window"},
+  {dir: "20260827-FX003-closed-watches", id: "OT-FX003-1", finding: "contradiction"},
+  {dir: "20260815-FX001-declared-lifecycle", id: "OT-x y", finding: "wid-shape"},
+  {dir: "20260827-FX003-closed-watches", id: "DL-009", finding: "phantom"},
+  {dir: "20260827-FX003-closed-watches", id: "OT-FX003-3", finding: "dead-anchor"},
+  {dir: "20260827-FX003-closed-watches", id: "OT-FX003-1", finding: "near-miss"}];
+
+test("advisories group by the contract's kind order, then by ticket and id", () => {
+  const ctx = S.packContext(idx, null, idx.generated, STAGED);
+  assert.deepEqual(ctx.advisories.map(a => [a.kind, a.tid, a.id, a.detail]), [
+    ["phantom", "FX003", "DL-009", ""],
+    ["phantom", "FX003", "OT-FX003-9", ""],
+    ["contradiction", "FX003", "OT-FX003-1", ""],
+    ["dead-anchor", "FX003", "OT-FX003-3", ""],
+    ["near-miss", "FX003", "OT-FX003-1", ""],
+    ["wid-shape", "FX001", "OT-x y", ""],
+    ["misplaced", "FX001", "sec-naming-note", "after sec-obligation-ticket-list"],
+    ["control-byte", "misc-notes", "misc-notes/audit-log.md", "byte 49"],
+    ["undated-window", "FX001", "OT-FX001-1", ""]]);
+  assert.deepEqual(ctx.advisory_counts, {phantom: 2, contradiction: 1, dead_anchor: 1,
+    near_miss: 1, wid_shape: 1, misplaced: 1, control_byte: 1, undated_window: 1, total: 9});
+});
+
+test("a caller that passes no advisories gets the lists a clean sweep gives", () => {
+  for (const arg of [undefined, []]){
+    const ctx = S.packContext(idx, null, idx.generated, arg);
+    assert.deepEqual(ctx.advisories, []);
+    assert.equal(ctx.advisory_counts.total, 0);
+    assert.equal(ctx.advisory_counts.phantom, 0);
+  }
+});
+
+test("an advisory of an unknown kind counts in the total alone and leads the list", () => {
+  const ctx = S.packContext(idx, null, idx.generated,
+    [{dir: "misc-notes", id: "x", finding: "phantom"}, {dir: "misc-notes", id: "y", finding: "future-kind"}]);
+  assert.deepEqual(ctx.advisories.map(a => a.kind), ["future-kind", "phantom"]);
+  assert.equal(ctx.advisory_counts.total, 2);
+  assert.equal("future_kind" in ctx.advisory_counts, false);
+});
+
+test("packGapKind reads the gap off the signal's leading token", () => {
+  assert.equal(S.packGapKind(null), "no signal");
+  assert.equal(S.packGapKind("   "), "no signal");
+  assert.equal(S.packGapKind("UNOBSERVABLE — nobody can see it"), "UNOBSERVABLE");
+  assert.equal(S.packGapKind("unobservable — the same claim in lower case"), "UNOBSERVABLE");
+  assert.equal(S.packGapKind("The count test — fires at one kind"), null);
+  assert.equal(S.packGapKind("An UNOBSERVABLE assumption elsewhere in the sentence"), null);
+});
+
+/* The third signal form SKILL.md fixes: the card points at a Pre-Mortem row
+   and the row owns the signal. The quoted mode is matched verbatim, escapes
+   undone, against the ticket's own rows. */
+const PM_ROWS = [
+  {mode: 'a mode that quotes "something"', likelihood: "L",
+    signal: "UNOBSERVABLE — no reader can see it", implemented_at: "PENDING"},
+  {mode: "a plain mode", likelihood: "M",
+    signal: "the count — fires at one", implemented_at: "—"},
+  {mode: "a mode whose signal cell is blank", likelihood: "L", signal: "", implemented_at: "PENDING"}];
+
+test("a pointer-form signal resolves to the Pre-Mortem row that owns it", () => {
+  assert.equal(S.packGapKind('\u2192 Pre-Mortem: "a mode that quotes \\"something\\""', PM_ROWS),
+    "UNOBSERVABLE");
+  assert.equal(S.packGapKind('\u2192 Pre-Mortem: "a plain mode"', PM_ROWS), null);
+  assert.equal(S.packGapKind('\u2192 Pre-Mortem: "a mode whose signal cell is blank"', PM_ROWS),
+    "no signal");
+});
+
+test("a signal that is only a dash reads as no signal, on the card or through its row", () => {
+  const rows = [{mode: "a dashed row", likelihood: "L", signal: "—", implemented_at: "PENDING"},
+    {mode: "a loud row", likelihood: "M", signal: "the count — fires at one", implemented_at: "—"}];
+  // The record's own no-value marker, in every dash a reader would take for it.
+  for (const bare of ["—", "  —  ", "–", "-", "——"])
+    assert.equal(S.packGapKind(bare, rows), "no signal", JSON.stringify(bare));
+  // A pointer makes the row's cell the entry's one signal of record.
+  assert.equal(S.packGapKind('→ Pre-Mortem: "a dashed row"', rows), "no signal");
+  assert.equal(S.packGapKind('→ Pre-Mortem: "a loud row"', rows), null);
+  // A dash inside a stated observable is not the marker.
+  assert.equal(S.packGapKind("the count — fires at one", rows), null);
+});
+
+test("an open card writing the dash reaches the gap list, directly and by pointer", () => {
+  const B = require("../adp-index-builder-lib.js");
+  const log = ["# T", "", "## Pre-Mortem Report", "",
+    "| Failure mode | Likelihood | Monitoring signal | Implemented at |", "|---|---|---|---|",
+    "| a dashed row | L | — | PENDING |", "",
+    "## Decision Log", "",
+    "### [DL-001] the card writes the dash", "- **Decision:** x", "- **Confidence:** HIGH",
+    "- **Monitoring signal:** —", "- **Status:** OPEN", "",
+    "### [DL-002] the card points at a dashed row", "- **Decision:** y", "- **Confidence:** HIGH",
+    '- **Monitoring signal:** → Pre-Mortem: "a dashed row"', "- **Status:** OPEN", "",
+    "### [DL-003] the card states no field at all", "- **Decision:** z", "- **Confidence:** LOW",
+    "- **Status:** OPEN", ""].join("\n");
+  const one = B.buildIndex([{path: "20260901-DSH1-dashes/audit-log.md", text: log}],
+    {project: "p", generated: "2026-11-20", source: "snapshot"});
+  // The dash card carries a signal key, so the index reports what the card
+  // says and the context is what reads the marker.
+  assert.equal(one.tickets[0].decisions[0].signal, "—");
+  const ctx = S.packContext(one, null, "2026-11-20");
+  assert.deepEqual(ctx.instrumentation_gaps.map(g => [g.id, g.gap]),
+    [["DL-001", "no signal"], ["DL-002", "no signal"], ["DL-003", "no signal"]]);
+  assert.deepEqual(ctx.gap_counts, {missing: 3, unobservable: 0, dangling: 0, total: 3, open: 3});
+});
+
+test("a pointer naming no row of the ticket is its own kind of gap", () => {
+  assert.equal(S.packGapKind('\u2192 Pre-Mortem: "a mode nobody wrote"', PM_ROWS), "dangling pointer");
+  assert.equal(S.packGapKind("\u2192 Pre-Mortem: no quoted mode at all", PM_ROWS), "dangling pointer");
+  // A ticket with no Pre-Mortem table can resolve nothing.
+  assert.equal(S.packGapKind('\u2192 Pre-Mortem: "a plain mode"'), "dangling pointer");
+  assert.equal(S.packGapKind('\u2192 Pre-Mortem: "a plain mode"', []), "dangling pointer");
+  // A row whose own cell points onward ends the chain instead of looping.
+  assert.equal(S.packGapKind('\u2192 Pre-Mortem: "loops"',
+    [{mode: "loops", signal: '\u2192 Pre-Mortem: "loops"'}]), "dangling pointer");
+});
+
+test("the gap list is the ledger's open rows whose card names no observable", () => {
+  const ctx = S.packContext(idx, null, idx.generated);
+  assert.deepEqual(ctx.instrumentation_gaps.map(g => [g.tid, g.id, g.gap]), [
+    ["FX001", "DL-002", "no signal"],
+    ["FX004", "DL-002", "UNOBSERVABLE"]]);
+  assert.deepEqual(ctx.gap_counts, {missing: 1, unobservable: 1, dangling: 0, total: 2, open: 3});
+});
+
+test("the gap list resolves each card's pointer against that card's own ticket", () => {
+  const B = require("../adp-index-builder-lib.js");
+  const QUIET = "UNOBSERVABLE — no observable exists";
+  const LOUD = "the count — fires at one";
+  /* Two tickets, and a mode each one alone carries. A pointer resolved
+     corpus-wide would find the other ticket's row, so a card pointing at the
+     other ticket's mode must read as dangling and the shared mode must read
+     each ticket's own cell. */
+  const log = (own, other, shared) => ["# T", "", "## Pre-Mortem Report", "",
+    "| Failure mode | Likelihood | Monitoring signal | Implemented at |", "|---|---|---|---|",
+    "| the shared mode | M | " + shared + " | PENDING |",
+    "| " + own + " | L | " + QUIET + " | PENDING |", "",
+    "## Decision Log", "",
+    "### [DL-001] points at the shared mode", "- **Decision:** x", "- **Confidence:** HIGH",
+    '- **Monitoring signal:** → Pre-Mortem: "the shared mode"', "- **Status:** OPEN", "",
+    "### [DL-002] points at the other ticket's mode", "- **Decision:** y", "- **Confidence:** LOW",
+    '- **Monitoring signal:** → Pre-Mortem: "' + other + '"', "- **Status:** OPEN", ""].join("\n");
+  const two = B.buildIndex([
+    {path: "20260901-PTR1-first/audit-log.md", text: log("only in A", "only in B", QUIET)},
+    {path: "20260902-PTR2-second/audit-log.md", text: log("only in B", "only in A", LOUD)}],
+    {project: "p", generated: "2026-11-20", source: "snapshot"});
+  const ctx = S.packContext(two, null, "2026-11-20");
+  /* A's shared row declares UNOBSERVABLE and B's names an observable, so the
+     same pointer text reads differently per ticket. Each DL-002 points at a
+     mode its own ticket does not carry. */
+  assert.deepEqual(ctx.instrumentation_gaps.map(g => [g.tid, g.id, g.gap]), [
+    ["PTR1", "DL-001", "UNOBSERVABLE"],
+    ["PTR1", "DL-002", "dangling pointer"],
+    ["PTR2", "DL-002", "dangling pointer"]]);
+  assert.deepEqual(ctx.gap_counts, {missing: 0, unobservable: 1, dangling: 2, total: 3, open: 4});
+});
+
+test("a recorded ruling settles a card before the gap list sees it", () => {
+  const B = require("../adp-index-builder-lib.js");
+  const log = ["# T", "", "## Decision Log", "",
+    "### [DL-001] unruled and unsignalled", "- **Decision:** x", "- **Confidence:** HIGH",
+    "- **Status:** OPEN", "",
+    "### [DL-002] ruled on the record, still OPEN on its card", "- **Decision:** y",
+    "- **Confidence:** HIGH", "- **Status:** OPEN", "",
+    "## Obligation Ticket List", "",
+    "| Ticket ID | Decision Log ref | Assumption to validate | Priority | Exit condition | Observation window |",
+    "|---|---|---|---|---|---|",
+    "| OT-GAP1-1 | DL-001 | it holds | HIGH | done → VALIDATED | 2026-12-01 |", "",
+    "- **DL-002 CLOSED 2026-11-02 → VALIDATED.** Quiet through the window.", ""].join("\n");
+  const one = B.buildIndex([{path: "20260901-GAP1-gaps/audit-log.md", text: log}],
+    {project: "p", generated: "2026-11-20", source: "snapshot"});
+  const ctx = S.packContext(one, null, "2026-11-20");
+  assert.deepEqual(ctx.instrumentation_gaps.map(g => g.id), ["DL-001"]);
+  assert.deepEqual(ctx.gap_counts, {missing: 1, unobservable: 0, dangling: 0, total: 1, open: 1});
+});
+
+test("the pre-mortem lists split by the anchor cell, each row reaching the list its cell names", () => {
+  const ctx = S.packContext(idx, null, idx.generated);
+  assert.deepEqual(ctx.pending_mitigations.map(r => [r.tid, r.likelihood, r.implemented_at]),
+    [["FX004", "M", "PENDING"]]);
+  assert.deepEqual(ctx.rebuttals.map(r => [r.tid, r.likelihood, r.implemented_at]),
+    [["FX004", "L", "—"]]);
+  // An anchored row is the one claim a person can settle, so the third list
+  // carries it with the anchor exactly as its author wrote it.
+  assert.deepEqual(ctx.anchored_mitigations.map(r => [r.tid, r.implemented_at]),
+    [["FX004", "`renderViewerGolden`"]]);
+  assert.deepEqual(ticket("FX004").premortem.map(r => r.implemented_at),
+    ["`renderViewerGolden`", "PENDING", "—"]);
+});
+
+test("every Pre-Mortem row on record reaches exactly one of the three lists", () => {
+  const ctx = S.packContext(idx, null, idx.generated);
+  const rows = idx.tickets.flatMap(t => t.premortem || []);
+  const listed = [ctx.pending_mitigations, ctx.rebuttals, ctx.anchored_mitigations];
+  assert.equal(listed.reduce((n, l) => n + l.length, 0), rows.length);
+  // A blank anchor cell would reach none of them, which DL-003 states and
+  // OT-MC004-3 watches; the fixture corpus carries no such row.
+  assert.equal(rows.some(r => !r.implemented_at), false);
+});
+
 test("tickets in review list their PR, open entries, and live watches; the fixtures have none", () => {
   assert.deepEqual(S.packContext(idx, null, idx.generated).in_review, []);
   const B = require("../adp-index-builder-lib.js");
@@ -201,7 +405,7 @@ test("the bootstrap pack states the record's watch convention, not the mockup's"
 });
 
 test("the shipped packs use only slots the context provides", () => {
-  const ctx = S.packContext(idx, ticket("FX004"), idx.generated);
+  const ctx = S.packContext(idx, ticket("FX004"), idx.generated, fx.advisories);
   const known = new Set(Object.keys(ctx));
   const watchKeys = ["tid", "wid", "what", "due", "state"];
   const entryKeys = ["tid", "id", "title", "confidence"];
@@ -211,7 +415,12 @@ test("the shipped packs use only slots the context provides", () => {
     unwatched: entryKeys, basis_direct: entryKeys, basis_inference: entryKeys,
     basis_assertion: entryKeys, basis_other: entryKeys, basis_none: entryKeys,
     open_by_age: entryKeys.concat("age", "watch"),
-    in_review: ["id", "dir", "pr", "open_count", "live_count"]};
+    in_review: ["id", "dir", "pr", "open_count", "live_count"],
+    advisories: ["kind", "tid", "id", "detail"],
+    instrumentation_gaps: entryKeys.concat("gap"),
+    pending_mitigations: ["tid", "mode", "likelihood", "implemented_at"],
+    rebuttals: ["tid", "mode", "likelihood", "implemented_at"],
+    anchored_mitigations: ["tid", "mode", "likelihood", "implemented_at"]};
   for (const file of R.packFiles()){
     const tpl = fs.readFileSync(path.join(R.PACKS_DIR, file), "utf8");
     // Every opener goes on the stack and every closer pops one, so a value
@@ -234,7 +443,7 @@ test("every shipped pack fills to its golden byte for byte, and no golden is sta
   const packs = R.packFiles();
   assert.ok(packs.length >= 4, "the four packs ship");
   for (const file of packs){
-    const got = R.fillFixturePack(file, idx);
+    const got = R.fillFixturePack(file, fx);
     const want = fs.readFileSync(R.goldenPath(file), "utf8");
     assert.equal(got, want, file + " differs from its golden; regenerate deliberately");
   }
@@ -245,9 +454,7 @@ test("every shipped pack fills to its golden byte for byte, and no golden is sta
 
 test("the fill is a pure function of the index and the pack: same index in, same bytes out", () => {
   const files = R.readCorpus(R.CORPUS);
-  const shuffled = files.slice().reverse();
-  const B = require("../adp-index-builder-lib.js");
-  const again = B.buildIndex(shuffled, R.OPTS);
+  const again = R.buildFixtureCorpus(files.slice().reverse());
   for (const file of R.packFiles())
-    assert.equal(R.fillFixturePack(file, again), R.fillFixturePack(file, idx), file);
+    assert.equal(R.fillFixturePack(file, again), R.fillFixturePack(file, fx), file);
 });
