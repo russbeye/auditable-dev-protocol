@@ -235,6 +235,42 @@ test("a pointer-form signal resolves to the Pre-Mortem row that owns it", () => 
     "no signal");
 });
 
+test("a signal that is only a dash reads as no signal, on the card or through its row", () => {
+  const rows = [{mode: "a dashed row", likelihood: "L", signal: "—", implemented_at: "PENDING"},
+    {mode: "a loud row", likelihood: "M", signal: "the count — fires at one", implemented_at: "—"}];
+  // The record's own no-value marker, in every dash a reader would take for it.
+  for (const bare of ["—", "  —  ", "–", "-", "——"])
+    assert.equal(S.packGapKind(bare, rows), "no signal", JSON.stringify(bare));
+  // A pointer makes the row's cell the entry's one signal of record.
+  assert.equal(S.packGapKind('→ Pre-Mortem: "a dashed row"', rows), "no signal");
+  assert.equal(S.packGapKind('→ Pre-Mortem: "a loud row"', rows), null);
+  // A dash inside a stated observable is not the marker.
+  assert.equal(S.packGapKind("the count — fires at one", rows), null);
+});
+
+test("an open card writing the dash reaches the gap list, directly and by pointer", () => {
+  const B = require("../adp-index-builder-lib.js");
+  const log = ["# T", "", "## Pre-Mortem Report", "",
+    "| Failure mode | Likelihood | Monitoring signal | Implemented at |", "|---|---|---|---|",
+    "| a dashed row | L | — | PENDING |", "",
+    "## Decision Log", "",
+    "### [DL-001] the card writes the dash", "- **Decision:** x", "- **Confidence:** HIGH",
+    "- **Monitoring signal:** —", "- **Status:** OPEN", "",
+    "### [DL-002] the card points at a dashed row", "- **Decision:** y", "- **Confidence:** HIGH",
+    '- **Monitoring signal:** → Pre-Mortem: "a dashed row"', "- **Status:** OPEN", "",
+    "### [DL-003] the card states no field at all", "- **Decision:** z", "- **Confidence:** LOW",
+    "- **Status:** OPEN", ""].join("\n");
+  const one = B.buildIndex([{path: "20260901-DSH1-dashes/audit-log.md", text: log}],
+    {project: "p", generated: "2026-11-20", source: "snapshot"});
+  // The dash card carries a signal key, so the index reports what the card
+  // says and the context is what reads the marker.
+  assert.equal(one.tickets[0].decisions[0].signal, "—");
+  const ctx = S.packContext(one, null, "2026-11-20");
+  assert.deepEqual(ctx.instrumentation_gaps.map(g => [g.id, g.gap]),
+    [["DL-001", "no signal"], ["DL-002", "no signal"], ["DL-003", "no signal"]]);
+  assert.deepEqual(ctx.gap_counts, {missing: 3, unobservable: 0, dangling: 0, total: 3, open: 3});
+});
+
 test("a pointer naming no row of the ticket is its own kind of gap", () => {
   assert.equal(S.packGapKind('\u2192 Pre-Mortem: "a mode nobody wrote"', PM_ROWS), "dangling pointer");
   assert.equal(S.packGapKind("\u2192 Pre-Mortem: no quoted mode at all", PM_ROWS), "dangling pointer");

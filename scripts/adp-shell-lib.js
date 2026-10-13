@@ -533,10 +533,17 @@
      of the ticket is a kind of its own: the entry's one signal of record
      addresses nothing, which no reader can check. The row's own cell is read
      with no rows to follow, so a chain of pointers ends at the first hop
-     instead of looping. */
+     instead of looping. A row whose signal cell is the dash reads as no
+     signal, exactly as a card's dash does, because the pointer makes that
+     cell the entry's one signal of record. */
   function packGapKind(signal, rows){
     const s = String(signal || "").trim();
-    if (!s) return "no signal";
+    /* A field holding only a dash is the record's own no-value marker, which
+       the templates write wherever a cell has nothing in it, so it reads the
+       same as an absent field. SKILL.md fixes three signal forms and the dash
+       is none of them. Em, en, and plain hyphen all count, because a reader
+       takes any of them for the same marker. */
+    if (!s || /^[—–-]+$/.test(s)) return "no signal";
     if (/^→\s*Pre-Mortem\b/i.test(s)){
       const at = s.indexOf('"'), end = s.lastIndexOf('"');
       const mode = end > at ? s.slice(at + 1, end).replace(/\\"/g, '"').trim() : "";
