@@ -91,7 +91,11 @@ test("no page root in either sheet clips horizontal overflow", () => {
   for (const name of ["adp-theme.css", "adp-shell.css"]) {
     const noComments = read(name).replace(/\/\*[\s\S]*?\*\//g, "");
     for (const m of noComments.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-      const roots = m[1].split(",").map(s => s.trim()).filter(s => s === "html" || s === "body");
+      // A :root selector, with or without an attribute suffix, selects the
+      // same element as html. We drop any statement such as an @import that
+      // precedes the selector, since it ends in a semicolon.
+      const roots = m[1].split(";").pop().split(",").map(s => s.trim())
+        .filter(s => s === "html" || s === "body" || /^:root(\[[^\]]*\])*$/.test(s));
       if (!roots.length) continue;
       const props = m[2].split(";").map(d => d.slice(0, d.indexOf(":")).trim());
       assert.deepEqual(props.filter(p => p === "overflow" || p === "overflow-x"), [],
