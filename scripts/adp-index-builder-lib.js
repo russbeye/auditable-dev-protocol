@@ -384,13 +384,14 @@
          above its zone is prose. Records land on their table row or card; a
          record naming an id with no row harvests nothing. The row's own
          window date is the anchor of record, so a re-anchor fills only a
-         null due, and a closure record freezes the row, so no anchor applies
-         to a closed watch. */
+         null due. A closure record freezes the row, so an anchor written
+         after it applies nothing, while one written before it keeps the date
+         the watch carried while live. */
       const ledger = ledgerOf(parsed.secs, hw.from);
       for (const w of watches){
         const c = ledger.closures.get(w.wid);
         const a = ledger.anchors.get(w.wid);
-        if (a && !w.anchored && !c){ w.due = a; w.anchored = true; }
+        if (a && !w.anchored && !ledger.lateAnchors.has(w.wid)){ w.due = a; w.anchored = true; }
         if (c){ w.closed = c.closed; w.outcome = c.outcome; }
       }
       for (const d of decisions){

@@ -13,9 +13,9 @@ and something a person wrote moved nothing. Read each kind for what it means.
 A phantom record names no table row and no card, so the closure it states
 never landed. A contradiction is a second record for an id the first one
 already settled, and the first one won. A dead-anchor aims a re-anchor at a
-watch the row already dates or a closure already ended. A near-miss is
-closure intent on a known id whose record never landed, which is the kind a
-sweep clears by writing the record. A wid-shape is a watch id the ledger
+watch the row already dates or a closure written above it already ended. A
+near-miss is closure intent on a known id whose record never landed, which is
+the kind a sweep clears by writing the record. A wid-shape is a watch id the ledger
 grammar cannot address, so no record can ever close that row. A misplaced
 section sits above the section the order convention gives it, named with the
 key it should follow. A control-byte is a raw control byte in a log, named

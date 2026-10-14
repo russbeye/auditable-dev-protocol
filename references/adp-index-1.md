@@ -279,8 +279,8 @@ unanchored watch its absolute due date (the first date is the day of the ruling,
 the new `due`). The ledger addresses ids in the `OT-` shape and `DL-` entry ids only. First
 occurrence in document order wins for every record kind; the row's own window date is the
 anchor of record, so a re-anchor line fills only a null `due` and never moves an existing
-anchor; a closure record freezes the row, so no anchor record applies to a closed watch,
-whatever the line order; a record naming a wid with no table row harvests nothing; a line
+anchor; a closure record freezes the row, so an anchor record written after it applies
+nothing, while one written before it keeps the date the watch carried while live; a record naming a wid with no table row harvests nothing; a line
 missing any part of
 the form — the date especially — is prose, which is what keeps every legacy closure sentence
 unharvested. The protocol's outcome vocabulary is VALIDATED, INVALIDATED, and UNKNOWN, and per
@@ -290,7 +290,7 @@ derivations, not the index, decide that closed watches leave the due math and th
 reasons. The builder also exports `lintCorpus`, an advisory sweep over the corpus reporting
 the ledger's silent failures: a landed record naming no row or card (phantom), a losing second
 record (contradiction), a landed anchor record that cannot honestly move its watch — the row
-already anchors it, or a closure record has ended it (dead-anchor), closure intent on a known
+already anchors it, or a closure record above it has ended it (dead-anchor), closure intent on a known
 id that never landed (near-miss), a watch id the ledger grammar cannot address
 (wid-shape), and a companion section written ahead of the place SKILL.md's section order
 convention gives it (misplaced, carrying `after`, the key of the section it should follow),
