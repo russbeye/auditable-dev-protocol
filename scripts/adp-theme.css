@@ -44,7 +44,6 @@ body{
   -webkit-font-smoothing:antialiased;
   min-height:100vh;
   position:relative;
-  overflow-x:hidden;
 }
 /* load-bearing grain — fractal-noise turbulence, desaturated. the analog gesture
    inside the digital system. tiles as fine film grain over every surface. */

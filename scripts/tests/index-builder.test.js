@@ -199,7 +199,7 @@ test("a ruling lands on a ticket that has no watch table", () => {
   assert.equal(d.status, "OPEN");
 });
 
-test("a closure freezes the row, so no anchor applies to a closed watch", () => {
+test("a closure freezes the row, so no later anchor applies to a closed watch", () => {
   const doc = builder.buildIndex(lintLog([
     "- **OT-1 CLOSED 2026-09-01 → VALIDATED.** Done.",
     "- **OT-1 RE-ANCHORED 2026-09-02 → 2026-12-01.** The closure already ended this watch."
@@ -208,6 +208,18 @@ test("a closure freezes the row, so no anchor applies to a closed watch", () => 
   assert.equal(w.due, null);
   assert.equal(w.anchored, false);
   assert.equal(w.closed, "2026-09-01");
+});
+
+test("an anchor written before the closure keeps the date the watch carried while live", () => {
+  const doc = builder.buildIndex(lintLog([
+    "- **OT-1 RE-ANCHORED 2026-09-01 → 2026-10-12.** The window gains its date.", "",
+    "## Ledger — later sweep", "",
+    "- **OT-1 CLOSED 2026-10-13 → VALIDATED.** The window ended quiet."
+  ]), OPTS);
+  const w = doc.tickets[0].watches[0];
+  assert.equal(w.due, "2026-10-12");
+  assert.equal(w.anchored, true);
+  assert.equal(w.closed, "2026-10-13");
 });
 
 test("lintCorpus reports the ledger's silent failures by kind", () => {
@@ -265,6 +277,14 @@ test("an anchor landing on a closed watch is a dead anchor", () => {
     "- **OT-1 CLOSED 2026-09-01 → VALIDATED.** Done.",
     "- **OT-1 RE-ANCHORED 2026-09-02 → 2026-12-01.** The closure already ended this watch."
   ])), [{dir: "T-1-x", id: "OT-1", finding: "dead-anchor"}]);
+});
+
+test("a watch re-anchored and then closed raises nothing", () => {
+  assert.deepEqual(builder.lintCorpus(lintLog([
+    "- **OT-1 RE-ANCHORED 2026-09-01 → 2026-10-12.** The window gains its date.", "",
+    "## Ledger — later sweep", "",
+    "- **OT-1 CLOSED 2026-10-13 → VALIDATED.** The window ended quiet."
+  ])), []);
 });
 
 test("lintCorpus enumerates watch ids the ledger grammar cannot address", () => {

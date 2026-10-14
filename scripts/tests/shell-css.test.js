@@ -83,6 +83,27 @@ test("adp-shell.css and adp-theme.css share no class name", () => {
   assert.deepEqual(shared, []);
 });
 
+test("no page root in either sheet clips horizontal overflow", () => {
+  // A clip on the page root hides content that runs past the window instead
+  // of letting the reader scroll to it. Every page loads adp-theme.css, and
+  // mission control adds adp-shell.css, so both sheets must leave the root
+  // alone, media blocks included.
+  for (const name of ["adp-theme.css", "adp-shell.css"]) {
+    const noComments = read(name).replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const m of noComments.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      // A :root selector, with or without an attribute suffix, selects the
+      // same element as html. We drop any statement such as an @import that
+      // precedes the selector, since it ends in a semicolon.
+      const roots = m[1].split(";").pop().split(",").map(s => s.trim())
+        .filter(s => s === "html" || s === "body" || /^:root(\[[^\]]*\])*$/.test(s));
+      if (!roots.length) continue;
+      const props = m[2].split(";").map(d => d.slice(0, d.indexOf(":")).trim());
+      assert.deepEqual(props.filter(p => p === "overflow" || p === "overflow-x"), [],
+        name + " " + m[1].trim());
+    }
+  }
+});
+
 test("the shell page and its tab strip use only adp-shell.css classes", () => {
   const shell = classesIn(read("adp-shell.css"));
   const html = fs.readFileSync(path.join(__dirname, "..", "mission-control.html"), "utf8");
