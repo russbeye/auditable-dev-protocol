@@ -267,6 +267,14 @@ test("an anchor landing on a closed watch is a dead anchor", () => {
   ])), [{dir: "T-1-x", id: "OT-1", finding: "dead-anchor"}]);
 });
 
+test("a watch re-anchored and then closed raises nothing", () => {
+  assert.deepEqual(builder.lintCorpus(lintLog([
+    "- **OT-1 RE-ANCHORED 2026-09-01 → 2026-10-12.** The window gains its date.", "",
+    "## Ledger — later sweep", "",
+    "- **OT-1 CLOSED 2026-10-13 → VALIDATED.** The window ended quiet."
+  ])), []);
+});
+
 test("lintCorpus enumerates watch ids the ledger grammar cannot address", () => {
   const files = [{path: "T-1-x/audit-log.md", text: [
     "# T", "",

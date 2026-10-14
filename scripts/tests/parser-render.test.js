@@ -142,6 +142,33 @@ test("a disallowed scheme degrades to visible text, any letter case", () => {
   }
 });
 
+// We read the href the way a browser does. The attribute's entities decode
+// once, and the URL parser drops tabs and newlines and trims leading controls.
+// Percent escapes never decode inside a scheme, so we leave them alone.
+function browserHref(html){
+  const m = /<a href="([^"]*)"/.exec(html);
+  if (!m) return null;
+  return m[1]
+    .replace(/&#x([0-9a-f]+);?/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#([0-9]+);?/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&(amp|quot|lt|gt|colon|Tab|NewLine);/g, (_, n) =>
+      ({amp: "&", quot: '"', lt: "<", gt: ">", colon: ":", Tab: "\t", NewLine: "\n"})[n])
+    .replace(/[\t\n\r]/g, "").replace(/^[\u0000-\u0020]+/, "");
+}
+
+test("percent-encoded and entity-encoded scheme spellings stay inert", () => {
+  for (const url of ["javascript%3Aalert(1)", "java%73cript:alert(1)", "%6Aavascript:alert(1)",
+                     "jav&#97;script:alert(1)", "&#106;avascript:alert(1)", "jav&#x61;script:alert(1)",
+                     "javascript&#58;alert(1)", "javascript&#x3A;alert(1)", "javascript&colon;alert(1)",
+                     "java&Tab;script:alert(1)", "data&#58;text/html,x"]) {
+    const href = browserHref(inline("[x](" + url + ")"));
+    if (href === null) continue;
+    const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(href);
+    assert.ok(!scheme || ["http", "https", "mailto"].includes(scheme[1].toLowerCase()),
+      url + " must not reach the browser as " + href);
+  }
+});
+
 test("control characters and double quotes in a url degrade to text", () => {
   assert.ok(!inline("[x](javascript:alert(1))").includes("<a "));
   assert.ok(!inline('[x](https://x.y/"onmouseover=1)').includes("<a "));

@@ -284,6 +284,9 @@
     const anchors = new Map();
     const rulings = new Map();
     const contradictions = [];
+    // Anchors that land after their watch's closure. An anchor written before
+    // the closure dated a live watch, so the lint leaves it alone.
+    const lateAnchors = new Set();
     secs.forEach((sec, si) => {
       if (si < watchFrom && si < rulingFrom) return;
       for (const line of withoutFences(sec.body.join("\n")).split("\n")){
@@ -303,13 +306,16 @@
             if (!closures.has(id)) closures.set(id, {closed: m[3], outcome: m[4]});
             else contradictions.push(id);
           } else if (I.isDate(m[4])){
-            if (!anchors.has(id)) anchors.set(id, m[4]);
-            else contradictions.push(id);
+            if (!anchors.has(id)){
+              anchors.set(id, m[4]);
+              if (closures.has(id)) lateAnchors.add(id);
+            } else contradictions.push(id);
           }
         }
       }
     });
-    return {closures: closures, anchors: anchors, rulings: rulings, contradictions: contradictions};
+    return {closures: closures, anchors: anchors, rulings: rulings, contradictions: contradictions,
+      lateAnchors: lateAnchors};
   }
 
   // The section-attribution rule already owns what counts as phase 5, so the
@@ -535,11 +541,11 @@
       // A contradiction is a second record for an id that the first record already ruled.
       for (const id of new Set(led.contradictions)) add(id, "contradiction");
       const anchored = new Set(hw.watches.filter(w => w.anchored).map(w => w.wid));
-      /* An anchor record aimed at a watch the row already anchors, or that
-         also holds a closure record, cannot honestly move anything. The
-         author sees that here instead of silence. */
+      /* An anchor record aimed at a watch the row already anchors, or one
+         written after the watch's closure record, cannot honestly move
+         anything. The author sees that here instead of silence. */
       for (const id of led.anchors.keys()){
-        if (wids.has(id) && (anchored.has(id) || led.closures.has(id))) add(id, "dead-anchor");
+        if (wids.has(id) && (anchored.has(id) || led.lateAnchors.has(id))) add(id, "dead-anchor");
       }
       /* A landed record makes its id's near-misses moot, so a swept corpus
          lints clean while the old prose stays in place, append-only. */
