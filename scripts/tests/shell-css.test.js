@@ -192,3 +192,67 @@ test("under the fold the export card heads the column and stops sticking", () =>
   // The override has to follow the sticky rule, or the sticky rule wins.
   assert.ok(css.indexOf(".nt-side{position:sticky") < css.indexOf(".nt-side{order:-1;position:static}"));
 });
+
+test("the header holds the window's width and overflows inside itself", () => {
+  const css = read("adp-shell.css");
+  // Without the zero floor the header's grid item grows to its content, the
+  // page scrolls sideways, and the header never sees its own overflow.
+  assert.equal(declarationsOf(css, ".shell header")["min-width"], "0");
+});
+
+test("the shell gives back the page scrollbar track the theme reserves", () => {
+  // The theme reserves the track for pages that scroll. The shell scrolls
+  // only inside the stage, so a reserved track would sit empty beside it.
+  assert.equal(declarationsOf(read("adp-theme.css"), "html")["scrollbar-gutter"], "stable");
+  assert.equal(declarationsOf(read("adp-shell.css"), "html")["scrollbar-gutter"], "auto");
+});
+
+test("the full header lays out the menu's children as header items", () => {
+  const css = read("adp-shell.css");
+  assert.equal(declarationsOf(css, ".hdrmenu").display, "contents");
+  assert.equal(declarationsOf(css, ".menubtn").display, "none");
+  // The project chit sits in the menu's markup, after the theme button. The
+  // order pair draws it right after the brand, where the full header has it.
+  assert.equal(declarationsOf(css, ".brand").order, "-2");
+  assert.equal(declarationsOf(css, ".hdrmenu > .chit").order, "-1");
+  // A positioned full header paints above the theme's fixed grain overlay and
+  // changes its pixels, so only the compact header is positioned.
+  assert.equal(declarationsOf(css, ".shell header").position, undefined);
+  assert.equal(declarationsOf(css, ".shell header.is-compact").position, "relative");
+});
+
+test("the header measures its row with every label held to one line", () => {
+  const css = read("adp-shell.css");
+  // A label that breaks lets the row fit by stacking, and the header would
+  // squeeze instead of folding.
+  const sel = ".shell header.is-measuring .brand,.shell header.is-measuring .mtab,.shell header.is-measuring .newtask";
+  assert.equal(declarationsOf(css, sel)["white-space"], "nowrap");
+  // Content that runs into padding never reaches scrollWidth, so the
+  // measuring header trades its right padding for a border. The extra pixel
+  // turns a fractional overflow, which scrollWidth rounds away, into one the
+  // page can read.
+  const m = declarationsOf(css, ".shell header.is-measuring");
+  assert.equal(m["padding-right"], "0");
+  assert.equal(m["border-right"], "17px solid transparent");
+});
+
+test("the compact header folds the menu's children under one button, whatever the tab count", () => {
+  const css = read("adp-shell.css");
+  assert.equal(declarationsOf(css, ".shell header.is-compact .menubtn").display, "inline-block");
+  assert.equal(declarationsOf(css, ".shell header.is-compact .hdrmenu").display, "none");
+  const open = declarationsOf(css, ".shell header.is-compact.menu-open .hdrmenu");
+  assert.equal(open.display, "flex");
+  assert.equal(open["flex-direction"], "column");
+  assert.equal(open.position, "absolute");
+  assert.equal(open["max-width"], "calc(100vw - 32px)");
+  // The tabs stack in the panel, so a sixth tab adds a row, not width.
+  assert.equal(declarationsOf(css, ".shell header.is-compact .tabs")["flex-direction"], "column");
+  assert.equal(declarationsOf(css, ".shell header.is-compact .hdrmenu > .chit")["white-space"], "normal");
+});
+
+test("the folded builder grid lets the preview scroll instead of stretching the page", () => {
+  const html = read("prompt-builder.html");
+  const css = html.match(/<style>([\s\S]*?)<\/style>/)[1].replace(/@media \(/g, "@media(");
+  // A bare 1fr track keeps the yaml preview's min-content width as its floor.
+  assert.equal(mediaDeclarationsOf(css, "max-width:980px", ".grid")["grid-template-columns"], "minmax(0,1fr)");
+});

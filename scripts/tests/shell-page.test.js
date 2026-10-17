@@ -195,9 +195,14 @@ test("mission-control.html carries the frame the harness models", () => {
   const screens = [...HTML.matchAll(/<section class="screen[^"]*" data-s="([^"]+)"/g)].map(m => m[1]);
   assert.deepEqual(screens, S.SCREENS);
   assert.match(HTML, /<span class="chit poll poll-idle" id="liveChit" role="status">/);
-  for (const id of ["projChit", "liveChit", "liveTxt", "themeBtn", "ttIcon", "tabs", "newTaskBtn", "rail", "foot", "shellmask"]) {
+  for (const id of ["projChit", "liveChit", "liveTxt", "themeBtn", "ttIcon", "menuBtn", "menuTxt", "hdrMenu", "tabs", "newTaskBtn", "rail", "foot", "shellmask"]) {
     assert.match(HTML, new RegExp('id="' + id + '"'));
   }
+  // The menu holds the project chit, the tab strip, and the new-task button,
+  // in that order, and nothing else.
+  const menu = HTML.match(/<div class="hdrmenu" id="hdrMenu">([\s\S]*?)<\/div>/)[1];
+  assert.deepEqual([...menu.matchAll(/id="([^"]+)"/g)].map(m => m[1]), ["projChit", "tabs", "newTaskBtn"]);
+  assert.match(HTML, /<button type="button" class="menubtn" id="menuBtn" aria-expanded="false" aria-controls="hdrMenu">/);
 });
 
 // ---- the page: theme boot ----
@@ -3126,4 +3131,130 @@ test("the drop mask names both kinds of file a drop can carry", () => {
   // The mask covers the whole page during a drag, so it speaks for every
   // screen, where a screen's own chit names only its own kind.
   assert.match(HTML, /<div class="maskmsg">▾ drop an audit log to open it, or a prompt\.yaml to import it<\/div>/);
+});
+
+// ---- the page: the header menu ----
+
+// The harness has no layout, so a test sets the header's two widths by hand.
+// The page reads them the way it reads a real box.
+function headerWidths(h, scroll, client){
+  const hdr = h.$("header");
+  hdr.scrollWidth = scroll;
+  hdr.clientWidth = client;
+  return hdr;
+}
+
+test("the header folds into the menu only while the full row overflows", () => {
+  const h = bootShell({stored: "dark"});
+  const hdr = h.$("header");
+  assert.equal(hdr.classList.contains("is-compact"), false);
+  headerWidths(h, 1080, 705);
+  h.fireWindow("resize");
+  assert.equal(hdr.classList.contains("is-compact"), true);
+  headerWidths(h, 1085, 1085);
+  h.fireWindow("resize");
+  assert.equal(hdr.classList.contains("is-compact"), false);
+});
+
+test("the header folds when its labels would have to break to fit", () => {
+  const h = bootShell({stored: "dark"});
+  const hdr = h.$("header");
+  // This row fits only while its labels may break: held to one line it
+  // overflows. The page must measure the held row.
+  Object.defineProperty(hdr, "scrollWidth", {configurable: true,
+    get: () => hdr.classList.contains("is-measuring") ? 1180 : 1085});
+  hdr.clientWidth = 1085;
+  h.fireWindow("resize");
+  assert.equal(hdr.classList.contains("is-compact"), true);
+  assert.equal(hdr.classList.contains("is-measuring"), false);
+});
+
+test("every path that rewrites header text measures the header again", async () => {
+  const live = liveCorpus();
+  const h = bootShell({stored: "dark", fetch: live.fetch});
+  await h.settle();
+  const hdr = h.$("header");
+  // A tab switch runs render(), which rewrites the project chit.
+  headerWidths(h, 1080, 705);
+  h.click(h.$$(".mtab")[1]);
+  assert.equal(hdr.classList.contains("is-compact"), true);
+  // The theme glyph changes width with its fallback font.
+  headerWidths(h, 705, 705);
+  h.click(h.$("#themeBtn"));
+  assert.equal(hdr.classList.contains("is-compact"), false);
+  // A failed re-fetch changes the live word without a full render.
+  headerWidths(h, 1080, 705);
+  live.down = true;
+  h.tick();
+  await h.settle();
+  assert.equal(h.$("#liveTxt").textContent, "CACHED");
+  assert.equal(hdr.classList.contains("is-compact"), true);
+});
+
+test("the menu button opens the menu and names the current screen", () => {
+  const h = bootShell({stored: "dark"});
+  headerWidths(h, 1080, 705);
+  h.fireWindow("resize");
+  assert.equal(h.$("#menuTxt").textContent, "inspector");
+  h.click(h.$("#menuBtn"));
+  assert.equal(h.$("header").classList.contains("menu-open"), true);
+  assert.equal(h.$("#menuBtn").getAttribute("aria-expanded"), "true");
+  h.click(h.$("#menuBtn"));
+  assert.equal(h.$("header").classList.contains("menu-open"), false);
+  assert.equal(h.$("#menuBtn").getAttribute("aria-expanded"), "false");
+});
+
+test("a pick from the open menu closes it and hands focus to the menu button", () => {
+  const h = bootShell({stored: "dark"});
+  headerWidths(h, 1080, 705);
+  h.fireWindow("resize");
+  h.click(h.$("#menuBtn"));
+  const tab = h.$$(".mtab").find(t => t.getAttribute("data-s") === "ledgers");
+  tab.focus();
+  h.click(tab);
+  assert.equal(h.$("header").classList.contains("menu-open"), false);
+  assert.equal(h.document.activeElement, h.$("#menuBtn"));
+  assert.equal(h.$("#menuTxt").textContent, "ledgers");
+  // The new-task button sits in the same menu and closes it the same way.
+  h.click(h.$("#menuBtn"));
+  h.$("#newTaskBtn").focus();
+  h.click(h.$("#newTaskBtn"));
+  assert.equal(h.$("header").classList.contains("menu-open"), false);
+  assert.equal(h.document.activeElement, h.$("#menuBtn"));
+  assert.equal(h.$("#menuTxt").textContent, "new task");
+});
+
+test("Escape closes the open menu and hands focus to the menu button", () => {
+  const h = bootShell({stored: "dark"});
+  headerWidths(h, 1080, 705);
+  h.fireWindow("resize");
+  h.click(h.$("#menuBtn"));
+  const tab = h.$$(".mtab")[2];
+  tab.focus();
+  h.key(tab, "Escape");
+  assert.equal(h.$("header").classList.contains("menu-open"), false);
+  assert.equal(h.document.activeElement, h.$("#menuBtn"));
+});
+
+test("a click outside the menu closes it and leaves focus alone", () => {
+  const h = bootShell({stored: "dark"});
+  headerWidths(h, 1080, 705);
+  h.fireWindow("resize");
+  h.click(h.$("#menuBtn"));
+  h.$("#rail").focus();
+  h.click(h.$("#rail"));
+  assert.equal(h.$("header").classList.contains("menu-open"), false);
+  assert.equal(h.document.activeElement, h.$("#rail"));
+});
+
+test("the open menu closes when the full header fits again", () => {
+  const h = bootShell({stored: "dark"});
+  headerWidths(h, 1080, 705);
+  h.fireWindow("resize");
+  h.click(h.$("#menuBtn"));
+  headerWidths(h, 1385, 1385);
+  h.fireWindow("resize");
+  assert.equal(h.$("header").classList.contains("is-compact"), false);
+  assert.equal(h.$("header").classList.contains("menu-open"), false);
+  assert.equal(h.$("#menuBtn").getAttribute("aria-expanded"), "false");
 });
