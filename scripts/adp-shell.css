@@ -18,7 +18,17 @@
    so the status line stays visible while the stage scrolls internally. */
 .shell{display:grid;grid-template-rows:auto 1fr auto;height:100vh;height:100dvh}
 
-.shell header{display:flex;align-items:center;gap:14px;padding:10px 16px;
+/* adp-theme.css reserves a scrollbar track on the page so the standalone pages
+   hold still when their content grows past the window. The shell never
+   scrolls the page, so that track would stay an empty band at the right edge.
+   We hand the space back to the shell. */
+html{scrollbar-gutter:auto}
+
+/* A grid item never shrinks below its content by default, so a header too
+   wide for the window would stretch the whole page. The zero floor keeps the
+   header at the window's width. A row that does not fit then overflows the
+   header itself, which is the overflow the page measures to fold the menu. */
+.shell header{display:flex;align-items:center;gap:14px;padding:10px 16px;min-width:0;
   border-bottom:1px solid var(--line);background:var(--panel)}
 .brand{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:700}
 .brand b{color:var(--accent)}
@@ -50,6 +60,39 @@
 .newtask{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;
   border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);padding:6px 14px;cursor:pointer}
 .newtask:hover,.newtask.is-on{background:none;color:var(--accent)}
+
+/* The menu wrapper holds the project chit, the tab strip, and the new-task
+   button. In the full header it adds no box, so its three children stay
+   items of the header row. The project chit sits late in the markup for
+   the menu's sake, and the order pair puts it back right after the brand. */
+.hdrmenu{display:contents}
+.brand{order:-2}
+.hdrmenu > .chit{order:-1}
+.menubtn{display:none;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  border:1px solid var(--line-bright);background:var(--inset);color:var(--ink);padding:6px 12px;cursor:pointer;
+  margin-left:auto;white-space:nowrap}
+.menubtn:hover{border-color:var(--accent)}
+/* While the page measures the header, no label may break. A row that fits
+   only by stacking its labels then counts as overflowing, and folds. A row
+   that runs into the header's own right padding does not count toward
+   scrollWidth, so we swap that padding for a transparent border. The border
+   is one pixel wider than the padding, because scrollWidth also rounds a
+   fractional overflow away while the browser still breaks the brand. */
+.shell header.is-measuring{padding-right:0;border-right:17px solid transparent}
+.shell header.is-measuring .brand,.shell header.is-measuring .mtab,.shell header.is-measuring .newtask{white-space:nowrap}
+/* The compact header keeps the brand, the live chit, and the theme button in
+   the row. Everything else waits in a panel under the menu button, anchored
+   to the header's right edge and never wider than the window. Only the
+   compact header becomes a positioned box. A positioned full header would
+   paint above the theme's fixed body overlay and change its pixels. */
+.shell header.is-compact{position:relative}
+.shell header.is-compact .menubtn{display:inline-block}
+.shell header.is-compact .hdrmenu{display:none}
+.shell header.is-compact.menu-open .hdrmenu{display:flex;flex-direction:column;align-items:stretch;gap:8px;
+  position:absolute;top:100%;right:16px;z-index:8;max-width:calc(100vw - 32px);padding:10px;
+  background:var(--panel);border:1px solid var(--line-bright)}
+.shell header.is-compact .hdrmenu > .chit{white-space:normal;overflow-wrap:anywhere}
+.shell header.is-compact .tabs{flex-direction:column;margin-left:0}
 
 .main{display:grid;grid-template-columns:240px 1fr;min-height:0}
 .rail{border-right:1px solid var(--line);background:var(--panel);overflow-y:auto}

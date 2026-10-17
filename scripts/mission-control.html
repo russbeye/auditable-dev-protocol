@@ -17,14 +17,22 @@
 <div class="shell">
   <header>
     <span class="brand">ADP · <b>MISSION CONTROL</b></span>
-    <span class="chit" id="projChit"></span>
     <!-- The viewer's source pill, for the served corpus. The state word is
          the spoken twin too: role=status reads each change, and the states
          change only on boot, a failed re-fetch, and its recovery. -->
     <span class="chit poll poll-idle" id="liveChit" role="status"><i aria-hidden="true"></i><span id="liveTxt">IDLE</span></span>
     <button type="button" class="chit click" id="themeBtn" title="Toggle light / dark"><span id="ttIcon" aria-hidden="true">☾</span> theme</button>
-    <nav class="tabs" id="tabs" role="tablist"></nav>
-    <button class="newtask" id="newTaskBtn">+ new task</button>
+    <!-- When the full header does not fit the window, the project chit, the
+         tab strip, and the new-task button fold into one menu under this
+         button. The project chit sits in the menu's markup, so a screen
+         reader reaches it after the theme button. CSS keeps it second on
+         screen while the header is full. -->
+    <button type="button" class="menubtn" id="menuBtn" aria-expanded="false" aria-controls="hdrMenu"><span aria-hidden="true">≡</span> <span id="menuTxt">inspector</span></button>
+    <div class="hdrmenu" id="hdrMenu">
+      <span class="chit" id="projChit"></span>
+      <nav class="tabs" id="tabs" role="tablist"></nav>
+      <button class="newtask" id="newTaskBtn">+ new task</button>
+    </div>
   </header>
   <div class="main">
     <aside class="rail" id="rail"></aside>
@@ -920,8 +928,10 @@
     const theme = document.documentElement.getAttribute("data-theme");
     $("#ttIcon").textContent = theme === "dark" ? "☾" : "☀";
     $("#projChit").textContent = S.projectChitText(corpus ? corpus.index : null);
+    $("#menuTxt").textContent = selScreen;
     syncLive();
     $("#foot").textContent = S.footerText(corpus ? corpus.index : null);
+    fitHeader();
   }
 
   /* Every screen syncs, so a reload lands where the reader was. The
@@ -1142,16 +1152,51 @@
     liveShown = state;
     $("#liveChit").className = "chit poll poll-" + (state === "WATCHING" ? "ok" : state === "CACHED" ? "warn" : "idle");
     $("#liveTxt").textContent = state;
+    fitHeader();
   }
   setInterval(() => { docs.forEach(pollDoc); pollCorpus(); }, 1500);
+
+  // The header folds into its menu when the full row cannot fit on one line,
+  // so the trigger follows the project name and the tab count, not a fixed
+  // width. We measure with every label held to one line, because a squeezed
+  // row would otherwise fit by stacking its labels. We always measure the
+  // full form, never the compact one. One window width then gives one answer,
+  // and the two forms cannot flip back and forth.
+  function fitHeader(){
+    const hdr = $("header");
+    hdr.classList.remove("is-compact");
+    hdr.classList.add("is-measuring");
+    const over = hdr.scrollWidth > hdr.clientWidth;
+    hdr.classList.remove("is-measuring");
+    hdr.classList.toggle("is-compact", over);
+    if (!over) setMenu(false);
+  }
+  // A pick from the open menu hides the control that holds focus. We hand
+  // focus back to the menu button, so the next Tab goes on from the header
+  // and does not restart at the top of the page.
+  function setMenu(open){
+    const hdr = $("header");
+    const inside = document.activeElement && document.activeElement.closest
+      && document.activeElement.closest(".hdrmenu");
+    hdr.classList.toggle("menu-open", open);
+    $("#menuBtn").setAttribute("aria-expanded", open ? "true" : "false");
+    if (!open && inside) $("#menuBtn").focus();
+  }
+  window.addEventListener("resize", fitHeader);
 
   // ---- events ----
 
   $("#themeBtn").addEventListener("click", () => {
     const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
     S.applyTheme(document, localStorage, next);
+    // The sun and the moon fall back to different fonts, so the glyph can
+    // change the header's width.
+    fitHeader();
   });
-  $("#newTaskBtn").addEventListener("click", () => { selScreen = "new task"; render(); syncHash(); });
+  $("#menuBtn").addEventListener("click", () => {
+    setMenu(!$("header").classList.contains("menu-open"));
+  });
+  $("#newTaskBtn").addEventListener("click", () => { selScreen = "new task"; setMenu(false); render(); syncHash(); });
 
   // The click path and the keyboard path fire the same sort, so the two can
   // never disagree about what a header does.
@@ -1164,6 +1209,10 @@
       : tk === "la" ? renderLedgers()
       : renderInspector();
   }
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && $("header").classList.contains("menu-open")) setMenu(false);
+  });
 
   // A th never turns Enter or Space into a click the way a button does, so
   // the sort headers get their keyboard activation dispatched by hand.
@@ -1180,9 +1229,11 @@
   // checked before the containers that hold them.
   document.addEventListener("click", e => {
     const hit = cls => e.target.closest ? e.target.closest(cls) : null;
+    if ($("header").classList.contains("menu-open") && !hit(".hdrmenu") && !hit(".menubtn")) setMenu(false);
     const tab = hit(".mtab");
     if (tab){
       selScreen = tab.getAttribute("data-s");
+      setMenu(false);
       render();
       if (selScreen === "watchboard" && wbStale) renderWatch();
       if (selScreen === "ledgers" && lgStale) renderLedgers();
