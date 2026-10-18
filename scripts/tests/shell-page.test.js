@@ -3420,6 +3420,24 @@ test("the prompt view renders every top-level key, the unknown one included", ()
     assert.ok(html.includes(v), v);
 });
 
+// A table cell is a value like any other, so block text in a record still
+// reads as markdown while a one-line cell stays exact.
+test("block text inside a table cell renders as markdown", () => {
+  const html = S.promptViewHtml(PL.parseYAML([
+    "requirements:",
+    "  - id: \"R1\"",
+    "    statement: \"Keep **this** exact\"",
+    "    verify: |",
+    "      First paragraph with **bold**.",
+    "",
+    "      Second paragraph.",
+  ].join("\n") + "\n"));
+  const cell = html.match(/<td>((?:(?!<\/td>)[\s\S])*Second paragraph[\s\S]*?)<\/td>/)[1];
+  assert.match(cell, /<p>First paragraph with <strong>bold<\/strong>\.<\/p>/);
+  assert.match(cell, /<p>Second paragraph\.<\/p>/);
+  assert.match(html, /<td>Keep \*\*this\*\* exact<\/td>/);
+});
+
 // R3: every tag the view emits is one we built. Escaped author markup shows as
 // text, and no event attribute or off-list href survives.
 test("prompt text renders inert", () => {

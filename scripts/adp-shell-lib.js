@@ -292,7 +292,8 @@
         v.forEach(r => Object.keys(r).forEach(k => { if (!cols.includes(k)) cols.push(k); }));
         return `<div class="md"><div class="tbl-wrap"><table class="md-tbl"><thead><tr>`
           + cols.map(c => `<th>${esc(keyLabel(c))}</th>`).join("") + `</tr></thead><tbody>`
-          + v.map(r => `<tr>` + cols.map(c => `<td>${promptScalarHtml(r[c], at + "[]." + c)}</td>`).join("") + `</tr>`).join("")
+          + v.map(r => `<tr>` + cols.map(c => `<td>${isLine(r[c]) ? promptScalarHtml(r[c], at + "[]." + c)
+            : P.renderMarkdown(r[c])}</td>`).join("") + `</tr>`).join("")
           + `</tbody></table></div></div>`;
       }
       return `<div class="md"><ul class="md-list">` + v.map(x =>
