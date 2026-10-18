@@ -93,6 +93,16 @@
     return (files || []).filter(p => B.isLogPath(p));
   }
 
+  // A ticket directory holds one prompt.yaml beside its audit log. A deeper
+  // prompt.yaml belongs to a reference folder, not to the ticket.
+  function promptPaths(files){
+    return (files || []).filter(p => {
+      const path = String(p).replace(/^\.\//, "");
+      const cut = path.indexOf("/");
+      return cut > 0 && path.slice(cut + 1) === "prompt.yaml";
+    });
+  }
+
   // The server decodes percent escapes, so a raw path with a hash or a
   // percent sign would come out as a different file. We encode each segment
   // and keep the slashes as route separators.
@@ -134,7 +144,23 @@
       });
       const texts = {};
       for (const f of logs) texts[f.path.replace(/^\.\//, "").split("/")[0]] = f.text;
-      return {index, texts, files};
+      // A prompt is display data the index never reads, so each fetch fails
+      // on its own. One bad prompt costs its ticket a notice, and the load
+      // still resolves. We fill the map in listing order after every fetch
+      // settles. The page compares whole corpora as JSON, so a map filled in
+      // network order would read as a change on every poll tick.
+      const paths = promptPaths(listing.files);
+      const got = await Promise.all(paths.map(async p => {
+        try{
+          const res = await fetchFn(corpusUrl(p));
+          return res && res.ok ? {text: await res.text()} : {error: "unreadable"};
+        }catch(e){
+          return {error: "unreadable"};
+        }
+      }));
+      const prompts = {};
+      paths.forEach((p, i) => { prompts[p.replace(/^\.\//, "").split("/")[0]] = got[i]; });
+      return {index, texts, files, prompts};
     }catch(e){
       // The chrome renders every failure as no-corpus, so the console keeps
       // the one trace that says which file or shape broke the load.
@@ -232,6 +258,73 @@
       + `<p class="dnotice">no sections found — shown raw. An audit log with ## headings renders like any ticket.</p>`
       + `<pre class="rawpre">${esc(m.raw)}</pre></div>`;
   }
+
+  /* The prompt view gives each top-level key a card, shaped like a Decision
+     Log card: a head with the key's title, then a grid of field rows. A
+     top-level one-line value sits in the head itself. A list of flat
+     records becomes a table, and any other list becomes a list. Every value
+     is author text. A multi-line string is prose, so it goes through the
+     markdown renderer the logs use. A one-line string is often a spec that
+     quotes markdown, for example a verify step that names "[go](url)", so we
+     show it escaped and exact. */
+  const LINK_ITEM = /^(https?|mailto):/i;
+  const keyLabel = k => k.replace(/_/g, " ");
+  const keyTitle = k => keyLabel(k).replace(/(^|\s)([a-z])/g, (m, s, c) => s + c.toUpperCase());
+  const isFlat = x => isMap(x) && Object.keys(x).every(k => !isMap(x[k]) && !Array.isArray(x[k]));
+  const isLine = x => !isMap(x) && !Array.isArray(x) && !(typeof x === "string" && x.includes("\n"));
+  const NONE = `<span class="pcard-none">none</span>`;
+
+  // A link item stands alone, and a relative one would resolve against this
+  // page, so we make an anchor only for an absolute http, https, or mailto URL.
+  function promptScalarHtml(v, at){
+    if (v == null || v === "") return `<span class="pcard-none">empty</span>`;
+    if (typeof v === "string" && at === "context.links[]" && LINK_ITEM.test(v) && P.safeLinkUrl(v))
+      return `<a href="${escAttr(v)}" target="_blank" rel="noopener noreferrer">${esc(v)}</a>`;
+    return esc(String(v));
+  }
+
+  function promptValueHtml(v, at){
+    if (typeof v === "string" && v.includes("\n")) return `<div class="md">${P.renderMarkdown(v)}</div>`;
+    if (Array.isArray(v)){
+      if (!v.length) return NONE;
+      if (v.every(isFlat)){
+        const cols = [];
+        v.forEach(r => Object.keys(r).forEach(k => { if (!cols.includes(k)) cols.push(k); }));
+        return `<div class="md"><div class="tbl-wrap"><table class="md-tbl"><thead><tr>`
+          + cols.map(c => `<th>${esc(keyLabel(c))}</th>`).join("") + `</tr></thead><tbody>`
+          + v.map(r => `<tr>` + cols.map(c => `<td>${promptScalarHtml(r[c], at + "[]." + c)}</td>`).join("") + `</tr>`).join("")
+          + `</tbody></table></div></div>`;
+      }
+      return `<div class="md"><ul class="md-list">` + v.map(x =>
+        `<li>${isLine(x) ? promptScalarHtml(x, at + "[]") : promptValueHtml(x, at + "[]")}</li>`).join("") + `</ul></div>`;
+    }
+    if (isMap(v)){
+      const ks = Object.keys(v);
+      if (!ks.length) return NONE;
+      return `<div class="pcard-grid">` + ks.map(k =>
+        `<div class="pcard-k">${esc(keyLabel(k))}</div><div class="pcard-v">${promptValueHtml(v[k], at + "." + k)}</div>`).join("")
+        + `</div>`;
+    }
+    return promptScalarHtml(v, at);
+  }
+
+  // The builder's keys come first in the order it writes them. A key the
+  // builder does not know still shows, after them and in file order, because
+  // a hand-written prompt may carry one and the view must not hide it.
+  function promptViewHtml(obj){
+    const known = NT_KEYS[""].filter(k => k in obj);
+    const keys = known.concat(Object.keys(obj).filter(k => !known.includes(k)));
+    return `<div class="pcards">` + keys.map(k => {
+      const v = obj[k];
+      const head = `<div class="pcard-head"><span class="pcard-title">${esc(keyTitle(k))}</span>`
+        + (isLine(v) ? `<span class="pcard-val">${promptScalarHtml(v, k)}</span>` : "")
+        + `<span class="pcard-key">${esc(k)}</span></div>`;
+      if (isLine(v)) return `<section class="pcard">${head}</section>`;
+      const body = isMap(v) ? promptValueHtml(v, k) : `<div class="pcard-body">${promptValueHtml(v, k)}</div>`;
+      return `<section class="pcard">${head}${body}</section>`;
+    }).join("") + `</div>`;
+  }
+
 
   // The tabindex puts every sort header in the tab order, because a bare th
   // never takes keyboard focus; the page's keydown path fires the sort.
@@ -1052,9 +1145,9 @@
   }
 
   const ADPShellLib = {NT_SWITCHES, SCREENS, TAB_SCREENS, localDate, tabsHtml, footerText,
-    projectChitText, applyTheme, hashRead, hashWrite, logPaths, corpusUrl,
+    projectChitText, applyTheme, hashRead, hashWrite, logPaths, promptPaths, corpusUrl,
     loadCorpus, railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml,
-    docPaneHtml, rawPaneHtml, pillsHtml, pillGroupHtml, decisionsPanelHtml, watchesPanelHtml,
+    docPaneHtml, rawPaneHtml, promptViewHtml, pillsHtml, pillGroupHtml, decisionsPanelHtml, watchesPanelHtml,
     statusPillsHtml, watchboardHtml, assumptionLedgerHtml, fullLogHtml, calibrationHtml,
     fillPack, packSlots, packReadsTicket, packBasisKind, packGapKind, packContext, loadPacks, packScreenHtml,
     slugOf, promptDir, blankRow, unknownKeys, unknownValues, placeable, builderOpsHtml, builderSideHtml, builderHtml};

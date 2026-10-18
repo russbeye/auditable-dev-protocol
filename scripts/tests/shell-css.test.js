@@ -123,6 +123,23 @@ test("the shell page and its tab strip use only adp-shell.css classes", () => {
 });
 
 
+// The prompt view paints its cards from the shell sheet and borrows only the
+// theme's document classes for markdown, lists, and tables inside a card.
+test("the prompt view uses shell card classes and only the theme's document classes", () => {
+  const shell = classesIn(read("adp-shell.css"));
+  const borrowed = new Set(["md", "md-list", "md-tbl", "tbl-wrap"]);
+  const html = S.promptViewHtml({schema_version: "1.0", task: {id: "x", note: ""}, prompt: "a\n- b",
+    context: {links: ["https://e.com"], references: [{path: "p", note: "n"}]}, output: {structure: ""},
+    protocol: {defers: [{phase: "x", reason: "y"}], artifacts: []}});
+  const used = new Set();
+  for (const m of html.matchAll(/class="([^"]+)"/g)) m[1].split(/\s+/).forEach(c => used.add(c));
+  assert.deepEqual([...used].filter(c => !shell.has(c) && !borrowed.has(c)).sort(), []);
+  const theme = classesIn(read("adp-theme.css"));
+  assert.deepEqual([...borrowed].filter(c => !theme.has(c)), []);
+  for (const c of ["pcards", "pcard", "pcard-head", "pcard-title", "pcard-val", "pcard-key", "pcard-grid",
+                   "pcard-k", "pcard-v", "pcard-body", "pcard-none"]) assert.ok(used.has(c), c);
+});
+
 test("the ledger panel contains its floated pill row and every child after the heading clears it", () => {
   const css = read("adp-shell.css");
   // flow-root keeps a wide pill row inside the panel's border; the sibling
