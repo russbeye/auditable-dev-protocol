@@ -210,6 +210,26 @@ html{scrollbar-gutter:auto}
 .rawpre{font-family:var(--mono);font-size:11px;color:var(--dim);white-space:pre-wrap;
   overflow-x:auto;margin:0;max-height:420px;overflow-y:auto}
 
+/* The prompt view's cards follow the Decision Log card in the theme sheet:
+   the same rail, head band, and ruled field grid. The label column sizes to
+   its longest key, up to 220px, and a label wraps there, because a prompt
+   key such as "stake single recommendation" is longer than any card field. */
+.pcards{display:flex;flex-direction:column;gap:12px}
+.pcard{border:1px solid var(--line-bright);border-left:3px solid var(--blue-bright);background:var(--inset);min-width:0}
+.pcard-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:10px 14px;background:rgba(0,41,222,.04)}
+.pcard-head:not(:last-child){border-bottom:1px solid var(--line)}
+.pcard-title{font-family:var(--disp);font-weight:600;font-size:13.5px;color:var(--ink)}
+.pcard-val{font-size:13px;color:var(--ink);min-width:0;overflow-wrap:anywhere}
+.pcard-key{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.04em}
+.pcard-grid{display:grid;grid-template-columns:fit-content(220px) minmax(0,1fr);gap:1px;background:var(--line)}
+.pcard-k{padding:8px 14px;background:var(--panel-2);font-size:10px;line-height:1.7;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--dim)}
+.pcard-v{padding:8px 14px;background:var(--inset);color:var(--ink);font-size:13px;min-width:0;overflow-wrap:anywhere}
+.pcard-v .pcard-grid{border:1px solid var(--line)}
+.pcard-body{padding:10px 14px;font-size:13px;color:var(--ink);min-width:0}
+.pcard-none{font-family:var(--mono);font-size:10.5px;color:var(--faint);font-style:italic}
+@media(max-width:560px){.pcard-grid{grid-template-columns:minmax(0,1fr)}.pcard-k{padding-bottom:2px}.pcard-v{padding-top:2px}}
+
 /* The heading's pill row floats right. flow-root keeps the float inside the
    panel's border, and everything after the heading clears it, so neither a
    table nor an empty-state notice runs down beside a wide row. */

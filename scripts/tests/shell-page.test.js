@@ -56,7 +56,23 @@ const LISTING = {
   root: "demo",
   files: ["20260101-AA1-alpha/audit-log.md", "20260101-AA1-alpha/prompt.yaml", "AV-002-beta/prompt.yaml"]
 };
-const TEXTS = {"20260101-AA1-alpha/audit-log.md": LOG};
+// Both prompts parse cleanly, so the shared fixture exercises the formatted
+// view. The failure shapes get corpora of their own.
+const PROMPT_AA1 = [
+  'schema_version: "1.0"',
+  "task:",
+  '  id: "20260101-AA1-alpha"',
+  '  title: "AA1 alpha"',
+  '  author: "rbeye"',
+  '  date: "2026-01-01"',
+  "prompt: |",
+  "  Make the **alpha** path work.",
+  "  Keep it small.",
+  ""
+].join("\n");
+const PROMPT_AV2 = PROMPT_AA1.replace('"20260101-AA1-alpha"', '"AV-002-beta"').replace("AA1 alpha", "beta brief");
+const TEXTS = {"20260101-AA1-alpha/audit-log.md": LOG,
+  "20260101-AA1-alpha/prompt.yaml": PROMPT_AA1, "AV-002-beta/prompt.yaml": PROMPT_AV2};
 const NOW = new Date(2026, 7, 25, 12, 0, 0);
 
 // The stub decodes each segment the way the server unquotes its route, so an
@@ -312,8 +328,8 @@ test("the corpus boot selects the first rail entry; a full ticket renders its sp
   // The section body went through adp-parser-lib's Decision Log renderer.
   assert.match(scr, /dl-card/);
   assert.match(scr, /DL-001/);
-  // The nav lists 5 real sections plus 5 missing canonicals.
-  assert.equal((h.$("#secSel").innerHTML.match(/<option/g) || []).length, 10);
+  // The nav lists the prompt, 5 real sections, and 5 missing canonicals.
+  assert.equal((h.$("#secSel").innerHTML.match(/<option/g) || []).length, 11);
   assert.equal(h.$("#secSel").value, "sec-decision-log");
   // The head chit reads the inferred lifecycle.
   assert.match(scr, /shipped · inferred/);
@@ -473,7 +489,9 @@ test("the full-log view renders every real section as a collapsible", async () =
   const full = h.$$(".op").find(o => o.getAttribute("data-view") === "full");
   h.click(full);
   const secs = h.$$(".fsec");
-  assert.equal(secs.length, 5);
+  // The prompt block heads the five real sections.
+  assert.equal(secs.length, 6);
+  assert.equal(secs[0].getAttribute("data-key"), "prompt");
   assert.ok(secs.every(s => s.open));
   const close = h.$$(".op").find(o => o.getAttribute("data-exp") === "close");
   h.click(close);
@@ -490,7 +508,7 @@ test("the rail collapses a group and a ticket click selects it", async () => {
   h.click(h.$$(".railsec").find(s => s.getAttribute("data-sec") === "needs attention"));
   assert.equal(h.$$(".rentry").length, 2);
   pick(h, "AV002");
-  assert.match(h.$("#scrInspector").innerHTML, /no audit log yet/);
+  assert.equal(h.$("#secSel").value, "prompt");
 });
 
 test("the permalink control copies the current address", async () => {
@@ -526,6 +544,37 @@ test("a link to a vanished section falls back with a visible notice", async () =
   const scr = h.$("#scrInspector").innerHTML;
   assert.match(scr, /was not found in this log/);
   assert.equal(h.$("#secSel").value, "sec-decision-log");
+});
+
+/* Every hash the full fixture ticket could write before the prompt entry
+   existed, with the section and heading each one opened then. The pairs
+   were captured from the page at 8cb020a, so a new entry that shifts any
+   key or default shows up here as a changed landing. */
+const PINNED_LANDINGS = [
+  ["sec-problem-statement", "phase 1 · Problem Statement"],
+  ["sec-decision-log", "phase 5 · Decision Log"],
+  ["sec-aside-notes", "Aside Notes"],
+  ["sec-pr-summary", "phase 7 · PR Summary"],
+  ["sec-obligation-ticket-list", "phase 9 · Obligation Ticket List"],
+  ["missing:Knowledge Gap", "phase 2 · Knowledge Gap"],
+  ["missing:Recommendation Brief", "phase 3 · Recommendation Brief"],
+  ["missing:Pre-Mortem Report", "phase 4 · Pre-Mortem Report"],
+  ["missing:Test Adversary", "phase 6 · Test Adversary"],
+  ["missing:Deployment Risk", "phase 8 · Deployment Risk"]
+];
+
+test("every section hash lands where it landed before the prompt entry", async () => {
+  for (const [key, heading] of PINNED_LANDINGS){
+    const h = bootCorpus({hash: "#t=AA1&s=" + encodeURIComponent(key)});
+    await h.settle();
+    assert.equal(h.$("#secSel").value, key);
+    assert.match(h.$("#scrInspector").innerHTML, new RegExp("<h4>" + heading + "[ <]"));
+    assert.doesNotMatch(h.$("#scrInspector").innerHTML, /was not found in this log/);
+  }
+  const bare = bootCorpus({hash: "#t=AA1"});
+  await bare.settle();
+  assert.equal(bare.$("#secSel").value, "sec-decision-log");
+  assert.equal(bare.hashes[bare.hashes.length - 1], "#t=AA1&s=sec-decision-log");
 });
 
 test("a link to an absent ticket shows a notice instead of a silent default", async () => {
@@ -3257,4 +3306,278 @@ test("the open menu closes when the full header fits again", () => {
   assert.equal(h.$("header").classList.contains("is-compact"), false);
   assert.equal(h.$("header").classList.contains("menu-open"), false);
   assert.equal(h.$("#menuBtn").getAttribute("aria-expanded"), "false");
+});
+
+// ---- the prompt view ----
+
+// Every key the builder writes, in a scrambled order, plus one top-level key
+// the builder does not know.
+const FULL_PROMPT = [
+  "protocol:",
+  "  apply: true",
+  "  artifacts:",
+  "    - problem_statement",
+  "    - pr_summary",
+  'schema_version: "1.0"',
+  "task:",
+  '  id: "T-9-full"',
+  '  title: "Full prompt"',
+  '  author: "rbeye"',
+  '  date: "2026-10-18"',
+  "preamble: |",
+  "  Hold the old decisions.",
+  "  Do not reopen them.",
+  "role:",
+  '  lens: "Front-end engineer"',
+  "  priorities:",
+  '    - "Keep `hashWrite` stable"',
+  "prompt: |",
+  "  Add the **view**.",
+  "  Keep it read-only.",
+  "constraints:",
+  "  out_of_scope:",
+  '    - "Editing"',
+  "  must_not:",
+  '    - "Change the index"',
+  "context:",
+  "  background: |",
+  "    The developer reads prompts in a terminal.",
+  "    See [the docs](https://example.com/docs).",
+  "  references:",
+  '    - path: "scripts/adp-serve.py"',
+  '      lines: "84-114"',
+  '      note: "serves the corpus"',
+  "  links:",
+  '    - "https://example.com/ticket"',
+  "lessons_learned:",
+  '  - context: "loads are all-or-null"',
+  '    takeaway: "display data fails alone"',
+  "output:",
+  '  format: "code"',
+  '  destination: "Edit in place"',
+  "requirements:",
+  '  - id: "R1"',
+  '    statement: "The view shows"',
+  '    verify: "A test asserts it"',
+  "reviewer_notes: |",
+  "  A key the builder never writes.",
+  "  It still shows.",
+  ""
+].join("\n");
+
+test("promptPaths keeps a ticket's own prompt.yaml and nothing deeper", () => {
+  const files = ["A-1-x/prompt.yaml", "A-1-x/audit-log.md", "A-1-x/refs/prompt.yaml",
+                 "prompt.yaml", "./C-3-z/prompt.yaml", "B-2-y/prompt.yml"];
+  assert.deepEqual(S.promptPaths(files), ["A-1-x/prompt.yaml", "./C-3-z/prompt.yaml"]);
+});
+
+test("loadCorpus rides the prompts along without touching the index", async () => {
+  const got = await S.loadCorpus(corpusFetch(LISTING, TEXTS), {now: NOW});
+  assert.deepEqual(got.prompts, {"20260101-AA1-alpha": {text: PROMPT_AA1}, "AV-002-beta": {text: PROMPT_AV2}});
+  const bare = await S.loadCorpus(corpusFetch(LISTING, {"20260101-AA1-alpha/audit-log.md": LOG}), {now: NOW});
+  assert.equal(I.serializeIndex(got.index), I.serializeIndex(bare.index));
+});
+
+// R4 at the seam: a failed prompt fetch and a thrown one each cost only their
+// own ticket, and the load still resolves.
+test("loadCorpus keeps loading when a prompt fetch fails or throws", async t => {
+  const warn = t.mock.method(console, "warn", () => {});
+  const base = corpusFetch(LISTING, {"20260101-AA1-alpha/audit-log.md": LOG});
+  const fetchFn = u => u === "corpus/AV-002-beta/prompt.yaml" ? Promise.reject(new Error("reset")) : base(u);
+  const got = await S.loadCorpus(fetchFn, {now: NOW});
+  assert.ok(got);
+  assert.equal(got.index.tickets.length, 2);
+  assert.deepEqual(got.prompts, {"20260101-AA1-alpha": {error: "unreadable"}, "AV-002-beta": {error: "unreadable"}});
+  assert.equal(warn.mock.callCount(), 0);
+});
+
+// R2: every builder field shows under its key, in the builder's order, and
+// the unknown key follows them.
+test("the prompt view renders every top-level key, the unknown one included", () => {
+  const issues = [];
+  const obj = PL.parseYAML(FULL_PROMPT, issues);
+  assert.deepEqual(issues, []);
+  const html = S.promptViewHtml(obj);
+  const heads = [...html.matchAll(/<span class="pcard-title">([^<]+)<\/span>/g)].map(m => m[1]);
+  assert.deepEqual(heads, ["Schema Version", "Task", "Preamble", "Role", "Prompt", "Constraints",
+    "Context", "Lessons Learned", "Output", "Requirements", "Protocol", "Reviewer Notes"]);
+  // Each card names its raw key, so a reader can find the field in the file.
+  assert.match(html, /<span class="pcard-key">lessons_learned<\/span>/);
+  // A one-line top-level value sits in its card's head.
+  assert.match(html, /<span class="pcard-title">Schema Version<\/span><span class="pcard-val">1\.0<\/span>/);
+  // A map's fields read as label and value rows, and flat records as a table.
+  assert.match(html, /<div class="pcard-k">title<\/div><div class="pcard-v">Full prompt<\/div>/);
+  assert.match(html, /<th>path<\/th><th>lines<\/th><th>note<\/th>/);
+  assert.match(html, /<th>id<\/th><th>statement<\/th><th>verify<\/th>/);
+  // Block text renders as markdown. One-line text stays exact, backticks and all.
+  assert.match(html, /Add the <strong>view<\/strong>/);
+  assert.match(html, /Keep `hashWrite` stable/);
+  assert.match(html, /<a href="https:\/\/example\.com\/docs"[^>]*>the docs<\/a>/);
+  assert.match(html, /<a href="https:\/\/example\.com\/ticket"[^>]*>https:\/\/example\.com\/ticket<\/a>/);
+  for (const v of ["T-9-full", "Front-end engineer", "Editing", "Change the index", "scripts/adp-serve.py",
+                   "84-114", "display data fails alone", "Edit in place", "The view shows", "A test asserts it",
+                   "problem_statement", "true", "A key the builder never writes."])
+    assert.ok(html.includes(v), v);
+});
+
+// A table cell is a value like any other, so block text in a record still
+// reads as markdown while a one-line cell stays exact.
+test("block text inside a table cell renders as markdown", () => {
+  const html = S.promptViewHtml(PL.parseYAML([
+    "requirements:",
+    "  - id: \"R1\"",
+    "    statement: \"Keep **this** exact\"",
+    "    verify: |",
+    "      First paragraph with **bold**.",
+    "",
+    "      Second paragraph.",
+  ].join("\n") + "\n"));
+  const cell = html.match(/<td>((?:(?!<\/td>)[\s\S])*Second paragraph[\s\S]*?)<\/td>/)[1];
+  assert.match(cell, /<p>First paragraph with <strong>bold<\/strong>\.<\/p>/);
+  assert.match(cell, /<p>Second paragraph\.<\/p>/);
+  assert.match(html, /<td>Keep \*\*this\*\* exact<\/td>/);
+});
+
+// R3: every tag the view emits is one we built. Escaped author markup shows as
+// text, and no event attribute or off-list href survives.
+test("prompt text renders inert", () => {
+  const hostile = [
+    "prompt: |",
+    "  <script>alert(1)</script>",
+    '  <img src=x onerror="alert(2)">',
+    "  [click](javascript:alert(3))",
+    "context:",
+    "  background: |",
+    "    [go](javascript:alert(4)) and <b onmouseover=x>hi</b>",
+    "    [rel](data:text/html,x)",
+    "  links:",
+    '    - "javascript:alert(5)"',
+    '    - "JaVaScRiPt:alert(6)"',
+    '    - "relative/path"',
+    '    - "mailto:a@b.c"',
+    'task:',
+    '  title: "<svg onload=alert(7)>"',
+    '  id: "[go](https://example.com/x)"',
+    ""
+  ].join("\n");
+  const html = S.promptViewHtml(PL.parseYAML(hostile));
+  const tags = [...html.matchAll(/<([a-z][a-z0-9]*)\b([^>]*)>/g)];
+  assert.ok(tags.length);
+  for (const [, name, attrs] of tags){
+    assert.ok(!["script", "img", "svg", "iframe", "object"].includes(name), name);
+    assert.doesNotMatch(attrs, /\son[a-z]+\s*=/i);
+    const href = attrs.match(/href="([^"]*)"/);
+    if (href) assert.match(href[1], /^(https?|mailto):/i);
+  }
+  assert.match(html, /&lt;script&gt;/);
+  assert.match(html, /<a href="mailto:a@b\.c"/);
+  assert.match(html, /<li>relative\/path<\/li>/);
+  assert.match(html, /<li>javascript:alert\(5\)<\/li>/);
+  // A one-line value that quotes markdown keeps its literal text.
+  assert.match(html, /<div class="pcard-v">\[go\]\(https:\/\/example\.com\/x\)<\/div>/);
+});
+
+// R1: the prompt heads the selector, and the step buttons reach it from phase 1.
+test("a ticket with a prompt lists it ahead of phase 1 and steps to it", async () => {
+  const h = bootCorpus({hash: "#t=AA1&s=sec-problem-statement"});
+  await h.settle();
+  const keys = [...h.$("#secSel").innerHTML.matchAll(/value="([^"]+)"/g)].map(m => m[1]);
+  assert.deepEqual(keys.slice(0, 2), ["prompt", "sec-problem-statement"]);
+  h.click(h.$$(".op").find(o => o.getAttribute("data-secstep") === "-1"));
+  assert.equal(h.$("#secSel").value, "prompt");
+  const scr = h.$("#scrInspector").innerHTML;
+  assert.match(scr, /<h4>prompt\.yaml /);
+  assert.match(scr, /Make the <strong>alpha<\/strong> path work/);
+  assert.match(scr, /secchit t-ok">complete/);
+  // The first entry has nothing before it.
+  assert.match(scr, /data-secstep="-1" disabled/);
+});
+
+// R7: the prompt view writes its own hash, and a fresh page lands on it.
+test("the prompt view has a deep link", async () => {
+  const h = bootCorpus();
+  await h.settle();
+  pick(h, "AA1");
+  h.change(h.$("#secSel"), "prompt");
+  assert.equal(h.hashes[h.hashes.length - 1], "#t=AA1&s=prompt");
+  const g = bootCorpus({hash: "#t=AA1&s=prompt"});
+  await g.settle();
+  assert.equal(g.$("#secSel").value, "prompt");
+  assert.match(g.$("#scrInspector").innerHTML, /<h4>prompt\.yaml /);
+  assert.doesNotMatch(g.$("#scrInspector").innerHTML, /was not found in this log/);
+});
+
+// R5: a prompt-only ticket opens on its prompt, and the old notice is kept
+// for a directory that holds neither file.
+test("a prompt-only ticket shows its prompt instead of the no-audit-log notice", async () => {
+  const listing = {root: "demo", files: LISTING.files.concat(["CC-3-gamma/notes.txt"])};
+  const h = bootShell({stored: "dark", fetch: corpusFetch(listing, TEXTS), hash: "#t=AV002"});
+  await h.settle();
+  const scr = h.$("#scrInspector").innerHTML;
+  assert.equal(h.$("#secSel").value, "prompt");
+  assert.match(scr, /beta brief/);
+  assert.doesNotMatch(scr, /no audit log yet/);
+  pick(h, "CC3");
+  assert.match(h.$("#scrInspector").innerHTML, /no audit log yet/);
+});
+
+// R4 on the page: an unreadable prompt and an unparseable one each show a
+// notice on their own ticket, and the dashboard loads.
+test("a missing or unparseable prompt.yaml affects only its own ticket", async () => {
+  const texts = {"20260101-AA1-alpha/audit-log.md": LOG, "AV-002-beta/prompt.yaml": "[1, 2, 3]\n"};
+  const h = bootShell({stored: "dark", fetch: corpusFetch(LISTING, texts), hash: "#t=AA1&s=prompt"});
+  await h.settle();
+  assert.equal(h.$$(".rentry").length, 2);
+  let scr = h.$("#scrInspector").innerHTML;
+  assert.match(scr, /prompt\.yaml is listed in the corpus but could not be read\./);
+  assert.match(scr, /secchit t-bad">unreadable/);
+  pick(h, "AV002");
+  scr = h.$("#scrInspector").innerHTML;
+  assert.match(scr, /did not parse as YAML/);
+  assert.match(scr, /<pre class="rawpre">\[1, 2, 3\]/);
+  // A partial parse renders formatted and names what it skipped.
+  const partial = Object.assign({}, texts, {"AV-002-beta/prompt.yaml": PROMPT_AV2 + "extra: [a, b]\n"});
+  const g = bootShell({stored: "dark", fetch: corpusFetch(LISTING, partial), hash: "#t=AV002"});
+  await g.settle();
+  scr = g.$("#scrInspector").innerHTML;
+  assert.match(scr, /parsed with 1 issue: extra \(flow sequence is unsupported/);
+  assert.match(scr, /beta brief/);
+});
+
+test("the prompt view follows an edit on the next poll tick", async () => {
+  const texts = Object.assign({}, TEXTS);
+  const h = bootShell({stored: "dark", fetch: corpusFetch(LISTING, texts), hash: "#t=AA1&s=prompt"});
+  await h.settle();
+  assert.match(h.$("#scrInspector").innerHTML, /Keep it small\./);
+  texts["20260101-AA1-alpha/prompt.yaml"] = PROMPT_AA1.replace("Keep it small.", "Keep it smaller.");
+  h.tick();
+  await h.settle();
+  assert.match(h.$("#scrInspector").innerHTML, /Keep it smaller\./);
+});
+
+// Prompt fetches settle in whatever order the network answers. A tick whose
+// prompts arrive in a new order but hold the same texts must not rebuild the
+// inspector, or the open selector closes and the pane flickers every tick.
+test("an unchanged poll tick keeps the inspector in place, whatever order the prompts arrive in", async () => {
+  let flip = false;
+  const base = corpusFetch(LISTING, TEXTS);
+  const fetchFn = u => {
+    if (!u.endsWith("prompt.yaml")) return base(u);
+    // We hold back one prompt per tick, a different one each time, so the
+    // completion order alternates between ticks.
+    const late = (u.includes("AA1") === flip) ? 5 : 0;
+    return new Promise(r => setTimeout(r, late)).then(() => base(u));
+  };
+  const h = bootShell({stored: "dark", fetch: fetchFn, hash: "#t=AA1&s=prompt"});
+  await h.settle();
+  await new Promise(r => setTimeout(r, 20));
+  await h.settle();
+  const before = h.$("#secSel");
+  for (let i = 0; i < 3; i++){
+    flip = !flip;
+    h.tick();
+    await new Promise(r => setTimeout(r, 20));
+    await h.settle();
+  }
+  assert.equal(h.$("#secSel"), before);
 });

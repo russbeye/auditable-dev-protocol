@@ -128,7 +128,27 @@
     if (doc) return {kind: "doc", key: doc.key, ticket: doc.ticket, text: doc.text, doc};
     if (!corpus) return null;
     const t = corpus.index.tickets.find(x => x.id === tok || x.dir === tok);
-    return t ? {kind: "ticket", key: tokenOf(t), ticket: t, text: corpus.texts[t.dir] || ""} : null;
+    return t ? {kind: "ticket", key: tokenOf(t), ticket: t, text: corpus.texts[t.dir] || "",
+      prompt: promptOf(t.dir, corpus.prompts[t.dir])} : null;
+  }
+
+  /* A ticket's prompt as the inspector shows it: parsed, raw when the parse
+     yields no keys, or unreadable when its fetch failed. We parse once per
+     text per ticket, because the poll hands back the same text every tick. */
+  const promptCache = new Map();
+  function promptOf(dir, p){
+    if (!p) return null;
+    if (p.error != null) return {state: "unreadable"};
+    const hit = promptCache.get(dir);
+    if (hit && hit.text === p.text) return hit;
+    const issues = [];
+    let obj = null;
+    try{ obj = PL.parseYAML(p.text, issues); }catch(e){ obj = null; }
+    const out = obj && typeof obj === "object" && !Array.isArray(obj) && Object.keys(obj).length
+      ? {state: issues.length ? "issues" : "parsed", obj, issues, text: p.text}
+      : {state: "raw", text: p.text};
+    promptCache.set(dir, out);
+    return out;
   }
 
   /* One parse per document text. The cache holds the split sections keyed by
@@ -233,13 +253,40 @@
     return {key, label, title: s ? s.title : key};
   }
 
-  function defaultKey(t){
+  // A ticket with no sections yet opens on its prompt. Every ticket with a
+  // log keeps the default it had before the prompt entry existed.
+  function defaultKey(t, prompt){
+    if (!t.sections.length && prompt) return PROMPT_KEY;
     if (t.state === "open" || t.state === "in-review"){
       const cur = D.canonicalSection(t, t.phase);
       if (cur) return cur.key;
     }
     const spine = D.canonicalSection(t, 5);
     return (spine || t.sections[0] || {key: null}).key;
+  }
+
+  /* The prompt entry heads the list, because the prompt comes before every
+     phase. Its key carries neither the "sec-" prefix of a section key nor the
+     "missing:" prefix, so no heading can collide with it and every older
+     link keeps its landing. */
+  const PROMPT_KEY = "prompt";
+  function entriesOf(tgt){
+    const entries = D.sectionEntries(tgt.ticket);
+    return tgt.prompt
+      ? [{key: PROMPT_KEY, title: "prompt.yaml", phase: null, prompt: true}].concat(entries)
+      : entries;
+  }
+  const PROMPT_STATES = {parsed: {label: "complete", tone: "ok"}, issues: {label: "parse issues", tone: "warn"},
+    raw: {label: "shown raw", tone: "warn"}, unreadable: {label: "unreadable", tone: "bad"}};
+
+  function promptBody(pr){
+    if (pr.state === "unreadable")
+      return {notice: "prompt.yaml is listed in the corpus but could not be read.", bodyHtml: ""};
+    if (pr.state === "raw")
+      return {notice: "prompt.yaml did not parse as YAML — shown raw.",
+        bodyHtml: `<pre class="rawpre">${P.esc(pr.text)}</pre>`};
+    return {notice: pr.issues.length ? `prompt.yaml parsed with ${pr.issues.length} issue${pr.issues.length === 1 ? "" : "s"}: ${pr.issues.join("; ")}` : null,
+      bodyHtml: S.promptViewHtml(pr.obj)};
   }
 
   // A section body renders as the decision-log card list when its title is
@@ -278,7 +325,7 @@
     const t = tgt.ticket;
     const pd = parsedOf(tgt.kind === "doc" ? tgt.key : t.dir, tgt.text);
 
-    if (!t.sections.length){
+    if (!t.sections.length && !tgt.prompt){
       scr.innerHTML = `<h2>inspector <span class="isub">${P.esc(t.dir)}</span></h2>` + ops
         + S.tickheadHtml({title: t.id || t.dir, chits: tgt.kind === "doc"
           ? [{txt: tgt.doc.watching ? "watching · live" : "opened · one-shot"}, {txt: "unindexed"}]
@@ -296,13 +343,13 @@
       const cs = D.citingSections(t, sel.item);
       if (cs.length) sel.s = cs[0];
     }
-    if (!sel.s && !sel.item) sel.s = defaultKey(t);
-    const entries = D.sectionEntries(t);
+    if (!sel.s && !sel.item) sel.s = defaultKey(t, tgt.prompt);
+    const entries = entriesOf(tgt);
     const states = {};
-    entries.forEach(en => { states[en.key] = D.sectionState(t, en, today()); });
+    entries.forEach(en => { states[en.key] = en.prompt ? PROMPT_STATES[tgt.prompt.state] : D.sectionState(t, en, today()); });
     if (sel.s && !states[sel.s]){
       missNotice = `section "${sel.s}" was not found in this log — the link may predate a retitle.`;
-      sel.s = defaultKey(t);
+      sel.s = defaultKey(t, tgt.prompt);
     }
 
     const chits = [{txt: t.state + " · " + t.state_source,
@@ -319,6 +366,9 @@
       pane = S.docPaneHtml({back: en ? en.title : "sections", heading: "[" + sel.item + "]",
         notice: pd.cards[sel.item] ? null : "this entry is cited here but not present in the loaded text.",
         bodyHtml: pd.cards[sel.item] ? `<div class="md">${P.renderDLCard(pd.cards[sel.item])}</div>` : ""});
+    } else if (sel.s === PROMPT_KEY){
+      const pb = promptBody(tgt.prompt);
+      pane = S.docPaneHtml({heading: "prompt.yaml", notice: missNotice || pb.notice, bodyHtml: pb.bodyHtml});
     } else {
       const en = entries.find(x => x.key === sel.s) || entries[0];
       const sec = en && !en.missing ? pd.byKey[en.key] : null;
@@ -337,6 +387,11 @@
       // A jump target always opens, whatever its collapse state was.
       if (fullJump) fullClosed.delete(fullJump);
       pane = S.fullLogHtml(entries.filter(en => !en.missing).map(en => {
+        if (en.prompt){
+          const pb = promptBody(tgt.prompt);
+          return {key: en.key, open: !fullClosed.has(en.key), heading: "prompt.yaml",
+            bodyHtml: (pb.notice ? `<p class="dnotice">${P.esc(pb.notice)}</p>` : "") + pb.bodyHtml};
+        }
         const sec = pd.byKey[en.key];
         const body = sec ? sec.body.join("\n") : "";
         return {key: en.key, open: !fullClosed.has(en.key),
@@ -1087,7 +1142,7 @@
      is no server to answer, and every tick would warn. A hidden tab never
      polls either, because a full corpus fetch for a page nobody is looking
      at buys nothing; the first tick after the tab is shown catches up. */
-  const sigOf = c => JSON.stringify([c.index.generated, c.index.tickets, c.texts]);
+  const sigOf = c => JSON.stringify([c.index.generated, c.index.tickets, c.texts, c.prompts]);
   async function pollCorpus(){
     if (corpusLoading || location.protocol === "file:" || document.visibilityState === "hidden") return;
     corpusLoading = true;
@@ -1370,7 +1425,7 @@
       if (op.getAttribute("data-secstep")){
         const tgt = findTarget(sel.t);
         if (!tgt) return;
-        const entries = D.sectionEntries(tgt.ticket);
+        const entries = entriesOf(tgt);
         const i = entries.findIndex(en => en.key === sel.s) + Number(op.getAttribute("data-secstep"));
         if (i >= 0 && i < entries.length){
           sel.s = entries[i].key; sel.item = null; missNotice = null;
