@@ -1372,6 +1372,170 @@ test("an unchanged tick renders nothing and disturbs no reader state", async () 
   assert.equal(h.$("#pasteArea").value, "half a draft");
 });
 
+// ---- poll redraw scope ----
+
+/* A corpus with two logged tickets and one prompt-only ticket, every file
+   mutable between ticks, so a test can change one ticket while the reader
+   works in another. */
+const LOG_BB2 = LOG.replace("AA1 alpha", "BB2 beta").replace(/OT-AA1-/g, "OT-BB2-");
+function twoTicketCorpus(){
+  const st = {listing: {root: "demo", files: ["20260101-AA1-alpha/audit-log.md",
+    "20260101-BB2-beta/audit-log.md", "20260101-CC3-gamma/prompt.yaml"]},
+  texts: {"20260101-AA1-alpha/audit-log.md": LOG, "20260101-BB2-beta/audit-log.md": LOG_BB2,
+    "20260101-CC3-gamma/prompt.yaml": PROMPT_AA1.replace(/AA1/g, "CC3")}};
+  st.fetch = u => corpusFetch(st.listing, st.texts)(u);
+  return st;
+}
+const tickOnce = async h => { h.tick(); await h.settle(); };
+const inDoc = (h, el) => h.$$(el.tagName.toLowerCase()).includes(el);
+const inspSelects = h => h.$$("select").filter(el => {
+  for (let n = el; n; n = n.parent) if (n.id === "scrInspector") return true;
+  return false;
+});
+
+test("a change to another ticket leaves the inspector's controls in place and still updates the rail", async () => {
+  const c = twoTicketCorpus();
+  const h = bootShell({stored: "dark", fetch: c.fetch});
+  await h.settle();
+  pick(h, "AA1");
+  h.click(h.$$(".op").find(o => o.getAttribute("data-op") === "paste"));
+  const sel = h.$("#secSel"), pa = h.$("#pasteArea");
+  assert.match(entry(h, "BB2").innerHTML, /5 SECTIONS MISSING/);
+  c.texts["20260101-BB2-beta/audit-log.md"] = LOG_BB2.replace("## Aside Notes",
+    "## Test Adversary Document\n\nGrown elsewhere.\n\n## Aside Notes");
+  await tickOnce(h);
+  assert.equal(h.$("#secSel"), sel);
+  assert.equal(h.$("#pasteArea"), pa);
+  assert.match(entry(h, "BB2").innerHTML, /4 SECTIONS MISSING/);
+});
+
+test("an append to the shown section rewrites the pane and keeps the selector element", async () => {
+  const c = twoTicketCorpus();
+  const h = bootShell({stored: "dark", fetch: c.fetch});
+  await h.settle();
+  pick(h, "AA1");
+  const aside = h.$$("option").find(o => /Aside Notes/.test(o.textContent)).getAttribute("value");
+  h.change(h.$("#secSel"), aside);
+  const sel = h.$("#secSel");
+  c.texts["20260101-AA1-alpha/audit-log.md"] = LOG.replace("Some **prose** citing DL-002.",
+    "Some **prose** citing DL-002.\n\nA line the run just wrote.");
+  await tickOnce(h);
+  assert.match(h.$("#scrInspector").innerHTML, /A line the run just wrote/);
+  assert.equal(h.$("#secSel"), sel);
+  assert.equal(h.$("#secSel").value, aside);
+});
+
+test("a new section on the shown ticket patches the selector in place and keeps its value", async () => {
+  const c = twoTicketCorpus();
+  const h = bootShell({stored: "dark", fetch: c.fetch});
+  await h.settle();
+  pick(h, "AA1");
+  const sel = h.$("#secSel"), was = sel.value;
+  c.texts["20260101-AA1-alpha/audit-log.md"] = LOG_GROWN;
+  await tickOnce(h);
+  assert.equal(h.$("#secSel"), sel);
+  assert.equal(sel.value, was);
+  assert.ok(h.$$("option").some(o => o.parent === sel && /Test Adversary Document/.test(o.textContent)));
+  assert.equal(inspSelects(h).length, 1);
+});
+
+test("a tick that rewrites the focused control hands focus to its twin without a scroll", async () => {
+  const c = twoTicketCorpus();
+  const h = bootShell({stored: "dark", fetch: c.fetch});
+  await h.settle();
+  pick(h, "AA1");
+  h.$$("button").find(b => b.getAttribute("data-secstep") === "-1").focus();
+  c.texts["20260101-AA1-alpha/audit-log.md"] = LOG_GROWN;
+  await tickOnce(h);
+  const f = h.document.activeElement;
+  assert.equal(f.getAttribute("data-secstep"), "-1");
+  assert.ok(inDoc(h, f));
+  assert.equal(f._focusOpts && f._focusOpts.preventScroll, true);
+});
+
+test("a prompt-only ticket that gains its log on a tick shows the full ticket view", async () => {
+  const c = twoTicketCorpus();
+  const h = bootShell({stored: "dark", fetch: c.fetch});
+  await h.settle();
+  pick(h, "CC3");
+  assert.equal(h.$("#secSel").value, "prompt");
+  c.listing = Object.assign({}, c.listing, {files: c.listing.files.concat("20260101-CC3-gamma/audit-log.md")});
+  c.texts["20260101-CC3-gamma/audit-log.md"] = LOG.replace("AA1 alpha", "CC3 gamma").replace(/OT-AA1-/g, "OT-CC3-");
+  await tickOnce(h);
+  assert.equal(inspSelects(h).length, 1);
+  assert.ok(h.$$("option").some(o => /Decision Log/.test(o.textContent)));
+  assert.equal(h.$("#secSel").value, "prompt");
+});
+
+test("a UI action still rebuilds the inspector whole, and the next tick compares against that rebuild", async () => {
+  const c = twoTicketCorpus();
+  const h = bootShell({stored: "dark", fetch: c.fetch});
+  await h.settle();
+  pick(h, "AA1");
+  const before = h.$("#secSel");
+  h.click(h.$$("button").find(b => b.getAttribute("data-secstep") === "1"));
+  const after = h.$("#secSel");
+  assert.notEqual(after, before);
+  c.texts["20260101-BB2-beta/audit-log.md"] = LOG_BB2 + "\nlate prose.\n";
+  await tickOnce(h);
+  assert.equal(h.$("#secSel"), after);
+});
+
+test("the full log keeps a collapsed section collapsed across both kinds of tick", async () => {
+  const c = twoTicketCorpus();
+  const h = bootShell({stored: "dark", fetch: c.fetch});
+  await h.settle();
+  pick(h, "AA1");
+  h.click(h.$$(".op").find(o => o.getAttribute("data-view") === "full"));
+  const fsec = key => h.$$(".fsec").find(d => d.getAttribute("data-key") === key);
+  const key = h.$$(".fsec").find(d => /Aside Notes/.test(d.innerHTML)).getAttribute("data-key");
+  h.click(h.$$(".fsum").find(x => x.parent === fsec(key)));
+  assert.equal(fsec(key).open, false);
+  // The collapse edits the DOM directly, so the first tick after it rewrites
+  // the body once from fullClosed. Every later tick compares clean again.
+  c.texts["20260101-BB2-beta/audit-log.md"] = LOG_BB2 + "\nlate prose.\n";
+  await tickOnce(h);
+  assert.equal(fsec(key).open, false);
+  const held = fsec(key);
+  c.texts["20260101-BB2-beta/audit-log.md"] = LOG_BB2 + "\nlater prose.\n";
+  await tickOnce(h);
+  assert.equal(fsec(key), held);
+  c.texts["20260101-AA1-alpha/audit-log.md"] = LOG_GROWN;
+  await tickOnce(h);
+  assert.ok(h.$$(".fsec").some(d => /Test Adversary Document/.test(d.innerHTML)));
+  assert.equal(fsec(key).open, false);
+});
+
+test("a hidden screen shows the change when the reader opens it", async () => {
+  const c = twoTicketCorpus();
+  const h = bootShell({stored: "dark", fetch: c.fetch});
+  await h.settle();
+  pick(h, "AA1");
+  c.texts["20260101-BB2-beta/audit-log.md"] = LOG_BB2.replace("| OT-BB2-2 |",
+    "| OT-BB2-3 | DL-002 | late watch | LOW | done → VALIDATED | until 2099-01-01 |\n| OT-BB2-2 |");
+  await tickOnce(h);
+  h.click(h.$$(".mtab").find(t => t.getAttribute("data-s") === "watchboard"));
+  assert.match(h.$("#scrWatch").innerHTML, /OT-BB2-3/);
+});
+
+test("a change to another watched document leaves the inspector's selector in place", async () => {
+  const a = makeHandle("wa.md", LOG), b = makeHandle("wb.md", LOG_BB2);
+  const h = bootCorpus({picker: async () => [a, b]});
+  await h.settle();
+  h.click(h.$$(".op").find(o => o.getAttribute("data-op") === "openwatch"));
+  await h.settle();
+  h.click(h.$$(".rentry").find(r => /wa\.md|AA1/.test(r.innerHTML) && /WATCHING FILE/.test(r.innerHTML)));
+  const sel = h.$("#secSel");
+  assert.match(h.$("#scrInspector").innerHTML, /AA1 alpha|wa\.md/);
+  b._text = LOG_BB2 + "\n## Amendment Notes\n\nlate news.\n";
+  await tickOnce(h);
+  assert.equal(h.$("#secSel"), sel);
+  a._text = LOG + "\n## Amendment Notes\n\nlate news.\n";
+  await tickOnce(h);
+  assert.equal(h.$("#secSel"), sel);
+  assert.ok(h.$$("option").some(o => /Amendment Notes/.test(o.textContent)));
+});
+
 test("a failed re-fetch keeps the last good corpus and traces once", async () => {
   const live = liveCorpus();
   const h = bootShell({stored: "dark", fetch: live.fetch});
