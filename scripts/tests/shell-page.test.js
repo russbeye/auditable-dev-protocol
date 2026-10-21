@@ -1404,6 +1404,16 @@ test("the harness replaceWith moves an in-tree sibling the way the DOM does", as
   assert.equal(a.parent, null);
 });
 
+test("the harness replaceWith leaves an element that replaces itself in place", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  const p = h.document.createElement("div");
+  const [a] = ["span", "b"].map(t => p.appendChild(h.document.createElement(t)));
+  a.replaceWith(a);
+  assert.deepEqual([...p.children].map(n => n.tagName), ["SPAN", "B"]);
+  assert.equal(a.parent, p);
+});
+
 test("a change to another ticket leaves the inspector's controls in place and still updates the rail", async () => {
   const c = twoTicketCorpus();
   const h = bootShell({stored: "dark", fetch: c.fetch});

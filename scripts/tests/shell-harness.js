@@ -90,9 +90,9 @@ function makeEl(tag, attrs){
   el.appendChild = child => { child.parent = el; el.children.push(child); return child; };
   el.replaceWith = other => {
     const p = el.parent;
-    if (!p) return;
-    // We detach the replacement before it takes el's slot. When the
-    // replacement is a sibling of el, a later filter would drop it again.
+    if (!p || other === el) return;
+    // The replacement leaves its old parent before it takes el's slot, so a
+    // sibling of el ends up in that slot and nowhere else.
     if (other.parent){
       other.parent.children = other.parent.children.filter(c => c !== other);
       staleRaw(other.parent);
