@@ -229,7 +229,9 @@
       el = cand.find(c =>
         Object.keys(mark.marks).every(a => c.getAttribute(a) === mark.marks[a]));
     }
-    if (el && el.focus) try{ el.focus(); }catch(e){}
+    // The twin sits where the original sat, so a scroll would only move the
+    // stage to a control the reader had scrolled away from.
+    if (el && el.focus) try{ el.focus({preventScroll: true}); }catch(e){}
   }
 
   function renderRail(){
@@ -297,7 +299,49 @@
       ? P.renderDecisionLog(body) : P.renderMarkdown(body)}</div>` : "";
   }
 
-  function renderInspector(){
+  /* The inspector is three regions: the top (heading, ops row, ticket head),
+     the section nav, and the body (pane and panels). A poll tick rewrites
+     only a region whose markup changed, so a change to another ticket
+     touches nothing here, and an append to the shown section leaves the
+     selector and the paste drawer alone. A changed nav is patched in place
+     instead: the selector keeps its element and takes the new options, and
+     an open list stays open through that. A UI action always rebuilds whole,
+     because two paths edit inspector DOM directly (the permalink label and
+     the full-log toggles) and a compare could skip the render that resets
+     them. */
+  const INSP_REGIONS = [["inspTop", "top"], ["inspNav", "nav"], ["inspBody", "body"]];
+  let inspWritten = null;
+  function paintInspector(view, tick){
+    const prev = inspWritten;
+    inspWritten = view;
+    if (!tick || !prev || !$("#inspTop")){
+      $("#scrInspector").innerHTML = INSP_REGIONS.map(([id, k]) => `<div id="${id}">${view[k]}</div>`).join("");
+      return;
+    }
+    for (const [id, k] of INSP_REGIONS){
+      if (view[k] === prev[k]) continue;
+      const el = $("#" + id);
+      if (k === "nav" && prev.nav && view.nav && patchNav(el, view.nav)) continue;
+      el.innerHTML = view[k];
+    }
+  }
+  // The nav's children line up one to one across a patch, so each control
+  // but the selector is swapped for its fresh twin. The selector takes the
+  // fresh options and the fresh value, which is the current section.
+  function patchNav(el, html){
+    const fresh = document.createElement("div");
+    fresh.innerHTML = html;
+    if (!el.children[0] || !fresh.children[0]) return false;
+    const was = Array.from(el.children[0].children), now = Array.from(fresh.children[0].children);
+    if (was.length !== now.length || was.some((o, i) => o.tagName !== now[i].tagName)) return false;
+    now.forEach((n, i) => {
+      if (n.tagName === "SELECT"){ was[i].innerHTML = n.innerHTML; was[i].value = n.value; }
+      else was[i].replaceWith(n);
+    });
+    return true;
+  }
+
+  function renderInspector(tick){
     const scr = $("#scrInspector");
     const keep = focusMark(document.activeElement);
     /* A paste draft lives only in the textarea, so any rebuild — a watched
@@ -315,10 +359,10 @@
       canReload: !!(tgt && tgt.kind === "doc" && tgt.doc.handle), viewMode, pasteOpen});
 
     if (!tgt){
-      scr.innerHTML = "<h2>inspector</h2>" + ops
-        + `<div class="ipanel"><p class="dnotice">${P.esc(bootNotice || (corpus
+      paintInspector({top: "<h2>inspector</h2>" + ops, nav: "",
+        body: `<div class="ipanel"><p class="dnotice">${P.esc(bootNotice || (corpus
           ? "select a ticket from the rail, or open a document"
-          : "no corpus behind this page — open, paste, or drop audit logs to inspect them"))}</p></div>`;
+          : "no corpus behind this page — open, paste, or drop audit logs to inspect them"))}</p></div>`}, tick);
       keepDraft(); refocus(keep);
       return;
     }
@@ -326,13 +370,14 @@
     const pd = parsedOf(tgt.kind === "doc" ? tgt.key : t.dir, tgt.text);
 
     if (!t.sections.length && !tgt.prompt){
-      scr.innerHTML = `<h2>inspector <span class="isub">${P.esc(t.dir)}</span></h2>` + ops
+      paintInspector({top: `<h2>inspector <span class="isub">${P.esc(t.dir)}</span></h2>` + ops
         + S.tickheadHtml({title: t.id || t.dir, chits: tgt.kind === "doc"
           ? [{txt: tgt.doc.watching ? "watching · live" : "opened · one-shot"}, {txt: "unindexed"}]
-          : [{txt: t.state + " · " + t.state_source}]})
-        + (tgt.kind === "doc"
+          : [{txt: t.state + " · " + t.state_source}]}),
+        nav: "",
+        body: tgt.kind === "doc"
           ? S.rawPaneHtml({heading: t.dir, raw: (tgt.text || "").slice(0, 4000)})
-          : `<div class="ipanel"><p class="dnotice">this ticket has no audit log yet — only its prompt or other files sit in the directory.</p></div>`);
+          : `<div class="ipanel"><p class="dnotice">this ticket has no audit log yet — only its prompt or other files sit in the directory.</p></div>`}, tick);
       keepDraft(); refocus(keep);
       return;
     }
@@ -446,10 +491,9 @@
         panels += S.watchesPanelHtml({label, sort: sortState.iw, rows: wRows});
     }
 
-    scr.innerHTML = `<h2>inspector <span class="isub">${P.esc(t.dir)}</span></h2>` + ops
-      + S.tickheadHtml({title: t.id || t.dir, chits})
-      + S.secNavHtml(entries, states, sel.s)
-      + pane + panels;
+    paintInspector({top: `<h2>inspector <span class="isub">${P.esc(t.dir)}</span></h2>` + ops
+      + S.tickheadHtml({title: t.id || t.dir, chits}),
+      nav: S.secNavHtml(entries, states, sel.s), body: pane + panels}, tick);
     keepDraft(); refocus(keep);
     if (fullJump){
       for (const d of document.querySelectorAll(".fsec"))
@@ -1007,8 +1051,10 @@
     try{ history.replaceState(null, "", h || "#"); }catch(e){}
   }
 
-  function renderAll(){
-    render(); renderRail(); renderInspector(); renderWatch(); renderLedgers(); renderCalib(); renderPack(); syncHash();
+  // A poll passes tick, and only the inspector reads it. The other screens
+  // already skip their hidden rebuilds.
+  function renderAll(tick){
+    render(); renderRail(); renderInspector(tick); renderWatch(); renderLedgers(); renderCalib(); renderPack(); syncHash();
   }
 
   // ---- opened documents ----
@@ -1123,11 +1169,11 @@
           (await doc.handle.queryPermission({mode: "read"})) !== "granted")
         throw new Error("read permission lapsed");
       const f = await doc.handle.getFile();
-      if (updateDoc(doc, await f.text())) renderAll();
+      if (updateDoc(doc, await f.text())) renderAll(true);
     }catch(e){
       doc.watching = false;
       console.warn("watch stopped:", e);
-      renderAll();
+      renderAll(true);
     }
     doc.polling = false;
   }
@@ -1154,7 +1200,7 @@
     if (s === corpusSig){ syncLive(); return; }
     corpus = c; corpusSig = s; advisories = B.lintCorpus(c.files);
     if (!selSettled) settleSelection();
-    renderAll();
+    renderAll(true);
   }
 
   // The view token restores the screen a reload left. A token naming no

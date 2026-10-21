@@ -22,6 +22,12 @@ let downloads = [];
 // keyboard across a rebuild. Each boot starts with nothing focused.
 let lastFocused = null;
 
+// A write inside an element changes the markup of every ancestor. We drop
+// their stored raw strings so their innerHTML re-serializes from the tree.
+function staleRaw(el){
+  for (let n = el; n; n = n.parent) n._raw = "";
+}
+
 function parseAttrs(str){
   const attrs = {};
   const re = /([a-zA-Z-]+)="([^"]*)"|([a-zA-Z-]+)/g;
@@ -73,6 +79,7 @@ function makeEl(tag, attrs){
       el.children.forEach(c => { c.parent = null; });
       el.children = [];
       parseInto(el, String(html));
+      staleRaw(el.parent);
     }
   });
   el.getAttribute = k => (k === "class" ? el.className : (k in el.attrs ? el.attrs[k] : null));
@@ -81,13 +88,29 @@ function makeEl(tag, attrs){
     else el.attrs[k] = String(v);
   };
   el.appendChild = child => { child.parent = el; el.children.push(child); return child; };
+  el.replaceWith = other => {
+    const p = el.parent;
+    if (!p || other === el) return;
+    // The replacement leaves its old parent before it takes el's slot, so a
+    // sibling of el ends up in that slot and nowhere else.
+    if (other.parent){
+      other.parent.children = other.parent.children.filter(c => c !== other);
+      staleRaw(other.parent);
+    }
+    p.children[p.children.indexOf(el)] = other;
+    other.parent = p;
+    el.parent = null;
+    staleRaw(p);
+  };
   el.addEventListener = (type, fn) => {
     (el.listeners[type] = el.listeners[type] || []).push(fn);
   };
   // An anchor click records the download it would start; the page's
   // download path is asserted from that record.
   el.click = () => { if (el.tagName === "A") downloads.push({href: el.href, download: el.download}); };
-  el.focus = () => { lastFocused = el; };
+  // The page passes focus options on a restore, and a test reads them here to
+  // pin that a restored focus never asks the browser to scroll.
+  el.focus = opts => { lastFocused = el; el._focusOpts = opts || null; };
   // The page scrolls a jumped-to section into view; tests read the counter.
   el.scrollIntoView = () => { el._scrolled = (el._scrolled || 0) + 1; };
   el.closest = sel => {
