@@ -1393,6 +1393,17 @@ const inspSelects = h => h.$$("select").filter(el => {
   return false;
 });
 
+test("the harness replaceWith moves an in-tree sibling the way the DOM does", async () => {
+  const h = bootShell({stored: "dark"});
+  await h.settle();
+  const p = h.document.createElement("div");
+  const [a, b, c] = ["span", "b", "i"].map(t => p.appendChild(h.document.createElement(t)));
+  a.replaceWith(c);
+  assert.deepEqual([...p.children].map(n => n.tagName), ["I", "B"]);
+  assert.equal(c.parent, p);
+  assert.equal(a.parent, null);
+});
+
 test("a change to another ticket leaves the inspector's controls in place and still updates the rail", async () => {
   const c = twoTicketCorpus();
   const h = bootShell({stored: "dark", fetch: c.fetch});
