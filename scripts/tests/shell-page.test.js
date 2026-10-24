@@ -91,6 +91,8 @@ function corpusFetch(listing, texts){
 
 const bootCorpus = opts => bootShell(Object.assign({stored: "dark", fetch: corpusFetch(LISTING, TEXTS)}, opts));
 const pick = (h, key) => h.click(h.$$(".rentry").find(r => r.getAttribute("data-key") === key));
+// Tests name the tab they want, so a new tab never shifts which screen a test opens.
+const tabFor = (h, name) => h.$$(".mtab").find(t => t.getAttribute("data-s") === name);
 
 // ---- lib: localDate ----
 
@@ -256,7 +258,7 @@ test("the boot paints the no-corpus chrome synchronously", () => {
 
 test("a tab click lands even while the seam is still pending", async () => {
   const h = bootShell({stored: "dark", fetch: () => new Promise(() => {})});
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   assert.equal(h.$("#scrWatch").classList.contains("is-on"), true);
   assert.equal(h.$("#scrInspector").classList.contains("is-on"), false);
 });
@@ -897,7 +899,7 @@ const bootBoard = opts => bootShell(Object.assign(
 test("the board rows live watches by default, overdue first, unanchored flagged", async () => {
   const h = bootBoard();
   await h.settle();
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   const scr = h.$("#scrWatch").innerHTML;
   assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
     ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2"]);
@@ -913,7 +915,7 @@ test("the board rows live watches by default, overdue first, unanchored flagged"
 test("the status chips reveal settled rows with their ruling and hide a live state", async () => {
   const h = bootBoard();
   await h.settle();
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   const chip = s => h.$$(".fpill").find(p => p.getAttribute("data-ws") === s);
   assert.match(chip("closed").innerHTML, /closed 1/);
   h.click(chip("closed"));
@@ -927,7 +929,7 @@ test("the status chips reveal settled rows with their ruling and hide a live sta
   // Back on the board, hiding upcoming removes its row and only its row.
   // The upcoming chip is the date-robust pick: AA1's 2099 due holds that
   // state whatever real day the corpus generates against.
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   h.click(chip("upcoming"));
   assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")),
     ["OT-BB2-1", "OT-BB2-2", "OT-AA1-2", "OT-BB2-3"]);
@@ -936,7 +938,7 @@ test("the status chips reveal settled rows with their ruling and hide a live sta
 test("a board watch link lands the inspector on the owning section, item highlighted", async () => {
   const h = bootBoard();
   await h.settle();
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   h.click(h.$$(".wbl").find(a => a.getAttribute("data-item") === "OT-BB2-1"));
   assert.equal(h.$("#scrInspector").classList.contains("is-on"), true);
   assert.equal(h.$("#secSel").value, "sec-obligation-ticket-list");
@@ -948,7 +950,7 @@ test("a board watch link lands the inspector on the owning section, item highlig
 test("a board ticket link selects the ticket's default view", async () => {
   const h = bootBoard();
   await h.settle();
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   h.click(h.$$(".wbl").find(a =>
     a.getAttribute("data-t") === "BB2" && !a.getAttribute("data-item")));
   assert.equal(h.$("#scrInspector").classList.contains("is-on"), true);
@@ -960,7 +962,7 @@ test("a board ticket link selects the ticket's default view", async () => {
 test("a board header sorts, flips on repeat, and keeps the keyboard", async () => {
   const h = bootBoard();
   await h.settle();
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   const tidTh = () => h.$$(".sth").find(t =>
     t.getAttribute("data-t") === "wb" && t.getAttribute("data-k") === "tid");
   tidTh().focus();
@@ -976,7 +978,7 @@ test("a board header sorts, flips on repeat, and keeps the keyboard", async () =
 test("with no corpus the board says so instead of rendering an empty table", async () => {
   const h = bootShell({stored: "dark"});
   await h.settle();
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   const scr = h.$("#scrWatch").innerHTML;
   assert.match(scr, /no corpus behind this page/);
   assert.ok(!scr.includes("wbrow"));
@@ -1006,7 +1008,7 @@ test("a watchless corpus boards the no-watches state, never the filtered one", a
     {root: "demo", files: ["20260103-CC3-gamma/audit-log.md"]},
     {"20260103-CC3-gamma/audit-log.md": LOG_C})});
   await h.settle();
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   const scr = h.$("#scrWatch").innerHTML;
   assert.match(scr, /no watches on record yet/);
   assert.ok(!scr.includes("hidden by the status filters"));
@@ -1026,7 +1028,7 @@ test("an all-settled corpus says the filters hide it, and the closed chip shows 
     {root: "demo", files: ["20260104-DD4-delta/audit-log.md"]},
     {"20260104-DD4-delta/audit-log.md": LOG_D})});
   await h.settle();
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   assert.match(h.$("#scrWatch").innerHTML, /every watch here is hidden by the status filters/);
   h.click(h.$$(".fpill").find(p => p.getAttribute("data-ws") === "closed"));
   assert.deepEqual(h.$$(".wbrow").map(r => r.getAttribute("data-wid")), ["OT-DD4-1"]);
@@ -1035,7 +1037,7 @@ test("an all-settled corpus says the filters hide it, and the closed chip shows 
 test("board links carry real hash hrefs, so the keyboard can reach them", async () => {
   const h = bootBoard();
   await h.settle();
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   const w = h.$$(".wbl").find(a => a.getAttribute("data-item") === "OT-BB2-1");
   // The harness reads the serialized attribute, entities intact; a real
   // browser decodes &amp; back to & before the hash is followed.
@@ -1070,9 +1072,9 @@ test("a token naming no real screen is ignored", async () => {
 test("a tab switch writes its view token; the inspector clears it", async () => {
   const h = bootBoard();
   await h.settle();
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   assert.match(h.hashes[h.hashes.length - 1], /^#v=watchboard&t=/);
-  h.click(h.$$(".mtab")[0]);
+  h.click(tabFor(h, "inspector"));
   assert.match(h.hashes[h.hashes.length - 1], /^#t=/);
 });
 
@@ -1081,9 +1083,9 @@ test("leaving the board with nothing selected clears the stale view token", asyn
   // hash; the old defect kept the board's token standing there.
   const h = bootShell({stored: "dark"});
   await h.settle();
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   assert.equal(h.hashes[h.hashes.length - 1], "#v=watchboard");
-  h.click(h.$$(".mtab")[0]);
+  h.click(tabFor(h, "inspector"));
   assert.equal(h.hashes[h.hashes.length - 1], "#");
 });
 
@@ -1099,14 +1101,14 @@ test("the boot passes never write over a pending deep link", async () => {
 test("a hidden board skips its rebuild and settles the debt on entry", async () => {
   const h = bootBoard();
   await h.settle();
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   const before = h.$$(".wbrow")[0];
-  h.click(h.$$(".mtab")[0]);
+  h.click(tabFor(h, "inspector"));
   // A full re-render while the board is hidden must leave its DOM untouched.
   pick(h, "BB2");
   assert.equal(h.$$(".wbrow")[0], before);
   // Entering the tab pays the owed rebuild: fresh nodes, same content.
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   assert.notEqual(h.$$(".wbrow")[0], before);
   assert.equal(h.$$(".wbrow")[0].getAttribute("data-wid"), "OT-BB2-1");
 });
@@ -1114,7 +1116,7 @@ test("a hidden board skips its rebuild and settles the debt on entry", async () 
 test("a header sorts from the keyboard with Enter and Space", async () => {
   const h = bootBoard();
   await h.settle();
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   const tidTh = () => h.$$(".sth").find(t =>
     t.getAttribute("data-t") === "wb" && t.getAttribute("data-k") === "tid");
   assert.equal(tidTh().getAttribute("tabindex"), "0");
@@ -1134,7 +1136,7 @@ test("a header sorts from the keyboard with Enter and Space", async () => {
 test("the ledger rows every decision, open debt first, settled outcomes last", async () => {
   const h = bootBoard();
   await h.settle();
-  h.click(h.$$(".mtab")[2]);
+  h.click(tabFor(h, "ledgers"));
   const scr = h.$("#scrLedgers").innerHTML;
   const dls = h.$$(".lgrow").filter(r => r.getAttribute("data-dl"));
   assert.deepEqual(dls.map(r => r.getAttribute("data-t") + "/" + r.getAttribute("data-dl")),
@@ -1155,17 +1157,17 @@ test("the ledger pills filter corpus-wide and leave the inspector's filter alone
   pick(h, "AA1");
   h.click(h.$$(".fpill").find(p => p.getAttribute("data-dlf") === "validated"));
   assert.deepEqual(h.$$(".dlrow").map(r => r.getAttribute("data-dl")), ["DL-001"]);
-  h.click(h.$$(".mtab")[2]);
+  h.click(tabFor(h, "ledgers"));
   h.click(h.$$(".fpill").find(p => p.getAttribute("data-lgf") === "open"));
   assert.deepEqual(
     h.$$(".lgrow").filter(r => r.getAttribute("data-dl")).map(r => r.getAttribute("data-dl")),
     ["DL-002", "DL-001"]);
-  h.click(h.$$(".mtab")[0]);
+  h.click(tabFor(h, "inspector"));
   assert.deepEqual(h.$$(".dlrow").map(r => r.getAttribute("data-dl")), ["DL-001"]);
   const on = h.$$(".fpill").find(p => p.getAttribute("data-dlf") && p.classList.contains("is-on"));
   assert.match(on.innerHTML, /validated/);
   // The ledger's own filter held through the round trip too.
-  h.click(h.$$(".mtab")[2]);
+  h.click(tabFor(h, "ledgers"));
   const lon = h.$$(".fpill").find(p => p.getAttribute("data-lgf") && p.classList.contains("is-on"));
   assert.match(lon.innerHTML, /open/);
 });
@@ -1173,7 +1175,7 @@ test("the ledger pills filter corpus-wide and leave the inspector's filter alone
 test("a ledger entry link lands the inspector on the item in its owning section", async () => {
   const h = bootBoard();
   await h.settle();
-  h.click(h.$$(".mtab")[2]);
+  h.click(tabFor(h, "ledgers"));
   h.click(h.$$(".wbl").find(a => a.getAttribute("data-item") === "DL-002"));
   assert.equal(h.$("#scrInspector").classList.contains("is-on"), true);
   assert.equal(h.$("#secSel").value, "sec-decision-log");
@@ -1184,11 +1186,11 @@ test("a ledger entry link lands the inspector on the item in its owning section"
 test("a ledger coverage link lands the watch, and a ticket link the default view", async () => {
   const h = bootBoard();
   await h.settle();
-  h.click(h.$$(".mtab")[2]);
+  h.click(tabFor(h, "ledgers"));
   h.click(h.$$(".wbl").find(a => a.getAttribute("data-item") === "OT-AA1-1"));
   assert.equal(h.$("#secSel").value, "sec-obligation-ticket-list");
   assert.match(h.$("#scrInspector").innerHTML, /is-hl/);
-  h.click(h.$$(".mtab")[2]);
+  h.click(tabFor(h, "ledgers"));
   h.click(h.$$(".wbl").find(a =>
     a.getAttribute("data-t") === "BB2" && !a.getAttribute("data-item")));
   assert.equal(h.$("#secSel").value, "sec-decision-log");
@@ -1201,14 +1203,14 @@ test("a ledgers deep link boots to the screen and a tab visit writes its token",
   assert.ok(h.$$(".lgrow").length > 0);
   const h2 = bootBoard();
   await h2.settle();
-  h2.click(h2.$$(".mtab")[2]);
+  h2.click(tabFor(h2, "ledgers"));
   assert.match(h2.hashes[h2.hashes.length - 1], /^#v=ledgers/);
 });
 
 test("with no corpus the ledgers say so instead of rendering empty tables", async () => {
   const h = bootShell({stored: "dark"});
   await h.settle();
-  h.click(h.$$(".mtab")[2]);
+  h.click(tabFor(h, "ledgers"));
   const scr = h.$("#scrLedgers").innerHTML;
   assert.match(scr, /no corpus behind this page/);
   assert.ok(!scr.includes("lgrow"));
@@ -1217,14 +1219,14 @@ test("with no corpus the ledgers say so instead of rendering empty tables", asyn
 test("a hidden ledgers screen skips its rebuild and pays it on entry", async () => {
   const h = bootBoard();
   await h.settle();
-  h.click(h.$$(".mtab")[2]);
+  h.click(tabFor(h, "ledgers"));
   const before = h.$$(".lgrow")[0];
-  h.click(h.$$(".mtab")[0]);
+  h.click(tabFor(h, "inspector"));
   // A full re-render while the ledgers are hidden must leave their DOM alone.
   pick(h, "BB2");
   assert.equal(h.$$(".lgrow")[0], before);
   // Entering the tab pays the owed rebuild: fresh nodes, same content.
-  h.click(h.$$(".mtab")[2]);
+  h.click(tabFor(h, "ledgers"));
   assert.notEqual(h.$$(".lgrow")[0], before);
   assert.equal(h.$$(".lgrow")[0].getAttribute("data-dl"), "DL-002");
 });
@@ -1232,7 +1234,7 @@ test("a hidden ledgers screen skips its rebuild and pays it on entry", async () 
 test("the sorted header carries aria-sort and the arrow hides from the tree", async () => {
   const h = bootBoard();
   await h.settle();
-  h.click(h.$$(".mtab")[2]);
+  h.click(tabFor(h, "ledgers"));
   const laTh = k => h.$$(".sth").find(t =>
     t.getAttribute("data-t") === "la" && t.getAttribute("data-k") === k);
   // scope makes the columnheader role explicit; aria-sort only means
@@ -1297,7 +1299,7 @@ test("closing from the keyboard hands focus to the next rail entry", async () =>
 test("the status header orders the default board and a flip really reverses it", async () => {
   const h = bootBoard();
   await h.settle();
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   const stateTh = () => h.$$(".sth").find(t =>
     t.getAttribute("data-t") === "wb" && t.getAttribute("data-k") === "state");
   h.click(stateTh());
@@ -1682,7 +1684,7 @@ test("the live pill's status region is written only when its state changes", asy
   let writes = 0, word = txt.textContent;
   Object.defineProperty(txt, "textContent", {get: () => word, set: v => { writes++; word = v; }});
   pick(h, "AA1");
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   h.tick();
   await h.settle();
   assert.equal(writes, 0);
@@ -1727,7 +1729,7 @@ test("a file:// open with a ticket link keeps the URL following the reader", asy
   const h = bootShell({stored: "dark", href: "file:///mission-control.html", hash: "#t=AA1"});
   await h.settle();
   assert.match(h.$("#scrInspector").innerHTML, /"AA1" is not in this corpus/);
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   assert.equal(h.location.hash, "#v=watchboard");
 });
 
@@ -1736,7 +1738,7 @@ test("a served page waiting for its corpus carries the ticket link through its h
   live.down = true;
   const h = bootShell({stored: "dark", fetch: live.fetch, hash: "#t=AA1"});
   await h.settle();
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   assert.equal(h.location.hash, "#v=watchboard&t=AA1");
   live.down = false;
   h.tick();
@@ -1770,7 +1772,7 @@ function packsFetch(inner, listing){
 }
 const bootPacks = opts => bootShell(Object.assign(
   {stored: "dark", fetch: packsFetch(corpusFetch(LISTING_WB, TEXTS_WB))}, opts));
-const packTab = h => h.click(h.$$(".mtab")[4]);
+const packTab = h => h.click(tabFor(h, "resume pack"));
 // The mini-DOM resolves one class per selector, so the marked entry and the
 // marked pack are read through classList.
 const selectedKey = h => h.$$(".rentry").find(r => r.classList.contains("is-sel")).getAttribute("data-key");
@@ -2007,7 +2009,7 @@ test("a hidden pack screen skips its rebuild and pays it on entry", async () => 
   await h.settle();
   packTab(h);
   const before = h.$$(".pk")[0];
-  h.click(h.$$(".mtab")[0]);
+  h.click(tabFor(h, "inspector"));
   // A full re-render while the pack screen is hidden must leave its DOM alone.
   pick(h, "BB2");
   assert.equal(h.$$(".pk")[0], before);
@@ -2018,7 +2020,7 @@ test("a hidden pack screen skips its rebuild and pays it on entry", async () => 
 
 // ---- calibration ----
 
-const calTab = h => h.click(h.$$(".mtab")[3]);
+const calTab = h => h.click(tabFor(h, "calibration"));
 
 test("the calibration screen tiles the corpus and rows every confidence with the ledger's counts", async () => {
   const h = bootBoard();
@@ -2027,7 +2029,7 @@ test("the calibration screen tiles the corpus and rows every confidence with the
   const scr = h.$("#scrCalib").innerHTML;
   // Two shipped tickets, three decisions, and the board's own watch counts:
   // the overdue count moves with the real date, so the board's chip states it.
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   const overdue = h.$$(".fpill").find(p => p.getAttribute("data-ws") === "overdue").innerHTML.match(/overdue (\d+)/)[1];
   calTab(h);
   assert.deepEqual(h.$$(".caltile-n").map(t => t.innerHTML), ["2", "2", "3", overdue + "+1"]);
@@ -2052,7 +2054,7 @@ test("the calibration screen tiles the corpus and rows every confidence with the
     assert.match(scr, new RegExp(`<i class="calseg-${k}"></i>${k}`));
   // The open count agrees with the ledger's pill on the same corpus.
   const open = (scr.match(/(\d+) open</g) || []).reduce((n, s) => n + parseInt(s, 10), 0);
-  h.click(h.$$(".mtab")[2]);
+  h.click(tabFor(h, "ledgers"));
   assert.match(h.$("#scrLedgers").innerHTML, new RegExp(`open ${open}`));
 });
 
@@ -2112,7 +2114,7 @@ test("a hidden calibration screen skips its rebuild and pays it on entry", async
   await h.settle();
   calTab(h);
   const before = h.$$(".caltile")[0];
-  h.click(h.$$(".mtab")[0]);
+  h.click(tabFor(h, "inspector"));
   // A full re-render while the screen is hidden must leave its DOM alone.
   pick(h, "BB2");
   assert.equal(h.$$(".caltile")[0], before);
@@ -2147,8 +2149,8 @@ test("a bar segment lands the ledger filtered to its cell, with focus on the sta
     ["DL-002", "DL-001"]);
   // The confidence filter is ledger state: it holds across a tab round trip.
   h.click(h.$$(".fpill").find(p => p.getAttribute("data-lgc") === "low"));
-  h.click(h.$$(".mtab")[0]);
-  h.click(h.$$(".mtab")[2]);
+  h.click(tabFor(h, "inspector"));
+  h.click(tabFor(h, "ledgers"));
   assert.match(on("data-lgc").innerHTML, /^low 1/);
   assert.deepEqual(h.$$(".lgrow").filter(r => r.getAttribute("data-dl")).map(r => r.getAttribute("data-dl")), ["DL-002"]);
 });
@@ -2514,7 +2516,7 @@ test("a drop or open onto a form in progress waits for a confirmation before it 
   newTab(h);
   nfSet(h, "task.id", "MINE-1");
   h.runTimeouts();
-  h.click(h.$$(".mtab")[0]);
+  h.click(tabFor(h, "inspector"));
   h.fireWindow("drop", {dataTransfer: {files: [{name: "p.yaml", __text: GOLDEN}]}});
   await h.settle();
   // The builder shows, the form and the draft stand, the question is asked.
@@ -3410,7 +3412,7 @@ test("every path that rewrites header text measures the header again", async () 
   const hdr = h.$("header");
   // A tab switch runs render(), which rewrites the project chit.
   headerWidths(h, 1080, 705);
-  h.click(h.$$(".mtab")[1]);
+  h.click(tabFor(h, "watchboard"));
   assert.equal(hdr.classList.contains("is-compact"), true);
   // The theme glyph changes width with its fallback font.
   headerWidths(h, 705, 705);
@@ -3463,7 +3465,7 @@ test("Escape closes the open menu and hands focus to the menu button", () => {
   headerWidths(h, 1080, 705);
   h.fireWindow("resize");
   h.click(h.$("#menuBtn"));
-  const tab = h.$$(".mtab")[2];
+  const tab = tabFor(h, "ledgers");
   tab.focus();
   h.key(tab, "Escape");
   assert.equal(h.$("header").classList.contains("menu-open"), false);
@@ -3765,4 +3767,433 @@ test("an unchanged poll tick keeps the inspector in place, whatever order the pr
     await h.settle();
   }
   assert.equal(h.$("#secSel"), before);
+});
+
+// ---- the reviews screen ----
+
+/* Two tickets with prreview rounds and one without. RV1 holds two PRs, and
+   PR #7's rounds are r1, r2, and r10, so a string sort would misorder them.
+   RV2 holds one PR: a round whose text tries to run script, a round with no
+   verdict yet, and a round whose fetch fails. AV-002 holds no rounds. */
+const review = o => [
+  `# PR Review — PR #${o.pr} round ${o.k} · ${o.dir}`, "",
+  "## Review Target", `- **Round:** ${o.k}`, "",
+  "## Inspected", "| Item | Value |", "|------|-------|", `| Prior review files | ${o.prior || "—"} |`, "",
+  "## Findings", "", o.findings || `Round ${o.k} of PR #${o.pr} found nothing.`, "",
+  ...(o.noVerdict ? [] : ["## Review Verdict", `- **Verdict:** ${o.verdict || "APPROVE"}`,
+    "- **Confidence:** HIGH", "- **Counts:** must 0 / should 1 / question 0 / nit 0",
+    "- **Opened:** PR-ADP-001", "- **Closed:** —", "- **Carried open:** —", "- **Summary:** done."]), ""
+].join("\n");
+const RV1 = "20260101-RV1-rounds", RV2 = "20260101-RV2-other";
+const LOG_RV1 = ["# Audit Log — RV1 rounds", "", "## Problem Statement", "", "**What the problem is:** demo.", "",
+  "## Review findings — PR #5, in-review (2026-01-02, first)", "", "An older pointer that names no file.", "",
+  "## Review findings — PR #7 round 2 (2026-01-03)", "",
+  `- **Review file:** \`.adp/${RV1}/pr-review-PR7-20260103-r2.md\``, ""].join("\n");
+const LOG_RV2 = LOG_RV1.replace(/RV1/g, "RV2").split("\n## Review findings")[0];
+const XSS = "<script>alert(1)</script> <img src=x onerror=alert(1)> [bad](javascript:alert(1))";
+function reviewCorpus(){
+  const st = {texts: {
+    [`${RV1}/audit-log.md`]: LOG_RV1,
+    [`${RV1}/pr-review-PR7-20260102-r1.md`]: review({pr: 7, k: 1, dir: RV1}),
+    [`${RV1}/pr-review-PR7-20260103-r2.md`]: review({pr: 7, k: 2, dir: RV1, prior: "pr-review-PR7-20260102-r1.md"}),
+    [`${RV1}/pr-review-PR8-20260104-r3.md`]: review({pr: 8, k: 3, dir: RV1}),
+    [`${RV1}/pr-review-PR7-20260105-r10.md`]: review({pr: 7, k: 10, dir: RV1}),
+    [`${RV1}/notes.md`]: "not a round",
+    [`${RV1}/refs/pr-review-PR7-20260105-r11.md`]: "a deeper file",
+    [`${RV2}/audit-log.md`]: LOG_RV2,
+    [`${RV2}/pr-review-PR9-20260106-r1.md`]: review({pr: 9, k: 1, dir: RV2, verdict: "APPROVE <b onmouseover=x>",
+      findings: XSS, prior: `\`.adp/${RV1}/pr-review-PR7-20260103-r2.md\`, \`.adp/NOPE-gone/pr-review-PR9-20260101-r1.md\``}),
+    [`${RV2}/pr-review-PR9-20260107-r2.md`]: review({pr: 9, k: 2, dir: RV2, noVerdict: true}),
+    "AV-002-beta/prompt.yaml": PROMPT_AV2
+  }};
+  // RV2's third round is listed but never answers.
+  st.listing = {root: "demo", files: Object.keys(st.texts).concat([`${RV2}/pr-review-PR9-20260108-r3.md`]).sort()};
+  st.fetch = u => corpusFetch(st.listing, st.texts)(u);
+  return st;
+}
+const bootReviews = (c, hash) => bootShell({stored: "dark", fetch: c.fetch, hash});
+const revHtml = h => h.$("#scrReviews").innerHTML;
+// The harness matches one simple selector, so a scoped query walks up from
+// each match to the region it must sit in.
+const inRegion = (h, id, sel) => h.$$(sel).filter(el => {
+  for (let n = el; n; n = n.parent) if (n.id === id) return true;
+  return false;
+});
+const revStep = (h, d) => h.click(h.$$(".op").find(o => o.getAttribute("data-revstep") === String(d)));
+
+test("reviewPaths keeps both review name forms in a ticket directory and nothing else", () => {
+  const files = ["A-1-x/pr-review-PR12-20261014-r3.md", "A-1-x/pr-review-local-20261014-r4.md",
+    "A-1-x/notes.md", "A-1-x/pr-review-notes.md", "A-1-x/pr-review-PR12-20261014-r3.md.bak",
+    "A-1-x/refs/pr-review-PR12-20261014-r5.md", "pr-review-PR12-20261014-r1.md", "./B-2-y/pr-review-PR1-20260101-r1.md"];
+  assert.deepEqual(S.reviewPaths(files),
+    ["A-1-x/pr-review-PR12-20261014-r3.md", "A-1-x/pr-review-local-20261014-r4.md", "./B-2-y/pr-review-PR1-20260101-r1.md"]);
+});
+
+test("reviewRounds groups rounds by PR and orders each group by the number k", () => {
+  const g = S.reviewRounds(["pr-review-PR7-20260105-r10.md", "pr-review-PR8-20260104-r3.md",
+    "pr-review-local-20260109-r12.md", "pr-review-PR7-20260103-r2.md", "pr-review-PR7-20260102-r1.md"]
+    .map(file => ({file, text: ""})));
+  assert.deepEqual(g.map(x => [x.label, x.rounds.map(r => r.k)]),
+    [["PR #7", [1, 2, 10]], ["PR #8", [3]], ["local", [12]]]);
+  assert.equal(g[0].rounds[2].date, "2026-01-05");
+});
+
+test("reviewHead reads the verdict fields, and names a missing section or field", () => {
+  const h = S.reviewHead(review({pr: 7, k: 1, dir: RV1}));
+  assert.deepEqual(h, {fields: {verdict: "APPROVE", confidence: "HIGH", counts: "must 0 / should 1 / question 0 / nit 0",
+    opened: "PR-ADP-001", closed: "—", carried: "—"}, missing: []});
+  assert.equal(S.reviewHead(review({pr: 7, k: 1, dir: RV1, noVerdict: true})).fields, null);
+  const gap = S.reviewHead(review({pr: 7, k: 1, dir: RV1}).replace("- **Confidence:** HIGH\n", ""));
+  assert.deepEqual(gap.missing, ["Confidence"]);
+});
+
+test("priorReviews resolves bare names to the same ticket and paths to theirs", () => {
+  const text = "| Prior review files | pr-review-PR41-20261013-r1.md, `.adp/OTHER-x/pr-review-PR41-20261014-r3.md`, notes.md |";
+  assert.deepEqual(S.priorReviews(text, "HERE-y"), [
+    {dir: "HERE-y", file: "pr-review-PR41-20261013-r1.md"},
+    {dir: "OTHER-x", file: "pr-review-PR41-20261014-r3.md"}]);
+  assert.deepEqual(S.priorReviews("| Prior review files | — |", "HERE-y"), []);
+  assert.deepEqual(S.priorReviews("no table", "HERE-y"), []);
+});
+
+test("reviewFileRef reads a pointer's Review file field and ignores everything else", () => {
+  assert.deepEqual(S.reviewFileRef(`- **Review file:** \`.adp/${RV1}/pr-review-PR7-20260103-r2.md\``),
+    {dir: RV1, file: "pr-review-PR7-20260103-r2.md"});
+  assert.equal(S.reviewFileRef("An older pointer that names no file."), null);
+  assert.equal(S.reviewFileRef("- **Review file:** `.adp/x/notes.md`"), null);
+});
+
+test("loadCorpus loads review rounds beside the index, and one failed round costs only itself", async () => {
+  const c = reviewCorpus();
+  const got = await S.loadCorpus(c.fetch, {now: NOW});
+  assert.deepEqual(got.reviews[RV1].map(r => r.file), ["pr-review-PR7-20260102-r1.md",
+    "pr-review-PR7-20260103-r2.md", "pr-review-PR7-20260105-r10.md", "pr-review-PR8-20260104-r3.md"]);
+  assert.deepEqual(got.reviews[RV2].map(r => r.error || "ok"), ["ok", "ok", "unreadable"]);
+  // The index never sees a review text: it builds the same bytes as a build
+  // from the logs alone.
+  const want = B.buildIndex(c.listing.files.map(p => (B.isLogPath(p) ? {path: p, text: c.texts[p]} : {path: p})),
+    {project: "demo", generated: "2026-08-25", source: "working-tree"});
+  assert.equal(I.serializeIndex(got.index), I.serializeIndex(want));
+  assert.equal(got.files.filter(f => /pr-review-/.test(f.path) && "text" in f).length, 0);
+});
+
+test("loadCorpus fills the review map in listing order, whatever order the fetches finish in", async () => {
+  const c = reviewCorpus();
+  const order = [];
+  const slow = rev => u => {
+    if (!/pr-review-/.test(u)) return c.fetch(u);
+    const i = c.listing.files.findIndex(p => u.endsWith(p.split("/").pop()));
+    const late = rev ? 40 - i : i;
+    return new Promise(r => setTimeout(r, late)).then(() => { order.push(i); return c.fetch(u); });
+  };
+  const a = await S.loadCorpus(slow(false), {now: NOW});
+  const fwd = order.splice(0);
+  const b = await S.loadCorpus(slow(true), {now: NOW});
+  assert.notDeepEqual(order, fwd);
+  assert.equal(JSON.stringify(a.reviews), JSON.stringify(b.reviews));
+});
+
+test("the reviews tab sits right after the inspector tab", () => {
+  assert.deepEqual(S.TAB_SCREENS, ["inspector", "reviews", "watchboard", "ledgers", "calibration", "resume pack"]);
+  assert.equal(S.SCREENS[S.SCREENS.length - 1], "new task");
+});
+
+test("a reviews deep link opens the ticket's latest round with its head", async () => {
+  const h = bootReviews(reviewCorpus(), `#v=reviews&t=RV1`);
+  await h.settle();
+  assert.equal(h.$("#scrReviews").classList.contains("is-on"), true);
+  const head = h.$("#revHead").innerHTML;
+  assert.match(head, /PR #7 · round 10/);
+  assert.match(head, /2026-01-05/);
+  assert.match(head, /APPROVE/);
+  assert.match(head, /must 0 \/ should 1 \/ question 0 \/ nit 0/);
+  assert.match(head, /PR-ADP-001/);
+  assert.match(h.$("#revBody").innerHTML, /Round 10 of PR #7 found nothing\./);
+  assert.match(h.location.hash, /^#v=reviews&t=RV1&s=pr-review-PR7-20260105-r10\.md$/);
+});
+
+test("the step controls walk one PR's rounds in number order and stop at both ends", async () => {
+  const h = bootReviews(reviewCorpus(), `#v=reviews&t=RV1`);
+  await h.settle();
+  const seen = [];
+  for (let i = 0; i < 3; i++){
+    seen.push(h.$("#revSel").value);
+    if (i < 2) revStep(h, -1);
+  }
+  assert.deepEqual(seen, ["pr-review-PR7-20260105-r10.md", "pr-review-PR7-20260103-r2.md", "pr-review-PR7-20260102-r1.md"]);
+  const btn = d => h.$$(".op").find(o => o.getAttribute("data-revstep") === String(d));
+  assert.equal(btn(-1).getAttribute("disabled") != null, true);
+  assert.equal(btn(1).getAttribute("disabled") != null, false);
+  revStep(h, 1); revStep(h, 1);
+  assert.equal(btn(1).getAttribute("disabled") != null, true);
+  assert.match(h.$("#revHead").innerHTML, /PR #7 · round 10/);
+});
+
+test("a ticket with two PRs offers a PR select, and a switch lands on that PR's latest round", async () => {
+  const c = reviewCorpus();
+  const h = bootReviews(c, `#v=reviews&t=RV1`);
+  await h.settle();
+  assert.deepEqual(h.$("#revPr").children.map(o => o.textContent), ["PR #7", "PR #8"]);
+  h.change(h.$("#revPr"), "PR8");
+  assert.match(h.$("#revHead").innerHTML, /PR #8 · round 3/);
+  assert.deepEqual(h.$("#revSel").children.map(o => o.getAttribute("value")), ["pr-review-PR8-20260104-r3.md"]);
+  assert.equal(h.location.hash, "#v=reviews&t=RV1&s=pr-review-PR8-20260104-r3.md");
+  // The hash reopens the same round in a fresh page.
+  const h2 = bootReviews(c, h.location.hash);
+  await h2.settle();
+  assert.match(h2.$("#revHead").innerHTML, /PR #8 · round 3/);
+  pick(h2, "RV2");
+  assert.equal(h2.$("#revPr"), null);
+});
+
+test("the reviews screen follows the rail, and a ticket with no rounds shows an empty state", async () => {
+  const h = bootReviews(reviewCorpus(), `#v=reviews&t=RV1`);
+  await h.settle();
+  pick(h, "RV2");
+  assert.equal(h.$("#scrReviews").classList.contains("is-on"), true);
+  assert.match(h.$("#revHead").innerHTML, /PR #9 · round/);
+  pick(h, "AV002");
+  assert.equal(h.$("#scrReviews").classList.contains("is-on"), true);
+  assert.match(revHtml(h), /this ticket has no review files/);
+  assert.equal(entry(h, "AV002").classList.contains("is-sel"), true);
+});
+
+test("a round's text renders inert in the head and the body", async () => {
+  const h = bootReviews(reviewCorpus(), `#v=reviews&t=RV2&s=pr-review-PR9-20260106-r1.md`);
+  await h.settle();
+  // The parsed tree is the check that matters: no live element and no event
+  // attribute exists, whatever the markup string looks like.
+  const under = tag => inRegion(h, "scrReviews", tag);
+  assert.equal(under("script").length, 0);
+  assert.equal(under("img").length, 0);
+  for (const tag of ["div", "p", "span", "b", "a", "dd", "code", "li"])
+    for (const el of under(tag))
+      assert.deepEqual(Object.keys(el.attrs).filter(k => /^on/i.test(k)), []);
+  const html = revHtml(h);
+  assert.doesNotMatch(html, /<script/i);
+  assert.doesNotMatch(html, /<img[^>]*onerror/i);
+  assert.doesNotMatch(html, /<b onmouseover/i);
+  assert.doesNotMatch(html, /href="javascript:/i);
+  for (const a of inRegion(h, "scrReviews", "a")){
+    const href = a.getAttribute("href");
+    if (href != null) assert.match(href, /^(#|https?:|mailto:)/);
+  }
+  assert.match(html, /&lt;script&gt;/);
+});
+
+test("prior rounds in another ticket link to that ticket's reviews tab", async () => {
+  const h = bootReviews(reviewCorpus(), `#v=reviews&t=RV2&s=pr-review-PR9-20260106-r1.md`);
+  await h.settle();
+  const links = inRegion(h, "revHead", ".rvl");
+  assert.deepEqual(links.map(a => a.textContent), [`pr-review-PR7-20260103-r2.md · ${RV1}`,
+    "pr-review-PR9-20260101-r1.md · NOPE-gone"]);
+  // The harness hands back the attribute as written, so the escaped ampersand shows.
+  assert.equal(links[0].getAttribute("href"), "#v=reviews&amp;t=RV1&amp;s=pr-review-PR7-20260103-r2.md");
+  h.click(links[1]);
+  assert.match(h.$("#revHead").innerHTML, /ticket "NOPE-gone" is not in this corpus\./);
+  assert.match(h.$("#revHead").innerHTML, /PR #9 · round 1/);
+  h.click(inRegion(h, "revHead", ".rvl")[0]);
+  assert.match(h.$("#revHead").innerHTML, /PR #7 · round 2/);
+  assert.equal(entry(h, "RV1").classList.contains("is-sel"), true);
+  assert.equal(h.location.hash, "#v=reviews&t=RV1&s=pr-review-PR7-20260103-r2.md");
+});
+
+test("an unreadable round, a round with no verdict, and a stale round link each show a notice", async () => {
+  const c = reviewCorpus();
+  const h = bootReviews(c, `#v=reviews&t=RV2&s=pr-review-PR9-20260108-r3.md`);
+  await h.settle();
+  assert.match(h.$("#revHead").innerHTML, /pr-review-PR9-20260108-r3\.md is listed in the corpus but could not be read\./);
+  assert.equal(h.$("#revBody").innerHTML, "");
+  revStep(h, -1);
+  assert.match(h.$("#revHead").innerHTML, /no Review Verdict section yet/);
+  assert.match(h.$("#revBody").innerHTML, /Round 2 of PR #9 found nothing\./);
+  const h2 = bootReviews(c, `#v=reviews&t=RV1&s=pr-review-PR7-20990101-r99.md`);
+  await h2.settle();
+  assert.match(h2.$("#revHead").innerHTML, /was not found in this ticket/);
+  assert.match(h2.$("#revHead").innerHTML, /PR #7 · round 10/);
+});
+
+test("an inspector pointer section links to its round, and the inspector keeps its section", async () => {
+  const h = bootReviews(reviewCorpus(), "#t=RV1");
+  await h.settle();
+  const optFor = re => h.$("#secSel").children.find(o => re.test(o.textContent)).getAttribute("value");
+  h.change(h.$("#secSel"), optFor(/PR #5, in-review/));
+  assert.equal(inRegion(h, "scrInspector", ".rvl").length, 0);
+  const key = optFor(/PR #7 round 2/);
+  h.change(h.$("#secSel"), key);
+  const link = inRegion(h, "scrInspector", ".rvl")[0];
+  assert.equal(link.textContent, "open round in reviews ›");
+  h.click(link);
+  assert.equal(h.$("#scrReviews").classList.contains("is-on"), true);
+  assert.match(h.$("#revHead").innerHTML, /PR #7 · round 2/);
+  h.click(tabFor(h, "inspector"));
+  assert.equal(h.$("#secSel").value, key);
+  assert.equal(h.location.hash, "#t=RV1&s=" + encodeURIComponent(key));
+});
+
+test("a quiet poll tick leaves every reviews region in place, and a new round patches the round select", async () => {
+  const c = reviewCorpus();
+  const h = bootReviews(c, `#v=reviews&t=RV1`);
+  await h.settle();
+  const ids = ["revTop", "revNav", "revHead", "revBody"];
+  const kids = () => ids.map(id => h.$("#" + id).children[0]);
+  const before = kids(), sel = h.$("#revSel");
+  await tickOnce(h); await tickOnce(h);
+  assert.deepEqual(kids(), before);
+  // A change in another ticket writes nothing here either.
+  c.texts[`${RV2}/pr-review-PR9-20260107-r2.md`] += "\nmore";
+  await tickOnce(h);
+  assert.deepEqual(kids(), before);
+  // A new PR #7 round keeps the shown round, and the select keeps its element.
+  c.texts[`${RV1}/pr-review-PR7-20260109-r11.md`] = review({pr: 7, k: 11, dir: RV1});
+  c.listing.files = c.listing.files.concat([`${RV1}/pr-review-PR7-20260109-r11.md`]).sort();
+  await tickOnce(h);
+  assert.equal(h.$("#revSel"), sel);
+  assert.equal(h.$("#revSel").value, "pr-review-PR7-20260105-r10.md");
+  assert.equal(h.$("#revSel").children.length, 4);
+  assert.equal(h.$("#revBody").children[0], before[3]);
+});
+
+const card = (id, o = {}) => [`### [${id}] ${o.title || "A finding title"}`,
+  `- **Severity:** ${o.severity || "should"}`, "- **Category:** COR — Correctness",
+  `- **Claim:** ${o.claim || "The code does the wrong thing."}`, "- **Confidence:** HIGH",
+  "- **Confidence basis:** DIRECT EVIDENCE — a repro.", `- **Status:** ${o.status || "OPEN"}`].join("\n");
+const ledger = (id, outcome, note) => `- **${id} CLOSED 2026-01-03 → ${outcome}.** ${note}`;
+const withLedger = (text, lines) => text.replace("## Review Verdict", "## Prior Findings\n" + lines.join("\n") + "\n\n## Review Verdict");
+
+test("reviewLedger reads every closure in a PR group, and a later round's line wins", () => {
+  const r2 = withLedger(review({pr: 7, k: 2, dir: RV1}), [ledger("PR-COR-001", "ACCEPTED", "first."), ledger("PR-COR-002", "REFUTED", "no defect.")]);
+  const r3 = withLedger(review({pr: 7, k: 3, dir: RV1}), [ledger("PR-COR-001", "RESOLVED", "fixed.")]);
+  const l = S.reviewLedger([{file: "a-r1.md", k: 1, text: review({pr: 7, k: 1, dir: RV1})},
+    {file: "a-r2.md", k: 2, text: r2}, {file: "a-r3.md", k: 3, text: r3}, {file: "a-r4.md", k: 4, error: "unreadable"}]);
+  assert.deepEqual(Object.keys(l).sort(), ["PR-COR-001", "PR-COR-002"]);
+  assert.deepEqual(l["PR-COR-001"], {file: "a-r3.md", k: 3, id: "PR-COR-001", date: "2026-01-03", outcome: "RESOLVED", note: "fixed."});
+  assert.equal(l["PR-COR-002"].outcome, "REFUTED");
+});
+
+test("a finding renders as a card, and its status pill reads the ledger, not the stale card", () => {
+  const text = review({pr: 7, k: 1, dir: RV1, findings: card("PR-COR-001") + "\n\n" + card("PR-TST-002", {severity: "nit"})});
+  const led = {"PR-COR-001": {id: "PR-COR-001", file: "pr-review-PR7-20260103-r2.md", k: 2, date: "2026-01-03", outcome: "RESOLVED", note: "fixed **now**."}};
+  const html = S.reviewBodyHtml(text, {ledger: led, tok: "RV1"});
+  const cards = html.split('<div class="dl-cards">')[1].split("Review Verdict")[0].split('<div class="dl-card ').slice(1);
+  assert.equal(cards.length, 2);
+  assert.match(cards[0], /^rail-ok"/);
+  assert.match(cards[0], /<i>severity<\/i>should/);
+  assert.match(cards[0], /<i>conf<\/i>HIGH/);
+  assert.match(cards[0], /<i>status<\/i>RESOLVED/);
+  assert.doesNotMatch(cards[0], /<i>status<\/i>OPEN/);
+  assert.match(cards[0], /2026-01-03 in <a class="rvl"[^>]*data-rf="pr-review-PR7-20260103-r2\.md">round 2<\/a> · fixed <strong>now<\/strong>\./);
+  assert.match(cards[0], /<span class="dl-k revk">Confidence basis<\/span>/);
+  assert.doesNotMatch(cards[0], /dl-k revk">(Severity|Confidence|Status)</);
+  assert.match(cards[1], /^rail-open"/);
+  assert.match(cards[1], /<i>severity<\/i>nit/);
+  assert.match(cards[1], /<i>status<\/i>OPEN/);
+  assert.match(html, /<h4>Findings<\/h4><div class="md"><div class="dl-cards">/);
+});
+
+test("Review Target, Review Verdict, and Prior Findings render as grids, and a stray line keeps markdown", () => {
+  const text = withLedger(review({pr: 7, k: 2, dir: RV1}), [ledger("PR-COR-001", "RESOLVED", "fixed.")]);
+  const html = S.reviewBodyHtml(text, {ledger: {}, tok: "RV1"});
+  assert.equal(html.split("dl-card revcard").length - 1, 3);
+  assert.match(html, /<span class="dl-k revk">Round<\/span><span class="dl-v revv">2<\/span>/);
+  assert.match(html, /<span class="dl-k revk">PR-COR-001<\/span><span class="dl-v revv"><span class="pill dl-pill p-ok"><i>closed<\/i>RESOLVED<\/span> 2026-01-03 · fixed\.<\/span>/);
+  // The Inspected table and an empty Findings section stay as the file reads.
+  assert.match(html, /<table/);
+  assert.match(html, /Round 2 of PR #7 found nothing\./);
+  // Each section is its own doc panel under an h4, as in the inspector, and
+  // the file's H1 gives way to the round head.
+  assert.deepEqual([...html.matchAll(/<div class="doc"><h4>([^<]*)<\/h4>/g)].map(x => x[1]),
+    ["Review Target", "Inspected", "Findings", "Prior Findings", "Review Verdict"]);
+  assert.doesNotMatch(html, /PR Review — PR #7/);
+  // Every panel body sits in the md block, so the theme's code, link, and
+  // emphasis styles reach the grids and cards as they reach prose.
+  assert.equal(html.split('<div class="doc"><h4>').length - 1, html.split('</h4><div class="md">').length - 1);
+  const stray = S.reviewBodyHtml(text.replace("## Prior Findings\n", "## Prior Findings\nA note that is not a ledger line.\n"), {ledger: {}});
+  assert.equal(stray.split("dl-card revcard").length - 1, 2);
+  assert.match(stray, /A note that is not a ledger line\./);
+  assert.match(stray, /PR-COR-001 CLOSED 2026-01-03/);
+});
+
+test("a finding card renders its text inert, and an unknown outcome word picks no class", () => {
+  const text = review({pr: 9, k: 1, dir: RV2, findings: card("PR-SEC-001", {title: XSS, claim: XSS, severity: "<b>x</b> later"})});
+  const html = S.reviewBodyHtml(text, {ledger: {"PR-SEC-001": {id: "PR-SEC-001", file: "f.md", k: 2, date: "2026-01-03",
+    outcome: "WEIRD", note: XSS}}, tok: "RV2"});
+  assert.doesNotMatch(html, /<script|<img|<b>|href="javascript:/i);
+  assert.match(html, /&lt;script&gt;/);
+  assert.match(html, /<span class="pill dl-pill p-low"><i>status<\/i>WEIRD<\/span>/);
+  assert.match(html, /<div class="dl-card ">/);
+  assert.match(html, /dl-k revk">severity note</);
+});
+
+test("a later round's closure repaints an earlier round's card on the next poll tick", async () => {
+  const c = reviewCorpus();
+  c.texts[`${RV1}/pr-review-PR7-20260102-r1.md`] = review({pr: 7, k: 1, dir: RV1, findings: card("PR-COR-001")});
+  const h = bootReviews(c, `#v=reviews&t=RV1&s=pr-review-PR7-20260102-r1.md`);
+  await h.settle();
+  // The harness can write an element's text before its child elements, so
+  // the pill's kind label is optional in the match.
+  assert.match(h.$("#revBody").innerHTML, /dl-pill p-open">(<i>status<\/i>)?OPEN/);
+  c.texts[`${RV1}/pr-review-PR7-20260103-r2.md`] = withLedger(c.texts[`${RV1}/pr-review-PR7-20260103-r2.md`],
+    [ledger("PR-COR-001", "RESOLVED", "fixed.")]);
+  await tickOnce(h);
+  assert.match(h.$("#revBody").innerHTML, /dl-pill p-ok">(<i>status<\/i>)?RESOLVED/);
+  assert.doesNotMatch(h.$("#revBody").innerHTML, /dl-pill p-open/);
+  h.click(inRegion(h, "revBody", ".rvl")[0]);
+  assert.match(h.$("#revHead").innerHTML, /PR #7 · round 2/);
+  assert.equal(h.location.hash, "#v=reviews&t=RV1&s=pr-review-PR7-20260103-r2.md");
+});
+
+/* AA1's log defines DL-001, DL-002, OT-AA1-1, and OT-AA1-2. Its round cites
+   DL-002 and OT-AA1-1 in prose, DL-001 only inside a code fence, and DL-099,
+   which the log never defines. */
+const AA1 = "20260101-AA1-alpha";
+const AA1_ROUND = review({pr: 3, k: 1, dir: AA1, findings: card("PR-COR-001")
+  + "\n- **Refs:** DL-002, OT-AA1-1, DL-099\n\n```\nDL-001\n```"});
+function citedCorpus(){
+  const texts = {[`${AA1}/audit-log.md`]: LOG, [`${AA1}/pr-review-PR3-20260102-r1.md`]: AA1_ROUND,
+    [`${AA1}/pr-review-PR3-20260103-r2.md`]: review({pr: 3, k: 2, dir: AA1})};
+  const listing = {root: "demo", files: Object.keys(texts).sort()};
+  return {fetch: u => corpusFetch(listing, texts)(u)};
+}
+
+test("reviewItems keeps the ticket's own ids that a round cites outside code fences", () => {
+  const t = {decisions: [{id: "DL-001"}, {id: "DL-002"}], watches: [{wid: "OT-AA1-1"}, {wid: "OT-AA1-2"}]};
+  const items = S.reviewItems(t, AA1_ROUND);
+  assert.deepEqual(items.decisions.map(d => d.id), ["DL-002"]);
+  assert.deepEqual(items.watches.map(w => w.wid), ["OT-AA1-1"]);
+  assert.deepEqual(S.reviewItems(t, review({pr: 3, k: 2, dir: AA1})), {decisions: [], watches: []});
+});
+
+test("a round shows the decisions and watches it cites, and a round that cites none shows no panel", async () => {
+  const h = bootReviews(citedCorpus(), `#v=reviews&t=AA1&s=pr-review-PR3-20260102-r1.md`);
+  await h.settle();
+  const body = h.$("#revBody").innerHTML;
+  assert.match(body, /decisions cited by PR #3 · round 1/);
+  assert.match(body, /watches cited by PR #3 · round 1/);
+  assert.deepEqual(inRegion(h, "revBody", ".dlrow").map(r => r.getAttribute("data-dl")), ["DL-002"]);
+  assert.deepEqual(inRegion(h, "revBody", ".wrow").map(r => r.getAttribute("data-item")), ["OT-AA1-1"]);
+  // The rows carry the inspector's backlink chips to the citing log sections.
+  assert.ok(inRegion(h, "revBody", ".pc").length > 0);
+  revStep(h, 1);
+  assert.doesNotMatch(h.$("#revBody").innerHTML, /cited by/);
+});
+
+test("the reviews filter is its own, and a cited row opens its entry in the inspector", async () => {
+  const h = bootReviews(citedCorpus(), `#v=reviews&t=AA1&s=pr-review-PR3-20260102-r1.md`);
+  await h.settle();
+  const rpill = f => inRegion(h, "revBody", ".fpill").find(p => p.getAttribute("data-rdf") === f);
+  // A pill shows only for a status that occurs, so "all" and "open" are the two.
+  assert.deepEqual(inRegion(h, "revBody", ".fpill").map(p => p.getAttribute("data-rdf")), ["all", "open"]);
+  h.click(rpill("open"));
+  assert.equal(rpill("open").classList.contains("is-on"), true);
+  assert.equal(h.$("#scrReviews").classList.contains("is-on"), true);
+  h.click(inRegion(h, "revBody", ".dlrow")[0]);
+  assert.equal(h.$("#scrInspector").classList.contains("is-on"), true);
+  assert.match(h.$("#scrInspector").innerHTML, /\[DL-002\]/);
+  // The inspector's own filter never saw the reviews click.
+  h.click(inRegion(h, "scrInspector", ".backlink")[0]);
+  h.change(h.$("#secSel"), "sec-decision-log");
+  const ipill = f => inRegion(h, "scrInspector", ".fpill").find(p => p.getAttribute("data-dlf") === f);
+  assert.equal(ipill("all").classList.contains("is-on"), true);
+  assert.equal(ipill("open").classList.contains("is-on"), false);
 });

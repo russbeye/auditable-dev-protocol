@@ -218,7 +218,7 @@ function buildTree(){
   const main = add("div", {class: "main"}, shell);
   add("aside", {class: "rail", id: "rail"}, main);
   const stage = add("main", {class: "stage"}, main);
-  [["inspector", "scrInspector"], ["watchboard", "scrWatch"], ["ledgers", "scrLedgers"],
+  [["inspector", "scrInspector"], ["reviews", "scrReviews"], ["watchboard", "scrWatch"], ["ledgers", "scrLedgers"],
    ["calibration", "scrCalib"], ["resume pack", "scrPack"], ["new task", "scrNew"]]
     .forEach(([s, id]) => add("section", {class: "screen", "data-s": s, id}, stage));
   add("footer", {id: "foot"}, shell);

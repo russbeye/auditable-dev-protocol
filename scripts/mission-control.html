@@ -38,6 +38,7 @@
     <aside class="rail" id="rail"></aside>
     <main class="stage">
       <section class="screen" data-s="inspector" id="scrInspector"></section>
+      <section class="screen" data-s="reviews" id="scrReviews"></section>
       <section class="screen" data-s="watchboard" id="scrWatch"></section>
       <section class="screen" data-s="ledgers" id="scrLedgers"></section>
       <section class="screen" data-s="calibration" id="scrCalib"></section>
@@ -201,7 +202,7 @@
      Matching walks candidates and compares attributes instead of composing a
      selector, so a harvested value in a mark never turns into query syntax.
      A control that did not survive the rebuild simply stays unfocused. */
-  const FOCUS_MARKS = ["data-op", "data-view", "data-secstep", "data-dlf", "data-lgf", "data-lgc",
+  const FOCUS_MARKS = ["data-op", "data-view", "data-secstep", "data-revstep", "data-rf", "data-dlf", "data-rdf", "data-lgf", "data-lgc",
     "data-calc", "data-calk",
     "data-ws", "data-exp", "data-permalink", "data-t", "data-k", "data-key", "data-item",
     "data-close", "data-pk", "data-nadd", "data-ndel"];
@@ -309,22 +310,24 @@
      because two paths edit inspector DOM directly (the permalink label and
      the full-log toggles) and a compare could skip the render that resets
      them. */
-  const INSP_REGIONS = [["inspTop", "top"], ["inspNav", "nav"], ["inspBody", "body"]];
-  let inspWritten = null;
-  function paintInspector(view, tick){
-    const prev = inspWritten;
-    inspWritten = view;
-    if (!tick || !prev || !$("#inspTop")){
-      $("#scrInspector").innerHTML = INSP_REGIONS.map(([id, k]) => `<div id="${id}">${view[k]}</div>`).join("");
-      return;
-    }
-    for (const [id, k] of INSP_REGIONS){
-      if (view[k] === prev[k]) continue;
-      const el = $("#" + id);
-      if (k === "nav" && prev.nav && view.nav && patchNav(el, view.nav)) continue;
-      el.innerHTML = view[k];
-    }
+  function regionPainter(scrId, regions){
+    let written = null;
+    return (view, tick) => {
+      const prev = written;
+      written = view;
+      if (!tick || !prev || !$("#" + regions[0][0])){
+        $("#" + scrId).innerHTML = regions.map(([id, k]) => `<div id="${id}">${view[k]}</div>`).join("");
+        return;
+      }
+      for (const [id, k] of regions){
+        if (view[k] === prev[k]) continue;
+        const el = $("#" + id);
+        if (k === "nav" && prev.nav && view.nav && patchNav(el, view.nav)) continue;
+        el.innerHTML = view[k];
+      }
+    };
   }
+  const paintInspector = regionPainter("scrInspector", [["inspTop", "top"], ["inspNav", "nav"], ["inspBody", "body"]]);
   // The nav's children line up one to one across a patch, so each control
   // but the selector is swapped for its fresh twin. The selector takes the
   // fresh options and the fresh value, which is the current section.
@@ -339,6 +342,44 @@
       else was[i].replaceWith(n);
     });
     return true;
+  }
+
+  /* The decisions and watches panels build their rows here, so the
+     inspector and the reviews screen sort, chip, and highlight a cited
+     entry the same way. */
+  function decisionRows(t, shown){
+    const kindOf = d => D.decisionKind(d);
+    const confRank = {high: 3, medium: 2, low: 1};
+    return D.sortRows(shown, sortState.dec.k, sortState.dec.d, {
+      id: d => d.id, title: d => d.title, conf: d => confRank[P.dlConfKind(d.confidence)] || 0,
+      status: d => kindOf(d), watch: d => (D.coveringWatch(t, d.id) || {wid: ""}).wid,
+      cited: d => D.citingSections(t, d.id).length
+    }).map(d => {
+      // A settled row shows how its watch ended, so the empty watch column
+      // never reads as data loss once coverage has closed.
+      const sw = D.settledWatch(t, d.id);
+      return {id: d.id, title: d.title,
+        // The chip stays single-word, the same rule the DL card pills follow.
+        // The demoted prose still reads in the doc pane's confidence note row.
+        conf: P.dlChipSplit(d.confidence).word,
+        confKind: P.dlConfKind(d.confidence),
+        statusKind: kindOf(d),
+        watch: (D.coveringWatch(t, d.id) || {wid: null}).wid,
+        settled: sw && {wid: sw.wid, outcome: sw.outcome, closed: sw.closed},
+        chips: D.citingSections(t, d.id).map(k => chipModel(t, k)),
+        hl: sel.item === d.id};
+    });
+  }
+  function watchRows(t, list){
+    return D.sortRows(list, sortState.iw.k, sortState.iw.d, {
+      wid: w => w.wid, what: w => w.what, dl: w => (w.dl || []).join(","),
+      due: w => w.anchored ? D.daysUntil(w.due, today()) : Infinity,
+      state: w => D.dueState(w, today()), cited: w => D.citingSections(t, w.wid).length
+    }).map(w => ({wid: w.wid, what: w.what, dls: w.dl || [],
+      dueText: w.anchored ? w.due : (w.window || "relative"),
+      state: D.dueState(w, today()), stateLabel: D.dueLabel(w, today()),
+      chips: D.citingSections(t, w.wid).map(k => chipModel(t, k)),
+      hl: sel.item === w.wid}));
   }
 
   function renderInspector(tick){
@@ -419,6 +460,7 @@
       const sec = en && !en.missing ? pd.byKey[en.key] : null;
       const body = sec ? sec.body.join("\n") : "";
       pane = S.docPaneHtml({
+        actionHtml: reviewActionHtml(body),
         heading: en ? (en.phase != null ? "phase " + en.phase + " · " + en.title : en.title) : "—",
         badge: en && en.missing ? "missing" : en && !en.canonical ? "non-canonical" : null,
         notice: missNotice || (en && en.missing
@@ -453,40 +495,13 @@
         invalidated: items.decisions.filter(d => kindOf(d) === "invalidated").length};
       const shown = dlFilter === "all" ? items.decisions
         : items.decisions.filter(d => kindOf(d) === dlFilter);
-      const confRank = {high: 3, medium: 2, low: 1};
-      const decRows = D.sortRows(shown, sortState.dec.k, sortState.dec.d, {
-        id: d => d.id, title: d => d.title, conf: d => confRank[P.dlConfKind(d.confidence)] || 0,
-        status: d => kindOf(d), watch: d => (D.coveringWatch(t, d.id) || {wid: ""}).wid,
-        cited: d => D.citingSections(t, d.id).length
-      }).map(d => {
-        // A settled row shows how its watch ended, so the empty watch column
-        // never reads as data loss once coverage has closed.
-        const sw = D.settledWatch(t, d.id);
-        return {id: d.id, title: d.title,
-          // The chip stays single-word, the same rule the DL card pills follow.
-          // The demoted prose still reads in the doc pane's confidence note row.
-          conf: P.dlChipSplit(d.confidence).word,
-          confKind: P.dlConfKind(d.confidence),
-          statusKind: kindOf(d),
-          watch: (D.coveringWatch(t, d.id) || {wid: null}).wid,
-          settled: sw && {wid: sw.wid, outcome: sw.outcome, closed: sw.closed},
-          chips: D.citingSections(t, d.id).map(k => chipModel(t, k)),
-          hl: sel.item === d.id};
-      });
+      const decRows = decisionRows(t, shown);
       const en = entries.find(x => x.key === sel.s);
       const label = en ? en.title : "this section";
       if (items.decisions.length)
         panels += S.decisionsPanelHtml({label, sort: sortState.dec,
           pills: S.pillsHtml(counts, dlFilter), rows: decRows});
-      const wRows = D.sortRows(items.watches, sortState.iw.k, sortState.iw.d, {
-        wid: w => w.wid, what: w => w.what, dl: w => (w.dl || []).join(","),
-        due: w => w.anchored ? D.daysUntil(w.due, today()) : Infinity,
-        state: w => D.dueState(w, today()), cited: w => D.citingSections(t, w.wid).length
-      }).map(w => ({wid: w.wid, what: w.what, dls: w.dl || [],
-        dueText: w.anchored ? w.due : (w.window || "relative"),
-        state: D.dueState(w, today()), stateLabel: D.dueLabel(w, today()),
-        chips: D.citingSections(t, w.wid).map(k => chipModel(t, k)),
-        hl: sel.item === w.wid}));
+      const wRows = watchRows(t, items.watches);
       if (items.watches.length)
         panels += S.watchesPanelHtml({label, sort: sortState.iw, rows: wRows});
     }
@@ -505,6 +520,114 @@
       if (nav && nav.scrollIntoView) nav.scrollIntoView();
       paneJump = false;
     }
+  }
+
+  // ---- reviews ----
+
+  /* The reviews screen reads a ticket's prreview rounds from the served
+     corpus. The round it shows lives in revSel, apart from the inspector's
+     section, so switching tabs never strands either one. revSel is a file
+     name, which the hash carries in its s token while this screen is up. */
+  let revSel = null, revNotice = null, revDlFilter = "all";
+  let rvStale = true;
+  const paintReviews = regionPainter("scrReviews", [["revTop", "top"], ["revNav", "nav"], ["revHead", "head"], ["revBody", "body"]]);
+
+  const revTok = dir => {
+    const t = corpus && corpus.index.tickets.find(x => x.dir === dir);
+    return t ? tokenOf(t) : dir;
+  };
+  function reviewGroups(){
+    const tgt = findTarget(sel.t);
+    return tgt && tgt.kind === "ticket" && corpus.reviews ? S.reviewRounds(corpus.reviews[tgt.ticket.dir]) : [];
+  }
+  function revAt(groups){
+    for (let gi = 0; gi < groups.length; gi++){
+      const ri = groups[gi].rounds.findIndex(r => r.file === revSel);
+      if (ri >= 0) return {gi, ri};
+    }
+    return null;
+  }
+
+  // A pointer section in the inspector gets a link to its round, when the
+  // file it names is a round the corpus holds.
+  // A row or chip in a reviews panel names a log entry, and the log lives in
+  // the inspector, so following one moves the reader there.
+  function toInspector(){
+    if (selScreen !== "reviews") return;
+    selScreen = "inspector";
+    render();
+  }
+
+  function reviewActionHtml(body){
+    const ref = S.reviewFileRef(body);
+    if (!ref || !corpus || !corpus.reviews || !(corpus.reviews[ref.dir] || []).some(f => f.file === ref.file)) return "";
+    return `<p class="revopen">` + S.reviewLinkHtml(revTok(ref.dir), ref.file, "open round in reviews ›") + `</p>`;
+  }
+
+  function renderReviews(tick){
+    if (selScreen !== "reviews"){ rvStale = true; return; }
+    rvStale = false;
+    const keep = focusMark(document.activeElement);
+    const tgt = findTarget(sel.t);
+    const top = sub => `<h2>reviews${sub ? ` <span class="isub">${P.esc(sub)}</span>` : ""}</h2>`;
+    const empty = (sub, text) => paintReviews({top: top(sub), nav: "", head: "",
+      body: `<div class="ipanel">` + (revNotice ? `<p class="dnotice">${P.esc(revNotice)}</p>` : "")
+        + `<p class="dnotice">${P.esc(text)}</p></div>`}, tick);
+    if (!tgt || tgt.kind !== "ticket"){
+      empty(null, tgt ? "an opened document has no review files. The reviews screen reads rounds from the served corpus."
+        : corpus ? "select a ticket from the rail to read its review rounds."
+        : "no corpus behind this page. The reviews screen reads review files from the served corpus.");
+      refocus(keep);
+      return;
+    }
+    const t = tgt.ticket;
+    const groups = reviewGroups();
+    if (!groups.length){
+      empty(t.dir, "this ticket has no review files. prreview writes pr-review-*.md beside the audit log.");
+      refocus(keep);
+      return;
+    }
+    let at = revAt(groups);
+    if (!at){
+      if (revSel) revNotice = `round "${revSel}" was not found in this ticket. The screen shows the latest round.`;
+      // The latest round is the highest k, because prreview numbers rounds
+      // across the whole directory.
+      let best = {gi: 0, ri: 0, k: -1};
+      groups.forEach((g, gi) => g.rounds.forEach((r, ri) => { if (r.k > best.k) best = {gi, ri, k: r.k}; }));
+      at = best;
+      revSel = groups[at.gi].rounds[at.ri].file;
+    }
+    const r = groups[at.gi].rounds[at.ri];
+    const notices = revNotice ? [revNotice] : [];
+    let fields = null, prior = [];
+    if (r.error != null) notices.push(`${r.file} is listed in the corpus but could not be read.`);
+    else {
+      const h = S.reviewHead(r.text);
+      fields = h.fields;
+      if (!fields) notices.push("this round has no Review Verdict section yet. The head shows what the file name carries.");
+      else if (h.missing.length) notices.push(`the Review Verdict section lacks ${h.missing.join(", ")}.`);
+      prior = S.priorReviews(r.text, t.dir).map(p => Object.assign({tok: revTok(p.dir)}, p));
+    }
+    // The round cites decisions and watches the way a log section does, so
+    // it gets the inspector's two panels under the body.
+    const title = groups[at.gi].label + " · round " + r.k;
+    let panels = "";
+    if (r.error == null){
+      const items = S.reviewItems(t, r.text);
+      const kindOf = d => D.decisionKind(d);
+      const counts = {all: items.decisions.length};
+      for (const k of ["open", "validated", "invalidated"]) counts[k] = items.decisions.filter(d => kindOf(d) === k).length;
+      const shown = revDlFilter === "all" ? items.decisions : items.decisions.filter(d => kindOf(d) === revDlFilter);
+      if (items.decisions.length)
+        panels += S.decisionsPanelHtml({label: title, sort: sortState.dec,
+          pills: S.pillsHtml(counts, revDlFilter, "data-rdf"), rows: decisionRows(t, shown)});
+      if (items.watches.length)
+        panels += S.watchesPanelHtml({label: title, sort: sortState.iw, rows: watchRows(t, items.watches)});
+    }
+    paintReviews({top: top(t.dir), nav: S.reviewNavHtml(groups, at.gi, at.ri),
+      head: S.reviewHeadHtml({title, date: r.date, fields, notices, prior, dir: t.dir}),
+      body: r.error != null ? "" : S.reviewBodyHtml(r.text, {ledger: S.reviewLedger(groups[at.gi].rounds), tok: revTok(t.dir)}) + panels}, tick);
+    refocus(keep);
   }
 
   // ---- watchboard ----
@@ -1043,8 +1166,11 @@
     // its corpus rides along until the reader selects something.
     if (booting) return;
     const pend = !sel.t && pendingSel && pendingSel.t ? pendingSel : sel;
+    // The reviews screen puts its round in the s token, and an item means
+    // nothing there.
+    const rev = selScreen === "reviews" && pend === sel;
     const h = S.hashWrite({v: selScreen === "inspector" ? null : selScreen,
-      t: pend.t, s: pend.s, item: pend.item});
+      t: pend.t, s: rev ? revSel : pend.s, item: rev ? null : pend.item});
     // An empty composition clears the hash. Keeping the old one would leave
     // a stale view token standing, and a reload would land on a screen the
     // reader already left.
@@ -1054,7 +1180,7 @@
   // A poll passes tick, and only the inspector reads it. The other screens
   // already skip their hidden rebuilds.
   function renderAll(tick){
-    render(); renderRail(); renderInspector(tick); renderWatch(); renderLedgers(); renderCalib(); renderPack(); syncHash();
+    render(); renderRail(); renderInspector(tick); renderReviews(tick); renderWatch(); renderLedgers(); renderCalib(); renderPack(); syncHash();
   }
 
   // ---- opened documents ----
@@ -1188,7 +1314,7 @@
      is no server to answer, and every tick would warn. A hidden tab never
      polls either, because a full corpus fetch for a page nobody is looking
      at buys nothing; the first tick after the tab is shown catches up. */
-  const sigOf = c => JSON.stringify([c.index.generated, c.index.tickets, c.texts, c.prompts]);
+  const sigOf = c => JSON.stringify([c.index.generated, c.index.tickets, c.texts, c.prompts, c.reviews]);
   async function pollCorpus(){
     if (corpusLoading || location.protocol === "file:" || document.visibilityState === "hidden") return;
     corpusLoading = true;
@@ -1220,7 +1346,8 @@
     if (pendingSel){
       if (pendingSel.t && !sel.t){
         const tgt = findTarget(pendingSel.t);
-        if (tgt) sel = {t: pendingSel.t, s: pendingSel.s, item: pendingSel.item};
+        if (tgt && viewToken() === "reviews"){ sel = {t: tgt.key, s: null, item: null}; revSel = pendingSel.s; }
+        else if (tgt) sel = {t: pendingSel.t, s: pendingSel.s, item: pendingSel.item};
         else bootNotice = `ticket "${pendingSel.t}" is not in this corpus.`;
       }
       pendingSel = null;
@@ -1308,6 +1435,7 @@
     st.d = st.k === k ? -st.d : 1; st.k = k;
     tk === "wb" ? renderWatch()
       : tk === "la" ? renderLedgers()
+      : selScreen === "reviews" ? renderReviews()
       : renderInspector();
   }
 
@@ -1336,6 +1464,7 @@
       selScreen = tab.getAttribute("data-s");
       setMenu(false);
       render();
+      if (selScreen === "reviews" && rvStale) renderReviews();
       if (selScreen === "watchboard" && wbStale) renderWatch();
       if (selScreen === "ledgers" && lgStale) renderLedgers();
       if (selScreen === "calibration" && cbStale) renderCalib();
@@ -1356,7 +1485,8 @@
     if (rentry){
       sel = {t: rentry.getAttribute("data-key"), s: null, item: null};
       dlFilter = "all"; missNotice = null; fullClosed.clear();
-      if (selScreen !== "resume pack") selScreen = "inspector";
+      revSel = null; revNotice = null; revDlFilter = "all";
+      if (selScreen !== "resume pack" && selScreen !== "reviews") selScreen = "inspector";
       renderAll();
       return;
     }
@@ -1373,7 +1503,7 @@
     if (lnk){
       try{ navigator.clipboard.writeText(location.href); }catch(err){}
       lnk.textContent = "copied";
-      setTimeout(() => renderInspector(), 900);
+      setTimeout(() => selScreen === "reviews" ? renderReviews() : renderInspector(), 900);
       return;
     }
     const pill = hit(".fpill");
@@ -1387,13 +1517,32 @@
       if (ws){ wbShow.has(ws) ? wbShow.delete(ws) : wbShow.add(ws); renderWatch(); }
       else if (lgf){ lgFilter = lgf; renderLedgers(); }
       else if (lgc){ lgConf = lgc; renderLedgers(); }
+      else if (pill.getAttribute("data-rdf")){ revDlFilter = pill.getAttribute("data-rdf"); renderReviews(); }
       else { dlFilter = pill.getAttribute("data-dlf"); renderInspector(); }
       return;
     }
     const seg = hit(".calseg");
     if (seg){ openLedgerCell(seg); return; }
     const pc = hit(".pc");
-    if (pc){ sel.s = pc.getAttribute("data-key"); sel.item = null; missNotice = null; paneJump = true; renderInspector(); syncHash(); return; }
+    if (pc){ toInspector(); sel.s = pc.getAttribute("data-key"); sel.item = null; missNotice = null; paneJump = true; renderInspector(); syncHash(); return; }
+    const rvl = hit(".rvl");
+    if (rvl){
+      // Routing stays in-page, like the board's links. A link into a ticket
+      // the corpus lacks keeps the current selection and says why.
+      if (e.preventDefault) e.preventDefault();
+      const tgt = findTarget(rvl.getAttribute("data-t"));
+      if (!tgt) revNotice = `ticket "${rvl.getAttribute("data-t")}" is not in this corpus.`;
+      else {
+        if (tgt.key !== sel.t){
+          sel = {t: tgt.key, s: null, item: null};
+          dlFilter = "all"; revDlFilter = "all"; missNotice = null; fullClosed.clear();
+        }
+        revSel = rvl.getAttribute("data-rf"); revNotice = null;
+      }
+      selScreen = "reviews";
+      renderAll();
+      return;
+    }
     const wbl = hit(".wbl");
     if (wbl){
       // The href exists so the keyboard can reach the link; routing stays
@@ -1410,6 +1559,7 @@
     }
     const wl = hit(".wl");
     if (wl){
+      toInspector();
       sel.item = wl.getAttribute("data-item");
       if (I.RE_OT.test(sel.item)){
         const tgt = findTarget(sel.t);
@@ -1436,7 +1586,7 @@
     const sth = hit(".sth");
     if (sth){ thSort(sth); return; }
     const dlrow = hit(".dlrow");
-    if (dlrow){ sel.item = dlrow.getAttribute("data-dl"); paneJump = true; renderInspector(); syncHash(); return; }
+    if (dlrow){ toInspector(); sel.item = dlrow.getAttribute("data-dl"); paneJump = true; renderInspector(); syncHash(); return; }
     const nadd = hit(".nt-add");
     if (nadd){ ntAddRow(nadd.getAttribute("data-nadd")); return; }
     const ndel = hit(".nt-del");
@@ -1468,7 +1618,12 @@
         else if (nop === "ntyaml"){ nt.showYaml = !nt.showYaml; renderNew(); if (nt.showYaml) $("#ntYaml").scrollIntoView(); }
         return;
       }
-      if (op.getAttribute("data-secstep")){
+      if (op.getAttribute("data-revstep")){
+        const groups = reviewGroups(), at = revAt(groups);
+        if (!at) return;
+        const rounds = groups[at.gi].rounds, i = at.ri + Number(op.getAttribute("data-revstep"));
+        if (i >= 0 && i < rounds.length){ revSel = rounds[i].file; revNotice = null; renderReviews(); syncHash(); }
+      } else if (op.getAttribute("data-secstep")){
         const tgt = findTarget(sel.t);
         if (!tgt) return;
         const entries = entriesOf(tgt);
@@ -1502,6 +1657,14 @@
   });
 
   document.addEventListener("change", e => {
+    // A PR switch lands on that PR's latest round.
+    if (e.target.id === "revSel" || e.target.id === "revPr"){
+      const g = e.target.id === "revPr" ? reviewGroups().find(x => x.pr === e.target.value) : null;
+      revSel = g ? g.rounds[g.rounds.length - 1].file : e.target.value;
+      revNotice = null;
+      renderReviews(); syncHash();
+      return;
+    }
     if (e.target.id === "secSel"){
       sel.s = e.target.value; sel.item = null; missNotice = null;
       if (viewMode === "full") fullJump = sel.s;
