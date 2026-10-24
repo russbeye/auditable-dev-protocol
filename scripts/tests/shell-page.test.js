@@ -4197,3 +4197,33 @@ test("the reviews filter is its own, and a cited row opens its entry in the insp
   assert.equal(ipill("all").classList.contains("is-on"), true);
   assert.equal(ipill("open").classList.contains("is-on"), false);
 });
+
+test("a column sort on one screen reaches the other screen's cited table the next time it shows", async () => {
+  const texts = {[`${AA1}/audit-log.md`]: LOG, [`${AA1}/pr-review-PR3-20260102-r1.md`]: review({pr: 3, k: 1, dir: AA1,
+    findings: card("PR-COR-001") + "\n- **Refs:** DL-001, DL-002"})};
+  const listing = {root: "demo", files: Object.keys(texts).sort()};
+  const h = bootReviews({fetch: u => corpusFetch(listing, texts)(u)}, `#t=AA1&s=sec-decision-log`);
+  await h.settle();
+  const ids = id => inRegion(h, id, ".dlrow").map(r => r.getAttribute("data-dl")).join(",");
+  const idTh = id => inRegion(h, id, ".sth").find(t => t.getAttribute("data-t") === "dec" && t.getAttribute("data-k") === "id");
+  assert.equal(ids("scrInspector"), "DL-001,DL-002");
+  h.click(tabFor(h, "reviews"));
+  h.click(idTh("revBody"));
+  assert.equal(ids("revBody"), "DL-002,DL-001");
+  h.click(tabFor(h, "inspector"));
+  assert.equal(ids("scrInspector"), "DL-002,DL-001");
+  assert.equal(idTh("scrInspector").getAttribute("aria-sort"), "descending");
+  // One click on the inspector's header reverses what it shows.
+  h.click(idTh("scrInspector"));
+  assert.equal(ids("scrInspector"), "DL-001,DL-002");
+  h.click(tabFor(h, "reviews"));
+  assert.equal(ids("revBody"), "DL-001,DL-002");
+  assert.equal(idTh("revBody").getAttribute("aria-sort"), "ascending");
+});
+
+test("a severity word that names an Object member takes the fallback class", () => {
+  const text = review({pr: 9, k: 1, dir: RV2, findings: card("PR-COR-001", {severity: "constructor"})});
+  const html = S.reviewBodyHtml(text, {ledger: {}, tok: "RV2"});
+  assert.match(html, /<span class="pill dl-pill p-low"><i>severity<\/i>constructor<\/span>/);
+  assert.doesNotMatch(html, /function/);
+});

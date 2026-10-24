@@ -1329,7 +1329,7 @@
     }
     let pills = "", rail = "";
     if (sev){
-      const s = P.dlChipSplit(sev), cls = SEVERITY_PILL[s.word.toLowerCase()];
+      const s = P.dlChipSplit(sev), cls = Object.hasOwn(SEVERITY_PILL, s.word.toLowerCase()) ? SEVERITY_PILL[s.word.toLowerCase()] : "";
       const note = cls ? s.tail : s.tail ? sev.trim() : "";
       pills += revPill("severity", cls || "p-low", s.word);
       if (note) rows.push(revRow("severity note", revText(note)));

@@ -383,6 +383,7 @@
   }
 
   function renderInspector(tick){
+    inStale = false;
     const scr = $("#scrInspector");
     const keep = focusMark(document.activeElement);
     /* A paste draft lives only in the textarea, so any rebuild — a watched
@@ -530,6 +531,11 @@
      name, which the hash carries in its s token while this screen is up. */
   let revSel = null, revNotice = null, revDlFilter = "all";
   let rvStale = true;
+  // The inspector and the reviews screen share the decisions sort and the
+  // watches sort. A sort on one screen marks the other stale, and we rebuild
+  // the other screen when its tab shows it. We don't rebuild both at once,
+  // because refocus would land on the hidden screen's twin header.
+  let inStale = false;
   const paintReviews = regionPainter("scrReviews", [["revTop", "top"], ["revNav", "nav"], ["revHead", "head"], ["revBody", "body"]]);
 
   const revTok = dir => {
@@ -1435,8 +1441,8 @@
     st.d = st.k === k ? -st.d : 1; st.k = k;
     tk === "wb" ? renderWatch()
       : tk === "la" ? renderLedgers()
-      : selScreen === "reviews" ? renderReviews()
-      : renderInspector();
+      : selScreen === "reviews" ? (renderReviews(), inStale = true)
+      : (renderInspector(), rvStale = true);
   }
 
   document.addEventListener("keydown", e => {
@@ -1464,6 +1470,7 @@
       selScreen = tab.getAttribute("data-s");
       setMenu(false);
       render();
+      if (selScreen === "inspector" && inStale) renderInspector();
       if (selScreen === "reviews" && rvStale) renderReviews();
       if (selScreen === "watchboard" && wbStale) renderWatch();
       if (selScreen === "ledgers" && lgStale) renderLedgers();
