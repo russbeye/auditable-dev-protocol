@@ -611,7 +611,7 @@
     return findings;
   }
 
-  const ADPIndexBuilder = {ADVISORY_KINDS, buildIndex, lintCorpus, parseDirName, isLogPath};
+  const ADPIndexBuilder = {ADVISORY_KINDS, buildIndex, lintCorpus, parseDirName, isLogPath, harvestTokens, withoutFences};
   if (isNode){ module.exports = ADPIndexBuilder; }
   else { global.ADPIndexBuilder = ADPIndexBuilder; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -207,6 +207,22 @@ html{scrollbar-gutter:auto}
 .ncbadge{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;border:1px dashed var(--warn);
   color:var(--warn);padding:1px 6px;text-transform:uppercase}
 .dnotice{font-size:12px;color:var(--dim);font-style:italic;margin:0 0 8px}
+/* The reviews screen's head sits above the rendered round. A round file name
+   is one long token, so a link breaks anywhere rather than widen the stage. */
+.revhead{margin:0 0 14px}
+.revhead .tickhead{margin-top:0}
+.revfields{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:0 0 8px;font-size:12px}
+.revfields dt{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.revfields dd{margin:0;color:var(--ink);overflow-wrap:anywhere}
+.revprior,.revopen{font-size:12px;color:var(--dim);margin:0 0 8px}
+.rvl{font-family:var(--mono);color:var(--accent);cursor:pointer;overflow-wrap:anywhere}
+/* The round body reuses the Decision Log card. A review label such as
+   "Confidence basis" outgrows the card's fixed 150px column, so the column
+   sizes to its longest label, up to 220px, and a label wraps there. */
+.revgrid{grid-template-columns:fit-content(220px) minmax(0,1fr)}
+.revk{white-space:normal}
+.revv{min-width:0;overflow-wrap:anywhere}
+@media(max-width:560px){.revgrid{grid-template-columns:minmax(0,1fr)}}
 .rawpre{font-family:var(--mono);font-size:11px;color:var(--dim);white-space:pre-wrap;
   overflow-x:auto;margin:0;max-height:420px;overflow-y:auto}
 

@@ -17,11 +17,12 @@
   const D = isNode ? require("./adp-derive-lib.js") : global.ADPDeriveLib;
   const esc = P.esc, escAttr = P.escAttr;
 
-  /* The six screens are the accepted product enumeration from the mockup.
-     The first five render as tabs. "new task" lights the accent button
-     instead, so it never sits in the tab strip. */
-  const SCREENS = ["inspector", "watchboard", "ledgers", "calibration", "resume pack", "new task"];
-  const TAB_SCREENS = SCREENS.slice(0, 5);
+  /* The seven screens are the accepted product enumeration from the mockup,
+     plus reviews beside the inspector. The first six render as tabs. "new
+     task" lights the accent button instead, so it never sits in the tab
+     strip. */
+  const SCREENS = ["inspector", "reviews", "watchboard", "ledgers", "calibration", "resume pack", "new task"];
+  const TAB_SCREENS = SCREENS.slice(0, 6);
 
   // IDX-004 wants a calendar-true YYYY-MM-DD. We compose it from local date
   // parts, because a UTC composition would date a late-evening build tomorrow.
@@ -103,6 +104,16 @@
     });
   }
 
+  // prreview names a round pr-review-PR<n>-<YYYYMMDD>-r<k>.md, or
+  // pr-review-local-… in branch mode, and writes it beside the audit log.
+  const REVIEW_NAME = /^pr-review-(PR(\d+)|local)-(\d{4})(\d{2})(\d{2})-r(\d+)\.md$/;
+  function reviewPaths(files){
+    return (files || []).filter(p => {
+      const parts = String(p).replace(/^\.\//, "").split("/");
+      return parts.length === 2 && parts[0] !== "" && REVIEW_NAME.test(parts[1]);
+    });
+  }
+
   // The server decodes percent escapes, so a raw path with a hash or a
   // percent sign would come out as a different file. We encode each segment
   // and keep the slashes as route separators.
@@ -149,18 +160,29 @@
       // still resolves. We fill the map in listing order after every fetch
       // settles. The page compares whole corpora as JSON, so a map filled in
       // network order would read as a change on every poll tick.
-      const paths = promptPaths(listing.files);
-      const got = await Promise.all(paths.map(async p => {
+      const fetchAlone = async p => {
         try{
           const res = await fetchFn(corpusUrl(p));
           return res && res.ok ? {text: await res.text()} : {error: "unreadable"};
         }catch(e){
           return {error: "unreadable"};
         }
-      }));
+      };
+      const paths = promptPaths(listing.files);
+      const got = await Promise.all(paths.map(fetchAlone));
       const prompts = {};
       paths.forEach((p, i) => { prompts[p.replace(/^\.\//, "").split("/")[0]] = got[i]; });
-      return {index, texts, files, prompts};
+      // Review rounds are display data too, under the same rule. Promise.all
+      // hands results back in listing order, and the server sorts the
+      // listing, so the map reads the same on every tick.
+      const rpaths = reviewPaths(listing.files);
+      const rgot = await Promise.all(rpaths.map(fetchAlone));
+      const reviews = {};
+      rpaths.forEach((p, i) => {
+        const [dir, file] = p.replace(/^\.\//, "").split("/");
+        (reviews[dir] = reviews[dir] || []).push(Object.assign({file}, rgot[i]));
+      });
+      return {index, texts, files, prompts, reviews};
     }catch(e){
       // The chrome renders every failure as no-corpus, so the console keeps
       // the one trace that says which file or shape broke the load.
@@ -242,13 +264,14 @@
 
   const permalink = `<button type="button" class="lnk" data-permalink="1" title="copy link to this view">⧉ link</button>`;
 
-  // m.bodyHtml is parser-lib output and lands unescaped by design; every
-  // other field is text.
+  // m.bodyHtml is parser-lib output and m.actionHtml is a builder's markup,
+  // so both land unescaped by design. Every other field is text.
   function docPaneHtml(m){
     return `<div class="doc">`
       + (m.back ? `<div class="backrow"><a class="backlink">← back to ${esc(m.back)}</a></div>` : "")
       + `<h4>${esc(m.heading)}${m.badge ? ` <span class="ncbadge">${esc(m.badge)}</span>` : ""} ${permalink}</h4>`
       + (m.notice ? `<p class="dnotice">${esc(m.notice)}</p>` : "")
+      + (m.actionHtml || "")
       + (m.bodyHtml || "")
       + `</div>`;
   }
@@ -1145,10 +1168,250 @@
       + `<div class="ipanel nt-side" id="ntSide">${builderSideHtml(m)}</div></div>`;
   }
 
+  // ---- the reviews screen ----
+
+  /* A ticket's rounds, grouped by PR. prreview numbers k across the whole
+     ticket directory, so a PR's first round here can carry a k above 1. We
+     sort by the number, because a string sort puts r10 before r2. The groups
+     follow the first round each one holds. */
+  function reviewRounds(list){
+    const groups = [];
+    for (const f of list || []){
+      const m = REVIEW_NAME.exec(f.file);
+      if (!m) continue;
+      let g = groups.find(x => x.pr === m[1]);
+      if (!g){ g = {pr: m[1], label: m[2] ? "PR #" + m[2] : "local", rounds: []}; groups.push(g); }
+      g.rounds.push({file: f.file, k: Number(m[6]), date: `${m[3]}-${m[4]}-${m[5]}`,
+        text: f.text, error: f.error});
+    }
+    for (const g of groups) g.rounds.sort((a, b) => a.k - b.k);
+    return groups.sort((a, b) => a.rounds[0].k - b.rounds[0].k);
+  }
+
+  const VERDICT_FIELDS = [["verdict", "Verdict"], ["confidence", "Confidence"], ["counts", "Counts"],
+    ["opened", "Opened"], ["closed", "Closed"], ["carried", "Carried open"]];
+  // The head reads the Review Verdict fields by their labels. A round still
+  // being written has no verdict yet, so a gap is a notice and never an error.
+  function reviewHead(text){
+    const sec = P.parseSections(String(text || "")).secs.find(s => s.title.trim() === "Review Verdict");
+    if (!sec) return {fields: null, missing: VERDICT_FIELDS.map(f => f[1])};
+    const got = {};
+    for (const f of P.parseDLFields(sec.body)) if (f.label && !(f.label in got)) got[f.label] = f.value;
+    const out = {fields: {}, missing: []};
+    for (const [k, label] of VERDICT_FIELDS){
+      if (got[label]) out.fields[k] = got[label];
+      else out.missing.push(label);
+    }
+    return out;
+  }
+
+  /* The Inspected table names earlier rounds as bare file names or as
+     .adp/<dir>/<file> paths. A bare name lives in the same ticket. A path can
+     point into another ticket, which is how a PR that moved between tasks
+     keeps its trail. */
+  function priorReviews(text, dir){
+    const row = String(text || "").split("\n").find(l => /^\|\s*Prior review files\s*\|/.test(l));
+    if (!row) return [];
+    const out = [];
+    for (const tok of (row.split("|")[2] || "").split(/[,\s`]+/)){
+      const parts = tok.replace(/^\.\//, "").replace(/^\.adp\//, "").split("/").filter(Boolean);
+      const file = parts.pop();
+      if (!file || parts.length > 1 || !REVIEW_NAME.test(file)) continue;
+      out.push({dir: parts[0] || dir, file});
+    }
+    return out;
+  }
+
+  // A pointer section names its round in a Review file field. We read the
+  // field and not the heading, so an older section with no file gets no link.
+  function reviewFileRef(body){
+    const m = String(body || "").match(/^\s*[-*+]?\s*\*\*Review file:\*\*\s*`?([^`\s]+)`?/m);
+    if (!m) return null;
+    const parts = m[1].replace(/^\.\//, "").replace(/^\.adp\//, "").split("/");
+    return parts.length === 2 && REVIEW_NAME.test(parts[1]) ? {dir: parts[0], file: parts[1]} : null;
+  }
+
+  // The PR select joins the row only when the ticket holds more than one PR.
+  function reviewNavHtml(groups, gi, ri){
+    const g = groups[gi];
+    const prSel = groups.length > 1
+      ? `<select id="revPr" class="secsel" aria-label="pull request">` + groups.map((x, i) =>
+        `<option value="${escAttr(x.pr)}"${i === gi ? " selected" : ""}>${esc(x.label)}</option>`).join("") + `</select>`
+      : "";
+    const opts = g.rounds.map((r, i) =>
+      `<option value="${escAttr(r.file)}"${i === ri ? " selected" : ""}>${esc("round " + r.k + " · " + r.date)}</option>`).join("");
+    return `<div class="secnav">` + prSel
+      + `<button type="button" class="op" data-revstep="-1"${ri <= 0 ? " disabled" : ""}>‹ prev</button>`
+      + `<select id="revSel" class="secsel" aria-label="round">${opts}</select>`
+      + `<button type="button" class="op" data-revstep="1"${ri >= g.rounds.length - 1 ? " disabled" : ""}>next ›</button></div>`;
+  }
+
+  // A round link is an in-page hash, so its href never carries a URL that
+  // came out of a review file. The tok is the ticket's rail token.
+  function reviewLinkHtml(tok, file, label){
+    return `<a class="rvl" href="${escAttr(hashWrite({v: "reviews", t: tok, s: file}))}" data-t="${escAttr(tok)}" data-rf="${escAttr(file)}">${esc(label)}</a>`;
+  }
+
+  function reviewHeadHtml(m){
+    const f = m.fields || {};
+    const chits = [m.date].concat(m.fields ? [f.verdict, f.confidence] : []).filter(Boolean);
+    const dd = (k, v) => `<dt>${esc(k)}</dt><dd>${esc(v || "—")}</dd>`;
+    return `<div class="revhead"><div class="tickhead"><span class="tbig">${esc(m.title)}</span>`
+      + chits.map(c => `<span class="chit">${esc(c)}</span>`).join("") + ` ${permalink}</div>`
+      + m.notices.map(n => `<p class="dnotice">${esc(n)}</p>`).join("")
+      + (m.fields ? `<dl class="revfields">${dd("counts", f.counts)}${dd("opened", f.opened)}`
+        + `${dd("closed", f.closed)}${dd("carried open", f.carried)}</dl>` : "")
+      + (m.prior.length ? `<p class="revprior">earlier rounds: ` + m.prior.map(p =>
+        reviewLinkHtml(p.tok || p.dir, p.file, p.file + (p.dir === m.dir ? "" : " · " + p.dir))).join(", ") + `</p>` : "")
+      + `</div>`;
+  }
+
+  /* A round cites decisions and watches by the same id tokens a log section
+     does, so we scan it with the index builder's own harvest. Only ids the
+     ticket defines count, which drops a token that names another ticket's
+     entry or a placeholder. */
+  function reviewItems(t, text){
+    const toks = B.harvestTokens(B.withoutFences(String(text || "")), false);
+    return {decisions: t.decisions.filter(d => toks.includes(d.id)),
+      watches: t.watches.filter(w => toks.includes(w.wid))};
+  }
+
+  /* prreview never edits a finding card after its round. A later round closes
+     the finding with a ledger line under Prior Findings instead, so the card's
+     own Status stays OPEN forever. We read the closures of a whole PR group,
+     in round order, so a card can show where its finding ended up. */
+  const REVIEW_LEDGER = /^\s*[-*+]\s+\*\*(PR-[A-Z]+-\d+)\s+CLOSED\s+(\d{4}-\d{2}-\d{2})\s*→\s*([A-Z]+)\.?\*\*\s*(.*)$/;
+  function ledgerRows(lines){
+    const rows = [];
+    let clean = true;
+    for (const l of lines){
+      if (!l.trim()) continue;
+      const m = REVIEW_LEDGER.exec(l);
+      if (m) rows.push({id: m[1], date: m[2], outcome: m[3], note: m[4]});
+      else clean = false;
+    }
+    return {rows, clean};
+  }
+  function reviewLedger(rounds){
+    const out = {};
+    for (const r of rounds || []){
+      if (r.text == null) continue;
+      const sec = P.parseSections(String(r.text)).secs.find(s => s.title.trim() === "Prior Findings");
+      for (const row of sec ? ledgerRows(sec.body).rows : []) out[row.id] = Object.assign({file: r.file, k: r.k}, row);
+    }
+    return out;
+  }
+
+  // Both maps are closed, so a word from a review file picks a class but
+  // never writes into the attribute that carries it.
+  const SEVERITY_PILL = {must: "p-high", should: "p-med", question: "p-unk", nit: "p-low"};
+  const OUTCOME_PILL = {RESOLVED: ["p-ok", "rail-ok"], ACCEPTED: ["p-unk", "rail-unk"], REFUTED: ["p-low", ""]};
+  const revPill = (kind, cls, word) => `<span class="pill dl-pill ${cls}"><i>${kind}</i>${esc(word)}</span>`;
+  const revRow = (label, html) => `<div class="dl-row"><span class="dl-k revk">${esc(label)}</span><span class="dl-v revv">${html}</span></div>`;
+  const revText = v => P.decorate(P.inline(v));
+
+  /* A finding card follows the Decision Log card. The severity, confidence,
+     and status move into the head as pills, and every other field keeps its
+     row. The status pill shows the ledger's closure when one exists, and the
+     card's written Status only when no later round closed the finding. */
+  function findingCardHtml(entry, m){
+    const hm = entry.head.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
+    const id = hm ? hm[1].trim() : "", title = hm ? hm[2].trim() : entry.head;
+    const split = P.dlSplitBody(entry.lines);
+    let sev = "", conf = "", status = "";
+    const rows = [];
+    for (const f of P.parseDLFields(split.fieldLines)){
+      const k = f.label.toLowerCase();
+      if (k === "severity") sev = f.value;
+      else if (k === "confidence") conf = f.value;
+      else if (k === "status") status = f.value;
+      else rows.push(revRow(f.label, revText(f.value)));
+    }
+    let pills = "", rail = "";
+    if (sev){
+      const s = P.dlChipSplit(sev), cls = Object.hasOwn(SEVERITY_PILL, s.word.toLowerCase()) ? SEVERITY_PILL[s.word.toLowerCase()] : "";
+      const note = cls ? s.tail : s.tail ? sev.trim() : "";
+      pills += revPill("severity", cls || "p-low", s.word);
+      if (note) rows.push(revRow("severity note", revText(note)));
+    }
+    if (conf){
+      const c = P.dlConfPill(conf);
+      pills += c.html;
+      if (c.note) rows.push(revRow("confidence note", revText(c.note)));
+    }
+    const closed = id && m.ledger && m.ledger[id];
+    if (closed){
+      const [cls, r] = OUTCOME_PILL[closed.outcome] || ["p-low", ""];
+      pills += revPill("status", cls, closed.outcome);
+      rail = r;
+      rows.push(revRow("closed", esc(closed.date) + " in " + reviewLinkHtml(m.tok, closed.file, "round " + closed.k)
+        + (closed.note ? " · " + revText(closed.note) : "")));
+    } else if (status){
+      const st = P.dlStatusPill(status);
+      pills += st.html;
+      rail = P.dlRail(status);
+      if (st.note) rows.push(revRow("status note", revText(st.note)));
+    }
+    const trail = split.trailing ? `<div class="md dl-trail">${P.renderMarkdown(split.trailing)}</div>` : "";
+    return `<div class="dl-card ${rail}"><div class="dl-head"><span class="dl-id">${id ? esc(id) : "—"}</span>`
+      + `<span class="dl-title">${revText(title)}</span><span class="dl-pills">${pills}</span></div>`
+      + (rows.length ? `<div class="dl-grid revgrid">${rows.join("")}</div>` : "") + trail + `</div>`;
+  }
+
+  // A labelled field list becomes a ruled grid. Any line that is not a field
+  // sends the section back to markdown, so nothing in it goes missing.
+  function fieldGridHtml(lines){
+    const split = P.dlSplitBody(lines);
+    const fields = P.parseDLFields(split.fieldLines);
+    if (!fields.length || split.trailing || fields.some(f => !f.label)) return null;
+    return `<div class="dl-card revcard"><div class="dl-grid revgrid">` + fields.map(f => revRow(f.label, revText(f.value))).join("") + `</div></div>`;
+  }
+
+  function ledgerHtml(lines){
+    const {rows, clean} = ledgerRows(lines);
+    if (!rows.length || !clean) return null;
+    return `<div class="dl-card revcard"><div class="dl-grid revgrid">` + rows.map(r => {
+      const [cls] = OUTCOME_PILL[r.outcome] || ["p-low"];
+      return revRow(r.id, revPill("closed", cls, r.outcome) + " " + esc(r.date) + (r.note ? " · " + revText(r.note) : ""));
+    }).join("") + `</div></div>`;
+  }
+
+  /* The round body renders section by section, one doc panel each, the way
+     the inspector shows a log section. Review Target, Review Verdict,
+     Findings, and Prior Findings carry prreview's field grammar, so they
+     become cards. Every other section, and any section that breaks the
+     grammar, renders as markdown exactly as the file reads. Every panel body
+     sits inside the md block, as the inspector's cards do, so a code span or
+     a link inside a card takes the same style as one in prose. The file's H1
+     repeats what the round head already says, so we drop it. m.ledger comes
+     from reviewLedger over the round's PR group, and m.tok is the ticket's
+     rail token for the links to closing rounds. */
+  function reviewBodyHtml(text, m){
+    const md = h => `<div class="md">${h}</div>`;
+    const panel = (title, html) => `<div class="doc">${title ? `<h4>${esc(title)}</h4>` : ""}${html}</div>`;
+    const doc = P.parseSections(String(text || ""));
+    if (doc.front != null) return `<div class="revdoc">${panel("", md(P.renderMarkdown(String(text))))}</div>`;
+    const intro = doc.intro.replace(/^#\s.*\n?/, "").trim();
+    let html = intro ? panel("", md(P.renderMarkdown(intro))) : "";
+    for (const sec of doc.secs){
+      const t = sec.title.trim(), body = sec.body.join("\n");
+      let part = null;
+      if (t === "Review Target" || t === "Review Verdict") part = fieldGridHtml(sec.body);
+      else if (t === "Prior Findings") part = ledgerHtml(sec.body);
+      else if (t === "Findings"){
+        const {pre, entries} = P.parseDLEntries(body);
+        if (entries.length) part = (pre ? P.renderMarkdown(pre) : "") + `<div class="dl-cards">${entries.map(e => findingCardHtml(e, m || {})).join("")}</div>`;
+      }
+      html += panel(t, md(part != null ? part : P.renderMarkdown(body)));
+    }
+    return `<div class="revdoc">${html}</div>`;
+  }
+
   const ADPShellLib = {NT_SWITCHES, SCREENS, TAB_SCREENS, localDate, tabsHtml, footerText,
-    projectChitText, applyTheme, hashRead, hashWrite, logPaths, promptPaths, corpusUrl,
+    projectChitText, applyTheme, hashRead, hashWrite, logPaths, promptPaths, reviewPaths, corpusUrl,
     loadCorpus, railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml,
-    docPaneHtml, rawPaneHtml, promptViewHtml, pillsHtml, pillGroupHtml, decisionsPanelHtml, watchesPanelHtml,
+    docPaneHtml, rawPaneHtml, promptViewHtml,
+    reviewRounds, reviewHead, priorReviews, reviewFileRef, reviewNavHtml, reviewLinkHtml, reviewHeadHtml, reviewLedger, reviewBodyHtml, reviewItems, pillsHtml, pillGroupHtml, decisionsPanelHtml, watchesPanelHtml,
     statusPillsHtml, watchboardHtml, assumptionLedgerHtml, fullLogHtml, calibrationHtml,
     fillPack, packSlots, packReadsTicket, packBasisKind, packGapKind, packContext, loadPacks, packScreenHtml,
     slugOf, promptDir, blankRow, unknownKeys, unknownValues, placeable, builderOpsHtml, builderSideHtml, builderHtml};
