@@ -4245,6 +4245,7 @@ test("a due cell holds a date on one line and lets window prose wrap", () => {
   assert.ok(board.includes('<td class="mono">until the developer'));
   assert.ok(board.includes('<td class="mono nw">2026-12-24</td>'));
   assert.ok(board.includes('<span class="st-validated nw">VALIDATED 2026-10-25</span>'));
+  assert.ok(board.includes('<span class="st-upcoming nw">upcoming 30d</span>'));
 });
 
 test("the page marks an anchored watch's due text as dated and an unanchored one as prose", async () => {
