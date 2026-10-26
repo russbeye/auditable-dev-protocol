@@ -1371,7 +1371,7 @@
       if (pendingSel.t && !sel.t){
         const tgt = findTarget(pendingSel.t);
         if (tgt && viewToken() === "reviews"){ sel = {t: tgt.key, s: null, item: null}; revSel = pendingSel.s; }
-        else if (tgt) sel = {t: pendingSel.t, s: pendingSel.s, item: pendingSel.item};
+        else if (tgt) sel = {t: tgt.key, s: pendingSel.s, item: pendingSel.item};
         else {
           const shared = corpus ? corpus.index.tickets.filter(x => x.id === pendingSel.t).length : 0;
           bootNotice = shared > 1

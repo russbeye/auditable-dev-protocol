@@ -4298,6 +4298,16 @@ test("the open ticket keeps its rail mark when its id stops or starts being shar
   assert.match(h.$("#scrInspector").innerHTML, /Decision of two/);
 });
 
+test("a directory hash for a ticket whose id is now unique marks its rail row", async () => {
+  const h = bootShell({stored: "dark", hash: "#t=A-001-two&s=sec-decision-log",
+    fetch: corpusFetch({root: "demo", files: ["A-001-two/audit-log.md"]}, TEXTS_SH)});
+  await h.settle();
+  const marked = h.$$(".rentry").filter(r => r.classList.contains("is-sel")).map(r => r.getAttribute("data-key"));
+  assert.deepEqual(marked, ["A001"]);
+  assert.equal(h.$("#secSel").value, "sec-decision-log");
+  assert.match(h.$("#scrInspector").innerHTML, /Decision of two/);
+});
+
 test("this repository's corpus keeps every ticket token it had", t => {
   const root = path.join(__dirname, "..", "..", ".adp");
   if (!fs.existsSync(root)) return t.skip(".adp is not present in this checkout");
