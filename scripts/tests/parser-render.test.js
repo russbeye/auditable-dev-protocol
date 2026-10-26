@@ -693,3 +693,13 @@ test("a blank line before a field start keeps the field in the card", () => {
   assert.match(html, /<i>status<\/i>OPEN</);
   assert.match(html, /<p>After\.<\/p>$/);
 });
+
+test("a bold paragraph or a ledger line after a card's blank line stays outside the card", () => {
+  for (const tail of ["**Gate confirmation:** the round closes here.",
+    "- **DL-115 CLOSED 2026-09-20 → INVALIDATED.** The signal fired."]){
+    const html = parserLib.renderSectionBody("### [DL-001] t\n- **Decision:** a\n- **Status:** OPEN\n\n" + tail);
+    const card = html.slice(0, html.indexOf("</div></div>") + 12);
+    assert.equal((card.match(/class="dl-row"/g) || []).length, 1, tail);
+    assert.ok(html.indexOf(tail.includes("Gate") ? "Gate confirmation" : "DL-115") > card.length, tail);
+  }
+});

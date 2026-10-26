@@ -500,7 +500,10 @@
      block ends at the first blank line that a field start does not follow.
      A section with no card renders exactly as renderMarkdown would. */
   const RE_CARD_HEAD=/^###\s+\[DL-\d+\]/;
-  const RE_FIELD_START=/^\s*[-*+]?\s*\*\*\s*[^*]+?\s*\*\*/;
+  // A field start is a bulleted bold label that ends in a colon. A bold
+  // paragraph or a ledger line such as "- **DL-115 CLOSED ...**" is not one,
+  // so it stays outside the card.
+  const RE_FIELD_START=/^\s*[-*+]\s+\*\*[^*]+?(?::\*\*|\*\*\s*:)/;
   function renderSectionBody(body){
     const lines=String(body).replace(/\r\n/g,'\n').split('\n');
     const out=[]; let prose=[]; let cards=[]; let inFence=false; let any=false;
