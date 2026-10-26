@@ -4255,3 +4255,18 @@ test("the page marks an anchored watch's due text as dated and an unanchored one
   assert.ok(obl.includes('<td class="mono nw">2099-01-01</td>'));
   assert.ok(obl.includes('<td class="mono">60 days after merge</td>'));
 });
+
+test("the decisions panel and the ledger hold every id, label, and age on one line", () => {
+  const d = {tid: "A1", id: "DL-104", title: "t", confKind: "medium", conf: "MEDIUM",
+    statusKind: "open", watch: null, settled: null, chips: [], ageText: "12d"};
+  const panel = S.decisionsPanelHtml({label: "x", sort: {k: "id", d: 1}, pills: "", rows: [d]});
+  assert.ok(panel.includes('<td class="mono nw">DL-104</td>'));
+  assert.ok(panel.includes('<span class="cf-medium nw">MEDIUM</span>'));
+  assert.ok(panel.includes('<span class="st-open nw">open</span>'));
+  assert.ok(panel.includes('<td><span class="st-unanchored nw">no watch</span></td>'));
+  const ledger = S.assumptionLedgerHtml({sort: {k: "age", d: 1}, pills: "", rows: [d]});
+  assert.match(ledger, /<td class="mono nw"><a class="wbl"[^>]*data-item="DL-104">DL-104<\/a><\/td>/);
+  assert.ok(ledger.includes('<span class="cf-medium nw">MEDIUM</span>'));
+  assert.ok(ledger.includes('<span class="st-open nw">open</span>'));
+  assert.ok(ledger.includes('<td class="mono nw">12d</td>'));
+});
