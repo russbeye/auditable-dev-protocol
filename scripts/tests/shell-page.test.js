@@ -4227,3 +4227,71 @@ test("a severity word that names an Object member takes the fallback class", () 
   assert.match(html, /<span class="pill dl-pill p-low"><i>severity<\/i>constructor<\/span>/);
   assert.doesNotMatch(html, /function/);
 });
+
+// ---- tickets that share an id ----
+
+/* Two directories that parse to the same id, A001, the shape issue #30
+   reports from a corpus with twelve CMS-001-<slug> directories. Each log
+   names its own decision, so a test can tell which one the inspector shows. */
+const sharedLog = word => LOG.replace("# Audit Log — AA1 alpha", "# Audit Log — " + word)
+  .replace("First decision", "Decision of " + word)
+  .replace(/OT-AA1-/g, "OT-A001-");
+const LISTING_SH = {root: "demo", files: ["A-001-one/audit-log.md", "A-001-two/audit-log.md"]};
+const TEXTS_SH = {"A-001-one/audit-log.md": sharedLog("one"), "A-001-two/audit-log.md": sharedLog("two")};
+const bootShared = opts => bootShell(Object.assign(
+  {stored: "dark", fetch: corpusFetch(LISTING_SH, TEXTS_SH)}, opts));
+
+test("a rail click on each shared-id ticket opens that directory", async () => {
+  const h = bootShared();
+  await h.settle();
+  assert.deepEqual(h.$$(".rentry").map(r => r.getAttribute("data-key")).sort(),
+    ["A-001-one", "A-001-two"]);
+  for (const word of ["one", "two"]){
+    pick(h, "A-001-" + word);
+    assert.match(h.$("#scrInspector").innerHTML, new RegExp("Decision of " + word));
+    assert.equal(h.hashes[h.hashes.length - 1], "#t=A-001-" + word + "&s=sec-decision-log");
+  }
+});
+
+test("board and ledger links on shared-id tickets land on their own directories", async () => {
+  const h = bootShared();
+  await h.settle();
+  for (const word of ["one", "two"]){
+    h.click(tabFor(h, "watchboard"));
+    h.click(h.$$(".wbl").find(a =>
+      a.getAttribute("data-t") === "A-001-" + word && a.getAttribute("data-item") === "OT-A001-1"));
+    assert.equal(h.$("#secSel").value, "sec-obligation-ticket-list");
+    const sel = h.$$(".rentry").find(r => r.classList.contains("is-sel"));
+    assert.equal(sel.getAttribute("data-key"), "A-001-" + word);
+    h.click(tabFor(h, "ledgers"));
+    h.click(h.$$(".wbl").find(a =>
+      a.getAttribute("data-t") === "A-001-" + word && a.getAttribute("data-item") === "DL-001"));
+    assert.match(h.$("#scrInspector").innerHTML, new RegExp("Decision of " + word));
+  }
+});
+
+test("a hash for the second shared-id ticket reopens it, and a bare shared id opens neither", async () => {
+  const h = bootShared({hash: "#t=A-001-two&s=sec-decision-log"});
+  await h.settle();
+  assert.match(h.$("#scrInspector").innerHTML, /Decision of two/);
+  const sel = h.$$(".rentry").find(r => r.classList.contains("is-sel"));
+  assert.equal(sel.getAttribute("data-key"), "A-001-two");
+  const old = bootShared({hash: "#t=A001"});
+  await old.settle();
+  assert.equal(old.$$(".rentry").some(r => r.classList.contains("is-sel")), false);
+  assert.match(old.$("#scrInspector").innerHTML, /"A001" names 2 tickets in this corpus/);
+});
+
+test("this repository's corpus keeps every ticket token it had", () => {
+  const root = path.join(__dirname, "..", "..", ".adp");
+  if (!fs.existsSync(root)) return;
+  const D = require("../adp-derive-lib.js");
+  const files = [];
+  for (const dir of fs.readdirSync(root)){
+    const p = path.join(root, dir, "audit-log.md");
+    if (fs.existsSync(p)) files.push({path: dir + "/audit-log.md", text: fs.readFileSync(p, "utf8")});
+  }
+  const index = B.buildIndex(files, {});
+  const tokenOf = D.ticketTokens(index.tickets);
+  for (const t of index.tickets) assert.equal(tokenOf(t), t.id || t.dir, t.dir);
+});

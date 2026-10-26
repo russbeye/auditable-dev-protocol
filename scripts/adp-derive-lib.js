@@ -219,8 +219,28 @@
      directory then watch id, so the order is total and replays the same on
      every build. */
   const UNANCHORED_ORDER = 1e15;
+  /* The name every link uses for a ticket. A ticket keeps its id while the
+     id picks out that ticket alone. A corpus can reuse an id across
+     directories, for example CMS-001-one and CMS-001-two both parse to CMS001,
+     so a shared id falls back to the directory, which the corpus keeps
+     unique. We also count another ticket's directory as a claim on the id,
+     so no two tickets ever get the same token. */
+  function ticketTokens(tickets){
+    const claims = new Map();
+    const claim = k => claims.set(k, (claims.get(k) || 0) + 1);
+    for (const t of tickets){
+      claim(t.dir);
+      if (t.id && t.id !== t.dir) claim(t.id);
+    }
+    const tokens = new Map();
+    for (const t of tickets)
+      tokens.set(t.dir, t.id && claims.get(t.id) === 1 ? t.id : t.dir);
+    return t => tokens.get(t.dir) || t.dir;
+  }
+
   const CLOSED_ORDER = 2e15;
   function watchboardRows(tickets, today){
+    const tokenOf = ticketTokens(tickets);
     const rows = [];
     const counts = {overdue: 0, soon: 0, upcoming: 0, unanchored: 0, closed: 0};
     for (const t of tickets){
@@ -228,7 +248,7 @@
         const state = dueState(w, today);
         counts[state]++;
         rows.push({
-          tid: t.id || t.dir, dir: t.dir, wid: w.wid, what: w.what,
+          tid: tokenOf(t), dir: t.dir, wid: w.wid, what: w.what,
           due: w.due, anchored: w.anchored, window: w.window,
           closed: w.closed || null, outcome: w.outcome || null,
           state, label: dueLabel(w, today),
@@ -257,9 +277,10 @@
   // 1 is open under one. The table starts at 1 so the split stays visible.
   const LEDGER_RANK = {open: 1, unknown: 2, other: 3, invalidated: 4, validated: 5};
   function ledgerRows(tickets, today){
+    const tokenOf = ticketTokens(tickets);
     const decisions = [];
     for (const t of tickets){
-      const tid = t.id || t.dir;
+      const tid = tokenOf(t);
       for (const d of t.decisions){
         const kind = decisionKind(d);
         const cover = coveringWatch(t, d.id);
@@ -351,7 +372,7 @@
     decisionKind, coveringWatch, settledWatch, canonicalSection,
     unwatchedOpen, attentionReasons, needsAttention, ribbonModel, railGroups,
     sectionEntries, sectionState, sectionItems, citingSections,
-    watchboardRows, ledgerRows, calibrationModel, sortRows};
+    ticketTokens, watchboardRows, ledgerRows, calibrationModel, sortRows};
   if (isNode){ module.exports = ADPDeriveLib; }
   else { global.ADPDeriveLib = ADPDeriveLib; }
 })(typeof globalThis !== "undefined" ? globalThis : this);

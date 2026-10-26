@@ -121,14 +121,24 @@
   // Derivations date against the index's own build day, so a tab left open
   // overnight keeps reporting the day the data is from.
   const today = () => corpus ? corpus.index.generated : S.localDate();
-  const tokenOf = t => t.id || t.dir;
+  // A token depends on the whole corpus, so we rebuild the lookup only when a
+  // poll swaps in a new ticket list, not once per rail row.
+  let tokenSrc = null, tokenFn = null;
+  const tokenOf = t => {
+    const list = corpus ? corpus.index.tickets : [];
+    if (list !== tokenSrc){ tokenSrc = list; tokenFn = D.ticketTokens(list); }
+    return tokenFn(t);
+  };
 
+  // A shared id names no single ticket, so a hash that carries one lands
+  // nowhere rather than on whichever ticket sorts first.
   function findTarget(tok){
     if (!tok) return null;
     const doc = docs.find(d => d.key === tok);
     if (doc) return {kind: "doc", key: doc.key, ticket: doc.ticket, text: doc.text, doc};
     if (!corpus) return null;
-    const t = corpus.index.tickets.find(x => x.id === tok || x.dir === tok);
+    const t = corpus.index.tickets.find(x => x.dir === tok)
+      || corpus.index.tickets.find(x => tokenOf(x) === tok);
     return t ? {kind: "ticket", key: tokenOf(t), ticket: t, text: corpus.texts[t.dir] || "",
       prompt: promptOf(t.dir, corpus.prompts[t.dir])} : null;
   }
@@ -1354,7 +1364,12 @@
         const tgt = findTarget(pendingSel.t);
         if (tgt && viewToken() === "reviews"){ sel = {t: tgt.key, s: null, item: null}; revSel = pendingSel.s; }
         else if (tgt) sel = {t: pendingSel.t, s: pendingSel.s, item: pendingSel.item};
-        else bootNotice = `ticket "${pendingSel.t}" is not in this corpus.`;
+        else {
+          const shared = corpus ? corpus.index.tickets.filter(x => x.id === pendingSel.t).length : 0;
+          bootNotice = shared > 1
+            ? `"${pendingSel.t}" names ${shared} tickets in this corpus — pick one from the rail.`
+            : `ticket "${pendingSel.t}" is not in this corpus.`;
+        }
       }
       pendingSel = null;
     }
