@@ -4255,6 +4255,10 @@ test("the page marks an anchored watch's due text as dated and an unanchored one
   const obl = h.$("#scrInspector").innerHTML;
   assert.ok(obl.includes('<td class="mono nw">2099-01-01</td>'));
   assert.ok(obl.includes('<td class="mono">60 days after merge</td>'));
+  h.click(tabFor(h, "watchboard"));
+  const board = h.$("#scrWatch").innerHTML;
+  assert.ok(board.includes('<td class="mono nw">2099-01-01</td>'));
+  assert.ok(board.includes('<td class="mono">60 days after merge</td>'));
 });
 
 test("the decisions panel and the ledger hold every id, label, and age on one line", () => {
