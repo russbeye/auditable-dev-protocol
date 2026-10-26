@@ -4321,3 +4321,17 @@ test("this repository's corpus keeps every ticket token it had", t => {
   const tokenOf = D.ticketTokens(index.tickets);
   for (const t of index.tickets) assert.equal(tokenOf(t), t.id || t.dir, t.dir);
 });
+
+// ---- cards outside the spine ----
+
+test("a decision card in a companion section renders as a card in the inspector", async () => {
+  const log = LOG.replace("Some **prose** citing DL-002.",
+    "Some **prose** citing DL-002.\n\n### [DL-009] An aside decision\n- **Decision:** x\n- **Confidence:** HIGH\n- **Status:** OPEN\n\nAfter the card.");
+  const h = bootShell({stored: "dark", fetch: corpusFetch(LISTING, Object.assign({}, TEXTS, {"20260101-AA1-alpha/audit-log.md": log}))});
+  await h.settle();
+  h.change(h.$("#secSel"), "sec-aside-notes");
+  const pane = h.$("#scrInspector").innerHTML;
+  assert.match(pane, /class="dl-card rail-open"/);
+  assert.match(pane, /class="pill dl-pill p-ok"><i>conf<\/i>HIGH</);
+  assert.match(pane, /<\/div><\/div><p>After the card\.<\/p>/);
+});
