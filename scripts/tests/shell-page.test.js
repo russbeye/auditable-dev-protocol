@@ -4282,9 +4282,25 @@ test("a hash for the second shared-id ticket reopens it, and a bare shared id op
   assert.match(old.$("#scrInspector").innerHTML, /"A001" names 2 tickets in this corpus/);
 });
 
-test("this repository's corpus keeps every ticket token it had", () => {
+test("the open ticket keeps its rail mark when its id stops or starts being shared", async () => {
+  const listing = {root: "demo", files: LISTING_SH.files.slice()};
+  const h = bootShell({stored: "dark", fetch: corpusFetch(listing, TEXTS_SH)});
+  await h.settle();
+  pick(h, "A-001-two");
+  const marked = () => h.$$(".rentry").filter(r => r.classList.contains("is-sel")).map(r => r.getAttribute("data-key"));
+  listing.files = ["A-001-two/audit-log.md"];
+  await tickOnce(h);
+  assert.deepEqual(marked(), ["A001"]);
+  assert.match(h.$("#scrInspector").innerHTML, /Decision of two/);
+  listing.files = LISTING_SH.files.slice();
+  await tickOnce(h);
+  assert.deepEqual(marked(), ["A-001-two"]);
+  assert.match(h.$("#scrInspector").innerHTML, /Decision of two/);
+});
+
+test("this repository's corpus keeps every ticket token it had", t => {
   const root = path.join(__dirname, "..", "..", ".adp");
-  if (!fs.existsSync(root)) return;
+  if (!fs.existsSync(root)) return t.skip(".adp is not present in this checkout");
   const D = require("../adp-derive-lib.js");
   const files = [];
   for (const dir of fs.readdirSync(root)){

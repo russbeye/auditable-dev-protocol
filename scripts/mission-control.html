@@ -1340,7 +1340,15 @@
     if (!c){ syncLive(); return; }
     const s = sigOf(c);
     if (s === corpusSig){ syncLive(); return; }
+    // A directory that arrives or leaves with the open ticket's id changes
+    // that ticket's token. We follow the open ticket by its directory, so the
+    // rail keeps marking it and the selection never strands on a stale token.
+    const was = sel.t ? findTarget(sel.t) : null;
     corpus = c; corpusSig = s; advisories = B.lintCorpus(c.files);
+    if (was && was.kind === "ticket"){
+      const now = c.index.tickets.find(x => x.dir === was.ticket.dir);
+      if (now) sel.t = tokenOf(now);
+    }
     if (!selSettled) settleSelection();
     renderAll(true);
   }
