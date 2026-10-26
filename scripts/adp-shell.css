@@ -261,7 +261,11 @@ html{scrollbar-gutter:auto}
 .ipanel td{padding:6px 10px 6px 6px;border-bottom:1px solid var(--line);vertical-align:top}
 .ipanel tr:last-child td{border-bottom:none}
 .arr{color:var(--accent);margin-left:3px}
-.mono{font-family:var(--mono);white-space:nowrap}
+/* The typeface and the wrap rule are separate classes, so a cell picks each
+   on its own. An id, a date, or a status word holds on one line with .nw,
+   and prose in the same font, such as a watch's window, wraps. */
+.mono{font-family:var(--mono)}
+.nw{white-space:nowrap}
 .dlrow{cursor:pointer}
 .dlrow:hover td{background:var(--inset)}
 /* The row is the unit of highlight. The background may repeat per cell, since

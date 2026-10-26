@@ -393,18 +393,18 @@
   // the status column beside it.
   function watchCell(d, link){
     return d.watch ? link(d.watch)
-      : d.settled ? (d.statusKind === "open" ? `<span class="st-unanchored">no watch</span> ` : "")
+      : d.settled ? (d.statusKind === "open" ? `<span class="st-unanchored nw">no watch</span> ` : "")
         + link(d.settled.wid, "closed " + d.settled.outcome + " " + d.settled.closed)
-      : d.statusKind === "open" ? `<span class="st-unanchored">no watch</span>` : "";
+      : d.statusKind === "open" ? `<span class="st-unanchored nw">no watch</span>` : "";
   }
 
   function decisionsPanelHtml(m){
     const wl = (wid, title) => `<a class="wl" data-item="${escAttr(wid)}"`
       + `${title ? ` title="${escAttr(title)}"` : ""}>${esc(wid)}</a>`;
     const rows = m.rows.map(d => `<tr class="dlrow${d.hl ? " is-hl" : ""}" data-dl="${escAttr(d.id)}">`
-      + `<td class="mono">${esc(d.id)}</td><td>${esc(d.title)}</td>`
-      + `<td><span class="cf-${d.confKind}">${esc(d.conf)}</span></td>`
-      + `<td><span class="st-${d.statusKind}">${esc(d.statusKind)}</span></td>`
+      + `<td class="mono nw">${esc(d.id)}</td><td>${esc(d.title)}</td>`
+      + `<td><span class="cf-${d.confKind} nw">${esc(d.conf)}</span></td>`
+      + `<td><span class="st-${d.statusKind} nw">${esc(d.statusKind)}</span></td>`
       + `<td>${watchCell(d, wl)}</td>`
       + `<td>${chips(d.chips)}</td></tr>`).join("");
     return `<div class="ipanel"><h2>decisions cited by ${esc(m.label)} <span class="hsub">${m.pills}</span></h2>`
@@ -415,10 +415,10 @@
 
   function watchesPanelHtml(m){
     const rows = m.rows.map(w => `<tr class="wrow${w.hl ? " is-hl" : ""}" data-item="${escAttr(w.wid)}">`
-      + `<td class="mono">${esc(w.wid)}</td><td>${esc(w.what)}</td>`
+      + `<td class="mono nw">${esc(w.wid)}</td><td>${esc(w.what)}</td>`
       + `<td>${w.dls.map(d => `<a class="wl" data-item="${escAttr(d)}">${esc(d)}</a>`).join(" ")}</td>`
-      + `<td class="mono">${esc(w.dueText)}</td>`
-      + `<td><span class="st-${w.state}">${esc(w.stateLabel)}</span></td>`
+      + `<td class="mono${w.dueDated ? " nw" : ""}">${esc(w.dueText)}</td>`
+      + `<td><span class="st-${w.state} nw">${esc(w.stateLabel)}</span></td>`
       + `<td>${chips(w.chips)}</td></tr>`).join("");
     return `<div class="ipanel"><h2>watches cited by ${esc(m.label)}</h2>`
       + `<div class="tblwrap"><table><tr>${th(m.sort, "iw", "wid", "id")}${th(m.sort, "iw", "what", "what to check")}`
@@ -455,9 +455,9 @@
       + `<td><a class="wbl" href="${escAttr(hashWrite({t: w.tid}))}" data-t="${escAttr(w.tid)}">${esc(w.tid)}</a></td>`
       + `<td><a class="wbl" href="${escAttr(hashWrite({t: w.tid, item: w.wid}))}" data-t="${escAttr(w.tid)}" data-item="${escAttr(w.wid)}">${esc(w.wid)}</a></td>`
       + `<td>${esc(w.what)}</td>`
-      + `<td class="mono">${esc(w.dueText)}</td>`
-      + `<td><span class="st-${w.state}">${esc(w.stateLabel)}</span></td>`
-      + `<td>${w.outcomeText ? `<span class="st-${w.outcomeKind}">${esc(w.outcomeText)}</span>` : "—"}</td></tr>`).join("");
+      + `<td class="mono${w.dueDated ? " nw" : ""}">${esc(w.dueText)}</td>`
+      + `<td><span class="st-${w.state} nw">${esc(w.stateLabel)}</span></td>`
+      + `<td>${w.outcomeText ? `<span class="st-${w.outcomeKind} nw">${esc(w.outcomeText)}</span>` : "—"}</td></tr>`).join("");
     return `<div class="ipanel">${head}`
       + `<div class="tblwrap"><table><tr>${th(m.sort, "wb", "tid", "ticket")}${th(m.sort, "wb", "wid", "watch")}`
       + `${th(m.sort, "wb", "what", "what to check")}${th(m.sort, "wb", "due", "due")}`
@@ -484,12 +484,12 @@
       return `<div class="ipanel">${head}<p class="dnotice">${esc(m.empty)}</p></div>`;
     const rows = m.rows.map(d => `<tr class="lgrow" data-t="${escAttr(d.tid)}" data-dl="${escAttr(d.id)}">`
       + `<td>${ledgerLink(d.tid)}</td>`
-      + `<td class="mono">${ledgerLink(d.tid, d.id)}</td>`
+      + `<td class="mono nw">${ledgerLink(d.tid, d.id)}</td>`
       + `<td>${esc(d.title)}</td>`
-      + `<td><span class="cf-${d.confKind}">${esc(d.conf)}</span></td>`
-      + `<td><span class="st-${d.statusKind}">${esc(d.statusKind)}</span></td>`
+      + `<td><span class="cf-${d.confKind} nw">${esc(d.conf)}</span></td>`
+      + `<td><span class="st-${d.statusKind} nw">${esc(d.statusKind)}</span></td>`
       + `<td>${watchCell(d, (wid, title) => ledgerLink(d.tid, wid, title))}</td>`
-      + `<td class="mono">${esc(d.ageText)}</td></tr>`).join("");
+      + `<td class="mono nw">${esc(d.ageText)}</td></tr>`).join("");
     return `<div class="ipanel">${head}`
       + `<div class="tblwrap"><table><tr>${th(m.sort, "la", "tid", "ticket")}${th(m.sort, "la", "id", "entry")}`
       + `${th(m.sort, "la", "title", "decision")}${th(m.sort, "la", "conf", "conf")}`

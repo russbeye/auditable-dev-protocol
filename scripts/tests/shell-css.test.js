@@ -273,3 +273,10 @@ test("the folded builder grid lets the preview scroll instead of stretching the 
   // A bare 1fr track keeps the yaml preview's min-content width as its floor.
   assert.equal(mediaDeclarationsOf(css, "max-width:980px", ".grid")["grid-template-columns"], "minmax(0,1fr)");
 });
+
+test("the mono typeface and the one-line rule are separate classes", () => {
+  const css = read("adp-shell.css");
+  assert.equal(declarationsOf(css, ".mono")["white-space"], undefined);
+  assert.equal(declarationsOf(css, ".mono")["font-family"], "var(--mono)");
+  assert.equal(declarationsOf(css, ".nw")["white-space"], "nowrap");
+});
