@@ -493,6 +493,51 @@
     }
     return counts;
   }
+  /* A section outside the spine can still record a decision, for example a
+     review response that adds DL-007. We draw each such entry with the same
+     card the spine uses and keep the prose around it as markdown. A card
+     starts at a heading the index would harvest, ### [DL-<n>], and its field
+     block ends at the first blank line that a field start does not follow.
+     A section with no card renders exactly as renderMarkdown would. */
+  const RE_CARD_HEAD=/^###\s+\[DL-\d+\]/;
+  const RE_FIELD_START=/^\s*[-*+]?\s*\*\*\s*[^*]+?\s*\*\*/;
+  function renderSectionBody(body){
+    const lines=String(body).replace(/\r\n/g,'\n').split('\n');
+    const out=[]; let prose=[]; let cards=[]; let inFence=false; let any=false;
+    const flushCards=()=>{ if(cards.length) out.push(`<div class="dl-cards">${cards.join('')}</div>`); cards=[]; };
+    const flushProse=()=>{
+      const t=prose.join('\n'); prose=[];
+      if(!t.trim()) return;
+      flushCards(); out.push(renderMarkdown(t));
+    };
+    let i=0;
+    while(i<lines.length){
+      const line=lines[i];
+      if(!inFence && RE_CARD_HEAD.test(line)){
+        flushProse(); any=true;
+        const head=line.replace(/^###\s+/,'').trim(); const card=[]; let fence=false; i++;
+        while(i<lines.length){
+          const l=lines[i];
+          if(fence){ card.push(l); if(/^\s*```/.test(l)) fence=false; i++; continue; }
+          if(/^#{1,3}\s/.test(l)) break;
+          if(/^\s*$/.test(l)){
+            let j=i; while(j<lines.length && /^\s*$/.test(lines[j])) j++;
+            if(j<lines.length && RE_FIELD_START.test(lines[j])){ i=j; continue; }
+            break;
+          }
+          if(/^\s*```/.test(l)) fence=true;
+          card.push(l); i++;
+        }
+        cards.push(renderDLCard({head, lines:card}));
+        continue;
+      }
+      if(/^\s*```/.test(line)) inFence=!inFence;
+      prose.push(line); i++;
+    }
+    if(!any) return renderMarkdown(body);
+    flushProse(); flushCards();
+    return out.join('');
+  }
   function renderDecisionLog(body){
     const {pre,entries}=parseDLEntries(body);
     // A Decision Log written as prose has no ### entries. Those sections fall
@@ -502,7 +547,7 @@
       + `<div class="dl-cards">${entries.map(renderDLCard).join('')}</div>`;
   }
 
-  const ADPParserLib={esc,escAttr,safeLinkUrl,inline,decorate,TOK,renderMarkdown,ART,SECTION_KINDS,metaFor,splitFrontMatter,parseSections,slug,sectionKeys,isTableStart,splitRow,parseDLFields,dlSplitBody,dlChipSplit,dlConfKind,dlConfPill,dlStatusPill,dlStatusKind,dlRail,parseDLEntries,dlEntryStatus,dlStatusCounts,renderDLCard,renderDecisionLog};
+  const ADPParserLib={esc,escAttr,safeLinkUrl,inline,decorate,TOK,renderMarkdown,ART,SECTION_KINDS,metaFor,splitFrontMatter,parseSections,slug,sectionKeys,isTableStart,splitRow,parseDLFields,dlSplitBody,dlChipSplit,dlConfKind,dlConfPill,dlStatusPill,dlStatusKind,dlRail,parseDLEntries,dlEntryStatus,dlStatusCounts,renderDLCard,renderSectionBody,renderDecisionLog};
   if(typeof module!=="undefined"&&module.exports){ module.exports=ADPParserLib; }
   else{ global.ADPParserLib=ADPParserLib; }
 })(typeof globalThis!=="undefined"?globalThis:this);

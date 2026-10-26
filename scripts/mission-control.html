@@ -293,11 +293,11 @@
   }
 
   // A section body renders as the decision-log card list when its title is
-  // the spine, and as markdown otherwise — the one rule the pane, the full
-  // log, and any future screen read.
+  // the spine, and as markdown with any decision cards drawn in place
+  // otherwise. The pane, the full log, and any future screen read this rule.
   function sectionBodyHtml(sec, body){
     return sec ? `<div class="md">${P.metaFor(sec.title).spine
-      ? P.renderDecisionLog(body) : P.renderMarkdown(body)}</div>` : "";
+      ? P.renderDecisionLog(body) : P.renderSectionBody(body)}</div>` : "";
   }
 
   /* The inspector is three regions: the top (heading, ops row, ticket head),

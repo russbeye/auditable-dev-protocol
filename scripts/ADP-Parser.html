@@ -98,7 +98,7 @@
   const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
 
   const {createStatusAnnouncer} = window.ADPPromptLib;
-  const {esc, escAttr, parseSections, sectionKeys, metaFor, renderMarkdown, renderDecisionLog, dlStatusCounts} = window.ADPParserLib;
+  const {esc, escAttr, parseSections, sectionKeys, metaFor, renderSectionBody, renderDecisionLog, dlStatusCounts} = window.ADPParserLib;
 
   /* =========================================================
      Tabs: a tab object owns all per-document state
@@ -174,7 +174,7 @@
       const bodyRaw=sec.body.join('\n');
       const counts=meta.spine ? dlStatusCounts(bodyRaw) : null;
       if(counts && act.dlFilter) filterHits+=counts[act.dlFilter];
-      let innerHtml=(meta.spine ? renderDecisionLog(bodyRaw) : renderMarkdown(bodyRaw)) || '<p style="color:var(--faint)">(empty)</p>';
+      let innerHtml=(meta.spine ? renderDecisionLog(bodyRaw) : renderSectionBody(bodyRaw)) || '<p style="color:var(--faint)">(empty)</p>';
       // The strip only makes sense over cards. A spine section that fell back
       // to the generic renderer has none, and its total is zero.
       if(counts && counts.total) innerHtml=dlStrip(counts)+innerHtml;

@@ -646,3 +646,50 @@ test("a bold run needs text against both of its delimiters", () => {
   assert.equal(renderMarkdown("**bold\nacross**"), "<p><strong>bold<br>across</strong></p>");
   assert.equal(inline("__init__ and a**b**c"), "<strong>init</strong> and a<strong>b</strong>c");
 });
+
+// ---- cards outside the spine ----
+
+const MIXED = [
+  "We changed one thing this round.",
+  "",
+  "### [DL-007] A poll re-keys the selection",
+  "- **Decision:** follow the directory",
+  "- **Confidence:** HIGH",
+  "- **Status:** VALIDATED",
+  "",
+  "The suite reads 676 pass."
+].join("\n");
+
+test("a card in a companion section renders with the card markup between its prose", () => {
+  const html = parserLib.renderSectionBody(MIXED);
+  assert.equal((html.match(/class="dl-card /g) || []).length, 1);
+  const card = html.indexOf('class="dl-card '), before = html.indexOf("We changed one thing"),
+    after = html.indexOf("The suite reads 676 pass.");
+  assert.ok(before > -1 && before < card && card < after);
+});
+
+test("prose after a card stays outside the card", () => {
+  const html = parserLib.renderSectionBody(MIXED);
+  const cards = html.slice(html.indexOf('<div class="dl-cards">'), html.indexOf("The suite reads"));
+  assert.ok(!cards.includes("676"));
+  assert.match(html, /<\/div><\/div><p>The suite reads 676 pass\.<\/p>/);
+});
+
+test("HIGH confidence in a companion card shows the confidence pill, not the priority pill", () => {
+  const html = parserLib.renderSectionBody(MIXED);
+  assert.match(html, /class="pill dl-pill p-ok"><i>conf<\/i>HIGH</);
+  assert.ok(!/p-high[^>]*>HIGH</.test(html));
+});
+
+test("a companion section with no card renders exactly as markdown", () => {
+  for (const body of ["Plain prose.", "### Notes\n- **Decision:** not a card", "```\n### [DL-001] fenced\n```"]){
+    assert.equal(parserLib.renderSectionBody(body), renderMarkdown(body));
+  }
+});
+
+test("a blank line before a field start keeps the field in the card", () => {
+  const html = parserLib.renderSectionBody("### [DL-001] t\n- **Decision:** a\n\n- **Status:** OPEN\n\nAfter.");
+  assert.equal((html.match(/class="dl-row"/g) || []).length, 1);
+  assert.match(html, /<i>status<\/i>OPEN</);
+  assert.match(html, /<p>After\.<\/p>$/);
+});
