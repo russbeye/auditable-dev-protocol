@@ -566,3 +566,35 @@ test("the kind vocabularies are exported and match what the classifiers can retu
   assert.deepEqual(m.buckets.map(b => b.kind), D.CONF_KINDS);
   assert.deepEqual(Object.keys(m.buckets[0].counts), D.STATUS_KINDS);
 });
+
+// ---- ticketTokens ----
+
+test("ticketTokens keeps a unique id and falls back to the directory for a shared one", () => {
+  const one = ticket({id: "CMS001", dir: "CMS-001-one"});
+  const two = ticket({id: "CMS001", dir: "CMS-001-two"});
+  const solo = ticket({id: "AA1", dir: "20260101-AA1-alpha"});
+  const bare = ticket({id: null, dir: "notes"});
+  const tokenOf = D.ticketTokens([one, two, solo, bare]);
+  assert.equal(tokenOf(one), "CMS-001-one");
+  assert.equal(tokenOf(two), "CMS-001-two");
+  assert.equal(tokenOf(solo), "AA1");
+  assert.equal(tokenOf(bare), "notes");
+});
+
+test("ticketTokens never lets a directory name and another ticket's id share a token", () => {
+  const named = ticket({id: null, dir: "AA1"});
+  const idd = ticket({id: "AA1", dir: "20260101-AA1-alpha"});
+  const tokenOf = D.ticketTokens([named, idd]);
+  assert.equal(tokenOf(named), "AA1");
+  assert.equal(tokenOf(idd), "20260101-AA1-alpha");
+});
+
+test("the board and ledger name a shared-id ticket by its directory", () => {
+  const w = watch({wid: "OT-CMS001-1", dl: ["DL-001"]});
+  const one = ticket({id: "CMS001", dir: "CMS-001-one", watches: [w], decisions: [decision()]});
+  const two = ticket({id: "CMS001", dir: "CMS-001-two", watches: [w], decisions: [decision()]});
+  assert.deepEqual(D.watchboardRows([one, two], TODAY).rows.map(r => r.tid).sort(),
+    ["CMS-001-one", "CMS-001-two"]);
+  assert.deepEqual(D.ledgerRows([one, two], TODAY).decisions.map(r => r.tid).sort(),
+    ["CMS-001-one", "CMS-001-two"]);
+});
