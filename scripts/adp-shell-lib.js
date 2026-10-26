@@ -678,9 +678,10 @@
     // the way the ledger does, so the directory is read back through the
     // index. A finding under a directory the index does not hold keeps the
     // directory as its name rather than losing it.
+    const tokenOf = D.ticketTokens(index.tickets);
     const tidOf = dir => {
       const own = index.tickets.find(x => x.dir === dir);
-      return own ? (own.id || own.dir) : dir;
+      return own ? tokenOf(own) : dir;
     };
     const wb = D.watchboardRows(index.tickets, today);
     const board = wb.rows;
@@ -750,7 +751,7 @@
     const premortem = [];
     for (const x of index.tickets)
       for (const r of (x.premortem || []))
-        premortem.push({tid: x.id || x.dir, mode: r.mode, likelihood: r.likelihood,
+        premortem.push({tid: tokenOf(x), mode: r.mode, likelihood: r.likelihood,
           implemented_at: r.implemented_at});
     const isPending = r => /^PENDING\b/i.test(r.implemented_at);
     const isRebuttal = r => r.implemented_at === "—";
@@ -782,7 +783,7 @@
         age: r.age == null ? "undated" : r.age + "d",
         watch: r.watch || "no watch"})),
       in_review: index.tickets.filter(x => x.state === "in-review").map(x => ({
-        id: x.id || x.dir, dir: x.dir, pr: x.pr,
+        id: tokenOf(x), dir: x.dir, pr: x.pr,
         open_count: x.decisions.filter(d => D.decisionKind(d) === "open").length,
         live_count: x.watches.filter(w => !w.closed).length})),
       basis_direct: basis.direct, basis_inference: basis.inference,
