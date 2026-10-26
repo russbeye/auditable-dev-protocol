@@ -497,13 +497,10 @@
      review response that adds DL-007. We draw each such entry with the same
      card the spine uses and keep the prose around it as markdown. A card
      starts at a heading the index would harvest, ### [DL-<n>], and its field
-     block ends at the first blank line that a field start does not follow.
-     A section with no card renders exactly as renderMarkdown would. */
+     block ends at the first blank line. Anything after that blank line, even
+     a list of bold labels such as "- **PR-COR-001:** fixed", renders after
+     the card. A section with no card renders exactly as renderMarkdown would. */
   const RE_CARD_HEAD=/^###\s+\[DL-\d+\]/;
-  // A field start is a bulleted bold label that ends in a colon. A bold
-  // paragraph or a ledger line such as "- **DL-115 CLOSED ...**" is not one,
-  // so it stays outside the card.
-  const RE_FIELD_START=/^\s*[-*+]\s+\*\*[^*]+?(?::\*\*|\*\*\s*:)/;
   function renderSectionBody(body){
     const lines=String(body).replace(/\r\n/g,'\n').split('\n');
     const out=[]; let prose=[]; let cards=[]; let inFence=false; let any=false;
@@ -522,12 +519,7 @@
         while(i<lines.length){
           const l=lines[i];
           if(fence){ card.push(l); if(/^\s*```/.test(l)) fence=false; i++; continue; }
-          if(/^#{1,3}\s/.test(l)) break;
-          if(/^\s*$/.test(l)){
-            let j=i; while(j<lines.length && /^\s*$/.test(lines[j])) j++;
-            if(j<lines.length && RE_FIELD_START.test(lines[j])){ i=j; continue; }
-            break;
-          }
+          if(/^#{1,3}\s/.test(l) || /^\s*$/.test(l)) break;
           if(/^\s*```/.test(l)) fence=true;
           card.push(l); i++;
         }

@@ -687,11 +687,10 @@ test("a companion section with no card renders exactly as markdown", () => {
   }
 });
 
-test("a blank line before a field start keeps the field in the card", () => {
-  const html = parserLib.renderSectionBody("### [DL-001] t\n- **Decision:** a\n\n- **Status:** OPEN\n\nAfter.");
-  assert.equal((html.match(/class="dl-row"/g) || []).length, 1);
-  assert.match(html, /<i>status<\/i>OPEN</);
-  assert.match(html, /<p>After\.<\/p>$/);
+test("a list of bold labels after a card's blank line renders after the card", () => {
+  const html = parserLib.renderSectionBody("### [DL-001] t\n- **Decision:** a\n- **Status:** OPEN\n\n- **PR-COR-001:** fixed in the next commit.");
+  assert.ok(!/class="dl-k">PR-COR-001/.test(html));
+  assert.match(html, /<\/div><\/div><ul class="md-list"><li><strong>PR-COR-001:<\/strong>/);
 });
 
 test("a bold paragraph or a ledger line after a card's blank line stays outside the card", () => {
