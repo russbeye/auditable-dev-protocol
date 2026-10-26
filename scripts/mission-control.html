@@ -376,7 +376,7 @@
       due: w => w.anchored ? D.daysUntil(w.due, today()) : Infinity,
       state: w => D.dueState(w, today()), cited: w => D.citingSections(t, w.wid).length
     }).map(w => ({wid: w.wid, what: w.what, dls: w.dl || [],
-      dueText: w.anchored ? w.due : (w.window || "relative"),
+      dueText: w.anchored ? w.due : (w.window || "relative"), dueDated: !!w.anchored,
       state: D.dueState(w, today()), stateLabel: D.dueLabel(w, today()),
       chips: D.citingSections(t, w.wid).map(k => chipModel(t, k)),
       hl: sel.item === w.wid}));
@@ -670,7 +670,7 @@
     }).map(r => ({tid: r.tid, wid: r.wid, what: r.what,
       // An unanchored row shows its window prose where a date would sit, so
       // the flag explains itself; the same rule the inspector's table uses.
-      dueText: r.anchored ? r.due : (r.window || "relative"),
+      dueText: r.anchored ? r.due : (r.window || "relative"), dueDated: !!r.anchored,
       state: r.state, stateLabel: r.label,
       outcomeText: r.closed ? r.outcome + " " + r.closed : null,
       outcomeKind: r.closed ? D.statusKind(r.outcome) : null}));

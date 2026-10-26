@@ -758,7 +758,7 @@ test("a hostile pasted log never lands markup in the page", async () => {
   // handler, in the panel or anywhere else the harvest reaches.
   h.change(h.$("#secSel"), "sec-decision-log");
   const html = h.$("#scrInspector").innerHTML;
-  assert.match(html, /class="cf-high"/);
+  assert.match(html, /class="cf-high nw"/);
   assert.ok(!/<[^>]*onmouseover/.test(html));
   assert.ok(!/<[^>]*onmouseover/.test(h.$("#rail").innerHTML));
 });
@@ -855,7 +855,7 @@ test("an open decision with only a settled watch leads with the marker", () => {
     rows: [{id: "DL-001", title: "t", conf: "HIGH", confKind: "high", statusKind: "open",
       watch: null, settled: {wid: "OT-1", outcome: "VALIDATED", closed: "2026-09-01"},
       chips: [], hl: false}]});
-  assert.ok(panel.includes(`<span class="st-unanchored">no watch</span> <a class="wl"`));
+  assert.ok(panel.includes(`<span class="st-unanchored nw">no watch</span> <a class="wl"`));
   assert.ok(panel.includes(`title="closed VALIDATED 2026-09-01"`));
 });
 
@@ -4226,4 +4226,32 @@ test("a severity word that names an Object member takes the fallback class", () 
   const html = S.reviewBodyHtml(text, {ledger: {}, tok: "RV2"});
   assert.match(html, /<span class="pill dl-pill p-low"><i>severity<\/i>constructor<\/span>/);
   assert.doesNotMatch(html, /function/);
+});
+
+// ---- table wrap rule ----
+
+test("a due cell holds a date on one line and lets window prose wrap", () => {
+  const prose = "until the developer's next live session with the testbed, no later than the start of ZUP-B3";
+  const row = o => Object.assign({wid: "OT-A1-1", what: "w", dls: [], state: "upcoming", stateLabel: "upcoming 30d", chips: []}, o);
+  const panel = S.watchesPanelHtml({label: "x", sort: {k: "wid", d: 1},
+    rows: [row({dueText: "2026-12-24", dueDated: true}), row({dueText: prose, dueDated: false})]});
+  assert.ok(panel.includes('<td class="mono nw">2026-12-24</td>'));
+  assert.ok(panel.includes('<td class="mono">until the developer'));
+  assert.ok(panel.includes('<td class="mono nw">OT-A1-1</td>'));
+  assert.ok(panel.includes('<span class="st-upcoming nw">upcoming 30d</span>'));
+  const board = S.watchboardHtml({sort: {k: "due", d: 1}, live: 2, settled: 0, pills: "",
+    rows: [Object.assign(row({dueText: prose, dueDated: false}), {tid: "A1"}),
+      Object.assign(row({dueText: "2026-12-24", dueDated: true}), {tid: "A1", outcomeText: "VALIDATED 2026-10-25", outcomeKind: "validated"})]});
+  assert.ok(board.includes('<td class="mono">until the developer'));
+  assert.ok(board.includes('<td class="mono nw">2026-12-24</td>'));
+  assert.ok(board.includes('<span class="st-validated nw">VALIDATED 2026-10-25</span>'));
+});
+
+test("the page marks an anchored watch's due text as dated and an unanchored one as prose", async () => {
+  const h = bootCorpus();
+  await h.settle();
+  h.change(h.$("#secSel"), "sec-obligation-ticket-list");
+  const obl = h.$("#scrInspector").innerHTML;
+  assert.ok(obl.includes('<td class="mono nw">2099-01-01</td>'));
+  assert.ok(obl.includes('<td class="mono">60 days after merge</td>'));
 });
