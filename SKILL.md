@@ -139,7 +139,7 @@ multi-stage run opens with a status marker after the previous stage's ticket lis
 chain under suffixed headings.
 
 Every run on record writes all nine phases before its PR opens, which is why PR review rounds land
-after the chain. The lint reads that from the heading alone, so a gate review placed above a chain
+after the chain. The lint reads that from the heading alone, so a review placed above a chain
 that was already finished goes unseen unless its heading names a PR. A section written where the
 chain then grows past it, a status note at a pause for example, takes the advisory and stays where it landed:
 history is append-only, and no log reorders to satisfy this rule. A stage that resumes a chain its
