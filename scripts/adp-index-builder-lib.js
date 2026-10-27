@@ -487,6 +487,9 @@
   // before the id, so a prose token like PILOT-1 never reads as OT-1.
   const RE_NEAR = new RegExp("(^|[^A-Za-z0-9-])((?:OT|DL)-" + I.LEDGER_TOKEN + ")\\s+(CLOSED|RE-ANCHORED)\\b", "g");
 
+  // Every PR review round on record names its PR this way in its heading.
+  const RE_PR = /\bPR #\d+/;
+
   /* SKILL.md's Encoding subsection owns this rule. A log is UTF-8, and a
      control byte other than tab, newline, and carriage return is written
      escaped inside a code span, never raw, so no tool calls the log binary.
@@ -580,7 +583,10 @@
          We ask
          buildTicket for the canonical flags and keys, so the first-occurrence
          rule keeps its one owner. Ad hoc sections and canonical repeats are
-         not governed, so they raise nothing. */
+         not governed, so they raise nothing. A review that names no PR
+         answers a phase gate during the run, so it sits where the gate was
+         and the chain grows past it. Only a review that names a PR is held
+         after the chain, because a PR opens once the chain is written. */
       const rows = buildTicket(dir, text).sections;
       const canon = rows.map((s, i) => s.canonical ? i : -1).filter(i => i > -1);
       if (canon.length){
@@ -591,6 +597,7 @@
           if (s.canonical) return;
           const kind = P.metaFor(s.title).kind;
           if (kind === "artifact" || kind === "ad-hoc") return;
+          if (kind === "review" && !RE_PR.test(s.title)) return;
           const zone = kind === "evidence" ? dl : chainEnd;
           if (zone !== -1 && i < zone) findings.push({dir: dir, id: s.key, finding: "misplaced", after: rows[zone].key});
         });

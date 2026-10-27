@@ -316,6 +316,35 @@ test("a companion ahead of its place is a misplaced advisory naming the key it s
   ]);
 });
 
+// The fourteen canonical headings in phase order, for the review-zone cases.
+const CHAIN = ["Problem Statement", "Knowledge Gap Document", "Open Questions (resolve before Phase 3)",
+  "Recommendation Brief", "Pre-Mortem Report", "Implementation Authorization", "Decision Log",
+  "Test Adversary Document", "PR Summary", "🚩 Mandatory Review Items (LOW-confidence decisions)",
+  "Residual Risk", "Test Coverage Gaps", "Deployment Risk Statement", "Obligation Ticket List"];
+
+test("a review that names no PR answers a gate, so the chain growing past it raises nothing", () => {
+  // MC-005 and MC-006 answered browser checks at the Phase 7 and Phase 6
+  // gates, and the chain then grew past them.
+  const at = (title, before) => {
+    const t = CHAIN.slice();
+    t.splice(t.indexOf(before), 0, title);
+    return t;
+  };
+  assert.deepEqual(builder.lintCorpus(orderLog(at("Review Response — developer browser check (2026-10-16)",
+    "Deployment Risk Statement"))), []);
+  assert.deepEqual(builder.lintCorpus(orderLog(at("Review Response — Phase 6 gate browser check (2026-10-18)",
+    "PR Summary"))), []);
+  assert.deepEqual(builder.lintCorpus(orderLog(["Problem Statement", "Decision Log",
+    "Review finding — developer browser check (2026-10-16)"])), []);
+});
+
+test("a PR review round above a complete chain still raises misplaced", () => {
+  const titles = CHAIN.slice();
+  titles.splice(titles.length - 1, 0, "Review findings — PR #7 round 1 (2026-10-20)");
+  assert.deepEqual(builder.lintCorpus(orderLog(titles)), [{dir: "T-1-x",
+    id: "sec-review-findings-pr-7-round-1-2026-10-20", finding: "misplaced", after: "sec-obligation-ticket-list"}]);
+});
+
 test("evidence beside the artifact that cites it, and companions after the chain, raise nothing", () => {
   assert.deepEqual(builder.lintCorpus(orderLog([
     "Problem Statement", "Decision Log", "Differential corpus render (Phase 6 falsification run)",
@@ -369,6 +398,15 @@ test("SKILL.md's section order convention names the lint kind that enforces it",
   assert.ok(at > -1, "SKILL.md lacks the Section order subsection");
   const sub = skill.slice(at, skill.indexOf("**Persist everything", at));
   assert.ok(sub.includes("`misplaced`") && sub.includes("`after`"), "the subsection must name the finding and its field");
+  assert.ok(sub.includes("`PR #N`"), "the subsection must name the PR form that puts a review after the chain");
+});
+
+test("the contract's advisory paragraph names the PR form the review zone reads", () => {
+  const spec = fs.readFileSync(path.join(__dirname, "..", "..", "references", "adp-index-1.md"), "utf8");
+  const at = spec.indexOf("(misplaced,");
+  assert.ok(at > -1, "adp-index-1.md lacks the misplaced advisory");
+  assert.ok(spec.slice(at, spec.indexOf("(control-byte", at)).includes("`PR #N`"),
+    "the misplaced advisory must name the PR form");
 });
 
 // A one-ticket corpus of one section with the given body, for the encoding cases.
