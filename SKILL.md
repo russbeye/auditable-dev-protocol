@@ -108,7 +108,7 @@ not cover is `ad-hoc`, which is a named kind and never an error.
 |------|----------------|----------------------|-------------------------|
 | `artifact` | The fourteen canonical headings: the nine phase artifacts plus Open Questions, Implementation Authorization, Mandatory Review Items, Residual Risk, and Test Coverage Gaps. | Every run, once each, in phase order. A repeat of a canonical heading ("Decision Log — Stage 2", "Obligation Ticket List — amendment (date)") keeps the artifact's tag, and the index demotes the repeat to non-canonical. | The artifact names, or `Phase N: <name>` |
 | `amendment` | A dated correction appended to a log that is already on record, by a sweep or by the developer, never an edit in place. | After merge, when a sweep or a later ruling has to reach a finished log. | `Sweep amendment — <what> (<date>)`, `Post-run amendment (<date>)` |
-| `review` | The run's answer to a review round: the findings raised, what changed, what was refused and why. | During PR review, one section per round or per finding. | `Review Response — PR #N (<date>)`, `Review finding — …`, `Review findings — …`, `Review addendum — <date>` |
+| `review` | The run's answer to a review round: the findings raised, what changed, what was refused and why. | During PR review, one section per round or per finding, or at a phase gate during the run. | `Review Response — PR #N (<date>)`, `Review finding — …`, `Review findings — …`, `Review addendum — <date>` |
 | `status` | Where the run stands, in one place, for a reader who opens the log cold. | At a run start, a stage boundary, or a pause, whenever the phase chain alone would mislead. | `Run status`, `Run status — <qualifier>`, `Stage N — <name> (run start <date>)` |
 | `evidence` | A record of something observed or measured that an artifact cites: coverage against requirements, a verification transcript, a differential render, a browser check, the files a change touched. | Phase 6 onward, whenever a claim needs its evidence beside it rather than in the conversation. | `Requirement coverage`, `Verification record (<date>)`, `Differential corpus render …`, `Browser acceptance — PR #N (<date>)`, `Files changed` |
 | `ledger` | Closure records: the dated CLOSED and RE-ANCHORED lines of Phase 9, merge facts, and ticket dispositions that settle what the run left open. | After merge, or at a review round that closes a watch. Per Phase 9 a ruling line lands anywhere from the Decision Log onward. | `Ledger — <what>`, `Post-merge note — PR #N merged (<date>)`, `Ticket Dispositions (<date>, …)`, `Post-run resolutions (<date>)`, `Closure` |
@@ -127,7 +127,9 @@ sections, counted 2026-09-14), and each row cites the count it codifies.
 
 | Kind | Where it belongs | On record |
 |------|------------------|-----------|
-| `amendment`, `review`, `status`, `ledger` | After the Obligation Ticket List, in the order the events happened. A log that has not reached Phase 9 appends them after its last canonical section. | 75 of 75 sections sit after the chain: 31 amendments in 30 logs, 24 review sections in 4, 13 status sections in 4, 7 ledgers in 6. |
+| `amendment`, `status`, `ledger` | After the Obligation Ticket List, in the order the events happened. A log that has not reached Phase 9 appends them after its last canonical section. | 51 of 51 sections sit after the chain: 31 amendments in 30 logs, 13 status sections in 4, 7 ledgers in 6. |
+| `review` naming a PR | A heading that names its PR in the form `PR #N` is a PR review round. It sits after the Obligation Ticket List, as the row above places its kinds, because a PR opens once the chain is written. | 113 of 113 sit after the chain, in 16 logs (counted 2026-10-26). |
+| `review` naming no PR | Not governed. A review that names no PR answers a phase gate during the run, for example a developer browser check, so it sits where the gate was and the chain grows past it. | 6 above the chain in 2 logs, all gate browser checks, and 5 after it in 4 logs (counted 2026-10-26). |
 | `evidence` | Beside the artifact that cites it, anywhere from the Decision Log onward: a Phase 6 render just before the Test Adversary Document, a coverage table inside the Phase 7 block (PR Summary through Test Coverage Gaps), or after the ticket list. A log with no Decision Log gives evidence no zone, and the lint leaves it alone. | 11 of 11 sit after the Decision Log: 3 just before the Test Adversary Document, 5 inside the Phase 7 block, 3 after the ticket list. |
 | `ad-hoc` | Not governed. The heading says what the section is, and the section sits where that makes sense. | 2 after the chain, 1 inside the Phase 7 block. |
 
@@ -136,9 +138,10 @@ companion, and is not governed either. All 79 on record sit after the chain: eac
 multi-stage run opens with a status marker after the previous stage's ticket list, then repeats the
 chain under suffixed headings.
 
-Every run on record writes all nine phases before its PR opens, which is why review rounds land
-after the chain. A section written where the chain then grows past it, a review that arrives before
-Phase 8 is written or a status note at a pause, takes the advisory and stays where it landed:
+Every run on record writes all nine phases before its PR opens, which is why PR review rounds land
+after the chain. The lint reads that from the heading alone, so a review placed above a chain
+that was already finished goes unseen unless its heading names a PR. A section written where the
+chain then grows past it, a status note at a pause for example, takes the advisory and stays where it landed:
 history is append-only, and no log reorders to satisfy this rule. A stage that resumes a chain its
 predecessor left short of Phase 9 grows the chain past the companions that predecessor wrote, and
 they take the advisory too; nothing on record does this, because every first stage shipped its

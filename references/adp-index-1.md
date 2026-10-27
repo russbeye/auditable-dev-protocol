@@ -293,7 +293,9 @@ record (contradiction), a landed anchor record that cannot honestly move its wat
 already anchors it, or a closure record above it has ended it (dead-anchor), closure intent on a known
 id that never landed (near-miss), a watch id the ledger grammar cannot address
 (wid-shape), and a companion section written ahead of the place SKILL.md's section order
-convention gives it (misplaced, carrying `after`, the key of the section it should follow),
+convention gives it (misplaced, carrying `after`, the key of the section it should follow; a
+review section is held after the chain only when its heading names a PR in the form `PR #N`, and
+one that names no PR answers a phase gate and is not governed),
 a raw control byte in a log, which SKILL.md's Encoding subsection forbids (control-byte,
 naming the log in `id` and carrying `offset`, the UTF-8 byte offset of the byte), and a live
 watch whose window is the dash while its exit condition names a calendar date, which SKILL.md's
