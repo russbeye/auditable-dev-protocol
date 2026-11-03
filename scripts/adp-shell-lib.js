@@ -40,7 +40,7 @@
   }
 
   function footerText(index){
-    if (!index) return "no corpus · serve the working tree with adp-serve.py to build the index in-memory";
+    if (!index) return "no corpus · launch mission control with adp-launch.mts to build the index in-memory";
     return `schema ${index.schema} · ${index.tickets.length} tickets · read-only · rebuilt in-memory from the working tree`;
   }
 

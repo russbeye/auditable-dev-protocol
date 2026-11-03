@@ -809,7 +809,7 @@
     if (!packs || !packs.length){
       scr.innerHTML = S.packScreenHtml({packs: null, notice: packs
         ? "the packs directory is empty — drop a .pack.md file into the skill's packs/ directory and reload."
-        : "no packs behind this page — packs load from the skill's packs/ directory through adp-serve.py (restart a server started before this page had packs routes); a page opened over file:// or with no server has none."});
+        : "no packs behind this page — packs load from the skill's packs/ directory through the mission control server; a page opened over file:// or with no server has none."});
       refocus(keep);
       return;
     }

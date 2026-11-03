@@ -24,14 +24,14 @@ A nine-phase protocol for AI-assisted development. The model defends one recomme
 - `scripts/validate-prompt.py`: checks a filled prompt for structure, types, and allowed values.
 - `scripts/prompt-builder.html`: a browser form for filling the template, with import and YAML export.
 - `scripts/ADP-Parser.html`: a browser viewer that watches the audit log and renders it by section. This is the protocol's observability layer.
-- `scripts/adp-serve.py`: a localhost server that opens the viewer already attached to the audit log, so watching starts without any clicks.
+- `scripts/adp-launch.mts`: prints the URL of mission control for the current repo, starting its localhost server (`scripts/adp-server.mts`) when none is live. Run it with `npm start` or `node scripts/adp-launch.mts`. It needs Node 22.18 or later.
 - `packs/`: the resume packs mission control fills from the corpus index, one `.pack.md` per pack. Drop a file in to add one.
 
 ## Using the protocol
 
 Invoke the skill by name, or ask for any of its artifacts. Reach for it before migrations, auth changes, payments, destructive operations, or public API changes. Skip it for renames and one-liners.
 
-Every run writes its artifacts to `.adp/<task-id>/` at the project root: the audit log at `.adp/<task-id>/audit-log.md`, plus any prompt drafted in session. The skill opens the Artifact Viewer on the audit log and keeps session output to questions, so you watch the run in the viewer rather than the chat. Whether `.adp/` gets committed or gitignored is your call; the skill asks once if the project hasn't decided.
+Every run writes its artifacts to `.adp/<task-id>/` at the project root: the audit log at `.adp/<task-id>/audit-log.md`, plus any prompt drafted in session. The skill opens mission control on the repo and keeps session output to questions, so you watch the run there rather than in the chat. Whether `.adp/` gets committed or gitignored is your call; the skill asks once if the project hasn't decided.
 
 The YAML prompt template is the preferred way to frame a request, but the skill accepts any prompting method you choose.
 
@@ -55,4 +55,4 @@ Invoke the skill with a request in hand and it offers to draft a filled template
 Two pages run the template and its output with no build step. Open them in a browser, and keep `adp-theme.css` and `adp-bg.svg` in the same folder.
 
 - **Prompt Builder** (`scripts/prompt-builder.html`) fills the template through a form instead of a text editor. Paste an existing `prompt.yaml` to import it, or load the example, then copy or download the result. It reports any keys it does not recognize.
-- **Artifact Viewer** (`scripts/ADP-Parser.html`) renders the protocol's markdown output and is the run's observability layer. The skill launches it through `scripts/adp-serve.py`, which serves the page already attached to the audit log and re-renders on every append. Opened by hand, the page still supports Open & watch file (Chromium), paste, and drop.
+- **Artifact Viewer** (`scripts/ADP-Parser.html`) renders the protocol's markdown output and is the run's observability layer. The mission control server serves it at `ADP-Parser.html?file=/corpus/<task-id>/audit-log.md`, and the page re-renders on every append. Opened by hand, the page still supports Open & watch file (Chromium), paste, and drop.

@@ -167,19 +167,23 @@ Committing keeps the audit trail with the code; ignoring keeps it local. If the 
 preference, ask once at Phase 1 and respect the answer.
 
 **The audit log is the observability layer, not the conversation.** The developer watches the run in
-the Artifact Viewer, not in session output. Immediately after creating the audit log in Phase 1,
-start the viewer server in the background and open the URL it prints in the browser (`xdg-open`,
-`open`, or `start`, whichever the platform has):
+mission control, not in session output. Immediately after creating the audit log in Phase 1, run the
+launcher from the project root with a 300000 ms tool timeout, and open the URL it prints in the
+browser (`xdg-open`, `open`, or `start`, whichever the platform has):
 
 ```
-python3 <skill-dir>/scripts/adp-serve.py .adp/<task.id>/audit-log.md
-# prints e.g. http://127.0.0.1:38393/ADP-Parser.html?file=/audit-log.md
+node <skill-dir>/scripts/adp-launch.mts
+# prints e.g. http://127.0.0.1:38393/mission-control.html
 ```
 
-The page polls the log and re-renders on every append; nobody clicks anything. Tell the developer in
-one plain line that carries nothing beyond the task id and the file it names:
+The launcher prints the URL of the one server for this repo. It reuses a live server, or starts one
+that outlives the shell, so the same command is safe to run every time. The server serves every log
+under the repo's `.adp` directory, and the page re-renders on every append; nobody clicks anything.
+Outside a run, when the developer asks about the corpus, offer to launch mission control in one
+sentence. Tell the developer in one plain line that carries nothing beyond the task id and the file
+it names:
 
-> ADP-Parser opened, watching `.adp/<task.id>/audit-log.md`.
+> Mission control opened, watching `.adp/<task.id>/audit-log.md`.
 
 From that point on, do not restate, summarize, or excerpt artifacts in the session. Session output is
 limited to gate questions and whatever answers you need from the developer; a gate prompt refers to
@@ -193,7 +197,7 @@ An audit log is UTF-8 throughout, and so is every file a run writes beside it. A
 than tab, newline, and carriage return (U+0000–U+0008, U+000B, U+000C, U+000E–U+001F, U+007F) is
 written escaped inside a code span, `\u0000` for NUL, never raw. A raw one makes `grep` call the log
 binary, so a census that shells out skips the file, and the sentence around it loses the byte it was
-naming. Every reader on record decodes UTF-8: `adp-serve.py` sends `charset=utf-8`, the pages read
+naming. Every reader on record decodes UTF-8: `adp-server.mts` sends `charset=utf-8`, the pages read
 `res.text()`, the suite reads `"utf8"`, and `validate-prompt.py` opens a prompt as `utf-8`. A reader that decodes anything else mangles every
 non-ASCII character, the ledger arrow `→` first, so no closure line matches the record grammar;
 `references/failure-modes.md` names that trap for census tooling. `lintCorpus` reports a raw control
