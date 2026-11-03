@@ -79,6 +79,12 @@ function send(res: http.ServerResponse, status: number, type: string, body: stri
 const notFound = (res: http.ServerResponse, why: string) => send(res, 404, "text/plain; charset=utf-8", why + "\n");
 
 function route(req: http.IncomingMessage, res: http.ServerResponse){
+  // A page on another origin can rebind its own host name to 127.0.0.1 and
+  // then read us as same-origin. Its requests still carry its own host name,
+  // so we answer only the two names this server is reached by.
+  const port = (server.address() as {port: number}).port;
+  if (req.headers.host !== "127.0.0.1:" + port && req.headers.host !== "localhost:" + port)
+    return send(res, 403, "text/plain; charset=utf-8", "unknown host\n");
   if (req.method !== "GET") return send(res, 405, "text/plain; charset=utf-8", "GET only\n");
   let p: string;
   try { p = decodeURIComponent(new URL(req.url ?? "/", "http://127.0.0.1").pathname); }

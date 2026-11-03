@@ -40,17 +40,31 @@ function trustedStateDir(): string {
   return dir;
 }
 
-function readState(file: string): State | Claim | null {
-  try {
-    const st = fs.lstatSync(file);
-    if (!st.isFile() || (POSIX && st.uid !== process.getuid!())) { fs.rmSync(file, {force: true}); return null; }
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch (e: any) {
-    if (e.code === "ENOENT") return null;
-    // An unreadable or half-written file names no server we can trust.
-    fs.rmSync(file, {force: true});
+/* What the state path holds, with the exact text we judged, so a later
+   removal can make sure the file still holds that text. "unsettled" is a file
+   we cannot parse yet. Claims and states both land whole, by link and by
+   rename, so only a stranger's write gives an unparseable file. We still
+   wait out the start window before we drop one, because removing a file a
+   live launcher just wrote would let two launchers start servers. */
+type Read = {value: State | Claim, text: string} | "unsettled" | null;
+
+function readState(file: string): Read {
+  let st: fs.Stats;
+  try { st = fs.lstatSync(file); } catch { return null; }
+  if (!st.isFile() || (POSIX && st.uid !== process.getuid!())) { fs.rmSync(file, {force: true}); return null; }
+  let text = "";
+  try { text = fs.readFileSync(file, "utf8"); return {value: JSON.parse(text), text}; }
+  catch {
+    if (Date.now() - st.mtimeMs < WAIT_MS) return "unsettled";
+    removeIfSame(file, text);
     return null;
   }
+}
+
+/* We remove the state file only while it still holds the text we judged. A
+   successor's claim or state may have replaced it after our read. */
+function removeIfSame(file: string, text: string){
+  try { if (fs.readFileSync(file, "utf8") === text) fs.rmSync(file); } catch {}
 }
 
 async function health(port: number): Promise<Health | null> {
@@ -88,28 +102,33 @@ async function launch(root: string): Promise<string> {
   const deadline = Date.now() + WAIT_MS;
 
   while (Date.now() < deadline){
-    const s = readState(file);
-    if (s && "port" in s){
+    const r = readState(file);
+    if (r === "unsettled"){ await sleep(100); continue; }
+    const s = r?.value;
+    if (r && s && "port" in s){
       const h = await liveServer(s, root);
       if (h && h.stamp === want) return url(s.port);
       // A live server on old code stops, so one repo never has two servers.
       if (h) await stopServer(h.pid, s.port);
-      fs.rmSync(file, {force: true});
+      removeIfSame(file, r.text);
       continue;
     }
-    if (s && "claimant" in s){
+    if (r && s && "claimant" in s){
       // Another launcher is starting a server. We wait for it, unless the
       // claimant died or the claim outlived the start window.
       if (alive(s.claimant) && Date.now() - s.at < WAIT_MS){ await sleep(100); continue; }
-      fs.rmSync(file, {force: true});
+      removeIfSame(file, r.text);
       continue;
     }
-    let fd: number;
-    try { fd = fs.openSync(file, "wx", 0o600); }
-    catch (e: any) { if (e.code === "EEXIST") continue; throw e; }
+    // We write the claim whole beside the state path, then link it into
+    // place. The link fails when any file holds the path, so one launcher
+    // wins, and no reader ever sees a claim half written.
     const claim: Claim = {claimant: process.pid, at: Date.now()};
-    fs.writeSync(fd, JSON.stringify(claim));
-    fs.closeSync(fd);
+    const tmp = file + "." + process.pid + ".claim";
+    fs.writeFileSync(tmp, JSON.stringify(claim), {mode: 0o600});
+    try { fs.linkSync(tmp, file); }
+    catch (e: any) { if (e.code === "EEXIST") continue; throw e; }
+    finally { fs.rmSync(tmp, {force: true}); }
     // The server must outlive this launcher and the shell that ran it, so it
     // gets its own process group and no handle back to us.
     spawn(process.execPath, [path.join(SCRIPTS_DIR, "adp-server.mts"), root, file],

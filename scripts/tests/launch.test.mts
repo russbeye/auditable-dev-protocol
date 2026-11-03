@@ -5,23 +5,28 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {spawn, spawnSync} from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import {repoKey} from "../adp-runtime.mts";
 
 const SCRIPTS = path.join(import.meta.dirname, "..");
 const LAUNCH = path.join(SCRIPTS, "adp-launch.mts");
 const PACKS_DIR = path.join(SCRIPTS, "..", "packs");
 const POSIX = process.platform !== "win32";
 
-const sandbox = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "adp-launch-")));
+// We resolve fixtures the way the launcher does. On Windows the temp dir can
+// carry an 8.3 short name, and only the native realpath expands it.
+const sandbox = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "adp-launch-")));
 const tmpEnv = (dir: string) => ({...process.env, TMPDIR: dir, TEMP: dir, TMP: dir});
 
 function makeRepo(name: string): string {
   const root = path.join(sandbox, name);
   fs.mkdirSync(path.join(root, ".adp", "T-001"), {recursive: true});
   fs.writeFileSync(path.join(root, ".adp", "T-001", "audit-log.md"), "# T-001\n\n## Problem Statement\nA → B\n", "utf8");
-  return fs.realpathSync(root);
+  return fs.realpathSync.native(root);
 }
 
 type Run = {status: number | null, stdout: string, stderr: string};
@@ -142,6 +147,22 @@ test("the server serves no file outside the page files at the top of scripts/", 
   }
 });
 
+function getWithHost(url: string, host: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    http.get(url, {headers: {host}}, res => { res.resume(); resolve(res.statusCode!); }).on("error", reject);
+  });
+}
+
+test("the server refuses a request whose Host is not its own address", async () => {
+  const port = new URL(base).port;
+  for (const route of ["/corpus.json", "/corpus/T-001/audit-log.md", "/health", "/mission-control.html"]){
+    assert.equal(await getWithHost(base + route, "attacker.example"), 403, route);
+    assert.equal(await getWithHost(base + route, "attacker.example:" + port), 403, route);
+    assert.equal(await getWithHost(base + route, "127.0.0.1:" + port), 200, route);
+    assert.equal(await getWithHost(base + route, "localhost:" + port), 200, route);
+  }
+});
+
 test("the server answers anything but GET with 405", async () => {
   assert.equal((await fetch(base + "/corpus.json", {method: "POST"})).status, 405);
 });
@@ -170,6 +191,23 @@ test("two spellings of one Windows path share one server", {skip: POSIX}, async 
   await track(a);
   const b = await launch(r.toUpperCase(), tmp);
   assert.equal(b, a);
+});
+
+test("a launch waits on a fresh unreadable claim and starts no server over it", async () => {
+  const r = makeRepo("unsettled");
+  const tmp = fs.mkdtempSync(path.join(sandbox, "tmp-"));
+  const dir = stateDirIn(tmp);
+  fs.mkdirSync(dir, {recursive: true, mode: 0o700});
+  const file = path.join(dir, crypto.createHash("sha256").update(repoKey(r)).digest("hex").slice(0, 16) + ".json");
+  // An empty file is what a launcher that writes in two steps leaves for an instant.
+  fs.writeFileSync(file, "", {mode: 0o600});
+  const p = spawn(process.execPath, [LAUNCH, r], {env: tmpEnv(tmp)});
+  await new Promise(res => setTimeout(res, 1500));
+  const after = fs.readFileSync(file, "utf8");
+  const exited = p.exitCode !== null;
+  p.kill();
+  assert.equal(after, "", "the launch replaced a claim that was still inside its start window");
+  assert.equal(exited, false);
 });
 
 /* R2: a state file earns no trust that /health does not confirm. We let a
