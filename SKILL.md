@@ -52,8 +52,9 @@ YAML so a script can check the structure.
 - `prompts/prompt-template.yaml` is the clean template. Copy it, fill it, delete what you don't need.
 - `references/prompt-template-annotated.yaml` documents every field and option, including the full
   `output.format` and `protocol.artifacts` value sets.
-- `scripts/validate-prompt.py` checks a filled prompt for required keys, types, and allowed values.
-  Run `python3 scripts/validate-prompt.py <file>`; it exits non-zero and lists what is wrong.
+- `scripts/validate-prompt.mts` checks a filled prompt for required keys, types, and allowed values.
+  Run `node <skill-dir>/scripts/validate-prompt.mts <file>`. It exits 1 and lists what is wrong, or
+  exits 2 when the file uses YAML outside the subset mission control reads.
 
 When invoked directly, nudge first. Before you restate the problem in Phase 1, point the developer at
 the template. Offer to draft one pre-filled with whatever they have already given you: the ask, file
@@ -198,7 +199,7 @@ than tab, newline, and carriage return (U+0000–U+0008, U+000B, U+000C, U+000E�
 written escaped inside a code span, `\u0000` for NUL, never raw. A raw one makes `grep` call the log
 binary, so a census that shells out skips the file, and the sentence around it loses the byte it was
 naming. Every reader on record decodes UTF-8: `adp-server.mts` sends `charset=utf-8`, the pages read
-`res.text()`, the suite reads `"utf8"`, and `validate-prompt.py` opens a prompt as `utf-8`. A reader that decodes anything else mangles every
+`res.text()`, the suite reads `"utf8"`, and `validate-prompt.mts` refuses a prompt that is not UTF-8. A reader that decodes anything else mangles every
 non-ASCII character, the ledger arrow `→` first, so no closure line matches the record grammar;
 `references/failure-modes.md` names that trap for census tooling. `lintCorpus` reports a raw control
 byte as a `control-byte` advisory that names the log in `id` and carries `offset`, the UTF-8 byte

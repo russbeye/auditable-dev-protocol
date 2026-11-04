@@ -4,7 +4,7 @@
   <p>
     <img alt="Protocol: 9 phases" src="https://img.shields.io/badge/protocol-9%20phases-2f6f68">
     <img alt="Prompt format: YAML" src="https://img.shields.io/badge/prompt%20format-YAML-cb6f3d">
-    <img alt="Validation: Python" src="https://img.shields.io/badge/validation-Python-3776ab">
+    <img alt="Validation: Node" src="https://img.shields.io/badge/validation-Node-5fa04e">
     <img alt="Artifacts: auditable" src="https://img.shields.io/badge/artifacts-auditable-6f42c1">
   </p>
   <p>
@@ -21,7 +21,7 @@ A nine-phase protocol for AI-assisted development. The model defends one recomme
 - `prompts/prompt-template.yaml`: a YAML format for framing a request before you start. Copy it and fill it in.
 - `references/prompt-template-annotated.yaml`: the same template with every field and option documented.
 - `references/failure-modes.md`: maps a symptom to the artifact you open first when something breaks.
-- `scripts/validate-prompt.py`: checks a filled prompt for structure, types, and allowed values.
+- `scripts/validate-prompt.mts`: checks a filled prompt for structure, types, and allowed values.
 - `scripts/prompt-builder.html`: a browser form for filling the template, with import and YAML export.
 - `scripts/ADP-Parser.html`: a browser viewer that watches the audit log and renders it by section. This is the protocol's observability layer.
 - `scripts/adp-launch.mts`: prints the URL of mission control for the current repo, starting its localhost server (`scripts/adp-server.mts`) when none is live. Run it with `npm start` or `node scripts/adp-launch.mts`. It needs Node 22.18 or later.
@@ -43,7 +43,7 @@ The YAML prompt template is the preferred way to frame a request, but the skill 
 4. Validate it:
 
    ```
-   python3 scripts/validate-prompt.py your-prompt.yaml
+   node scripts/validate-prompt.mts your-prompt.yaml
    ```
 
    The script prints each problem it finds and exits non-zero. A clean run prints `VALID`.

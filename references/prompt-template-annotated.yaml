@@ -1,7 +1,7 @@
 # Annotated prompt template for the Auditable AI-Assisted Development Protocol.
 # This file documents every field and every option. It is a reference, not a form.
 # Copy prompts/prompt-template.yaml for the clean version to fill in.
-# Validate a filled prompt with: python3 scripts/validate-prompt.py <file>
+# Validate a filled prompt with: node scripts/validate-prompt.mts <file>
 # Every value below is a valid example, so this file also serves as a passing fixture.
 
 # Required. Bump when the structure changes so a validator can branch on it.
