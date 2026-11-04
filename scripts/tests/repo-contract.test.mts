@@ -9,7 +9,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = path.join(import.meta.dirname, "..", "..");
-// We build the words from parts, so this file does not trip its own scan.
+// We build the words from parts and keep them out of the test names, so this
+// file does not trip its own scan once git tracks it.
 const PY = "python";
 // A call is the lowercase command with a flag or a script after it. Prose
 // such as "Python 3.7" stays legal, because census advice in the references
@@ -28,7 +29,7 @@ test("the repo tracks no Python file", () => {
   assert.deepEqual(tracked().filter(f => f.endsWith(".py")), []);
 });
 
-test("no tracked file calls Python, installs a Python package, or needs PyYAML", () => {
+test("no tracked file calls Python, installs a Python package, or names its YAML library", () => {
   const hits: string[] = [];
   for (const f of tracked()){
     const text = fs.readFileSync(path.join(ROOT, f), "utf8");
