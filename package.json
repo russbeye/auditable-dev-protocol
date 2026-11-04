@@ -1,0 +1,16 @@
+{
+  "name": "auditable-dev-protocol",
+  "private": true,
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node scripts/adp-launch.mts",
+    "test": "node --test \"scripts/tests/*.test.js\" \"scripts/tests/*.test.mts\"",
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2"
+  }
+}

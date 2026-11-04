@@ -12,15 +12,15 @@ under `scripts/tests/fixtures/index/` against them.
 artifacts are H2 sections of the log. The mission-control shell (MC-001) needs corpus-wide state
 — watches, decisions, lifecycle — as data, and every environment must agree on it: one builder
 library running under Node in the test suite and in the browser over corpus files served by
-`adp-serve.py`. The index is never a stored artifact; it exists only in memory where it is
+the mission control server. The index is never a stored artifact; it exists only in memory where it is
 built. Nothing agreed on the shape until now; the corpus conventions existed only as habits of
 the existing logs.
 
 **Decision.** We freeze the conventions as `adp-index/1`, specified here as numbered rules with
 a validator and fixtures. The index is metadata-only: it carries derived facts and verbatim
 tokens, never section bodies and never rendered HTML. Consumers load a ticket's raw
-`audit-log.md` through the same source seam that produced the index (the adp-serve corpus
-routes today; any future seam supplies the same shape) when they need content. The index is a
+`audit-log.md` through the same source seam that produced the index (the mission control
+server's corpus routes today; any future seam supplies the same shape) when they need content. The index is a
 pure function of (path, text) pairs, so every producer yields identical bytes for the same
 corpus.
 
@@ -70,7 +70,7 @@ always means the `YYYY-MM-DD` form of rule IDX-004.
 - `schema` — the literal string `adp-index/1`.
 - `project` — the corpus name. Caller-supplied.
 - `generated` — the build date. Caller-supplied: the builder never reads a clock.
-- `source` — which seam produced the index: `working-tree` (the adp-serve corpus routes,
+- `source` — which seam produced the index: `working-tree` (the mission control server's corpus routes,
   live), `snapshot` (a stored corpus copy; none ships today), or `picked` (a browser directory
   selection; reserved). The token set is frozen, and an unused token stays.
 - `tickets` — one entry per ticket directory, sorted ascending by `dir`. Attention ordering,
