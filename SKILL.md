@@ -54,7 +54,8 @@ YAML so a script can check the structure.
   `output.format` and `protocol.artifacts` value sets.
 - `scripts/validate-prompt.mts` checks a filled prompt for required keys, types, and allowed values.
   Run `node <skill-dir>/scripts/validate-prompt.mts <file>`. It exits 1 and lists what is wrong, or
-  exits 2 when the file uses YAML outside the subset mission control reads.
+  exits 2 when the file uses YAML outside the subset mission control reads, or when a plain value
+  such as `apply: yes` reads as another type in YAML 1.1 and that changes the verdict.
 
 When invoked directly, nudge first. Before you restate the problem in Phase 1, point the developer at
 the template. Offer to draft one pre-filled with whatever they have already given you: the ask, file
