@@ -13,6 +13,21 @@
   // The nine protocol phases, as protocol.defers names them.
   const PHASES = ["observation","literature_review","hypothesis","research_design","implementation","analysis","synthesis","communication","obligations"];
 
+  // The implicit types a YAML 1.1 loader gives a plain scalar,
+  // with its own patterns. We keep only the type that validate() reads, so a
+  // timestamp becomes a number. A Date would pass the mapping check.
+  const YAML11=[
+    {name:"a boolean", re:/^(?:yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF)$/,
+      value:v=>/^(?:yes|true|on)$/i.test(v)},
+    {name:"null", re:/^(?:null|Null|NULL|~)$/, value:()=>null},
+    {name:"an integer", re:/^(?:[-+]?0b[0-1_]+|[-+]?0[0-7_]+|[-+]?(?:0|[1-9][0-9_]*)|[-+]?0x[0-9a-fA-F_]+|[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)$/,
+      value:v=>Number(v.replace(/_/g,""))},
+    {name:"a float", re:/^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?|\.[0-9][0-9_]*(?:[eE][-+][0-9]+)?|[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/,
+      value:v=>Number(v.replace(/_/g,""))},
+    {name:"a timestamp", re:/^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}(?:[Tt]|[ \t]+)[0-9]{1,2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]*)?(?:[ \t]*(?:Z|[-+][0-9]{1,2}(?::[0-9]{2})?))?)$/,
+      value:v=>Date.parse(v)},
+  ];
+
   function qstr(s){ return '"'+String(s).replace(/\\/g,"\\\\").replace(/"/g,'\\"')+'"'; }
   function block(key, val, indent){
     const pad=" ".repeat(indent);
@@ -266,7 +281,10 @@
   // Keys are identifiers. When the caller passes an `issues` array, we add a
   // user-facing entry for every construct outside that dialect. Our import
   // contract is that nothing is dropped or altered without being named.
-  function parseYAML(text, issues){
+  // With yaml11 set, we also type each plain scalar the way a YAML 1.1 loader
+  // does and name it in issues. The validator CLI uses that reading to find
+  // a prompt whose verdict depends on how a reader types its plain values.
+  function parseYAML(text, issues, yaml11){
     const lines=String(text).replace(/\r\n/g,"\n").replace(/\t/g,"  ").split("\n");
     const N=lines.length; let i=0;
     const indentOf=s=>s.match(/^ */)[0].length;
@@ -314,6 +332,10 @@
       if(v==="true") return true;
       if(v==="false") return false;
       if(v==="null"||v==="~") return null;
+      if(yaml11){
+        const t=YAML11.find(r=>r.re.test(v));
+        if(t){ note(`${at} (plain value ${v} reads as ${t.name} in YAML 1.1, and mission control reads it as text)`); return t.value(v); }
+      }
       if(CONSTRUCT[v[0]]) note(`${at} (${CONSTRUCT[v[0]]} is unsupported; value kept as plain text)`);
       return v;
     }

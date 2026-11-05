@@ -104,6 +104,48 @@ test("the CLI exits 2 on a construct outside the subset and names it", () => {
   assert.match(res.stderr, /flow mapping/);
 });
 
+// Runs the CLI on minimal.yaml with one line swapped, or with lines added.
+function runVariant(from, to){
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adp-validate-"));
+  const file = path.join(dir, "variant.yaml");
+  const minimal = fs.readFileSync(path.join(CORPUS, "valid", "minimal.yaml"), "utf8");
+  const text = from === null ? minimal + to : minimal.replace(from, to);
+  assert.notStrictEqual(text, minimal);
+  fs.writeFileSync(file, text);
+  const res = spawnSync(process.execPath, [VALIDATOR, file], {encoding: "utf8"});
+  fs.rmSync(dir, {recursive: true, force: true});
+  return res;
+}
+
+for (const [from, to, key] of [
+  ["apply: true", "apply: yes", "protocol.apply"],
+  ["apply: true", "apply: True", "protocol.apply"],
+  ['date: "2026-07-31"', "date: 2026-07-31", "task.date"],
+  ['schema_version: "1.0"', "schema_version: 1.0", "schema_version"],
+  ['id: "PB-005-fixture"', "id: 42", "task.id"],
+]){
+  test(`the CLI exits 2 when the YAML type of "${to}" changes the verdict`, () => {
+    const res = runVariant(from, to);
+    assert.strictEqual(res.status, 2);
+    assert.strictEqual(res.stdout, "");
+    assert.ok(res.stderr.includes(`  - ${key} (plain value `), res.stderr);
+  });
+}
+
+test("the CLI gives the verdict when a typed plain value does not change it", () => {
+  const res = runVariant(null, "constraints:\n  budget: 5\n");
+  assert.strictEqual(res.status, 0, res.stderr);
+});
+
+test("parseYAML keeps a typed plain value as text unless yaml11 is set", () => {
+  const plain = [];
+  assert.deepStrictEqual(lib.parseYAML("a: True\nb: 1.0\n", plain), {a: "True", b: "1.0"});
+  assert.deepStrictEqual(plain, []);
+  const typed = [];
+  assert.deepStrictEqual(lib.parseYAML("a: True\nb: 1.0\n", typed, true), {a: true, b: 1});
+  assert.strictEqual(typed.length, 2);
+});
+
 test("the CLI exits 2 on bytes that are not UTF-8", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adp-validate-"));
   const file = path.join(dir, "latin1.yaml");
