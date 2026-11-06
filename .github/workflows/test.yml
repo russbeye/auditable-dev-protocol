@@ -20,11 +20,6 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      # The validator parity suite still runs validate-prompt.py, which needs PyYAML.
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-      - run: pip install pyyaml
       - run: npm ci
       - run: npm run typecheck
       - run: npm test

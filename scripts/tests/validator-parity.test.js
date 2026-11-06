@@ -1,31 +1,30 @@
 /* Validator parity suite. One fixture corpus, two
-   validators, zero tolerated drift.
+   entry points, zero tolerated drift.
 
    Every fixture under fixtures/parity/ is judged three ways. The manifest
-   states the expected flagged keys, scripts/validate-prompt.py runs on the
+   states the expected flagged keys, scripts/validate-prompt.mts runs on the
    file, and the lib's validate() runs directly on the parsed document. All
    three must produce the same key set. The manifest is the contract, so
    flipping one expectation must fail the run.
 
-   The corpus stays inside the builder's YAML dialect. Use quoted strings and
-   real booleans. A typed plain scalar, for example an unquoted date, parses
-   as a string here and as a richer type under PyYAML. That mismatch lives in
-   the parsers, not the validators, and this suite does not judge it.
+   The CLI refuses a mapping that parseYAML cannot read whole, and exits 2
+   in place of a verdict. No fixture is such a mapping, so every fixture
+   gets its verdict through the CLI.
 
-   Runs with the rest of the suite:  node --test scripts/tests/*.test.js
-   Needs python3 with PyYAML on PATH. We fail loudly when either is missing,
-   because a skipped parity check reads as parity that was never checked. */
+   Runs with the rest of the suite:  npm test */
 "use strict";
 
-const {test, before} = require("node:test");
+const {test} = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const {spawnSync} = require("node:child_process");
 const {lib} = require("./helpers.js");
 
 const CORPUS = path.join(__dirname, "fixtures", "parity");
-const VALIDATOR = path.join(__dirname, "..", "validate-prompt.py");
+const VALIDATOR = path.join(__dirname, "..", "validate-prompt.mts");
+const LIB = path.join(__dirname, "..", "adp-prompt-lib.js");
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(CORPUS, "manifest.json"), "utf8"));
 
 const sortedKeys = errs => [...new Set(errs.map(e => e[0]))].sort();
@@ -34,8 +33,12 @@ function jsKeys(text){
   return sortedKeys(lib.validate(lib.parseYAML(text)));
 }
 
-function pyKeys(relPath){
-  const res = spawnSync("python3", [VALIDATOR, path.join(CORPUS, relPath)], {encoding: "utf8"});
+function run(relPath){
+  return spawnSync(process.execPath, [VALIDATOR, path.join(CORPUS, relPath)], {encoding: "utf8"});
+}
+
+function cliKeys(relPath){
+  const res = run(relPath);
   if (res.status === 0) return [];
   if (res.status === 1){
     // Every message begins with the key it flags, so the first token is the
@@ -45,15 +48,8 @@ function pyKeys(relPath){
       .map(line => line.slice(4).split(/\s/, 1)[0]);
     return [...new Set(keys)].sort();
   }
-  throw new Error(`validate-prompt.py exited ${res.status} on ${relPath}: ${res.stderr || res.stdout}`);
+  throw new Error(`validate-prompt.mts exited ${res.status} on ${relPath}: ${res.stderr || res.stdout}`);
 }
-
-before(() => {
-  const probe = spawnSync("python3", ["-c", "import yaml"], {encoding: "utf8"});
-  assert.strictEqual(probe.status, 0,
-    "the parity suite needs python3 with PyYAML (pip install pyyaml); " +
-    "we fail rather than skip, because skipped parity reads as checked parity");
-});
 
 test("manifest and fixture directory agree on the corpus", () => {
   const onDisk = [];
@@ -73,17 +69,105 @@ test("the manifest's verdicts match the directory split", () => {
 for (const [file, expected] of Object.entries(MANIFEST)){
   test(`parity: ${file}`, () => {
     const want = [...expected].sort();
-    const py = pyKeys(file);
     const js = jsKeys(fs.readFileSync(path.join(CORPUS, file), "utf8"));
-    assert.deepStrictEqual(py, want, `${file}: validate-prompt.py disagrees with the manifest`);
     assert.deepStrictEqual(js, want, `${file}: the JS validate() disagrees with the manifest`);
+    assert.deepStrictEqual(cliKeys(file), want, `${file}: validate-prompt.mts disagrees with the manifest`);
   });
 }
 
-/* Requirement R2: every rule in validate-prompt.py has at least one fixture
-   that trips it. BRANCHES lists every message-key family the Python validator
-   can emit, with list indexes generalized to []. If you add a rule to
-   validate-prompt.py, add its family here and a fixture that trips it. */
+test("the CLI prints VALID and exits 0 on a clean file", () => {
+  const res = run("valid/minimal.yaml");
+  assert.strictEqual(res.status, 0);
+  assert.strictEqual(res.stdout, `VALID: ${path.join(CORPUS, "valid/minimal.yaml")}\n`);
+});
+
+test("the CLI gives the root verdict when the parse yields nothing, even with issues", () => {
+  // root-list.yaml is a sequence at the root. parseYAML drops both lines and
+  // returns {}, so no mapping exists to misjudge.
+  const issues = [];
+  lib.parseYAML(fs.readFileSync(path.join(CORPUS, "invalid/root-list.yaml"), "utf8"), issues);
+  assert.ok(issues.length > 0);
+  const res = run("invalid/root-list.yaml");
+  assert.strictEqual(res.status, 1);
+  assert.deepStrictEqual(cliKeys("invalid/root-list.yaml"), ["root"]);
+});
+
+test("the CLI exits 2 on a construct outside the subset and names it", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adp-validate-"));
+  const file = path.join(dir, "flow.yaml");
+  const minimal = fs.readFileSync(path.join(CORPUS, "valid", "minimal.yaml"), "utf8");
+  fs.writeFileSync(file, minimal + "constraints: {a: 1}\n");
+  const res = spawnSync(process.execPath, [VALIDATOR, file], {encoding: "utf8"});
+  fs.rmSync(dir, {recursive: true, force: true});
+  assert.strictEqual(res.status, 2);
+  assert.strictEqual(res.stdout, "");
+  assert.match(res.stderr, /flow mapping/);
+});
+
+// Runs the CLI on minimal.yaml with one line swapped, or with lines added.
+function runVariant(from, to){
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adp-validate-"));
+  const file = path.join(dir, "variant.yaml");
+  const minimal = fs.readFileSync(path.join(CORPUS, "valid", "minimal.yaml"), "utf8");
+  const text = from === null ? minimal + to : minimal.replace(from, to);
+  assert.notStrictEqual(text, minimal);
+  fs.writeFileSync(file, text);
+  const res = spawnSync(process.execPath, [VALIDATOR, file], {encoding: "utf8"});
+  fs.rmSync(dir, {recursive: true, force: true});
+  return res;
+}
+
+for (const [from, to, key] of [
+  ["apply: true", "apply: yes", "protocol.apply"],
+  ["apply: true", "apply: True", "protocol.apply"],
+  ['date: "2026-07-31"', "date: 2026-07-31", "task.date"],
+  ['schema_version: "1.0"', "schema_version: 1.0", "schema_version"],
+  ['id: "PB-005-fixture"', "id: 42", "task.id"],
+]){
+  test(`the CLI exits 2 when the YAML type of "${to}" changes the verdict`, () => {
+    const res = runVariant(from, to);
+    assert.strictEqual(res.status, 2);
+    assert.strictEqual(res.stdout, "");
+    assert.ok(res.stderr.includes(`  - ${key} (plain value `), res.stderr);
+  });
+}
+
+test("the CLI gives the verdict when a typed plain value does not change it", () => {
+  const res = runVariant(null, "constraints:\n  budget: 5\n");
+  assert.strictEqual(res.status, 0, res.stderr);
+});
+
+test("parseYAML keeps a typed plain value as text unless yaml11 is set", () => {
+  const plain = [];
+  assert.deepStrictEqual(lib.parseYAML("a: True\nb: 1.0\n", plain), {a: "True", b: "1.0"});
+  assert.deepStrictEqual(plain, []);
+  const typed = [];
+  assert.deepStrictEqual(lib.parseYAML("a: True\nb: 1.0\n", typed, true), {a: true, b: 1});
+  assert.strictEqual(typed.length, 2);
+});
+
+test("the CLI exits 2 on bytes that are not UTF-8", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adp-validate-"));
+  const file = path.join(dir, "latin1.yaml");
+  const minimal = fs.readFileSync(path.join(CORPUS, "valid", "minimal.yaml"));
+  fs.writeFileSync(file, Buffer.concat([minimal, Buffer.from("# caf\xe9\n", "latin1")]));
+  const res = spawnSync(process.execPath, [VALIDATOR, file], {encoding: "utf8"});
+  fs.rmSync(dir, {recursive: true, force: true});
+  assert.strictEqual(res.status, 2);
+  assert.match(res.stderr, /could not read/);
+});
+
+test("the CLI exits 2 on a usage error and on a missing file", () => {
+  assert.strictEqual(spawnSync(process.execPath, [VALIDATOR], {encoding: "utf8"}).status, 2);
+  const missing = spawnSync(process.execPath, [VALIDATOR, path.join(CORPUS, "no-such.yaml")], {encoding: "utf8"});
+  assert.strictEqual(missing.status, 2);
+  assert.match(missing.stderr, /could not read/);
+});
+
+/* Requirement R2: every rule in validate() has at least one fixture that
+   trips it. BRANCHES lists every message-key family validate() can emit,
+   with list indexes generalized to []. If you add a rule to validate() in
+   adp-prompt-lib.js, add its family here and a fixture that trips it. */
 const BRANCHES = [
   "root", "schema_version",
   "task", "task.id", "task.title", "task.author", "task.date",
@@ -101,21 +185,21 @@ const BRANCHES = [
   "protocol.defers[].phase", "protocol.defers[].reason",
 ];
 
-test("every Python rule family is tripped by at least one fixture", () => {
+test("every rule family is tripped by at least one fixture", () => {
   const covered = new Set(
     Object.values(MANIFEST).flat().map(k => k.replace(/\[\d+\]/g, "[]")));
   const missing = BRANCHES.filter(b => !covered.has(b));
   assert.deepStrictEqual(missing, [], "rule families with no fixture");
 });
 
-test("validate-prompt.py has not grown rules the corpus does not know", () => {
+test("validate() has not grown rules the corpus does not know", () => {
   // A count pin is a blunt tripwire, and that is the point. A new rule site
   // fails this test until BRANCHES and the corpus grow with it.
-  const src = fs.readFileSync(VALIDATOR, "utf8");
-  const requires = (src.match(/require\(/g) || []).length - (src.match(/def require\(/g) || []).length;
-  const appends = (src.match(/errors\.append\(/g) || []).length;
-  assert.strictEqual(requires, 27, "require() call sites in validate-prompt.py");
-  assert.strictEqual(appends, 3, "errors.append() sites in validate-prompt.py");
+  const src = fs.readFileSync(LIB, "utf8");
+  const start = src.indexOf("function validate(raw)");
+  const body = src.slice(start, src.indexOf("\n  }\n", start));
+  assert.strictEqual((body.match(/e\.push\(/g) || []).length, 29, "e.push() sites in validate()");
+  assert.strictEqual((body.match(/return \[\[/g) || []).length, 1, "early-return verdicts in validate()");
 });
 
 /* Totality over raw parsed documents. These cases pin the direct path: a
@@ -143,9 +227,9 @@ for (const [name, text] of Object.entries(RAW_DOCS)){
   });
 }
 
-test("an empty parse gets the root verdict Python gives an empty file", () => {
-  // parseYAML collapses an empty text to {}, and PyYAML reads the same text
-  // as None, so both sides must answer with the root flag alone.
+test("an empty parse gets the root verdict", () => {
+  // parseYAML collapses an empty text to {}. An empty file has no mapping at
+  // its root, so validate() answers with the root flag alone.
   assert.deepStrictEqual(sortedKeys(lib.validate(lib.parseYAML(""))), ["root"]);
 });
 

@@ -10,9 +10,23 @@
   const ARTIFACTS = ["problem_statement","knowledge_gap","recommendation_brief","premortem","decision_log","test_adversary","pr_summary","deployment_risk","obligation_tickets"];
   const FORMATS = ["code","patch","json","yaml","markdown","prose"];
   const DEFAULT_ARTIFACTS = ["decision_log","test_adversary"];
-  // The nine protocol phases, as protocol.defers names them. Keep this list
-  // in step with PHASES in validate-prompt.py, which is the authoritative side.
+  // The nine protocol phases, as protocol.defers names them.
   const PHASES = ["observation","literature_review","hypothesis","research_design","implementation","analysis","synthesis","communication","obligations"];
+
+  // The implicit types a YAML 1.1 loader gives a plain scalar,
+  // with its own patterns. We keep only the type that validate() reads, so a
+  // timestamp becomes a number. A Date would pass the mapping check.
+  const YAML11=[
+    {name:"a boolean", re:/^(?:yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF)$/,
+      value:v=>/^(?:yes|true|on)$/i.test(v)},
+    {name:"null", re:/^(?:null|Null|NULL|~)$/, value:()=>null},
+    {name:"an integer", re:/^(?:[-+]?0b[0-1_]+|[-+]?0[0-7_]+|[-+]?(?:0|[1-9][0-9_]*)|[-+]?0x[0-9a-fA-F_]+|[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)$/,
+      value:v=>Number(v.replace(/_/g,""))},
+    {name:"a float", re:/^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?|\.[0-9][0-9_]*(?:[eE][-+][0-9]+)?|[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/,
+      value:v=>Number(v.replace(/_/g,""))},
+    {name:"a timestamp", re:/^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}(?:[Tt]|[ \t]+)[0-9]{1,2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]*)?(?:[ \t]*(?:Z|[-+][0-9]{1,2}(?::[0-9]{2})?))?)$/,
+      value:v=>Date.parse(v)},
+  ];
 
   function qstr(s){ return '"'+String(s).replace(/\\/g,"\\\\").replace(/"/g,'\\"')+'"'; }
   function block(key, val, indent){
@@ -53,7 +67,7 @@
      Two keys stay out of the fill on purpose. A filled schema_version would
      hide a missing required field from validate(). protocol.apply gets a
      default only when the whole protocol block is absent, because
-     validate-prompt.py requires apply inside a present block, and a filled
+     validate() requires apply inside a present block, and a filled
      default would hide that error too. protocol.defers passes through whole,
      since an absent defers key means that nothing is deferred. */
   function normalize(doc){
@@ -175,26 +189,24 @@
     return L.join("\n").replace(/\n{3,}/g,"\n\n").replace(/\s+$/,"")+"\n";
   }
 
-  // Validation mirrors validate-prompt.py (surfaced as warnings). The Python
-  // side is the authoritative rule set, and the parity suite under
-  // scripts/tests/ holds the two to the same verdicts and flagged keys.
-  // Align that side first when the rules change.
-  // Mirror of the Python side's nonempty_str. Only a real string with visible
-  // content passes, so booleans and whitespace-only values fail.
+  // This is the one rule set for a prompt. The builder shows its findings as
+  // warnings, and validate-prompt.mts prints them. The parity suite under
+  // scripts/tests/ pins each rule to a fixture.
+  // Only a real string with visible content passes, so booleans and
+  // whitespace-only values fail.
   function nonemptyStr(v){ return typeof v==="string" && v.trim()!==""; }
-  // Mirror of DATE_RE in validate-prompt.py. We check the shape of the date,
-  // not the calendar, so Feb 30 passes by contract. Keep the class [0-9] on
-  // both sides. Python's \d also matches non-ASCII digits, and the two
-  // validators must reject the same strings.
+  // We check the shape of the date, not the calendar, so Feb 30 passes by
+  // contract. The class [0-9] admits ASCII digits only, so a date written in
+  // another script's digits fails.
   const DATE_RE=/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
   function validate(raw){
     // We judge presence and structure on the raw argument, because the fill
     // toward the blank shape would hide an absent or wrong-typed block. The
     // per-field checks still read the filled document, which keeps them
     // total. When a block fails its shape check, we flag the block and keep
-    // its field checks quiet, the way Python's isinstance guards do.
-    // parseYAML collapses an empty or unrecognized text to {}. PyYAML reads
-    // those same texts as a non-mapping root, so we give the same verdict.
+    // its field checks quiet.
+    // parseYAML collapses an empty or unrecognized text to {}. Neither text
+    // has a mapping at its root, so both get the root verdict.
     if(!isObj(raw)||Object.keys(raw).length===0) return [["root","must be a mapping"]];
     const d=normalize(raw);
     const e=[];
@@ -206,7 +218,7 @@
       // never flags task.date twice.
       if(nonemptyStr(d.task.date) && !DATE_RE.test(d.task.date)) e.push(["task.date","must match YYYY-MM-DD"]);
     } else e.push(["task","must be a mapping"]);
-    // Python flags the lens whenever the role key exists. The page never
+    // We flag the lens whenever the role key exists. The page never
     // trips this rule on a blank form. Its badge validates the export image
     // of the form, and serialization omits an all-blank role.
     if("role" in raw){
@@ -224,8 +236,7 @@
     } else e.push(["output","must be a mapping"]);
     // We judge requirements on the raw list. The fill would turn a
     // non-mapping item into a blank row, and a wrong shape must not read
-    // as missing fields. Python flags every field of an all-empty item,
-    // so we do the same.
+    // as missing fields. We flag every field of an all-empty item.
     if(!Array.isArray(raw.requirements)||raw.requirements.length===0) e.push(["requirements","at least one complete requirement"]);
     else raw.requirements.forEach((r,i)=>{
       if(!isObj(r)){ e.push([`requirements[${i}]`,"must be a mapping"]); return; }
@@ -238,8 +249,8 @@
     if("context" in raw && !isObj(raw.context)) e.push(["context","must be a mapping"]);
     if("lessons_learned" in raw){
       if(!Array.isArray(raw.lessons_learned)) e.push(["lessons_learned","must be a list"]);
-      // We judge every raw item, all-empty ones included, because Python
-      // flags an item that lacks both fields. The builder's badge strips
+      // We judge every raw item, all-empty ones included, because an item
+      // that lacks both fields teaches nothing. The builder's badge strips
       // its all-empty rows before it calls us.
       else raw.lessons_learned.forEach((x,i)=>{ if(!isObj(x)||!nonemptyStr(x.context)||!nonemptyStr(x.takeaway)) e.push([`lessons_learned[${i}]`,"needs context and takeaway"]); });
     }
@@ -249,9 +260,9 @@
       if(!Array.isArray(d.protocol.artifacts)) e.push(["protocol.artifacts","must be a list"]);
       else d.protocol.artifacts.forEach(a=>{ if(!ARTIFACTS.includes(a)) e.push(["protocol.artifacts","unknown artifact: "+a]); });
       // The builder's defers editor feeds this through gather(), which omits
-      // the key when the editor is empty. We mirror the Python side: a known
-      // phase name and a written reason per item, and an absent key means
-      // that nothing is deferred.
+      // the key when the editor is empty. We want a known phase name and a
+      // written reason per item, and an absent key means that nothing is
+      // deferred.
       if(d.protocol.defers!==undefined){
         if(!Array.isArray(d.protocol.defers)) e.push(["protocol.defers","must be a list"]);
         else d.protocol.defers.forEach((x,i)=>{
@@ -270,7 +281,10 @@
   // Keys are identifiers. When the caller passes an `issues` array, we add a
   // user-facing entry for every construct outside that dialect. Our import
   // contract is that nothing is dropped or altered without being named.
-  function parseYAML(text, issues){
+  // With yaml11 set, we also type each plain scalar the way a YAML 1.1 loader
+  // does and name it in issues. The validator CLI uses that reading to find
+  // a prompt whose verdict depends on how a reader types its plain values.
+  function parseYAML(text, issues, yaml11){
     const lines=String(text).replace(/\r\n/g,"\n").replace(/\t/g,"  ").split("\n");
     const N=lines.length; let i=0;
     const indentOf=s=>s.match(/^ */)[0].length;
@@ -318,6 +332,10 @@
       if(v==="true") return true;
       if(v==="false") return false;
       if(v==="null"||v==="~") return null;
+      if(yaml11){
+        const t=YAML11.find(r=>r.re.test(v));
+        if(t){ note(`${at} (plain value ${v} reads as ${t.name} in YAML 1.1, and mission control reads it as text)`); return t.value(v); }
+      }
       if(CONSTRUCT[v[0]]) note(`${at} (${CONSTRUCT[v[0]]} is unsupported; value kept as plain text)`);
       return v;
     }
