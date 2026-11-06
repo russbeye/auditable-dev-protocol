@@ -3,7 +3,7 @@
    changes, update this file to match, then regenerate the golden output from
    the repo root and review the diff before committing:
 
-     node -e "const l=require('./scripts/adp-prompt-lib.js'),s=require('./scripts/tests/fixtures/builder-example.js');require('fs').writeFileSync('scripts/tests/fixtures/builder-example.yaml',l.buildYaml(s))"
+     node -e "const l=require('./src/lib/adp-prompt-lib.ts'),s=require('./scripts/tests/fixtures/builder-example.js');require('fs').writeFileSync('scripts/tests/fixtures/builder-example.yaml',l.buildYaml(s))"
 */
 "use strict";
 

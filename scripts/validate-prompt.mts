@@ -11,14 +11,8 @@
 
    We read the prompt with the same parseYAML and validate() that mission
    control uses, so a prompt never passes one and fails the other. */
-import {createRequire} from "node:module";
 import fs from "node:fs";
-
-type PromptLib = {
-  parseYAML(text: string, issues?: string[], yaml11?: boolean): unknown,
-  validate(doc: unknown): [string, string][],
-};
-const lib = createRequire(import.meta.url)("./adp-prompt-lib.js") as PromptLib;
+import * as lib from "../src/lib/adp-prompt-lib.ts";
 
 const keys = (errors: [string, string][]) => [...new Set(errors.map(e => e[0]))].sort().join("\n");
 

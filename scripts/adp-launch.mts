@@ -7,10 +7,11 @@
    line, the URL, so a caller can read it and go. Every repo gets one state
    file in a per-user directory under the temp dir, and we trust that file
    only as far as GET /health confirms it. */
-import {spawn} from "node:child_process";
+import {spawn, spawnSync} from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import {SCRIPTS_DIR, stamp, stateDir, statePath, type Health, type State} from "./adp-runtime.mts";
+import {BUILD_MARK, SCRIPTS_DIR, SKILL_DIR, stamp, stateDir, statePath, type Health, type State} from "./adp-runtime.mts";
 
 const WAIT_MS = 10_000;
 const POSIX = process.platform !== "win32";
@@ -93,10 +94,67 @@ async function stopServer(pid: number, port: number){
   while (Date.now() < end && await health(port)) await sleep(100);
 }
 
+/* We follow npm's own rule for a current install. npm ci and npm install
+   write node_modules/.package-lock.json last, so a lockfile newer than that
+   file means a pull or a checkout changed the dependencies. */
+function installed(): boolean {
+  try {
+    const have = fs.statSync(path.join(SKILL_DIR, "node_modules", ".package-lock.json")).mtimeMs;
+    return have >= fs.statSync(path.join(SKILL_DIR, "package-lock.json")).mtimeMs;
+  } catch { return false; }
+}
+
+// The build writes its marker only when it succeeds, so a failed build runs
+// again on the next launch.
+function built(): boolean {
+  try { return fs.readFileSync(BUILD_MARK, "utf8") === stamp(); } catch { return false; }
+}
+
+/* Runs one step with its output on our stderr, because stdout carries only
+   the URL. A failed step ends the launch, and the error the tool printed
+   stays above our one line. */
+function step(what: string, cmd: string, args: string[]){
+  process.stderr.write(`adp-launch: ${what}\n`);
+  // npm is a .cmd file on Windows, and only a shell can run one.
+  const r = spawnSync(cmd, args, {cwd: SKILL_DIR, stdio: ["ignore", 2, 2], shell: !POSIX && cmd === "npm"});
+  if (r.status !== 0) throw new Error(`${what} failed`);
+}
+
+/* Installs the dependencies when the lockfile changed, and builds the bundle
+   when the sources changed. Launchers for two repos share this skill
+   directory, so they take turns through a lock file in the state directory.
+   A lock whose holder died is taken over. */
+async function prepare(dir: string){
+  const lock = path.join(dir, "build-" + crypto.createHash("sha256").update(SKILL_DIR).digest("hex").slice(0, 16) + ".lock");
+  // The lock lands whole by link, like the claim, so a reader never sees it
+  // empty and takes it for a dead holder's.
+  const tmp = lock + "." + process.pid;
+  fs.writeFileSync(tmp, String(process.pid), {mode: 0o600});
+  try {
+    for (;;){
+      try { fs.linkSync(tmp, lock); break; }
+      catch (e: any) {
+        if (e.code !== "EEXIST") throw e;
+        let text = "";
+        try { text = fs.readFileSync(lock, "utf8"); } catch { continue; }
+        // A pid of 0 would probe our own process group and always answer.
+        const holder = Number(text);
+        if (holder > 0 && alive(holder)){ await sleep(200); continue; }
+        removeIfSame(lock, text);
+      }
+    }
+  } finally { fs.rmSync(tmp, {force: true}); }
+  try {
+    if (!installed()) step("installing dependencies (npm ci)", "npm", ["ci"]);
+    if (!built()) step("building the app", process.execPath,
+      [path.join(SKILL_DIR, "node_modules", "vite", "bin", "vite.js"), "build", "--logLevel", "warn"]);
+  } finally { fs.rmSync(lock, {force: true}); }
+}
+
 const url = (port: number) => `http://127.0.0.1:${port}/mission-control.html`;
 
 async function launch(root: string): Promise<string> {
-  trustedStateDir();
+  await prepare(trustedStateDir());
   const file = statePath(root);
   const want = stamp();
   const deadline = Date.now() + WAIT_MS;

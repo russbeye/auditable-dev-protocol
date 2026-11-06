@@ -2,7 +2,7 @@
 
 The mission-control shell consumes one artifact: an index document describing every ticket in an
 `.adp/` corpus. This file is the contract for that document. It opens with the decision record,
-then gives the normative specification as numbered rules. `scripts/adp-index-lib.js` enforces
+then gives the normative specification as numbered rules. `src/lib/adp-index-lib.ts` enforces
 the machine-checkable rules; `scripts/tests/index-contract.test.js` runs the fixture corpus
 under `scripts/tests/fixtures/index/` against them.
 

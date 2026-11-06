@@ -1,12 +1,12 @@
 /* Announcer suite. The live region must speak state
    transitions after input settles and stay silent otherwise. We drive the
    factory with a hand-rolled scheduler, so the tests never touch the global
-   timers and run on stock Node.
+   timers.
 
-   Runs with the rest of the suite:  node --test scripts/tests/*.test.js */
+   Runs with the rest of the suite:  npm test */
 "use strict";
 
-const {test} = require("node:test");
+import {test} from "vitest";
 const assert = require("node:assert");
 const {lib} = require("./helpers.js");
 

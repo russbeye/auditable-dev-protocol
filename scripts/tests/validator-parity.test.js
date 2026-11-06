@@ -14,7 +14,7 @@
    Runs with the rest of the suite:  npm test */
 "use strict";
 
-const {test} = require("node:test");
+import {test} from "vitest";
 const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -24,7 +24,7 @@ const {lib} = require("./helpers.js");
 
 const CORPUS = path.join(__dirname, "fixtures", "parity");
 const VALIDATOR = path.join(__dirname, "..", "validate-prompt.mts");
-const LIB = path.join(__dirname, "..", "adp-prompt-lib.js");
+const LIB = path.join(__dirname, "..", "..", "src", "lib", "adp-prompt-lib.ts");
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(CORPUS, "manifest.json"), "utf8"));
 
 const sortedKeys = errs => [...new Set(errs.map(e => e[0]))].sort();
@@ -167,7 +167,7 @@ test("the CLI exits 2 on a usage error and on a missing file", () => {
 /* Requirement R2: every rule in validate() has at least one fixture that
    trips it. BRANCHES lists every message-key family validate() can emit,
    with list indexes generalized to []. If you add a rule to validate() in
-   adp-prompt-lib.js, add its family here and a fixture that trips it. */
+   adp-prompt-lib.ts, add its family here and a fixture that trips it. */
 const BRANCHES = [
   "root", "schema_version",
   "task", "task.id", "task.title", "task.author", "task.date",
@@ -196,8 +196,8 @@ test("validate() has not grown rules the corpus does not know", () => {
   // A count pin is a blunt tripwire, and that is the point. A new rule site
   // fails this test until BRANCHES and the corpus grow with it.
   const src = fs.readFileSync(LIB, "utf8");
-  const start = src.indexOf("function validate(raw)");
-  const body = src.slice(start, src.indexOf("\n  }\n", start));
+  const start = src.indexOf("function validate(raw");
+  const body = src.slice(start, src.indexOf("\n}\n", start));
   assert.strictEqual((body.match(/e\.push\(/g) || []).length, 29, "e.push() sites in validate()");
   assert.strictEqual((body.match(/return \[\[/g) || []).length, 1, "early-return verdicts in validate()");
 });

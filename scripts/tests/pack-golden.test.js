@@ -11,11 +11,11 @@
    which one it was. */
 "use strict";
 
-const test = require("node:test");
+import {test} from "vitest";
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const S = require("../adp-shell-lib.js");
+const S = require("../../src/lib/adp-shell-lib.ts");
 const R = require("./fixtures/packs/regen.js");
 
 // ---- the fill ----
@@ -115,7 +115,7 @@ test("no watch row carries window prose; dates come from due and anchored alone"
 });
 
 test("the unwatched list is the ledger's rank-zero rows", () => {
-  const D = require("../adp-derive-lib.js");
+  const D = require("../../src/lib/adp-derive-lib.ts");
   const want = D.ledgerRows(idx.tickets, idx.generated).decisions.filter(r => r.rank === 0)
     .map(r => r.tid + " " + r.id);
   const ctx = S.packContext(idx, null, idx.generated);
@@ -249,7 +249,7 @@ test("a signal that is only a dash reads as no signal, on the card or through it
 });
 
 test("an open card writing the dash reaches the gap list, directly and by pointer", () => {
-  const B = require("../adp-index-builder-lib.js");
+  const B = require("../../src/lib/adp-index-builder-lib.ts");
   const log = ["# T", "", "## Pre-Mortem Report", "",
     "| Failure mode | Likelihood | Monitoring signal | Implemented at |", "|---|---|---|---|",
     "| a dashed row | L | — | PENDING |", "",
@@ -291,7 +291,7 @@ test("the gap list is the ledger's open rows whose card names no observable", ()
 });
 
 test("the gap list resolves each card's pointer against that card's own ticket", () => {
-  const B = require("../adp-index-builder-lib.js");
+  const B = require("../../src/lib/adp-index-builder-lib.ts");
   const QUIET = "UNOBSERVABLE — no observable exists";
   const LOUD = "the count — fires at one";
   /* Two tickets, and a mode each one alone carries. A pointer resolved
@@ -323,7 +323,7 @@ test("the gap list resolves each card's pointer against that card's own ticket",
 });
 
 test("a recorded ruling settles a card before the gap list sees it", () => {
-  const B = require("../adp-index-builder-lib.js");
+  const B = require("../../src/lib/adp-index-builder-lib.ts");
   const log = ["# T", "", "## Decision Log", "",
     "### [DL-001] unruled and unsignalled", "- **Decision:** x", "- **Confidence:** HIGH",
     "- **Status:** OPEN", "",
@@ -367,7 +367,7 @@ test("every Pre-Mortem row on record reaches exactly one of the three lists", ()
 
 test("tickets in review list their PR, open entries, and live watches; the fixtures have none", () => {
   assert.deepEqual(S.packContext(idx, null, idx.generated).in_review, []);
-  const B = require("../adp-index-builder-lib.js");
+  const B = require("../../src/lib/adp-index-builder-lib.ts");
   const log = ["---", "state: in-review", 'pr: "#9"', "---", "# T", "", "## Decision Log", "",
     "### [DL-001] a", "- **Decision:** x", "- **Confidence:** HIGH", "- **Status:** OPEN", "",
     "### [DL-002] b", "- **Decision:** y", "- **Confidence:** LOW", "- **Status:** VALIDATED", "",

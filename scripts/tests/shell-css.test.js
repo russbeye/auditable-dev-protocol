@@ -1,10 +1,10 @@
 "use strict";
 
-const test = require("node:test");
+import {test} from "vitest";
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const S = require("../adp-shell-lib.js");
+const S = require("../../src/lib/adp-shell-lib.ts");
 
 function read(name){
   return fs.readFileSync(path.join(__dirname, "..", name), "utf8");

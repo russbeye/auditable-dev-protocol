@@ -1,13 +1,13 @@
 "use strict";
 
-const test = require("node:test");
+import {test} from "vitest";
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const builder = require(path.join(__dirname, "..", "adp-index-builder-lib.js"));
-const indexLib = require(path.join(__dirname, "..", "adp-index-lib.js"));
+const builder = require(path.join(__dirname, "..", "..", "src", "lib", "adp-index-builder-lib.ts"));
+const indexLib = require(path.join(__dirname, "..", "..", "src", "lib", "adp-index-lib.ts"));
 
 const CORPUS = path.join(__dirname, "fixtures", "corpus");
 const GOLDEN = path.join(__dirname, "fixtures", "corpus-expected-index.json");
@@ -657,9 +657,8 @@ test("prompt-only and unmatched directories are real tickets", () => {
 
 test("the browser build matches the Node build byte for byte", () => {
   const context = vm.createContext({});
-  for (const f of ["adp-parser-lib.js", "adp-index-lib.js", "adp-index-builder-lib.js"]){
-    vm.runInContext(fs.readFileSync(path.join(__dirname, "..", f), "utf8"), context, {filename: f});
-  }
+  const f = path.join(__dirname, "..", "..", "dist", "adp-libs.js");
+  vm.runInContext(fs.readFileSync(f, "utf8"), context, {filename: f});
   const files = readCorpus(CORPUS);
   context.__files = JSON.parse(JSON.stringify(files));
   const browserBytes = vm.runInContext(
@@ -695,10 +694,10 @@ test("own corpus: the live .adp builds a valid, deterministic index", t => {
       for (const tok of toks) if (tok.slice(0, 3) === "DL-" && !ids.has(tok)) phantoms++;
     }
   }
-  t.diagnostic("phantom DL refs (cross-ticket or quoted ids): " + phantoms);
+  t.annotate("phantom DL refs (cross-ticket or quoted ids): " + phantoms);
   // The watchboard's blind spot is an obligation-titled section whose table
   // does not open with Ticket ID, so we surface any such section here.
-  const parser = require(path.join(__dirname, "..", "adp-parser-lib.js"));
+  const parser = require(path.join(__dirname, "..", "..", "src", "lib", "adp-parser-lib.ts"));
   const blind = [];
   for (const f of files){
     if (!f.path.endsWith("/audit-log.md")) continue;
@@ -712,7 +711,7 @@ test("own corpus: the live .adp builds a valid, deterministic index", t => {
       }
     }
   }
-  t.diagnostic("obligation sections with variant table headers: " + blind.length +
+  t.annotate("obligation sections with variant table headers: " + blind.length +
     (blind.length ? " (" + blind.join("; ") + ")" : ""));
 });
 

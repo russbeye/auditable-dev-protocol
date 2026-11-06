@@ -15,8 +15,8 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const S = require("../../../adp-shell-lib.js");
-const B = require("../../../adp-index-builder-lib.js");
+const S = require("../../../../src/lib/adp-shell-lib.ts");
+const B = require("../../../../src/lib/adp-index-builder-lib.ts");
 
 const ROOT = path.join(__dirname, "..", "..", "..", "..");
 const CORPUS = path.join(__dirname, "..", "corpus");

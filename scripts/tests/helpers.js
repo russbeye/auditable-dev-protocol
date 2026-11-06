@@ -1,10 +1,9 @@
 /* Shared plumbing for the test suite. Run everything from the repo
-   root with one command on stock Node 20 or later:
+   root with one command:
 
-     node --test scripts/tests/*.test.js
+     npm test
 
-   Note: pass the files, not the directory. Newer Node treats a directory
-   argument as a literal module path and fails. We resolve every path from
+   We resolve every path from
    this file's own directory, so the tests themselves do not care which
    directory they are launched from. */
 "use strict";
@@ -12,8 +11,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const lib = require(path.join(__dirname, "..", "adp-prompt-lib.js"));
-const parserLib = require(path.join(__dirname, "..", "adp-parser-lib.js"));
+const lib = require(path.join(__dirname, "..", "..", "src", "lib", "adp-prompt-lib.ts"));
+const parserLib = require(path.join(__dirname, "..", "..", "src", "lib", "adp-parser-lib.ts"));
 
 function readFixture(name){
   return fs.readFileSync(path.join(__dirname, "fixtures", name), "utf8");

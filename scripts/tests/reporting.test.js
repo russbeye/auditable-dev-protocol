@@ -4,7 +4,7 @@
    that contract, so we assert it verbatim. */
 "use strict";
 
-const test = require("node:test");
+import {test} from "vitest";
 const assert = require("node:assert/strict");
 const {lib, readFixture} = require("./helpers.js");
 const {parseYAML} = lib;

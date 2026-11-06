@@ -9,5 +9,5 @@
     "verbatimModuleSyntax": true,
     "types": ["node"]
   },
-  "include": ["scripts/*.mts", "scripts/tests/*.mts"]
+  "include": ["scripts/*.mts", "scripts/tests/*.mts", "src/**/*.ts", "vite.config.mts"]
 }

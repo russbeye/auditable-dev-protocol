@@ -4,7 +4,7 @@
    fixtures/builder-example.js and review the diff. */
 "use strict";
 
-const test = require("node:test");
+import {test} from "vitest";
 const assert = require("node:assert/strict");
 const {lib, readFixture, normalize} = require("./helpers.js");
 const {buildYaml} = lib;

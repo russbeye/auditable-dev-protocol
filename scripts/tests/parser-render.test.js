@@ -1,10 +1,10 @@
-/* Trap pins for adp-parser-lib.js. The lib was extracted from ADP-Parser.html
+/* Trap pins for adp-parser-lib.ts. The lib was extracted from ADP-Parser.html
    under the rule that behavior moves before it improves, so every test here
    pins what the page already did. If one of these fails after an edit, the
    renderer's observable output changed and the change needs its own fixture. */
 "use strict";
 
-const test = require("node:test");
+import {test} from "vitest";
 const assert = require("node:assert/strict");
 const vm = require("node:vm");
 const fs = require("node:fs");
@@ -17,7 +17,7 @@ const {esc, escAttr, inline, decorate, parseSections, sectionKeys, slug, metaFor
 // ---- dual export (R2) ----
 
 test("the browser leg exposes the same API as require()", () => {
-  const src = fs.readFileSync(path.join(__dirname, "..", "adp-parser-lib.js"), "utf8");
+  const src = fs.readFileSync(path.join(__dirname, "..", "..", "dist", "adp-libs.js"), "utf8");
   const sandbox = {};
   vm.createContext(sandbox);
   vm.runInContext(src, sandbox);

@@ -230,8 +230,7 @@ function buildTree(){
 // ---- script extraction ----
 
 const HTML_PATH = path.join(__dirname, "..", "mission-control.html");
-const LIBS = ["adp-parser-lib.js", "adp-index-lib.js", "adp-index-builder-lib.js",
-  "adp-derive-lib.js", "adp-prompt-lib.js", "adp-shell-lib.js"];
+const LIBS_PATH = path.join(__dirname, "..", "..", "dist", "adp-libs.js");
 
 function inlineScripts(){
   const html = fs.readFileSync(HTML_PATH, "utf8");
@@ -376,9 +375,7 @@ function bootShell(opts){
 
   const scripts = inlineScripts();
   vm.runInContext(scripts.prePaint, sandbox);
-  for (const lib of LIBS) {
-    vm.runInContext(fs.readFileSync(path.join(__dirname, "..", lib), "utf8"), sandbox);
-  }
+  vm.runInContext(fs.readFileSync(LIBS_PATH, "utf8"), sandbox);
   vm.runInContext(scripts.main, sandbox);
 
   const $ = sel => document.querySelector(sel);

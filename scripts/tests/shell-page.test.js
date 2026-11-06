@@ -1,12 +1,12 @@
 "use strict";
 
-const test = require("node:test");
+import {test, vi} from "vitest";
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const S = require("../adp-shell-lib.js");
-const B = require("../adp-index-builder-lib.js");
-const I = require("../adp-index-lib.js");
+const S = require("../../src/lib/adp-shell-lib.ts");
+const B = require("../../src/lib/adp-index-builder-lib.ts");
+const I = require("../../src/lib/adp-index-lib.ts");
 const {bootShell} = require("./shell-harness.js");
 // The standalone boots here too, so one test can hold the two exports to the
 // same bytes from the same form contents.
@@ -127,20 +127,20 @@ test("loadCorpus builds the same bytes as a direct Node build and rides the text
 });
 
 test("loadCorpus resolves null on every failure shape", async t => {
-  const warn = t.mock.method(console, "warn", () => {});
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   assert.equal(await S.loadCorpus(() => Promise.reject(new Error("down"))), null);
   assert.equal(await S.loadCorpus(() => Promise.resolve({ok: false})), null);
   assert.equal(await S.loadCorpus(() => Promise.resolve({ok: true, json: async () => ({})})), null);
   // The not-ok probe is the quiet offline mode. The other two shapes warn.
-  assert.equal(warn.mock.callCount(), 2);
+  assert.equal(warn.mock.calls.length, 2);
 });
 
 test("loadCorpus is all-or-null when one log is unreadable, and says which", async t => {
-  const warn = t.mock.method(console, "warn", () => {});
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   const got = await S.loadCorpus(corpusFetch(LISTING, {}));
   assert.equal(got, null);
-  assert.equal(warn.mock.callCount(), 1);
-  assert.match(String(warn.mock.calls[0].arguments.join(" ")), /unreadable corpus file/);
+  assert.equal(warn.mock.calls.length, 1);
+  assert.match(String(warn.mock.calls[0].join(" ")), /unreadable corpus file/);
 });
 
 test("loadCorpus percent-encodes each path segment of a fetch", async () => {
@@ -208,8 +208,7 @@ test("mission-control.html carries the frame the harness models", () => {
   assert.match(HTML, /<input type="file" id="openDoc"[^>]* multiple/);
   const srcs = [...HTML.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
   assert.deepEqual(srcs,
-    ["adp-parser-lib.js", "adp-index-lib.js", "adp-index-builder-lib.js",
-     "adp-derive-lib.js", "adp-prompt-lib.js", "adp-shell-lib.js"]);
+    ["adp-libs.js"]);
   const screens = [...HTML.matchAll(/<section class="screen[^"]*" data-s="([^"]+)"/g)].map(m => m[1]);
   assert.deepEqual(screens, S.SCREENS);
   assert.match(HTML, /<span class="chit poll poll-idle" id="liveChit" role="status">/);
@@ -837,7 +836,7 @@ test("the closed group starts collapsed, and a click opens it", async () => {
 });
 
 test("a settled decision's watch cell keeps the id and puts the ruling on hover", () => {
-  const S = require("../adp-shell-lib.js");
+  const S = require("../../src/lib/adp-shell-lib.ts");
   const assert = require("node:assert/strict");
   const panel = S.decisionsPanelHtml({label: "x", pills: "", sort: {k: "id", d: 1},
     rows: [{id: "DL-001", title: "t", conf: "HIGH", confKind: "high", statusKind: "validated",
@@ -849,7 +848,7 @@ test("a settled decision's watch cell keeps the id and puts the ruling on hover"
 });
 
 test("an open decision with only a settled watch leads with the marker", () => {
-  const S = require("../adp-shell-lib.js");
+  const S = require("../../src/lib/adp-shell-lib.ts");
   const assert = require("node:assert/strict");
   const panel = S.decisionsPanelHtml({label: "x", pills: "", sort: {k: "id", d: 1},
     rows: [{id: "DL-001", title: "t", conf: "HIGH", confKind: "high", statusKind: "open",
@@ -1754,7 +1753,7 @@ test("a served page waiting for its corpus carries the ticket link through its h
    so the screen renders the real files. The corpus is the board's staged
    pair, which carries an open decision, live and settled watches, and an
    overdue one. */
-const P = require("../adp-parser-lib.js");
+const P = require("../../src/lib/adp-parser-lib.ts");
 const PACKS_ROOT = path.join(__dirname, "..", "..", "packs");
 const PACK_FILES = fs.readdirSync(PACKS_ROOT).filter(f => f.endsWith(".pack.md")).sort();
 const PACK_NAMES = PACK_FILES.map(f => f.replace(/\.pack\.md$/, ""));
@@ -1799,18 +1798,18 @@ test("loadPacks returns every listed pack in listing order, with its name, file,
 });
 
 test("loadPacks resolves null on every failure shape, all-or-null", async t => {
-  const warn = t.mock.method(console, "warn", () => {});
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   // A probe that never answers and a not-ok probe are both the quiet
   // no-packs mode; the corpus seam already traces a dead server.
   assert.equal(await S.loadPacks(() => Promise.reject(new Error("down"))), null);
   assert.equal(await S.loadPacks(() => Promise.resolve({ok: false})), null);
-  assert.equal(warn.mock.callCount(), 0);
+  assert.equal(warn.mock.calls.length, 0);
   assert.equal(await S.loadPacks(() => Promise.resolve({ok: true, json: async () => ({})})), null);
   // One listed pack the server cannot serve fails the whole load.
   assert.equal(await S.loadPacks(packsFetch(() => Promise.resolve({ok: false}),
     {packs: PACK_FILES.concat("ghost.pack.md")})), null);
-  assert.equal(warn.mock.callCount(), 2);
-  assert.match(String(warn.mock.calls[1].arguments.join(" ")), /unreadable pack: ghost/);
+  assert.equal(warn.mock.calls.length, 2);
+  assert.match(String(warn.mock.calls[1].join(" ")), /unreadable pack: ghost/);
 });
 
 test("the pack screen rows every pack in listing order with resume-ticket selected by default", async () => {
@@ -2190,7 +2189,7 @@ test("a poll rebuild hands focus to the rebuilt segment", async () => {
 
 // ---- the page: new task ----
 
-const PL = require("../adp-prompt-lib.js");
+const PL = require("../../src/lib/adp-prompt-lib.ts");
 const GOLDEN = fs.readFileSync(path.join(__dirname, "fixtures", "builder-example.yaml"), "utf8");
 const newTab = h => h.click(h.$("#newTaskBtn"));
 const ntOp = (h, op) => h.click(h.$$(".op").find(o => o.getAttribute("data-op") === op));
@@ -2667,7 +2666,7 @@ test("a restored draft that differs from the blank only by its date takes an imp
 });
 
 test("the directory line collapses only the id's leading letters-digits pair, so the index reads the name back", () => {
-  const B = require("../adp-index-builder-lib.js");
+  const B = require("../../src/lib/adp-index-builder-lib.ts");
   const line = S.promptDir({task: {id: "GROW-6687-email-validation", date: "2026-06-18"}}, "add-server-side-validation");
   assert.equal(line, ".adp/20260618-GROW6687-email-validation-add-server-side-validation/prompt.yaml");
   assert.deepEqual(B.parseDirName(line.split("/")[1]),
@@ -3157,7 +3156,7 @@ test("a typed slug reaches the directory line in the convention's kebab case", a
   assert.equal(h.$("#ntSlug").value, "My Slug!");
   assert.match(h.$("#ntDir").textContent, /-my-slug\/prompt\.yaml$/);
   // The index builder reads the name back as date, id, and slug.
-  const B = require("../adp-index-builder-lib.js");
+  const B = require("../../src/lib/adp-index-builder-lib.ts");
   h.input(field(h, "task.id"), "AV-016");
   const dir = h.$("#ntDir").textContent.split("/")[1];
   assert.deepEqual(B.parseDirName(dir).slug, "my-slug");
@@ -3568,14 +3567,14 @@ test("loadCorpus rides the prompts along without touching the index", async () =
 // R4 at the seam: a failed prompt fetch and a thrown one each cost only their
 // own ticket, and the load still resolves.
 test("loadCorpus keeps loading when a prompt fetch fails or throws", async t => {
-  const warn = t.mock.method(console, "warn", () => {});
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   const base = corpusFetch(LISTING, {"20260101-AA1-alpha/audit-log.md": LOG});
   const fetchFn = u => u === "corpus/AV-002-beta/prompt.yaml" ? Promise.reject(new Error("reset")) : base(u);
   const got = await S.loadCorpus(fetchFn, {now: NOW});
   assert.ok(got);
   assert.equal(got.index.tickets.length, 2);
   assert.deepEqual(got.prompts, {"20260101-AA1-alpha": {error: "unreadable"}, "AV-002-beta": {error: "unreadable"}});
-  assert.equal(warn.mock.callCount(), 0);
+  assert.equal(warn.mock.calls.length, 0);
 });
 
 // R2: every builder field shows under its key, in the builder's order, and
@@ -4311,7 +4310,7 @@ test("a directory hash for a ticket whose id is now unique marks its rail row", 
 test("this repository's corpus keeps every ticket token it had", t => {
   const root = path.join(__dirname, "..", "..", ".adp");
   if (!fs.existsSync(root)) return t.skip(".adp is not present in this checkout");
-  const D = require("../adp-derive-lib.js");
+  const D = require("../../src/lib/adp-derive-lib.ts");
   const files = [];
   for (const dir of fs.readdirSync(root)){
     const p = path.join(root, dir, "audit-log.md");
