@@ -5,7 +5,7 @@
    in fixtures/viewer-example.js. */
 "use strict";
 
-const test = require("node:test");
+import {test} from "vitest";
 const assert = require("node:assert/strict");
 const {parserLib, readFixture, renderViewerGolden} = require("./helpers.js");
 const example = require("./fixtures/viewer-example.js");

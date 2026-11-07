@@ -6,11 +6,14 @@
   },
   "scripts": {
     "start": "node scripts/adp-launch.mts",
-    "test": "node --test \"scripts/tests/*.test.js\" \"scripts/tests/*.test.mts\"",
+    "test": "vitest run",
     "typecheck": "tsc"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
-    "typescript": "^7.0.2"
+    "jsdom": "^29.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
   }
 }

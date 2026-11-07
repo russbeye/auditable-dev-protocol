@@ -4,16 +4,16 @@
    invalid fixture, and no fixture cites a rule the spec does not define. */
 "use strict";
 
-const test = require("node:test");
+import {test} from "vitest";
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const lib = require(path.join(__dirname, "..", "adp-index-lib.js"));
+const lib = require(path.join(__dirname, "..", "..", "src", "lib", "adp-index-lib.ts"));
 
 const FIXDIR = path.join(__dirname, "fixtures", "index");
 const SPEC_PATH = path.join(__dirname, "..", "..", "references", "adp-index-1.md");
-const LIB_PATH = path.join(__dirname, "..", "adp-index-lib.js");
+const LIB_PATH = path.join(__dirname, "..", "..", "src", "lib", "adp-index-lib.ts");
 
 const validFiles = fs.readdirSync(path.join(FIXDIR, "valid")).filter(f => f.endsWith(".json")).sort();
 const invalidFiles = fs.readdirSync(path.join(FIXDIR, "invalid")).filter(f => f.endsWith(".json")).sort();

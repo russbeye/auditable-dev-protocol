@@ -1,0 +1,411 @@
+/* adp-derive-lib.ts — pure derivations over an adp-index/1 ticket.
+   The rail's attention reasons, the ribbon, the rail groups, the section-nav
+   model, and the ref scoping all live here as plain functions over (ticket,
+   today), with no DOM and no HTML, so Node tests exercise them directly and
+   the later screens (watchboard, ledgers, calibration) consume the same
+   vocabulary. Every date comparison takes today as an argument, because a
+   derivation that reads a clock cannot be replayed. The vanilla pages read
+   it as the global `ADPDeriveLib` from the build in dist/. */
+import * as P from "./adp-parser-lib.ts";
+import * as I from "./adp-index-lib.ts";
+import type {Ticket, Decision, Watch, Section} from "./adp-index-lib.ts";
+import type {DLConfKind, DLStatusKind} from "./adp-parser-lib.ts";
+
+
+
+// Date.UTC keeps the day arithmetic calendar-true across DST boundaries,
+// where local-midnight subtraction can land a half-day off.
+function utcOf(iso: string): number{
+  const p = String(iso).split("-").map(Number);
+  return Date.UTC(p[0], p[1] - 1, p[2]);
+}
+function daysUntil(due: string, today: string): number{
+  return Math.round((utcOf(due) - utcOf(today)) / 86400000);
+}
+
+/* A closed watch classifies as closed before anything else, so it can
+   never read as overdue or unanchored however stale its due date is. The
+   due math below applies to live watches only. */
+function dueState(w: Watch, today: string): DueState{
+  if (w.closed) return "closed";
+  if (!w.anchored) return "unanchored";
+  const n = daysUntil(w.due!, today);
+  return n < 0 ? "overdue" : n <= 14 ? "soon" : "upcoming";
+}
+function dueLabel(w: Watch, today: string): string{
+  if (w.closed) return "CLOSED";
+  if (!w.anchored) return "UNANCHORED";
+  const n = daysUntil(w.due!, today);
+  return n < 0 ? "OVERDUE " + (-n) + "D" : n + "D LEFT";
+}
+
+// The index keeps a decision's whole status line verbatim, so the leading
+// token is the classification and parser-lib already owns that rule.
+function statusKind(status: unknown): DLStatusKind{
+  return P.dlStatusKind(status);
+}
+
+// A recorded ledger ruling outranks the card's own status line, because
+// the append-only closure flow settles an entry without editing the card.
+// Every consumer classifies a decision through this one lookup.
+function decisionKind(d: Decision): DLStatusKind{
+  return P.dlStatusKind(d.outcome || d.status);
+}
+
+// The one covering-watch lookup. The watch column, the unwatched-open
+// filter, and any future board read a decision's coverage through it, so
+// they can never disagree about what "covered" means. Coverage means live
+// coverage: a closed watch protects nothing now, so an OPEN decision whose
+// only watch has closed counts as unwatched again.
+function coveringWatch(t: Ticket, dlId: string): Watch | null{
+  return t.watches.find(w => !w.closed && (w.dl || []).includes(dlId)) || null;
+}
+
+// The display companion to coveringWatch: the closed watch that stood over
+// a decision, so a settled row can show how its watch ended. This lookup
+// never counts as protection; coverage stays live-only.
+function settledWatch(t: Ticket, dlId: string): Watch | null{
+  return t.watches.find(w => w.closed && (w.dl || []).includes(dlId)) || null;
+}
+
+// The canonical section for a phase, or null. Ownership, the default
+// landing key, and watch-link routing all resolve a phase through this one
+// lookup, and first-wins is its single rule.
+function canonicalSection(t: Ticket, phase: number): Section | null{
+  return t.sections.find(s => s.canonical && s.phase === phase) || null;
+}
+
+function unwatchedOpen(t: Ticket): Decision[]{
+  return t.decisions.filter(d => decisionKind(d) === "open" &&
+    !coveringWatch(t, d.id));
+}
+
+/* Attention reasons in fixed priority: overdue watches, unanchored watches,
+   missing sections, open decisions without a covering watch. One entry per
+   kind with a count, so a ticket with many unanchored watches reads as one
+   line, not a stack of duplicates. Every lifecycle state raises reasons —
+   the rail reports what the corpus records. */
+function attentionReasons(t: Ticket, today: string): Reason[]{
+  const r: Reason[] = [];
+  const overdue = t.watches.filter(w => dueState(w, today) === "overdue");
+  if (overdue.length === 1)
+    r.push({txt: "WATCH OVERDUE " + (-daysUntil(overdue[0].due!, today)) + "D", tone: "bad"});
+  else if (overdue.length)
+    r.push({txt: overdue.length + " WATCHES OVERDUE", tone: "bad"});
+  const un = t.watches.filter(w => !w.anchored && !w.closed).length;
+  if (un) r.push({txt: un === 1 ? "WATCH UNANCHORED" : un + " WATCHES UNANCHORED", tone: "warn"});
+  const miss = (t.missing || []).length;
+  if (miss) r.push({txt: miss + " SECTION" + (miss > 1 ? "S" : "") + " MISSING", tone: "warn"});
+  const uw = unwatchedOpen(t).length;
+  if (uw) r.push({txt: uw + " DECISION" + (uw > 1 ? "S" : "") + " UNWATCHED", tone: "warn"});
+  return r;
+}
+
+// The ribbon shows the top two reasons plus an overflow count. A quiet
+// ticket gets one state line instead: where it stands and, when shipped or
+// closed, the next watch date the loop is waiting on.
+function ribbonModel(t: Ticket, today: string): RibbonModel{
+  const reasons = attentionReasons(t, today);
+  if (reasons.length)
+    return {reasons: reasons.slice(0, 2), more: Math.max(0, reasons.length - 2)};
+  if (t.state === "open" || t.state === "in-review")
+    return {reasons: [{txt: "PHASE " + t.phase + " · " + t.state.toUpperCase(), tone: "warn"}], more: 0};
+  const up = t.watches.filter(w => !w.closed && w.anchored && daysUntil(w.due!, today) >= 0)
+    .sort((a, b) => daysUntil(a.due!, today) - daysUntil(b.due!, today));
+  const st = t.state.toUpperCase();
+  return {reasons: [{txt: up.length ? st + " · WATCH " + up[0].due : st + " · LOOP CLOSED", tone: "ok"}], more: 0};
+}
+
+/* Which reasons pull a ticket into the needs-attention group. The ribbon
+   reports every reason in every state; the group takes only what someone
+   can act on now: an overdue watch, an open decision with no covering
+   watch, or canonical sections missing from a log that claims to be done.
+   Unanchored watches stay ribbon-only — they are the legacy debt the sweep
+   tickets pay down, not today's action — and missing sections on a ticket
+   still in flight just mean the work is not there yet. */
+function needsAttention(t: Ticket, today: string): boolean{
+  if (t.watches.some(w => dueState(w, today) === "overdue")) return true;
+  if (unwatchedOpen(t).length) return true;
+  if ((t.state === "shipped" || t.state === "closed") && (t.missing || []).length) return true;
+  return false;
+}
+
+// Needs-attention first, then the live states, then the settled ones.
+// Within a group the newest directory sorts first, because dir names lead
+// with the date under the naming convention.
+const GROUPS: RailGroupName[] = ["needs attention", "in progress", "shipped", "closed"];
+function railGroups(tickets: Ticket[], today: string): RailGroup[]{
+  const g: Record<RailGroupName, Ticket[]> = {"needs attention": [], "in progress": [], "shipped": [], "closed": []};
+  for (const t of tickets){
+    if (needsAttention(t, today)) g["needs attention"].push(t);
+    else if (t.state === "shipped") g["shipped"].push(t);
+    else if (t.state === "closed") g["closed"].push(t);
+    else g["in progress"].push(t);
+  }
+  const byDir = (a: Ticket, b: Ticket) => b.dir.localeCompare(a.dir);
+  return GROUPS.map(name => [name, g[name].sort(byDir)]);
+}
+
+/* The nav walks the real sections in audit-log order, then the missing
+   canonical artifacts trail the list in phase order. A missing section has
+   no position in the document, so it never claims one; real logs interleave
+   companion sections too freely for the mockup's slot weave to hold. */
+function sectionEntries(t: Ticket): SectionEntry[]{
+  const entries = t.sections.map((s): SectionEntry =>
+    ({key: s.key, title: s.title, phase: s.phase, canonical: s.canonical, missing: false}));
+  const missing = (t.missing || []).map((label): SectionEntry => ({
+    key: "missing:" + label, title: label,
+    phase: I.CANONICAL_ARTIFACTS.indexOf(label) + 1 || null,
+    canonical: true, missing: true
+  })).sort((a, b) => (a.phase || 0) - (b.phase || 0));
+  return entries.concat(missing);
+}
+
+function sectionState(t: Ticket, en: SectionEntry, today: string): SectionState{
+  if (en.missing) return {label: "missing", tone: "mute"};
+  if (!en.canonical) return {label: "non-canonical", tone: "warn"};
+  if (en.phase === 5){
+    if (t.decisions.some(d => decisionKind(d) === "invalidated"))
+      return {label: "invalidated entries", tone: "bad"};
+    if (t.decisions.some(d => decisionKind(d) === "open"))
+      return {label: "open items", tone: "warn"};
+  }
+  if (en.phase === 9){
+    if (t.watches.some(w => dueState(w, today) === "overdue"))
+      return {label: "overdue watches", tone: "bad"};
+    if (t.watches.some(w => !w.anchored && !w.closed))
+      return {label: "unanchored watches", tone: "warn"};
+  }
+  if ((t.state === "open" || t.state === "in-review") && en.phase === t.phase)
+    return {label: "current", tone: "accent"};
+  return {label: "complete", tone: "ok"};
+}
+
+/* What a section cites. The canonical Decision Log section implicitly owns
+   every decision and the canonical Obligation section every watch; any
+   other section shows exactly what its body cites by id token. */
+function sectionItems(t: Ticket, key: string): SectionItems{
+  const sec = t.sections.find(s => s.key === key);
+  const owns = (ph: number) => !!sec && canonicalSection(t, ph) === sec;
+  const ref = (t.refs || {})[key] || [];
+  return {
+    decisions: owns(5) ? t.decisions : t.decisions.filter(d => ref.includes(d.id)),
+    watches: owns(9) ? t.watches : t.watches.filter(w => ref.includes(w.wid))
+  };
+}
+
+// Every section whose body cites the id, owner section first. The backlink
+// chips on a table row come straight from this list.
+function citingSections(t: Ticket, id: string): string[]{
+  const ownerPhase = I.RE_DL.test(id) ? 5 : 9;
+  const out: string[] = [];
+  const own = canonicalSection(t, ownerPhase);
+  if (own) out.push(own.key);
+  for (const key of Object.keys(t.refs || {}))
+    if ((t.refs[key] || []).includes(id) && !out.includes(key)) out.push(key);
+  return out;
+}
+
+/* The watchboard: every watch across every ticket, one row per watch —
+   the shell's one watch surface, settled rows included. Each row carries
+   one numeric order value, and that value is the default order, the due
+   column, and the status column alike, so the two columns stay one
+   ordering read two ways. Dated live rows carry their days (overdue is
+   negative and sorts first), unanchored rows carry a sentinel above any
+   real date, and closed rows sit above that with newer rulings first.
+   The page's status filters decide what shows, so counts reports every
+   state and the filter chips can say what they hide. Ties break by
+   directory then watch id, so the order is total and replays the same on
+   every build. */
+const UNANCHORED_ORDER = 1e15;
+/* The name every link uses for a ticket. A ticket keeps its id while the
+   id picks out that ticket alone. A corpus can reuse an id across
+   directories, for example CMS-001-one and CMS-001-two both parse to CMS001,
+   so a shared id falls back to the directory, which the corpus keeps
+   unique. We also count another ticket's directory as a claim on the id,
+   so no two tickets ever get the same token. */
+function ticketTokens(tickets: Ticket[]): TokenOf{
+  const claims = new Map<string, number>();
+  const claim = (k: string) => claims.set(k, (claims.get(k) || 0) + 1);
+  for (const t of tickets){
+    claim(t.dir);
+    if (t.id && t.id !== t.dir) claim(t.id);
+  }
+  const tokens = new Map<string, string>();
+  for (const t of tickets)
+    tokens.set(t.dir, t.id && claims.get(t.id) === 1 ? t.id : t.dir);
+  return t => tokens.get(t.dir) || t.dir;
+}
+
+const CLOSED_ORDER = 2e15;
+function watchboardRows(tickets: Ticket[], today: string): Watchboard{
+  const tokenOf = ticketTokens(tickets);
+  const rows: WatchboardRow[] = [];
+  const counts: WatchCounts = {overdue: 0, soon: 0, upcoming: 0, unanchored: 0, closed: 0};
+  for (const t of tickets){
+    for (const w of t.watches){
+      const state = dueState(w, today);
+      counts[state]++;
+      rows.push({
+        tid: tokenOf(t), dir: t.dir, wid: w.wid, what: w.what,
+        due: w.due, anchored: w.anchored, window: w.window,
+        closed: w.closed || null, outcome: w.outcome || null,
+        state, label: dueLabel(w, today),
+        // Subtracting the closure day keeps closed rows one band above
+        // the sentinel while newer rulings take the smaller value.
+        order: state === "closed" ? CLOSED_ORDER - utcOf(w.closed!)
+          : w.anchored ? daysUntil(w.due!, today)
+          : UNANCHORED_ORDER
+      });
+    }
+  }
+  rows.sort((a, b) => a.order - b.order
+    || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0)
+    || (a.wid < b.wid ? -1 : a.wid > b.wid ? 1 : 0));
+  return {rows, counts};
+}
+
+/* The assumption ledger: the corpus's whole decision record, settled
+   rulings included. Rows pre-order as triage. Unwatched-open entries lead
+   because they are the debt nobody guards, covered-open entries follow,
+   unknown and unrecognized tokens sit next as questions, and the settled
+   outcomes close the list. Ties break by directory then id, so the order
+   is total and replays the same on every build. Watches have no ledger of
+   their own: the board is the one watch surface. */
+// Open entries split on coverage: rank 0 is open with no live watch, rank
+// 1 is open under one. The table starts at 1 so the split stays visible.
+const LEDGER_RANK: Record<DLStatusKind, number> = {open: 1, unknown: 2, other: 3, invalidated: 4, validated: 5};
+function ledgerRows(tickets: Ticket[], today: string): Ledger{
+  const tokenOf = ticketTokens(tickets);
+  const decisions: LedgerRow[] = [];
+  for (const t of tickets){
+    const tid = tokenOf(t);
+    for (const d of t.decisions){
+      const kind = decisionKind(d);
+      const cover = coveringWatch(t, d.id);
+      const sw = settledWatch(t, d.id);
+      decisions.push({
+        tid, dir: t.dir, id: d.id, title: d.title,
+        confidence: d.confidence, kind,
+        watch: cover ? cover.wid : null,
+        settled: sw ? {wid: sw.wid, outcome: sw.outcome, closed: sw.closed} : null,
+        created: d.created,
+        // A card with no date has no age. The page renders that as a dash
+        // instead of letting a null reach the day math as NaN.
+        age: d.created ? -daysUntil(d.created, today) : null,
+        rank: kind === "open" && !cover ? 0 : LEDGER_RANK[kind]
+      });
+    }
+  }
+  decisions.sort((a, b) => a.rank - b.rank
+    || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0)
+    || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return {decisions};
+}
+
+/* The calibration model: does stated confidence predict outcomes. One
+   bucket per confidence kind in a fixed order, each folding its decisions
+   by outcome kind. Both classifications are the ledger's own: dlConfKind
+   by prefix, decisionKind with a ruling over the card. So the screen and
+   the ledger cannot disagree about an entry. A bucket keeps the verbatim
+   tokens it met, because the other bucket exists to show what the parser
+   could not place, and a count alone would hide which token that was.
+   The other bucket rows only when it has entries, so a corpus written to
+   the protocol shows the three canonical rows and nothing more. */
+// The closed sets the parser's classifiers return, in the order the
+// calibration bars and the ledger pills present them. Exported so a kind
+// added to a classifier is added here once and every consumer follows.
+const CONF_KINDS: DLConfKind[] = ["high", "medium", "low", "other"];
+const STATUS_KINDS: DLStatusKind[] = ["validated", "invalidated", "open", "unknown", "other"];
+function calibrationModel(tickets: Ticket[], today: string): CalibrationModel{
+  const buckets = CONF_KINDS.map((kind): CalibrationBucket => {
+    const counts = {} as Record<DLStatusKind, number>;
+    STATUS_KINDS.forEach(k => { counts[k] = 0; });
+    return {kind, tokens: [], counts, total: 0, ruled: {validated: 0, ruled: 0}};
+  });
+  const byKind = {} as Record<DLConfKind, CalibrationBucket>;
+  buckets.forEach(b => { byKind[b.kind] = b; });
+  let decisions = 0, shipped = 0;
+  for (const t of tickets){
+    // A closed log shipped first: the contract's ladder puts closed above
+    // shipped, so the tile counts both.
+    if (t.state === "shipped" || t.state === "closed") shipped++;
+    for (const d of t.decisions){
+      decisions++;
+      const b = byKind[P.dlConfKind(d.confidence)];
+      // A card with no confidence line is named in words, because a dash
+      // is the glyph the counts column uses for nothing.
+      const word = P.dlChipSplit(String(d.confidence == null ? "" : d.confidence)).word || "none stated";
+      if (!b.tokens.includes(word)) b.tokens.push(word);
+      const kind = decisionKind(d);
+      b.counts[kind]++;
+      b.total++;
+      // Only a ruling is an outcome. Open, unknown, and other entries are
+      // not evidence either way, so the ruled share leaves them out.
+      if (kind === "validated" || kind === "invalidated"){
+        b.ruled.ruled++;
+        if (kind === "validated") b.ruled.validated++;
+      }
+    }
+  }
+  const wb = watchboardRows(tickets, today).counts;
+  return {
+    tiles: {tickets: tickets.length, shipped, decisions,
+      overdue: wb.overdue, unanchored: wb.unanchored},
+    buckets: buckets.filter(b => b.kind !== "other" || b.total > 0)
+  };
+}
+
+// One sorter serves every table: accessors map a column key to a value and
+// d flips the direction. Rows never mutate; presentation order is ours.
+function sortRows<T>(rows: T[], k: string, d: number, acc: SortAccessors<T>): T[]{
+  const f = acc[k];
+  if (!f) return rows.slice();
+  return rows.slice().sort((a, b) => {
+    const x = f(a), y = f(b);
+    return (x < y ? -1 : x > y ? 1 : 0) * d;
+  });
+}
+
+export {GROUPS, CONF_KINDS, STATUS_KINDS, daysUntil, dueState, dueLabel, statusKind, decisionKind,
+  coveringWatch, settledWatch, canonicalSection, unwatchedOpen, attentionReasons, needsAttention,
+  ribbonModel, railGroups, sectionEntries, sectionState, sectionItems, citingSections, ticketTokens,
+  watchboardRows, ledgerRows, calibrationModel, sortRows};
+export type {DueState, Tone, Reason, RibbonModel, RailGroupName, RailGroup, SectionEntry, SectionState,
+  SectionItems, TokenOf, WatchCounts, WatchboardRow, Watchboard, SettledWatch, LedgerRow, Ledger,
+  CalibrationBucket, CalibrationTiles, CalibrationModel, SortKey, SortAccessors};
+
+type DueState = "overdue" | "soon" | "upcoming" | "unanchored" | "closed";
+type Tone = "ok" | "warn" | "bad" | "mute" | "accent";
+type Reason = {txt: string, tone: "ok" | "warn" | "bad"};
+type RibbonModel = {reasons: Reason[], more: number};
+type RailGroupName = "needs attention" | "in progress" | "shipped" | "closed";
+type RailGroup = [RailGroupName, Ticket[]];
+type SectionEntry = {key: string, title: string, phase: number | null, canonical: boolean, missing: boolean};
+type SectionState = {label: string, tone: Tone};
+type SectionItems = {decisions: Decision[], watches: Watch[]};
+type TokenOf = (t: Pick<Ticket, "dir">) => string;
+type WatchCounts = Record<DueState, number>;
+type WatchboardRow = {
+  tid: string, dir: string, wid: string, what: string,
+  due: string | null, anchored: boolean, window: string | null,
+  closed: string | null, outcome: string | null,
+  state: DueState, label: string, order: number
+};
+type Watchboard = {rows: WatchboardRow[], counts: WatchCounts};
+type SettledWatch = {wid: string, outcome: string | undefined, closed: string | undefined};
+type LedgerRow = {
+  tid: string, dir: string, id: string, title: string,
+  confidence: string, kind: DLStatusKind,
+  watch: string | null, settled: SettledWatch | null,
+  created: string | null, age: number | null, rank: number
+};
+type Ledger = {decisions: LedgerRow[]};
+type CalibrationBucket = {
+  kind: DLConfKind, tokens: string[], counts: Record<DLStatusKind, number>,
+  total: number, ruled: {validated: number, ruled: number}
+};
+type CalibrationTiles = {tickets: number, shipped: number, decisions: number, overdue: number, unanchored: number};
+type CalibrationModel = {tiles: CalibrationTiles, buckets: CalibrationBucket[]};
+type SortKey = string | number;
+type SortAccessors<T> = Record<string, (row: T) => SortKey>;

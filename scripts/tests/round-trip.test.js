@@ -4,7 +4,7 @@
    bytes must not move. */
 "use strict";
 
-const test = require("node:test");
+import {test} from "vitest";
 const assert = require("node:assert/strict");
 const {lib, readFixture, readReference, normalize} = require("./helpers.js");
 const {parseYAML, buildYaml} = lib;

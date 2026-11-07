@@ -7,7 +7,7 @@
    while the page still carries one. */
 "use strict";
 
-const test = require("node:test");
+import {test} from "vitest";
 const assert = require("node:assert/strict");
 const {lib} = require("./helpers.js");
 const {bootBuilder} = require("./builder-harness.js");

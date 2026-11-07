@@ -1,8 +1,8 @@
 "use strict";
 
-const test = require("node:test");
+import {test} from "vitest";
 const assert = require("node:assert/strict");
-const D = require("../adp-derive-lib.js");
+const D = require("../../src/lib/adp-derive-lib.ts");
 
 const TODAY = "2026-08-27";
 

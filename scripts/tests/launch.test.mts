@@ -2,7 +2,7 @@
    read the server it starts from outside over HTTP. Every launch runs with
    its own temp dir in the environment, so os.tmpdir() points the state
    directory at a sandbox and no test touches a real user's servers. */
-import test from "node:test";
+import {afterAll, beforeAll, test} from "vitest";
 import assert from "node:assert/strict";
 import {spawn, spawnSync} from "node:child_process";
 import crypto from "node:crypto";
@@ -10,7 +10,8 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import {repoKey} from "../adp-runtime.mts";
+import {repoKey, SKILL_DIR} from "../adp-runtime.mts";
+import {requireInstall} from "./global-setup.mts";
 
 const SCRIPTS = path.join(import.meta.dirname, "..");
 const LAUNCH = path.join(SCRIPTS, "adp-launch.mts");
@@ -31,9 +32,9 @@ function makeRepo(name: string): string {
 
 type Run = {status: number | null, stdout: string, stderr: string};
 
-function launchAsync(root: string, tmp: string): Promise<Run> {
+function launchAsync(root: string, tmp: string, launcher = LAUNCH): Promise<Run> {
   return new Promise(resolve => {
-    const p = spawn(process.execPath, [LAUNCH, root], {env: tmpEnv(tmp)});
+    const p = spawn(process.execPath, [launcher, root], {env: tmpEnv(tmp)});
     let stdout = "", stderr = "";
     p.stdout.on("data", d => { stdout += d; });
     p.stderr.on("data", d => { stderr += d; });
@@ -57,7 +58,7 @@ function stateDirIn(tmp: string): string {
 /* Every server a test starts gets stopped here, found through the state
    files the sandbox holds and through the pids the tests record. */
 const pids = new Set<number>();
-test.after(() => {
+afterAll(() => {
   for (const pid of pids){ try { process.kill(pid); } catch {} }
   fs.rmSync(sandbox, {recursive: true, force: true});
 });
@@ -68,7 +69,7 @@ const repo = makeRepo("repo");
 const tmpMain = fs.mkdtempSync(path.join(sandbox, "tmp-"));
 let base = "";
 let firstStdout = "";
-test.before(async () => {
+beforeAll(async () => {
   const r = await launchAsync(repo, tmpMain);
   assert.equal(r.status, 0, r.stderr);
   firstStdout = r.stdout;
@@ -80,7 +81,7 @@ test("the launcher prints the mission control URL and nothing else", () => {
   assert.match(firstStdout, /^http:\/\/127\.0\.0\.1:\d+\/mission-control\.html\n$/);
 });
 
-for (const route of ["/adp-shell.css", "/mission-control.html", "/ADP-Parser.html", "/corpus.json",
+for (const route of ["/adp-shell.css", "/mission-control.html", "/ADP-Parser.html", "/adp-libs.js", "/corpus.json",
     "/corpus/T-001/audit-log.md", "/packs.json", "/packs/resume-ticket.pack.md", "/health"]){
   test(`${route} answers no-store with a UTF-8 charset`, async () => {
     const res = await fetch(base + route);
@@ -283,3 +284,124 @@ test("a state directory that is a symlink stops the launcher", {skip: !POSIX}, a
   assert.equal(run.status, 1);
   assert.match(run.stderr, /not a directory this user owns/);
 });
+
+/* The build lock for this checkout, planted in a sandbox state directory and
+   naming this test process, which is always alive. The launcher would empty
+   a state directory with loose permissions, so we create it private. */
+function plantBuildLock(tmp: string): string {
+  const dir = stateDirIn(tmp);
+  fs.mkdirSync(dir, {mode: 0o700});
+  const lock = path.join(dir, "build-" + crypto.createHash("sha256").update(SKILL_DIR).digest("hex").slice(0, 16) + ".lock");
+  fs.writeFileSync(lock, String(process.pid), {mode: 0o600});
+  return lock;
+}
+
+test("a build lock older than the launch window is taken over, whatever process holds its pid", {timeout: 20_000}, async () => {
+  const r = makeRepo("stalelock");
+  const tmp = fs.mkdtempSync(path.join(sandbox, "tmp-"));
+  const lock = plantBuildLock(tmp);
+  const old = new Date(Date.now() - 600_000);
+  fs.utimesSync(lock, old, old);
+  await track(await launch(r, tmp));
+  assert.equal(fs.existsSync(lock), false);
+});
+
+test("a build lock whose holder died is taken over at once", {timeout: 20_000}, async () => {
+  const r = makeRepo("deadlock");
+  const tmp = fs.mkdtempSync(path.join(sandbox, "tmp-"));
+  const lock = plantBuildLock(tmp);
+  fs.writeFileSync(lock, String(spawnSync(process.execPath, ["-e", ""]).pid));
+  const run = await launchAsync(r, tmp);
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stderr, "");
+  await track(run.stdout.trim());
+});
+
+test("a launch that waits on a live build lock says so, and goes on once the lock is gone", {timeout: 20_000}, async () => {
+  const r = makeRepo("livelock");
+  const tmp = fs.mkdtempSync(path.join(sandbox, "tmp-"));
+  const lock = plantBuildLock(tmp);
+  const p = spawn(process.execPath, [LAUNCH, r], {env: tmpEnv(tmp)});
+  let stdout = "", stderr = "";
+  p.stdout.on("data", d => { stdout += d; });
+  const waiting = new Promise<void>(resolve => p.stderr.on("data", d => { stderr += d; if (/waiting for another launcher/.test(stderr)) resolve(); }));
+  const exited = new Promise<number | null>(resolve => p.on("exit", resolve));
+  await waiting;
+  fs.rmSync(lock);
+  assert.equal(await exited, 0, stderr);
+  assert.equal(stderr, "adp-launch: waiting for another launcher to install or build\n");
+  await track(stdout.trim());
+});
+
+test("the suite's setup refuses a checkout whose install is older than its lockfile", () => {
+  const dir = fs.mkdtempSync(path.join(sandbox, "install-"));
+  fs.mkdirSync(path.join(dir, "node_modules"));
+  const record = path.join(dir, "node_modules", ".package-lock.json"), lockfile = path.join(dir, "package-lock.json");
+  fs.writeFileSync(record, "{}");
+  fs.writeFileSync(lockfile, "{}");
+  const then = new Date(Date.now() - 60_000);
+  fs.utimesSync(record, then, then);
+  assert.throws(() => requireInstall(dir), /Run npm ci/);
+  // A Date holds whole milliseconds and the file system keeps finer ones, so
+  // "now" can land just before the lockfile's mtime. We clear it by a second.
+  const later = new Date(fs.statSync(lockfile).mtimeMs + 1000);
+  fs.utimesSync(record, later, later);
+  requireInstall(dir);
+});
+
+test("the suite's setup checks the install before it builds", () => {
+  const src = fs.readFileSync(path.join(import.meta.dirname, "global-setup.mts"), "utf8");
+  const body = src.slice(src.indexOf("export default async function setup()"));
+  const check = body.indexOf("requireInstall(SKILL_DIR)");
+  assert.ok(check > 0 && check < body.indexOf("build("), "setup() must call requireInstall(SKILL_DIR) before build(");
+});
+
+/* A copy of the skill holds what a clone holds: the sources, the pages, the
+   packs, and the package files, with no node_modules and no build. The copy
+   never links this checkout's node_modules, because an npm ci in the copy
+   would then empty the tree the running suite loads from. */
+function copySkill(name: string): string {
+  const skill = path.join(SCRIPTS, "..");
+  const dst = path.join(sandbox, name);
+  fs.mkdirSync(path.join(dst, "scripts"), {recursive: true});
+  for (const f of fs.readdirSync(SCRIPTS))
+    if (/\.(mts|html|css|svg)$/.test(f)) fs.copyFileSync(path.join(SCRIPTS, f), path.join(dst, "scripts", f));
+  for (const d of ["src", "packs"]) fs.cpSync(path.join(skill, d), path.join(dst, d), {recursive: true});
+  for (const f of ["package.json", "package-lock.json", "vite.config.mts"]) fs.copyFileSync(path.join(skill, f), path.join(dst, f));
+  return dst;
+}
+
+const alivePid = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+test("a clone installs and builds on first launch, and a source edit rebuilds and replaces its server", async () => {
+  const skill = copySkill("clone");
+  const launcher = path.join(skill, "scripts", "adp-launch.mts");
+  const r = makeRepo("clone-repo");
+  const tmp = fs.mkdtempSync(path.join(sandbox, "tmp-"));
+
+  const first = await launchAsync(r, tmp, launcher);
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stderr, /installing dependencies/);
+  assert.match(first.stderr, /building the app/);
+  const old = await health(first.stdout.trim());
+  pids.add(old.pid);
+  for (const route of ["/mission-control.html", "/adp-libs.js"])
+    assert.equal((await fetch(baseOf(first.stdout.trim()) + route)).status, 200, route);
+
+  // An unchanged clone reuses its install, its build, and its server.
+  const again = await launchAsync(r, tmp, launcher);
+  assert.equal(again.stdout, first.stdout);
+  assert.equal(again.stderr, "");
+
+  fs.appendFileSync(path.join(skill, "src", "lib", "adp-parser-lib.ts"), "\n// edited\n");
+  const next = await launchAsync(r, tmp, launcher);
+  assert.equal(next.status, 0, next.stderr);
+  assert.doesNotMatch(next.stderr, /installing dependencies/);
+  assert.match(next.stderr, /building the app/);
+  const h = await health(next.stdout.trim());
+  pids.add(h.pid);
+  assert.notEqual(h.pid, old.pid);
+  assert.notEqual(h.stamp, old.stamp);
+  assert.equal(fs.readFileSync(path.join(skill, "dist", ".adp-build-stamp"), "utf8"), h.stamp);
+  assert.equal(alivePid(old.pid), false, "the server on the old stamp still runs");
+}, 300_000);

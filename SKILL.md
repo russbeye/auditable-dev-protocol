@@ -102,7 +102,7 @@ when something breaks.
 
 An audit log's H2 headings are its sections, and every section has a kind. The kinds below come
 from a census of the logs on record: thirty-two logs wrote the same fourteen canonical headings and
-a small recurring set of companions. The registry in `scripts/adp-parser-lib.js` tags each kind,
+a small recurring set of companions. The registry in `src/lib/adp-parser-lib.ts` tags each kind,
 and both viewers label a section with it. The set is defined, not closed: a section the set does
 not cover is `ad-hoc`, which is a named kind and never an error.
 

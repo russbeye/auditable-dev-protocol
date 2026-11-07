@@ -2,7 +2,7 @@
    tracked file may call Python or need it, and SKILL.md must name only the
    commands that exist. The scan skips .adp, because audit logs record the
    history of files that the repo no longer holds. */
-import test from "node:test";
+import {test} from "vitest";
 import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
 import fs from "node:fs";

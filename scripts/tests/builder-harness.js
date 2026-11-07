@@ -1,9 +1,8 @@
 /* A vm boot for the prompt builder's page script, so the suites can pin
    behavior that lives inside the page IIFE and never reaches the lib, such as
    the import report's unknown-key entries and the draft restore. We evaluate
-   the real adp-prompt-lib.js and the real main IIFE from prompt-builder.html
-   against a small stubbed DOM, with no build step and no dependency, so the
-   whole suite still runs on stock node --test. The stub covers only what the
+   the real prompt library from the build and the real main IIFE from prompt-builder.html
+   against a small stubbed DOM. The stub covers only what the
    page touches on its load, import, and export paths. If the page grows a new
    DOM dependency on those paths, grow the stub with it. */
 "use strict";
@@ -248,7 +247,9 @@ function makeClock(){
 }
 
 const HTML_PATH = path.join(__dirname, "..", "prompt-builder.html");
-const LIB_PATH = path.join(__dirname, "..", "adp-prompt-lib.js");
+// The build writes all six libraries into one file, which sets one global
+// per library. This page reads only ADPPromptLib.
+const LIB_PATH = path.join(__dirname, "..", "..", "dist", "adp-libs.js");
 
 function mainScript(){
   const html = fs.readFileSync(HTML_PATH, "utf8");
@@ -264,7 +265,7 @@ function mainScript(){
    tests exercise. */
 function bootBuilder(opts){
   opts = opts || {};
-  const lib = require(LIB_PATH);
+  const lib = require("../../src/lib/adp-prompt-lib.ts");
   const clock = makeClock();
   const storage = opts.storage || new Map();
   const copied = [];

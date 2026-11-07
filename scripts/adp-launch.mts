@@ -7,12 +7,16 @@
    line, the URL, so a caller can read it and go. Every repo gets one state
    file in a per-user directory under the temp dir, and we trust that file
    only as far as GET /health confirms it. */
-import {spawn} from "node:child_process";
+import {spawn, spawnSync} from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import {SCRIPTS_DIR, stamp, stateDir, statePath, type Health, type State} from "./adp-runtime.mts";
+import {BUILD_MARK, installed, SCRIPTS_DIR, SKILL_DIR, stamp, stateDir, statePath, type Health, type State} from "./adp-runtime.mts";
 
 const WAIT_MS = 10_000;
+// The skill gives a launch 300 s. A build lock older than that belongs to a
+// launcher its caller gave up on, whatever process now holds its pid.
+const LOCK_MS = 300_000;
 const POSIX = process.platform !== "win32";
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -93,10 +97,65 @@ async function stopServer(pid: number, port: number){
   while (Date.now() < end && await health(port)) await sleep(100);
 }
 
+// The build writes its marker only when it succeeds, so a failed build runs
+// again on the next launch.
+function built(): boolean {
+  try { return fs.readFileSync(BUILD_MARK, "utf8") === stamp(); } catch { return false; }
+}
+
+/* Runs one step with its output on our stderr, because stdout carries only
+   the URL. A failed step ends the launch, and the error the tool printed
+   stays above our one line. */
+function step(what: string, cmd: string, args: string[]){
+  process.stderr.write(`adp-launch: ${what}\n`);
+  // npm is a .cmd file on Windows, and only a shell can run one.
+  const r = spawnSync(cmd, args, {cwd: SKILL_DIR, stdio: ["ignore", 2, 2], shell: !POSIX && cmd === "npm"});
+  if (r.status !== 0) throw new Error(`${what} failed`);
+}
+
+/* Installs the dependencies when the lockfile changed, and builds the bundle
+   when the sources changed. Launchers for two repos share this skill
+   directory, so they take turns through a lock file in the state directory.
+   A lock whose holder died, or that outlived the launch window, is taken
+   over. A pid alone cannot prove the holder lives, because a reboot can hand
+   a dead launcher's pid to another process. */
+async function prepare(dir: string){
+  const lock = path.join(dir, "build-" + crypto.createHash("sha256").update(SKILL_DIR).digest("hex").slice(0, 16) + ".lock");
+  // The lock lands whole by link, like the claim, so a reader never sees it
+  // empty and takes it for a dead holder's.
+  const tmp = lock + "." + process.pid;
+  fs.writeFileSync(tmp, String(process.pid), {mode: 0o600});
+  let told = false;
+  try {
+    for (;;){
+      try { fs.linkSync(tmp, lock); break; }
+      catch (e: any) {
+        if (e.code !== "EEXIST") throw e;
+        let text = "", age = 0;
+        try { text = fs.readFileSync(lock, "utf8"); age = Date.now() - fs.statSync(lock).mtimeMs; } catch { continue; }
+        // A pid of 0 would probe our own process group and always answer.
+        const holder = Number(text);
+        if (holder > 0 && alive(holder) && age < LOCK_MS){
+          if (!told) process.stderr.write("adp-launch: waiting for another launcher to install or build\n");
+          told = true;
+          await sleep(200);
+          continue;
+        }
+        removeIfSame(lock, text);
+      }
+    }
+  } finally { fs.rmSync(tmp, {force: true}); }
+  try {
+    if (!installed(SKILL_DIR)) step("installing dependencies (npm ci)", "npm", ["ci"]);
+    if (!built()) step("building the app", process.execPath,
+      [path.join(SKILL_DIR, "node_modules", "vite", "bin", "vite.js"), "build", "--logLevel", "warn"]);
+  } finally { fs.rmSync(lock, {force: true}); }
+}
+
 const url = (port: number) => `http://127.0.0.1:${port}/mission-control.html`;
 
 async function launch(root: string): Promise<string> {
-  trustedStateDir();
+  await prepare(trustedStateDir());
   const file = statePath(root);
   const want = stamp();
   const deadline = Date.now() + WAIT_MS;

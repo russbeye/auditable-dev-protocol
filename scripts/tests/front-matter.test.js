@@ -1,10 +1,10 @@
 "use strict";
 
-const test = require("node:test");
+import {test} from "vitest";
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
-const lib = require(path.join(__dirname, "..", "adp-parser-lib.js"));
+const lib = require(path.join(__dirname, "..", "..", "src", "lib", "adp-parser-lib.ts"));
 
 test("a well-formed block splits off and sections start clean", () => {
   const md = "---\nstate: open\npr: \"#7\"\n---\n# Title\n\n## Problem Statement\nBody\n";

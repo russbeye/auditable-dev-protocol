@@ -11,7 +11,7 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import {PACKS_DIR, SCRIPTS_DIR, stamp, type Health, type State} from "./adp-runtime.mts";
+import {DIST_DIR, PACKS_DIR, SCRIPTS_DIR, stamp, type Health, type State} from "./adp-runtime.mts";
 
 const [rootArg, stateFile] = process.argv.slice(2);
 if (!rootArg || !stateFile){
@@ -122,7 +122,11 @@ function route(req: http.IncomingMessage, res: http.ServerResponse){
   const name = p.slice(1);
   const type = PAGE_TYPES[path.extname(name)];
   if (type && !name.includes("/") && !name.includes("\\")){
-    const target = inside(SCRIPTS_DIR, name);
+    // The build output sits beside the pages under one flat name space. We
+    // resolve dist/ per request, because a rebuild removes and recreates it.
+    let dist: string | null = null;
+    try { dist = fs.realpathSync(DIST_DIR); } catch {}
+    const target = inside(SCRIPTS_DIR, name) ?? (dist && inside(dist, name));
     if (target) return send(res, 200, type, fs.readFileSync(target));
   }
   return notFound(res, "not found");
