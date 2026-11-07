@@ -11,9 +11,12 @@ import {spawn, spawnSync} from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import {BUILD_MARK, SCRIPTS_DIR, SKILL_DIR, stamp, stateDir, statePath, type Health, type State} from "./adp-runtime.mts";
+import {BUILD_MARK, installed, SCRIPTS_DIR, SKILL_DIR, stamp, stateDir, statePath, type Health, type State} from "./adp-runtime.mts";
 
 const WAIT_MS = 10_000;
+// The skill gives a launch 300 s. A build lock older than that belongs to a
+// launcher its caller gave up on, whatever process now holds its pid.
+const LOCK_MS = 300_000;
 const POSIX = process.platform !== "win32";
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -94,16 +97,6 @@ async function stopServer(pid: number, port: number){
   while (Date.now() < end && await health(port)) await sleep(100);
 }
 
-/* We follow npm's own rule for a current install. npm ci and npm install
-   write node_modules/.package-lock.json last, so a lockfile newer than that
-   file means a pull or a checkout changed the dependencies. */
-function installed(): boolean {
-  try {
-    const have = fs.statSync(path.join(SKILL_DIR, "node_modules", ".package-lock.json")).mtimeMs;
-    return have >= fs.statSync(path.join(SKILL_DIR, "package-lock.json")).mtimeMs;
-  } catch { return false; }
-}
-
 // The build writes its marker only when it succeeds, so a failed build runs
 // again on the next launch.
 function built(): boolean {
@@ -123,29 +116,37 @@ function step(what: string, cmd: string, args: string[]){
 /* Installs the dependencies when the lockfile changed, and builds the bundle
    when the sources changed. Launchers for two repos share this skill
    directory, so they take turns through a lock file in the state directory.
-   A lock whose holder died is taken over. */
+   A lock whose holder died, or that outlived the launch window, is taken
+   over. A pid alone cannot prove the holder lives, because a reboot can hand
+   a dead launcher's pid to another process. */
 async function prepare(dir: string){
   const lock = path.join(dir, "build-" + crypto.createHash("sha256").update(SKILL_DIR).digest("hex").slice(0, 16) + ".lock");
   // The lock lands whole by link, like the claim, so a reader never sees it
   // empty and takes it for a dead holder's.
   const tmp = lock + "." + process.pid;
   fs.writeFileSync(tmp, String(process.pid), {mode: 0o600});
+  let told = false;
   try {
     for (;;){
       try { fs.linkSync(tmp, lock); break; }
       catch (e: any) {
         if (e.code !== "EEXIST") throw e;
-        let text = "";
-        try { text = fs.readFileSync(lock, "utf8"); } catch { continue; }
+        let text = "", age = 0;
+        try { text = fs.readFileSync(lock, "utf8"); age = Date.now() - fs.statSync(lock).mtimeMs; } catch { continue; }
         // A pid of 0 would probe our own process group and always answer.
         const holder = Number(text);
-        if (holder > 0 && alive(holder)){ await sleep(200); continue; }
+        if (holder > 0 && alive(holder) && age < LOCK_MS){
+          if (!told) process.stderr.write("adp-launch: waiting for another launcher to install or build\n");
+          told = true;
+          await sleep(200);
+          continue;
+        }
         removeIfSame(lock, text);
       }
     }
   } finally { fs.rmSync(tmp, {force: true}); }
   try {
-    if (!installed()) step("installing dependencies (npm ci)", "npm", ["ci"]);
+    if (!installed(SKILL_DIR)) step("installing dependencies (npm ci)", "npm", ["ci"]);
     if (!built()) step("building the app", process.execPath,
       [path.join(SKILL_DIR, "node_modules", "vite", "bin", "vite.js"), "build", "--logLevel", "warn"]);
   } finally { fs.rmSync(lock, {force: true}); }

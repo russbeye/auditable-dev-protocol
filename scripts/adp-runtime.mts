@@ -59,6 +59,16 @@ export function stamp(): string {
   return hashFiles(stampFiles());
 }
 
+/* We follow npm's own rule for a current install. npm ci and npm install
+   write node_modules/.package-lock.json last, so a lockfile newer than that
+   file means a pull or a checkout changed the dependencies. */
+export function installed(dir: string): boolean {
+  try {
+    const have = fs.statSync(path.join(dir, "node_modules", ".package-lock.json")).mtimeMs;
+    return have >= fs.statSync(path.join(dir, "package-lock.json")).mtimeMs;
+  } catch { return false; }
+}
+
 /* Every build writes the stamp of the sources it read into this file, so
    the launcher rebuilds only when the sources moved past the bundle. */
 export const BUILD_MARK = path.join(DIST_DIR, ".adp-build-stamp");

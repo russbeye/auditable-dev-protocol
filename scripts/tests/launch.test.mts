@@ -10,7 +10,8 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import {repoKey} from "../adp-runtime.mts";
+import {repoKey, SKILL_DIR} from "../adp-runtime.mts";
+import {requireInstall} from "./global-setup.mts";
 
 const SCRIPTS = path.join(import.meta.dirname, "..");
 const LAUNCH = path.join(SCRIPTS, "adp-launch.mts");
@@ -282,6 +283,67 @@ test("a state directory that is a symlink stops the launcher", {skip: !POSIX}, a
   const run = await launchAsync(r, tmp);
   assert.equal(run.status, 1);
   assert.match(run.stderr, /not a directory this user owns/);
+});
+
+/* The build lock for this checkout, planted in a sandbox state directory and
+   naming this test process, which is always alive. The launcher would empty
+   a state directory with loose permissions, so we create it private. */
+function plantBuildLock(tmp: string): string {
+  const dir = stateDirIn(tmp);
+  fs.mkdirSync(dir, {mode: 0o700});
+  const lock = path.join(dir, "build-" + crypto.createHash("sha256").update(SKILL_DIR).digest("hex").slice(0, 16) + ".lock");
+  fs.writeFileSync(lock, String(process.pid), {mode: 0o600});
+  return lock;
+}
+
+test("a build lock older than the launch window is taken over, whatever process holds its pid", {timeout: 20_000}, async () => {
+  const r = makeRepo("stalelock");
+  const tmp = fs.mkdtempSync(path.join(sandbox, "tmp-"));
+  const lock = plantBuildLock(tmp);
+  const old = new Date(Date.now() - 600_000);
+  fs.utimesSync(lock, old, old);
+  await track(await launch(r, tmp));
+  assert.equal(fs.existsSync(lock), false);
+});
+
+test("a build lock whose holder died is taken over at once", {timeout: 20_000}, async () => {
+  const r = makeRepo("deadlock");
+  const tmp = fs.mkdtempSync(path.join(sandbox, "tmp-"));
+  const lock = plantBuildLock(tmp);
+  fs.writeFileSync(lock, String(spawnSync(process.execPath, ["-e", ""]).pid));
+  const run = await launchAsync(r, tmp);
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stderr, "");
+  await track(run.stdout.trim());
+});
+
+test("a launch that waits on a live build lock says so, and goes on once the lock is gone", {timeout: 20_000}, async () => {
+  const r = makeRepo("livelock");
+  const tmp = fs.mkdtempSync(path.join(sandbox, "tmp-"));
+  const lock = plantBuildLock(tmp);
+  const p = spawn(process.execPath, [LAUNCH, r], {env: tmpEnv(tmp)});
+  let stdout = "", stderr = "";
+  p.stdout.on("data", d => { stdout += d; });
+  const waiting = new Promise<void>(resolve => p.stderr.on("data", d => { stderr += d; if (/waiting for another launcher/.test(stderr)) resolve(); }));
+  const exited = new Promise<number | null>(resolve => p.on("exit", resolve));
+  await waiting;
+  fs.rmSync(lock);
+  assert.equal(await exited, 0, stderr);
+  assert.equal(stderr, "adp-launch: waiting for another launcher to install or build\n");
+  await track(stdout.trim());
+});
+
+test("the suite's setup refuses a checkout whose install is older than its lockfile", () => {
+  const dir = fs.mkdtempSync(path.join(sandbox, "install-"));
+  fs.mkdirSync(path.join(dir, "node_modules"));
+  const record = path.join(dir, "node_modules", ".package-lock.json"), lockfile = path.join(dir, "package-lock.json");
+  fs.writeFileSync(record, "{}");
+  fs.writeFileSync(lockfile, "{}");
+  const then = new Date(Date.now() - 60_000);
+  fs.utimesSync(record, then, then);
+  assert.throws(() => requireInstall(dir), /Run npm ci/);
+  fs.utimesSync(record, new Date(), new Date());
+  requireInstall(dir);
 });
 
 /* A copy of the skill holds what a clone holds: the sources, the pages, the
