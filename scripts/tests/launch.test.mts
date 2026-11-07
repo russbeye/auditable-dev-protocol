@@ -342,8 +342,18 @@ test("the suite's setup refuses a checkout whose install is older than its lockf
   const then = new Date(Date.now() - 60_000);
   fs.utimesSync(record, then, then);
   assert.throws(() => requireInstall(dir), /Run npm ci/);
-  fs.utimesSync(record, new Date(), new Date());
+  // A Date holds whole milliseconds and the file system keeps finer ones, so
+  // "now" can land just before the lockfile's mtime. We clear it by a second.
+  const later = new Date(fs.statSync(lockfile).mtimeMs + 1000);
+  fs.utimesSync(record, later, later);
   requireInstall(dir);
+});
+
+test("the suite's setup checks the install before it builds", () => {
+  const src = fs.readFileSync(path.join(import.meta.dirname, "global-setup.mts"), "utf8");
+  const body = src.slice(src.indexOf("export default async function setup()"));
+  const check = body.indexOf("requireInstall(SKILL_DIR)");
+  assert.ok(check > 0 && check < body.indexOf("build("), "setup() must call requireInstall(SKILL_DIR) before build(");
 });
 
 /* A copy of the skill holds what a clone holds: the sources, the pages, the
