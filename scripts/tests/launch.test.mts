@@ -81,7 +81,7 @@ test("the launcher prints the mission control URL and nothing else", () => {
   assert.match(firstStdout, /^http:\/\/127\.0\.0\.1:\d+\/mission-control\.html\n$/);
 });
 
-for (const route of ["/adp-shell.css", "/mission-control.html", "/ADP-Parser.html", "/adp-libs.js", "/corpus.json",
+for (const route of ["/adp-shell.css", "/mission-control.html", "/ADP-Parser.html", "/adp-libs.js", "/app.html", "/adp-app.js", "/corpus.json",
     "/corpus/T-001/audit-log.md", "/packs.json", "/packs/resume-ticket.pack.md", "/health"]){
   test(`${route} answers no-store with a UTF-8 charset`, async () => {
     const res = await fetch(base + route);
@@ -166,6 +166,52 @@ test("the server refuses a request whose Host is not its own address", async () 
 
 test("the server answers anything but GET with 405", async () => {
   assert.equal((await fetch(base + "/corpus.json", {method: "POST"})).status, 405);
+});
+
+/* An open event stream, read into one buffer. A read that outlives its
+   wait keeps running, so we never start a second one that could take its
+   chunk. */
+async function openEvents(url: string){
+  const ctl = new AbortController();
+  const res = await fetch(url, {signal: ctl.signal});
+  let text = "";
+  const pump = (async () => {
+    const dec = new TextDecoder();
+    try { for await (const chunk of res.body!) text += dec.decode(chunk, {stream: true}); } catch {}
+  })();
+  const waitFor = async (want: string, ms: number) => {
+    const end = Date.now() + ms;
+    while (!text.includes(want) && Date.now() < end) await new Promise(r => setTimeout(r, 20));
+    return text.includes(want);
+  };
+  return {res, get text(){ return text; }, waitFor, close: async () => { ctl.abort(); await pump; }};
+}
+
+/* R5, the server half. A page holds this stream open, and each change to
+   the corpus on disk reaches it as one event inside the two-second bound. */
+test("an open event stream hears a log edit and a new task within 2 s, and nothing while the corpus is quiet", {timeout: 15_000}, async () => {
+  const root = makeRepo("events");
+  // A state directory of its own keeps the route tests' one-server count true.
+  const url = await launch(root, fs.mkdtempSync(path.join(sandbox, "tmp-")));
+  await track(url);
+  const ev = await openEvents(baseOf(url) + "/events");
+  try {
+    assert.equal(ev.res.status, 200);
+    assert.equal(ev.res.headers.get("content-type"), "text/event-stream; charset=utf-8");
+    assert.equal(ev.res.headers.get("cache-control"), "no-store");
+    await new Promise(r => setTimeout(r, 1500));
+    assert.equal(ev.text, "");
+    let t0 = Date.now();
+    fs.appendFileSync(path.join(root, ".adp", "T-001", "audit-log.md"), "\n## Decision Log\n", "utf8");
+    assert.ok(await ev.waitFor("data: change\n\n", 2000), "no event within 2 s of the edit");
+    const firstAt = Date.now() - t0;
+    t0 = Date.now();
+    fs.mkdirSync(path.join(root, ".adp", "T-002"));
+    fs.writeFileSync(path.join(root, ".adp", "T-002", "audit-log.md"), "# T-002\n", "utf8");
+    assert.ok(await ev.waitFor("data: change\n\ndata: change\n\n", 2000), "no event within 2 s of the new task");
+    assert.ok(firstAt < 2000 && Date.now() - t0 < 2000);
+  } finally { await ev.close(); }
+  assert.equal(await getWithHost(baseOf(url) + "/events", "attacker.example"), 403);
 });
 
 /* R1: a second launch reuses the live server. */
