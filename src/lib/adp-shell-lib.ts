@@ -1511,7 +1511,7 @@ function reviewBodyHtml(text: string | null | undefined, m?: ReviewBodyModel): s
   return `<div class="revdoc">${html}</div>`;
 }
 
-export {NT_SWITCHES, SCREENS, TAB_SCREENS, localDate, tabsHtml, footerText, projectChitText,
+export {NT_KEYS, LINK_ITEM, SEVERITY_PILL, OUTCOME_PILL, ledgerRows, keyLabel, keyTitle, isFlat, isLine, isMap, NT_SWITCHES, SCREENS, TAB_SCREENS, localDate, tabsHtml, footerText, projectChitText,
   applyTheme, hashRead, hashWrite, logPaths, promptPaths, reviewPaths, corpusUrl, loadCorpus,
   railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml, docPaneHtml, rawPaneHtml,
   promptViewHtml, reviewRounds, reviewHead, priorReviews, reviewFileRef, reviewNavHtml,

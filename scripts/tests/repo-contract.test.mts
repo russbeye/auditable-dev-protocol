@@ -49,18 +49,29 @@ test("SKILL.md launches mission control and validates through the Node scripts",
    component that takes the parser library's escaped render may hand React a
    string of HTML, and this list names every such component. We read src/
    from disk, so a file git does not track yet still counts. */
-const HTML_OWNERS: string[] = [];
+const HTML_OWNERS = ["src/app/Inspector.tsx"];
 
-test("no source file outside the owner list passes HTML to React", () => {
+function sourcesHolding(needle: RegExp): string[] {
   const hits: string[] = [];
   const walk = (dir: string) => {
     for (const e of fs.readdirSync(dir, {withFileTypes: true})){
       const p = path.join(dir, e.name);
       if (e.isDirectory()) walk(p);
-      else if (/\.tsx?$/.test(e.name) && fs.readFileSync(p, "utf8").includes("dangerouslySetInnerHTML"))
+      else if (/\.tsx?$/.test(e.name) && needle.test(fs.readFileSync(p, "utf8")))
         hits.push(path.relative(ROOT, p).split(path.sep).join("/"));
     }
   };
   walk(path.join(ROOT, "src"));
-  assert.deepEqual(hits.filter(f => !HTML_OWNERS.includes(f)), []);
+  return hits.sort();
+}
+
+test("no source file outside the owner list passes HTML to React", () => {
+  assert.deepEqual(sourcesHolding(/dangerouslySetInnerHTML/), HTML_OWNERS);
+});
+
+/* The owner's prop takes the EscapedHtml brand. A cast is the only way to
+   make a string carry it, so the parser library, which escapes every
+   document character it renders, must be the only file that casts one. */
+test("only the parser library makes a string into EscapedHtml", () => {
+  assert.deepEqual(sourcesHolding(/as\s+EscapedHtml\b|<EscapedHtml>/), ["src/lib/adp-parser-lib.ts"]);
 });
