@@ -1,8 +1,32 @@
 import fs from "node:fs";
+import {build, type InlineConfig} from "vite";
 import {defineConfig} from "vitest/config";
-import {BUILD_MARK, stamp} from "./scripts/adp-runtime.mts";
+import {BUILD_MARK, SKILL_DIR, stamp} from "./scripts/adp-runtime.mts";
 
 let startStamp = "";
+
+/* The React app is an ES module, and rolldown builds an IIFE from one entry
+   only, so the app needs a build of its own. We run it from inside the
+   libraries build, so the launcher and the suite still run one command and
+   the stamp covers both bundles. Lib mode leaves process.env.NODE_ENV for a
+   consumer to set, and the page is that consumer, so we set it here. */
+const APP_BUILD: InlineConfig = {
+  configFile: false,
+  root: SKILL_DIR,
+  logLevel: "warn",
+  define: {"process.env.NODE_ENV": JSON.stringify("production")},
+  // Vite picks the JSX transform from the NODE_ENV the build inherits, and
+  // the suite and the launcher can hand it "test". The define above loads
+  // React's production build, which has no jsxDEV, so we pin the transform
+  // to match it.
+  oxc: {jsx: {development: false}},
+  build: {
+    outDir: "dist",
+    emptyOutDir: false,
+    minify: false,
+    lib: {entry: "src/app/main.tsx", formats: ["es"], fileName: () => "adp-app.js"},
+  },
+};
 
 export default defineConfig({
   plugins: [{
@@ -14,7 +38,10 @@ export default defineConfig({
     name: "adp-build-stamp",
     apply: "build",
     buildStart(){ startStamp = stamp(); },
-    writeBundle(){ fs.writeFileSync(BUILD_MARK, startStamp); },
+    async writeBundle(){
+      await build(APP_BUILD);
+      fs.writeFileSync(BUILD_MARK, startStamp);
+    },
   }],
   build: {
     outDir: "dist",

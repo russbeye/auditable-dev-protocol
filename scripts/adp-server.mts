@@ -78,6 +78,53 @@ function send(res: http.ServerResponse, status: number, type: string, body: stri
 
 const notFound = (res: http.ServerResponse, why: string) => send(res, 404, "text/plain; charset=utf-8", why + "\n");
 
+/* The open pages learn of a corpus change through server-sent events. We
+   check each file's path, size, and mtime once a second rather than trust
+   fs.watch. A watcher misses an editor's rename on some platforms, needs a
+   new watch for each new task directory, and fails without a word at the
+   inotify limit. The check runs only while a page listens. */
+const CHECK_MS = 1000;
+const listeners = new Set<http.ServerResponse>();
+let lastPrint: string | null = null;
+let checker: NodeJS.Timeout | null = null;
+
+function fingerprint(): string | null {
+  const dir = corpus();
+  if (!dir) return null;
+  try {
+    return corpusFiles(dir).map(f => {
+      // A file removed between the listing and its stat simply leaves the
+      // print. The next check sees the listing without it.
+      try { const s = fs.statSync(path.join(dir, f)); return f + "\t" + s.size + "\t" + s.mtimeMs; }
+      catch { return f; }
+    }).join("\n");
+  } catch { return null; }
+}
+
+function check(){
+  const now = fingerprint();
+  if (now === lastPrint) return;
+  lastPrint = now;
+  for (const res of listeners) res.write("data: change\n\n");
+}
+
+function listen(req: http.IncomingMessage, res: http.ServerResponse){
+  if (!listeners.size){
+    lastPrint = fingerprint();
+    checker = setInterval(check, CHECK_MS);
+    checker.unref();
+  }
+  listeners.add(res);
+  req.on("close", () => {
+    listeners.delete(res);
+    if (!listeners.size && checker){ clearInterval(checker); checker = null; }
+  });
+  // The page reloads the corpus when the stream opens, so the headers go out
+  // now rather than with the first change.
+  res.writeHead(200, {"Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store"});
+  res.flushHeaders();
+}
+
 function route(req: http.IncomingMessage, res: http.ServerResponse){
   // A page on another origin can rebind its own host name to 127.0.0.1 and
   // then read us as same-origin. Its requests still carry its own host name,
@@ -94,6 +141,7 @@ function route(req: http.IncomingMessage, res: http.ServerResponse){
     const h: Health = {root, stamp: myStamp, pid: process.pid};
     return send(res, 200, "application/json; charset=utf-8", JSON.stringify(h));
   }
+  if (p === "/events") return listen(req, res);
   if (p === "/corpus.json"){
     const dir = corpus();
     if (!dir) return notFound(res, "no corpus directory");

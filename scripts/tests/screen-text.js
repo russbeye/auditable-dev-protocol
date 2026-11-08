@@ -90,7 +90,28 @@ async function settle(w, turns = 20){
 
 const ATTRS = ["title", "aria-label", "placeholder", "alt"];
 
-/* What one region of the page shows. Each text node becomes one entry with
+/* Sibling text nodes with no element between them read as one run of text.
+   React renders "{n} slots used" as two such nodes, where a parsed HTML
+   string gives one. A comment node shows nothing, so it does not end the
+   run. */
+function textRun(n){
+  const w = n.ownerDocument.defaultView;
+  let s = "";
+  for (let m = n; m && (m.nodeType === w.Node.TEXT_NODE || m.nodeType === w.Node.COMMENT_NODE); m = m.nextSibling)
+    if (m.nodeType === w.Node.TEXT_NODE) s += m.data;
+  return s;
+}
+
+function runContinues(n){
+  const w = n.ownerDocument.defaultView;
+  for (let m = n.previousSibling; m; m = m.previousSibling){
+    if (m.nodeType === w.Node.TEXT_NODE) return true;
+    if (m.nodeType !== w.Node.COMMENT_NODE) return false;
+  }
+  return false;
+}
+
+/* What one region of the page shows. Each run of text becomes one entry with
    its whitespace collapsed, so a change in markup nesting or indentation
    does not count as a change in text. The attributes a person reads through
    a tooltip or a screen reader come next, in document order. */
@@ -101,7 +122,8 @@ function record(el){
   for (let n = tw.currentNode; n; n = tw.nextNode()){
     if (n.nodeType === w.Node.TEXT_NODE){
       if (n.parentElement && /^(SCRIPT|STYLE)$/.test(n.parentElement.tagName)) continue;
-      const t = n.data.replace(/\s+/g, " ").trim();
+      if (runContinues(n)) continue;
+      const t = textRun(n).replace(/\s+/g, " ").trim();
       if (t) text.push(t);
     } else {
       for (const a of ATTRS){
@@ -170,4 +192,4 @@ async function captureAll(){
   return out;
 }
 
-module.exports = {bootPage, settle, captureAll, NOW};
+module.exports = {bootPage, settle, captureAll, record, snapshot, diskFetch, NOW};
