@@ -51,7 +51,7 @@ const SYNTAX_ESC: Record<string, string>={'*':'&#42;','_':'&#95;','[':'&#91;',']
 // contents must stay literal and must be escaped only once. Each one leaves
 // a NUL-wrapped index behind and goes back in at the end. A backslash
 // before ASCII punctuation outside a span makes that character literal.
-function inline(s: unknown): string{
+function inline(s: unknown): EscapedHtml{
   const codes: string[]=[];
   let t = String(s).replace(CODE_SPAN,(m: string,run: string,c: string)=>{codes.push(spanText(c));return '\u0000'+(codes.length-1)+'\u0000';});
   t = esc(t);
@@ -72,7 +72,7 @@ function inline(s: unknown): string{
   // both of its asterisks.
   t = t.replace(/(^|[^*\w])\*([^*\s](?:[^*]*[^*\s])?)\*(?!\w)/g,'$1<em>$2</em>');
   t = t.replace(/\u0000(\d+)\u0000/g,(m: string,i: string)=>`<code>${esc(codes[+i])}</code>`);
-  return t;
+  return t as EscapedHtml;
 }
 // We wrap free-standing status keywords in pills. The input is HTML we
 // already rendered, so we lift each tag into a placeholder before the
@@ -80,12 +80,12 @@ function inline(s: unknown): string{
 // where an href can carry a path segment like /HIGH. The guard leaves a
 // keyword plain inside a word, directly after a tag, and inside double
 // quotes. A slash is prose, so VALIDATED/INVALIDATED pills both words.
-function decorate(html: string): string{
+function decorate(html: EscapedHtml): EscapedHtml{
   const tags: string[]=[];
   let t = html.replace(/<[^>]*>/g,m=>{tags.push(m);return '\u0000'+(tags.length-1)+'\u0000';});
   t = t.replace(/(^|[^A-Za-z0-9_"\u0000])(INVALIDATED|VALIDATED|UNOBSERVABLE|UNKNOWN|PENDING|MEDIUM|MED|HIGH|OPEN|LOW)\b/g,
     (m: string,pre: string,w: string)=>pre+`<span class="pill ${TOK[w]}">${w}</span>`);
-  return t.replace(/\u0000(\d+)\u0000/g,(m: string,i: string)=>tags[+i]);
+  return t.replace(/\u0000(\d+)\u0000/g,(m: string,i: string)=>tags[+i]) as EscapedHtml;
 }
 // UNKNOWN and UNOBSERVABLE both mean the observability is absent, so they
 // share one hue. PENDING is a promised mitigation that has not landed, which
@@ -200,7 +200,7 @@ function subHead(s: string): string{
   return decorate(inline(s));
 }
 
-function renderMarkdown(md: unknown): string{
+function renderMarkdown(md: unknown): EscapedHtml{
   const lines=String(md).replace(/\r\n/g,'\n').replace(/\t/g,'  ').split('\n');
   let html=''; let i=0;
   while(i<lines.length){
@@ -230,7 +230,7 @@ function renderMarkdown(md: unknown): string{
     // because a hard-wrapped author meant those breaks.
     html+=`<p>${decorate(inline(buf.join('\n'))).replace(/\n/g,'<br>')}</p>`;
   }
-  return html;
+  return html as EscapedHtml;
 }
 
 /* =========================================================
@@ -364,7 +364,7 @@ function dlChipSplit(v: string): DLChipSplit{
 function dlChip(kind: string,cls: string,known: boolean,v: string): DLChip{
   const s=dlChipSplit(v);
   return {
-    html:`<span class="pill dl-pill ${cls}"><i>${kind}</i>${esc(s.word)}</span>`,
+    html:`<span class="pill dl-pill ${cls}"><i>${kind}</i>${esc(s.word)}</span>` as EscapedHtml,
     note: known ? s.tail : (s.tail ? v.trim() : '')
   };
 }
@@ -419,7 +419,7 @@ function dlSplitBody(lines: string[]): DLBodySplit{
   return {fieldLines:lines, trailing:''};
 }
 
-function renderDLCard(entry: DLEntry): string{
+function renderDLCard(entry: DLEntry): EscapedHtml{
   const hm=entry.head.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
   const id=hm?hm[1].trim():''; const title=hm?hm[2].trim():entry.head;
   const split=dlSplitBody(entry.lines);
@@ -451,7 +451,7 @@ function renderDLCard(entry: DLEntry): string{
         <span class="dl-pills">${pills}</span>
       </div>
       ${grid?`<div class="dl-grid">${grid}</div>`:''}${trail}
-    </div>`;
+    </div>` as EscapedHtml;
 }
 /* We split a section body into pre-entry prose and ### entries in one
    place, because renderDecisionLog and the audit counts must see the same
@@ -498,7 +498,7 @@ function dlStatusCounts(body: unknown): DLStatusCounts{
    a list of bold labels such as "- **PR-COR-001:** fixed", renders after
    the card. A section with no card renders exactly as renderMarkdown would. */
 const RE_CARD_HEAD=/^###\s+\[DL-\d+\]/;
-function renderSectionBody(body: unknown): string{
+function renderSectionBody(body: unknown): EscapedHtml{
   const lines=String(body).replace(/\r\n/g,'\n').split('\n');
   const out: string[]=[]; let prose: string[]=[]; let cards: string[]=[]; let inFence=false; let any=false;
   const flushCards=()=>{ if(cards.length) out.push(`<div class="dl-cards">${cards.join('')}</div>`); cards=[]; };
@@ -528,15 +528,15 @@ function renderSectionBody(body: unknown): string{
   }
   if(!any) return renderMarkdown(body);
   flushProse(); flushCards();
-  return out.join('');
+  return out.join('') as EscapedHtml;
 }
-function renderDecisionLog(body: unknown): string{
+function renderDecisionLog(body: unknown): EscapedHtml{
   const {pre,entries}=parseDLEntries(body);
   // A Decision Log written as prose has no ### entries. Those sections fall
   // back to the generic renderer instead of showing an empty deck of cards.
   if(!entries.length) return renderMarkdown(body);
-  return (pre?`<div class="md">${renderMarkdown(pre)}</div>`:'')
-    + `<div class="dl-cards">${entries.map(renderDLCard).join('')}</div>`;
+  return ((pre?`<div class="md">${renderMarkdown(pre)}</div>`:'')
+    + `<div class="dl-cards">${entries.map(renderDLCard).join('')}</div>`) as EscapedHtml;
 }
 
 export {esc, escAttr, safeLinkUrl, inline, decorate, TOK, renderMarkdown, ART, SECTION_KINDS,
@@ -544,9 +544,15 @@ export {esc, escAttr, safeLinkUrl, inline, decorate, TOK, renderMarkdown, ART, S
   parseDLFields, dlSplitBody, dlChipSplit, dlConfKind, dlConfPill, dlStatusPill, dlStatusKind,
   dlRail, parseDLEntries, dlEntryStatus, dlStatusCounts, renderDLCard, renderSectionBody,
   renderDecisionLog};
-export type {SectionKind, SectionMeta, ArtEntry, FrontMatterSplit, Section, ParsedSections,
+export type {EscapedHtml, SectionKind, SectionMeta, ArtEntry, FrontMatterSplit, Section, ParsedSections,
   DLField, DLChipSplit, DLChip, DLConfKind, DLStatusKind, DLBodySplit, DLEntry, DLEntries, DLStatusCounts};
 
+/* HTML this library built from document text, with every document character
+   escaped. React renders a string of HTML only when it carries this brand,
+   and only this file casts a string to it, so no other code can hand React
+   markup of its own. */
+declare const escapedHtml: unique symbol;
+type EscapedHtml = string & {readonly [escapedHtml]: true};
 type ListMarker = {ordered: boolean, marker: string, num: number};
 type SectionKind = 'artifact' | 'amendment' | 'review' | 'status' | 'evidence' | 'ledger' | 'ad-hoc';
 interface SectionMeta {icon: string; tag: string; kind: SectionKind; spine?: boolean; alert?: boolean}
@@ -556,7 +562,7 @@ type Section = {title: string, body: string[]};
 type ParsedSections = {front: string | null, intro: string, secs: Section[]};
 type DLField = {label: string, value: string};
 type DLChipSplit = {word: string, tail: string};
-type DLChip = {html: string, note: string};
+type DLChip = {html: EscapedHtml, note: string};
 type DLConfKind = 'high' | 'medium' | 'low' | 'other';
 type DLStatusKind = 'invalidated' | 'validated' | 'open' | 'unknown' | 'other';
 type DLBodySplit = {fieldLines: string[], trailing: string};

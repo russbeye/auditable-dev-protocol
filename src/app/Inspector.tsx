@@ -1,0 +1,507 @@
+/* The inspector: one ticket's log, a section at a time or whole, with the
+   decisions and watches the shown section cites. This file holds the app's
+   one component that hands React a string of HTML. */
+import {useEffect, useLayoutEffect, useRef, useState, type ReactNode} from "react";
+import * as D from "../lib/adp-derive-lib.ts";
+import * as I from "../lib/adp-index-lib.ts";
+import * as P from "../lib/adp-parser-lib.ts";
+import * as PL from "../lib/adp-prompt-lib.ts";
+import * as S from "../lib/adp-shell-lib.ts";
+import type {SectionEntry, SectionState} from "../lib/adp-derive-lib.ts";
+import type {Ticket} from "../lib/adp-index-lib.ts";
+import type {DLEntry, EscapedHtml, Section} from "../lib/adp-parser-lib.ts";
+import type {YamlMap, YamlValue} from "../lib/adp-prompt-lib.ts";
+import type {Chit, Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPanelRow} from "../lib/adp-shell-lib.ts";
+import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
+
+type HtmlProps = {html: EscapedHtml; as?: "div" | "span" | "td"; className?: string};
+
+/* The one place the app hands React a string of HTML. The prop takes only
+   the parser library's escaped render, because the brand is cast nowhere
+   else. A bare span takes no box of its own, so markup placed beside text
+   sits in its parent's layout as if the parent held it directly. */
+function Html({html, as = "span", className}: HtmlProps){
+  const Tag = as;
+  return <Tag className={className} style={as === "span" && !className ? {display: "contents"} : undefined}
+    dangerouslySetInnerHTML={{__html: html}}/>;
+}
+
+// ---- the ticket's text, parsed once per text ----
+
+/* A ticket's prompt as the inspector shows it: parsed, raw when the parse
+   yields no keys, or unreadable when its fetch failed. */
+type PromptView =
+  | {state: "unreadable"}
+  | {state: "raw"; text: string}
+  | {state: "parsed" | "issues"; obj: YamlMap; issues: string[]; text: string};
+
+function promptOf(p: FetchedText | undefined): PromptView | null {
+  if (!p) return null;
+  if (p.error != null) return {state: "unreadable"};
+  const issues: string[] = [];
+  let obj: YamlMap | null = null;
+  try { obj = PL.parseYAML(p.text, issues); } catch { obj = null; }
+  return obj && typeof obj === "object" && !Array.isArray(obj) && Object.keys(obj).length
+    ? {state: issues.length ? "issues" : "parsed", obj, issues, text: p.text}
+    : {state: "raw", text: p.text};
+}
+
+/* The split sections keyed by the contract's section keys, plus every DL
+   entry found in any section, first id wins, the rule the harvest uses. */
+type ParsedLog = {byKey: Record<string, Section>; cards: Record<string, DLEntry>};
+
+function parseLog(text: string): ParsedLog {
+  const secs = P.parseSections(text || "").secs;
+  const keys = P.sectionKeys(secs);
+  const byKey: Record<string, Section> = {};
+  secs.forEach((s, i) => { byKey[keys[i]] = s; });
+  const cards: Record<string, DLEntry> = {};
+  for (const s of secs)
+    for (const e of P.parseDLEntries(s.body.join("\n")).entries){
+      const hm = e.head.match(/^\[([^\]]+)\]/);
+      if (hm && !(hm[1] in cards)) cards[hm[1]] = e;
+    }
+  return {byKey, cards};
+}
+
+// ---- the section list ----
+
+/* The prompt entry heads the list, because the prompt comes before every
+   phase. Its key carries neither the "sec-" prefix of a section key nor the
+   "missing:" prefix, so no heading can collide with it and every older
+   link keeps its landing. */
+const PROMPT_KEY = "prompt";
+type Entry = SectionEntry & {prompt?: boolean};
+
+function entriesOf(t: Ticket, prompt: PromptView | null): Entry[] {
+  const entries: Entry[] = D.sectionEntries(t);
+  return prompt ? [{key: PROMPT_KEY, title: "prompt.yaml", phase: null, canonical: false, missing: false, prompt: true}, ...entries] : entries;
+}
+
+const PROMPT_STATES: Record<PromptView["state"], SectionState> = {parsed: {label: "complete", tone: "ok"},
+  issues: {label: "parse issues", tone: "warn"}, raw: {label: "shown raw", tone: "warn"}, unreadable: {label: "unreadable", tone: "bad"}};
+
+function statesOf(t: Ticket, entries: Entry[], prompt: PromptView | null, today: string): Record<string, SectionState> {
+  const states: Record<string, SectionState> = {};
+  for (const en of entries) states[en.key] = en.prompt ? PROMPT_STATES[prompt!.state] : D.sectionState(t, en, today);
+  return states;
+}
+
+// A ticket with no sections yet opens on its prompt. Every ticket with a
+// log keeps the default it had before the prompt entry existed.
+function defaultKey(t: Ticket, prompt: PromptView | null): string | null {
+  if (!t.sections.length && prompt) return PROMPT_KEY;
+  if (t.state === "open" || t.state === "in-review"){
+    const cur = D.canonicalSection(t, t.phase);
+    if (cur) return cur.key;
+  }
+  const spine = D.canonicalSection(t, 5);
+  return (spine || t.sections[0] || {key: null}).key;
+}
+
+/* The section a selection lands on. An item-only link lands on the item's
+   owning section, so key drift in the section token never strands a link
+   that names a real item. A selection with neither lands on the default.
+   A section the log no longer holds falls back to the default and says so. */
+function resolveSection(t: Ticket, prompt: PromptView | null, s: string | null, item: string | null, today: string):
+  {s: string | null; notice: string | null} {
+  if (!t.sections.length && !prompt) return {s, notice: null};
+  if (item && !s){
+    const cs = D.citingSections(t, item);
+    if (cs.length) s = cs[0];
+  }
+  if (!s && !item) s = defaultKey(t, prompt);
+  if (s && !statesOf(t, entriesOf(t, prompt), prompt, today)[s])
+    return {s: defaultKey(t, prompt), notice: `section "${s}" was not found in this log — the link may predate a retitle.`};
+  return {s, notice: null};
+}
+
+// ---- the prompt view ----
+
+/* The prompt view gives each top-level key a card, shaped like a Decision
+   Log card. A multi-line string is prose, so it goes through the markdown
+   renderer the logs use. A one-line string shows escaped and exact. A link
+   item becomes an anchor only for an absolute http, https, or mailto URL,
+   because a relative one would resolve against this page. */
+function Scalar({v, at}: {v: unknown; at: string}){
+  if (v == null || v === "") return <span className="pcard-none">empty</span>;
+  if (typeof v === "string" && at === "context.links[]" && S.LINK_ITEM.test(v) && P.safeLinkUrl(v))
+    return <a href={v} target="_blank" rel="noopener noreferrer">{v}</a>;
+  return <>{String(v)}</>;
+}
+
+const NONE = <span className="pcard-none">none</span>;
+
+function Value({v, at}: {v: YamlValue; at: string}): ReactNode {
+  if (typeof v === "string" && v.includes("\n")) return <Html as="div" className="md" html={P.renderMarkdown(v)}/>;
+  if (Array.isArray(v)){
+    if (!v.length) return NONE;
+    if (v.every(S.isFlat)){
+      const cols: string[] = [];
+      v.forEach(r => Object.keys(r).forEach(k => { if (!cols.includes(k)) cols.push(k); }));
+      return <div className="md"><div className="tbl-wrap"><table className="md-tbl">
+        <thead><tr>{cols.map(c => <th key={c}>{S.keyLabel(c)}</th>)}</tr></thead>
+        <tbody>{v.map((r, i) => <tr key={i}>{cols.map(c => S.isLine(r[c])
+          ? <td key={c}><Scalar v={r[c]} at={at + "[]." + c}/></td>
+          : <Html key={c} as="td" html={P.renderMarkdown(r[c])}/>)}</tr>)}</tbody>
+      </table></div></div>;
+    }
+    return <div className="md"><ul className="md-list">{v.map((x, i) =>
+      <li key={i}>{S.isLine(x) ? <Scalar v={x} at={at + "[]"}/> : <Value v={x} at={at + "[]"}/>}</li>)}</ul></div>;
+  }
+  if (S.isMap(v)){
+    const ks = Object.keys(v);
+    if (!ks.length) return NONE;
+    return <div className="pcard-grid">{ks.map(k => <PromptField key={k} k={k} v={v[k]} at={at + "." + k}/>)}</div>;
+  }
+  return <Scalar v={v} at={at}/>;
+}
+
+function PromptField({k, v, at}: {k: string; v: YamlValue; at: string}){
+  return <><div className="pcard-k">{S.keyLabel(k)}</div><div className="pcard-v"><Value v={v} at={at}/></div></>;
+}
+
+// The builder's keys come first in the order it writes them. A key the
+// builder does not know still shows, after them and in file order, because
+// a hand-written prompt may carry one and the view must not hide it.
+function PromptCards({obj}: {obj: YamlMap}){
+  const known = S.NT_KEYS[""].filter(k => k in obj);
+  const keys = known.concat(Object.keys(obj).filter(k => !known.includes(k)));
+  return <div className="pcards">{keys.map(k => {
+    const v = obj[k];
+    return <section key={k} className="pcard">
+      <div className="pcard-head"><span className="pcard-title">{S.keyTitle(k)}</span>
+        {S.isLine(v) ? <span className="pcard-val"><Scalar v={v} at={k}/></span> : null}
+        <span className="pcard-key">{k}</span></div>
+      {S.isLine(v) ? null : S.isMap(v) ? <Value v={v} at={k}/> : <div className="pcard-body"><Value v={v} at={k}/></div>}
+    </section>;
+  })}</div>;
+}
+
+function promptNotice(pr: PromptView): string | null {
+  if (pr.state === "unreadable") return "prompt.yaml is listed in the corpus but could not be read.";
+  if (pr.state === "raw") return "prompt.yaml did not parse as YAML — shown raw.";
+  return pr.issues.length ? `prompt.yaml parsed with ${pr.issues.length} issue${pr.issues.length === 1 ? "" : "s"}: ${pr.issues.join("; ")}` : null;
+}
+
+function PromptBody({pr}: {pr: PromptView}){
+  if (pr.state === "unreadable") return null;
+  if (pr.state === "raw") return <pre className="rawpre">{pr.text}</pre>;
+  return <PromptCards obj={pr.obj}/>;
+}
+
+// ---- the panes ----
+
+// A section body renders as the decision-log card list when its title is
+// the spine, and as markdown with any decision cards drawn in place
+// otherwise. The pane and the full log both read this rule.
+function SectionBody({sec, body}: {sec: Section | null; body: string}){
+  return sec ? <Html as="div" className="md" html={P.metaFor(sec.title).spine ? P.renderDecisionLog(body) : P.renderSectionBody(body)}/> : null;
+}
+
+/* The permalink copies the page's address. The label says it copied for a
+   moment and then rests, the way the vanilla control did. */
+function Permalink(){
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 900);
+    return () => clearTimeout(t);
+  }, [copied]);
+  const copy = () => {
+    try { navigator.clipboard.writeText(location.href); } catch {}
+    setCopied(true);
+  };
+  return <button type="button" className="lnk" data-permalink="1" title="copy link to this view" onClick={copy}>{copied ? "copied" : "⧉ link"}</button>;
+}
+
+type DocPaneProps = {back?: string; onBack?(): void; heading: string; badge?: string | null; notice?: string | null;
+  action?: ReactNode; children?: ReactNode};
+
+function DocPane({back, onBack, heading, badge, notice, action, children}: DocPaneProps){
+  return <div className="doc">
+    {back ? <div className="backrow"><a className="backlink" onClick={onBack}>← back to {back}</a></div> : null}
+    <h4>{heading}{badge ? <>{" "}<span className="ncbadge">{badge}</span></> : null}{" "}<Permalink/></h4>
+    {notice ? <p className="dnotice">{notice}</p> : null}
+    {action}
+    {children}
+  </div>;
+}
+
+function Tickhead({title, chits}: {title: string; chits: Chit[]}){
+  return <div className="tickhead"><span className="tbig">{title}</span>
+    {chits.map((c, i) => <span key={i} className="chit" title={c.title}>{c.txt}</span>)}</div>;
+}
+
+function SecNav({entries, states, selKey, onPick, onStep}: {entries: Entry[]; states: Record<string, SectionState>;
+  selKey: string | null; onPick(key: string): void; onStep(d: number): void}){
+  const i = entries.findIndex(en => en.key === selKey);
+  const cur = i >= 0 ? states[entries[i].key] : {label: "—", tone: "mute"};
+  return <div className="secnav">
+    <button type="button" className="op" data-secstep="-1" disabled={i <= 0} onClick={() => onStep(-1)}>‹ prev</button>
+    <select id="secSel" className="secsel" aria-label="section" value={i >= 0 ? entries[i].key : ""} onChange={e => onPick(e.target.value)}>
+      {entries.map(en => {
+        const st = states[en.key];
+        const base = en.phase != null ? `phase ${en.phase} · ${en.title}` : en.title;
+        return <option key={en.key} value={en.key}>{st.label === "complete" ? base : `${base} — ${st.label}`}</option>;
+      })}
+    </select>
+    <button type="button" className="op" data-secstep="1" disabled={i < 0 || i >= entries.length - 1} onClick={() => onStep(1)}>next ›</button>
+    <span className={"secchit t-" + cur.tone}>{cur.label}</span>
+  </div>;
+}
+
+// ---- the screen ----
+
+type InspSel = {s: string | null; item: string | null};
+type InspectorActions = PanelActions & {
+  onView(v: ViewMode): void;
+  onSection(key: string): void;
+  onStep(key: string): void;
+  onBack(): void;
+  onFilter(f: string): void;
+  onToggle(key: string, open: boolean): void;
+  onExpand(open: boolean, keys: string[]): void;
+  onRound(tok: string, file: string): void;
+  onSpy(key: string): void;
+};
+type InspectorProps = {
+  corpus: Corpus | null;
+  today: string;
+  t: Ticket | undefined;
+  tokenOf(t: Pick<Ticket, "dir">): string;
+  notice: string | null;
+  sel: InspSel;
+  view: ViewMode;
+  dlFilter: string;
+  missNotice: string | null;
+  fullClosed: ReadonlySet<string>;
+  decSort: SortState;
+  iwSort: SortState;
+  // A jump scrolls the stage once: to the section nav for a pane, or to one
+  // full-log section by its key. jumped holds the last sequence number
+  // served, so a screen that mounts again does not replay an old jump.
+  jump: {to: string | null; seq: number};
+  jumped: {current: number};
+  act: InspectorActions;
+};
+
+// A canonical section's chip carries its phase. A non-canonical one still
+// gets the artifact family's tag when the registry knows the title, and its
+// kind otherwise, so a ledger or an ad hoc note is named rather than marked §.
+function chipModel(t: Ticket, key: string){
+  const s = t.sections.find(x => x.key === key);
+  const meta = s ? P.metaFor(s.title) : null;
+  return {key, label: !s ? "§" : s.phase != null ? "P" + s.phase : meta!.tag || meta!.kind, title: s ? s.title : key};
+}
+
+/* The decisions and watches panels build their rows here, so the inspector
+   and the reviews screen sort, chip, and highlight a cited entry the same
+   way. */
+const CONF_RANK: Record<string, number> = {high: 3, medium: 2, low: 1};
+function decisionRows(t: Ticket, shown: Ticket["decisions"], sort: SortState, item: string | null): DecisionPanelRow[] {
+  return D.sortRows(shown, sort.k, sort.d, {
+    id: d => d.id, title: d => d.title, conf: d => CONF_RANK[P.dlConfKind(d.confidence)] || 0,
+    status: d => D.decisionKind(d), watch: d => (D.coveringWatch(t, d.id) || {wid: ""}).wid,
+    cited: d => D.citingSections(t, d.id).length
+  }).map(d => {
+    // A settled row shows how its watch ended, so the empty watch column
+    // never reads as data loss once coverage has closed.
+    const sw = D.settledWatch(t, d.id);
+    return {id: d.id, title: d.title, conf: P.dlChipSplit(d.confidence).word, confKind: P.dlConfKind(d.confidence),
+      statusKind: D.decisionKind(d), watch: (D.coveringWatch(t, d.id) || {wid: null}).wid,
+      settled: sw && {wid: sw.wid, outcome: sw.outcome, closed: sw.closed},
+      chips: D.citingSections(t, d.id).map(k => chipModel(t, k)), hl: item === d.id};
+  });
+}
+function watchRows(t: Ticket, list: Ticket["watches"], sort: SortState, item: string | null, today: string): WatchPanelRow[] {
+  return D.sortRows(list, sort.k, sort.d, {
+    wid: w => w.wid, what: w => w.what, dl: w => (w.dl || []).join(","),
+    due: w => w.anchored ? D.daysUntil(w.due!, today) : Infinity,
+    state: w => D.dueState(w, today), cited: w => D.citingSections(t, w.wid).length
+  }).map(w => ({wid: w.wid, what: w.what, dls: w.dl || [],
+    dueText: w.anchored ? w.due : (w.window || "relative"), dueDated: !!w.anchored,
+    state: D.dueState(w, today), stateLabel: D.dueLabel(w, today),
+    chips: D.citingSections(t, w.wid).map(k => chipModel(t, k)), hl: item === w.wid}));
+}
+
+const STATUS_FILTERS = ["open", "validated", "invalidated"] as const;
+function filterCounts(decisions: Ticket["decisions"]): Record<string, number> {
+  const counts: Record<string, number> = {all: decisions.length};
+  for (const k of STATUS_FILTERS) counts[k] = decisions.filter(d => D.decisionKind(d) === k).length;
+  return counts;
+}
+
+/* The full log marks the section in view as the reader scrolls the stage,
+   the way the viewer's table of contents did. A section counts as in view
+   once its top edge reaches the top of the stage's content. The mark is
+   the section selector itself, so the selector, its state chit, and the
+   address all name the section the reader is in. */
+const SPY_SLACK = 20;
+function useScrollSpy(on: boolean, onSpy: (key: string) => void){
+  const spy = useRef(onSpy);
+  spy.current = onSpy;
+  useEffect(() => {
+    if (!on) return;
+    const stage = document.querySelector(".stage");
+    if (!stage) return;
+    let tick = false;
+    const run = () => {
+      tick = false;
+      const secs = [...document.querySelectorAll<HTMLElement>("#scrInspector .fsec")];
+      if (!secs.length) return;
+      const top = stage.getBoundingClientRect().top + SPY_SLACK;
+      let key = secs[0].getAttribute("data-key");
+      for (const s of secs){ if (s.getBoundingClientRect().top <= top) key = s.getAttribute("data-key"); else break; }
+      if (key) spy.current(key);
+    };
+    const mark = () => { if (tick) return; tick = true; requestAnimationFrame(run); };
+    let scrolled = false;
+    const scroll = () => { scrolled = true; mark(); };
+    stage.addEventListener("scroll", scroll, {passive: true});
+    /* A late web font can move the sections with no scroll event, so a
+       change in the screen's size marks again. Until the reader scrolls,
+       the selection stays the one they opened the full log on, so a size
+       change before the first scroll marks nothing. */
+    const resize = new ResizeObserver(() => { if (scrolled) mark(); });
+    const screen = document.querySelector("#scrInspector");
+    if (screen) resize.observe(screen);
+    return () => { stage.removeEventListener("scroll", scroll); resize.disconnect(); };
+  }, [on]);
+}
+
+function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, missNotice, fullClosed, decSort, iwSort, jump, jumped, act}: InspectorProps){
+  const text = t && corpus ? corpus.texts[t.dir] || "" : "";
+  const promptSrc = t && corpus ? corpus.prompts[t.dir] : undefined;
+  const pd = useMemoText(text);
+  const prompt = useMemoPrompt(promptSrc);
+  useScrollSpy(view === "full" && !!t, act.onSpy);
+  useLayoutEffect(() => {
+    if (jump.seq <= jumped.current) return;
+    jumped.current = jump.seq;
+    const el = jump.to == null ? document.querySelector("#scrInspector .secnav")
+      : [...document.querySelectorAll("#scrInspector .fsec")].find(d => d.getAttribute("data-key") === jump.to);
+    if (el && el.scrollIntoView) el.scrollIntoView();
+  }, [jump.seq]);
+
+  const ops = <div className="mops"><span className="mgap"></span>
+    <button type="button" className={"op tgl" + (view === "section" ? " is-on" : "")} data-view="section" onClick={() => act.onView("section")}>section</button>
+    <button type="button" className={"op tgl" + (view === "full" ? " is-on" : "")} data-view="full" onClick={() => act.onView("full")}>full log</button>
+  </div>;
+
+  // The three regions keep the vanilla page's ids: the top (heading, ops
+  // row, ticket head), the section nav, and the body (pane and panels).
+  const regions = (top: ReactNode, nav: ReactNode, body: ReactNode) =>
+    <><div id="inspTop">{top}</div><div id="inspNav">{nav}</div><div id="inspBody">{body}</div></>;
+  if (!t) return regions(<><h2>inspector</h2>{ops}</>, null, <div className="ipanel"><p className="dnotice">{notice || (corpus
+    ? "select a ticket from the rail"
+    : "no corpus behind this page — the inspector reads the served corpus.")}</p></div>);
+
+  const top = <><h2>inspector <span className="isub">{t.dir}</span></h2>{ops}</>;
+  if (!t.sections.length && !prompt)
+    return regions(<>{top}<Tickhead title={t.id || t.dir} chits={[{txt: t.state + " · " + t.state_source}]}/></>, null,
+      <div className="ipanel"><p className="dnotice">this ticket has no audit log yet — only its prompt or other files sit in the directory.</p></div>);
+
+  const entries = entriesOf(t, prompt);
+  const states = statesOf(t, entries, prompt, today);
+  const chits: Chit[] = [{txt: t.state + " · " + t.state_source,
+    title: "lifecycle state — declared in front matter, or inferred from section presence on legacy logs"}];
+  if (t.pr) chits.push({txt: "pr " + t.pr});
+
+  const sectionPane = (en: Entry | undefined) => {
+    const sec = en && !en.missing ? pd.byKey[en.key] || null : null;
+    const body = sec ? sec.body.join("\n") : "";
+    const ref = S.reviewFileRef(body);
+    const round = ref && corpus && corpus.reviews && (corpus.reviews[ref.dir] || []).some(f => f.file === ref.file) ? ref : null;
+    return <DocPane heading={en ? (en.phase != null ? "phase " + en.phase + " · " + en.title : en.title) : "—"}
+      badge={en && en.missing ? "missing" : en && !en.canonical ? "non-canonical" : null}
+      notice={missNotice || (en && en.missing ? "this section was never written. A missing canonical section is an attention reason on the rail." : null)}
+      action={round ? <p className="revopen"><RoundLink tok={revTok(corpus, tokenOf, round.dir)} file={round.file} label="open round in reviews ›" onRound={act.onRound}/></p> : null}>
+      <SectionBody sec={sec} body={body}/>
+    </DocPane>;
+  };
+
+  let pane: ReactNode, panels: ReactNode = null;
+  if (view === "full"){
+    const list = entries.filter(en => !en.missing);
+    pane = <><div className="mops">
+      <button type="button" className="op" data-exp="open" onClick={() => act.onExpand(true, list.map(en => en.key))}>expand all</button>
+      <button type="button" className="op" data-exp="close" onClick={() => act.onExpand(false, list.map(en => en.key))}>collapse all</button></div>
+      {list.map(en => {
+        const sec = en.prompt ? null : pd.byKey[en.key] || null;
+        const heading = en.prompt ? "prompt.yaml" : en.phase != null ? "phase " + en.phase + " · " + en.title : en.title;
+        const badge = en.prompt || en.canonical ? null : "non-canonical";
+        const pn = en.prompt ? promptNotice(prompt!) : null;
+        // We toggle the details ourselves, so the collapse state lives in
+        // the app and survives every render.
+        return <details key={en.key} className="fsec" data-key={en.key} open={!fullClosed.has(en.key)}>
+          <summary className="fsum" onClick={e => { e.preventDefault(); act.onToggle(en.key, fullClosed.has(en.key)); }}>
+            {heading}{badge ? <>{" "}<span className="ncbadge">{badge}</span></> : null}</summary>
+          <div className="fbody">{en.prompt
+            ? <>{pn ? <p className="dnotice">{pn}</p> : null}<PromptBody pr={prompt!}/></>
+            : <SectionBody sec={sec} body={sec ? sec.body.join("\n") : ""}/>}</div>
+        </details>;
+      })}</>;
+  } else if (sel.item && I.RE_DL.test(sel.item)){
+    const en = entries.find(x => x.key === sel.s);
+    const card = pd.cards[sel.item];
+    pane = <DocPane back={en ? en.title : "sections"} onBack={act.onBack} heading={"[" + sel.item + "]"}
+      notice={card ? null : "this entry is cited here but not present in the loaded text."}>
+      {card ? <Html as="div" className="md" html={P.renderDLCard(card)}/> : null}
+    </DocPane>;
+  } else if (sel.s === PROMPT_KEY){
+    pane = <DocPane heading="prompt.yaml" notice={missNotice || promptNotice(prompt!)}><PromptBody pr={prompt!}/></DocPane>;
+  } else pane = sectionPane(entries.find(x => x.key === sel.s) || entries[0]);
+
+  if (view !== "full"){
+    const items = D.sectionItems(t, sel.s || "");
+    const counts = filterCounts(items.decisions);
+    const shown = dlFilter === "all" ? items.decisions : items.decisions.filter(d => D.decisionKind(d) === dlFilter);
+    const en = entries.find(x => x.key === sel.s);
+    const label = en ? en.title : "this section";
+    panels = <>
+      {items.decisions.length ? <DecisionsPanel label={label} sort={decSort} rows={decisionRows(t, shown, decSort, sel.item)}
+        pills={<Pills counts={counts} active={dlFilter} mark="data-dlf" onPick={act.onFilter}/>}
+        onSort={act.onSort} onRow={act.onRow} onWatch={act.onWatch} onChip={act.onChip}/> : null}
+      {items.watches.length ? <WatchesPanel label={label} sort={iwSort} rows={watchRows(t, items.watches, iwSort, sel.item, today)}
+        onSort={act.onSort} onWatch={act.onWatch} onChip={act.onChip}/> : null}
+    </>;
+  }
+
+  return regions(<>{top}<Tickhead title={t.id || t.dir} chits={chits}/></>,
+    <SecNav entries={entries} states={states} selKey={sel.s} onPick={act.onSection} onStep={d => {
+      const i = entries.findIndex(en => en.key === sel.s) + d;
+      if (i >= 0 && i < entries.length) act.onStep(entries[i].key);
+    }}/>,
+    <>{pane}{panels}</>);
+}
+
+// A round link is an in-page hash, so its href never carries a URL that
+// came out of a review file. A click routes in the app.
+function RoundLink({tok, file, label, onRound}: {tok: string; file: string; label: string; onRound(tok: string, file: string): void}){
+  return <a className="rvl" href={S.hashWrite({v: "reviews", t: tok, s: file})} data-t={tok} data-rf={file}
+    onClick={e => { e.preventDefault(); onRound(tok, file); }}>{label}</a>;
+}
+
+// A review that names a ticket by directory links by that ticket's rail
+// token, and by the directory itself when the corpus lacks the ticket.
+function revTok(corpus: Corpus | null, tokenOf: (t: Pick<Ticket, "dir">) => string, dir: string): string {
+  const t = corpus && corpus.index.tickets.find(x => x.dir === dir);
+  return t ? tokenOf(t) : dir;
+}
+
+// The text and the prompt keep their identity across a reload that changed
+// nothing, so each parse runs once per text.
+function useMemoText(text: string): ParsedLog {
+  const ref = useRef<{text: string; out: ParsedLog} | null>(null);
+  if (!ref.current || ref.current.text !== text) ref.current = {text, out: parseLog(text)};
+  return ref.current.out;
+}
+function useMemoPrompt(p: FetchedText | undefined): PromptView | null {
+  const ref = useRef<{p: FetchedText | undefined; out: PromptView | null} | null>(null);
+  if (!ref.current || ref.current.p !== p) ref.current = {p, out: promptOf(p)};
+  return ref.current.out;
+}
+
+export {Html, Inspector, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
+export type {InspectorActions, InspSel, PromptView};

@@ -10,9 +10,26 @@ import fs from "node:fs";
 import path from "node:path";
 import {createElement} from "react";
 import {act, cleanup, fireEvent, render} from "@testing-library/react";
+import * as Bld from "../../src/lib/adp-index-builder-lib.ts";
+import * as S from "../../src/lib/adp-shell-lib.ts";
 import {App} from "../../src/app/App.tsx";
+import {PromptCards, SPY_SLACK} from "../../src/app/Inspector.tsx";
+import {Rail} from "../../src/app/Rail.tsx";
+import {ReviewBody} from "../../src/app/Reviews.tsx";
+import * as PL from "../../src/lib/adp-prompt-lib.ts";
+import {DecisionsPanel, Pills, WatchesPanel} from "../../src/app/panels.tsx";
 import type {EventFeed} from "../../src/app/live.ts";
 import type {FetchFn, FetchResponse} from "../../src/lib/adp-shell-lib.ts";
+
+// The lint sweep runs through a pass-through spy, so a test can count the
+// sweeps the app runs.
+vi.mock("../../src/lib/adp-index-builder-lib.ts", async importOriginal => {
+  const real = await importOriginal<typeof import("../../src/lib/adp-index-builder-lib.ts")>();
+  return {...real, lintCorpus: vi.fn(real.lintCorpus)};
+});
+
+// jsdom has no ResizeObserver, so the full log gets one that never reports.
+globalThis.ResizeObserver ??= class { observe(){} unobserve(){} disconnect(){} } as unknown as typeof ResizeObserver;
 
 const require = createRequire(import.meta.url);
 type Region = {text: string[]; attrs: string[]};
@@ -113,6 +130,84 @@ test("the app's watchboard state shows what the vanilla page showed, region for 
   await boot({fetch: diskFetch(), now: BASELINE_NOW});
   await click(tabFor("watchboard"));
   assert.deepEqual(snapshot(document), BASELINE["watchboard"]);
+});
+
+/* The vanilla inspector's ops row held four controls that loaded a file
+   from outside .adp: open and watch, reload, paste, and the drag-and-drop
+   hint. The app has none of them, and the baseline still records them, so
+   the comparison takes exactly these entries out of each inspector state
+   and fails when the baseline lacks one. Every other entry must match. */
+const REMOVED_OPS = {text: ["⌖ open", "↻ reload", "⌨ paste", "drag & drop .md anywhere"], attrs: ["title=pick audit logs to open"]};
+function withoutOps(r: Region): Region {
+  const drop = (list: string[], gone: string[]) => {
+    const out = list.slice();
+    for (const g of gone){
+      const i = out.indexOf(g);
+      assert.ok(i >= 0, "the baseline lacks " + g);
+      out.splice(i, 1);
+    }
+    return out;
+  };
+  return {text: drop(r.text, REMOVED_OPS.text), attrs: drop(r.attrs, REMOVED_OPS.attrs)};
+}
+const tabTo = (name: string) => click(tabFor(name));
+const rentries = () => $$(".rentry").map(r => r.getAttribute("data-key")!);
+const options = () => [...($("#secSel") as HTMLSelectElement).options].map(o => o.value);
+async function pickSection(key: string){ fireEvent.change($("#secSel"), {target: {value: key}}); await settle(1); }
+const baselineBoot = () => boot({fetch: diskFetch(), now: BASELINE_NOW});
+
+/* We walk the app the way the baseline capture walked the vanilla page:
+   every section of every ticket, then its full log, in rail order. */
+test("the app's inspector shows what the vanilla page showed, for every section and full log of every ticket", async () => {
+  await baselineBoot();
+  const keys = Object.keys(BASELINE).filter(k => k.startsWith("inspector|"));
+  const seen: string[] = [];
+  for (const t of rentries()){
+    await tabTo("inspector");
+    await click(entry(t));
+    await click($('[data-view="section"]'));
+    for (const s of options()){
+      await pickSection(s);
+      const k = "inspector|" + t + "|section|" + s, want = BASELINE[k];
+      assert.ok(want, "the baseline has no state " + k);
+      assert.deepEqual(snapshot(document), {...want, main: withoutOps(want.main!)}, k);
+      seen.push(k);
+    }
+    await click($('[data-view="full"]'));
+    const k = "inspector|" + t + "|full", want = BASELINE[k];
+    assert.deepEqual(snapshot(document), {...want, main: withoutOps(want.main!)}, k);
+    seen.push(k);
+  }
+  assert.deepEqual(seen, keys);
+}, 120000);
+
+test("the app's resume pack screen shows what the vanilla page showed, for every pack and ticket", async () => {
+  await baselineBoot();
+  const keys = Object.keys(BASELINE).filter(k => k.startsWith("resume pack|"));
+  const seen: string[] = [];
+  for (const t of rentries()){
+    await tabTo("inspector");
+    await click(entry(t));
+    await tabTo("resume pack");
+    for (const pk of $$(".pk").map(b => b.getAttribute("data-pk")!)){
+      await click($$(".pk").find(b => b.getAttribute("data-pk") === pk)!);
+      const k = "resume pack|" + t + "|" + pk;
+      assert.deepEqual(snapshot(document), BASELINE[k], k);
+      seen.push(k);
+    }
+  }
+  assert.deepEqual(seen, keys);
+}, 120000);
+
+// The baseline took the boards after its walk, so the last rail ticket is
+// the one the reviews screen shows.
+test("the app's reviews, ledgers, and calibration screens show what the vanilla page showed", async () => {
+  await baselineBoot();
+  await click(entry(rentries().at(-1)!));
+  for (const name of ["reviews", "ledgers", "calibration"]){
+    await tabTo(name);
+    assert.deepEqual(snapshot(document), BASELINE[name], name);
+  }
 });
 
 // ---- the fixture the vanilla page tests use ----
@@ -241,7 +336,7 @@ test("the corpus boot selects the first rail entry", async () => {
   const sel = $$(".rentry").filter(r => r.classList.contains("is-sel")).map(r => r.getAttribute("data-key"));
   assert.equal(sel.length, 1);
   assert.equal(sel[0], $$(".rentry")[0].getAttribute("data-key"));
-  assert.equal(hashes[hashes.length - 1], "#t=" + sel[0]);
+  assert.equal(hashes[hashes.length - 1], "#t=" + sel[0] + "&s=sec-decision-log");
 });
 
 test("the rail collapses a group and a ticket click selects it", async () => {
@@ -291,13 +386,26 @@ test("the status chips reveal settled rows with their ruling and hide a live sta
   await click(chip("closed"));
   assert.deepEqual(wids(), ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2", "OT-BB2-3"]);
   assert.match($("#scrWatch").textContent!, /VALIDATED 2026-08-10/);
+  // The settled row's link lands the inspector like any board row's.
   await click($$(".wbl").find(a => a.getAttribute("data-item") === "OT-BB2-3")!);
   assert.equal(isOn("scrInspector"), true);
-  assert.equal(hashes[hashes.length - 1], "#t=BB2&item=OT-BB2-3");
+  assert.equal(($("#secSel") as HTMLSelectElement).value, "sec-obligation-ticket-list");
+  assert.match($("#scrInspector").innerHTML, /is-hl/);
+  assert.equal(hashes[hashes.length - 1], "#t=BB2&s=sec-obligation-ticket-list&item=OT-BB2-3");
   // The chips keep their state across a visit to another screen.
   await click(tabFor("watchboard"));
   await click(chip("upcoming"));
   assert.deepEqual(wids(), ["OT-BB2-1", "OT-BB2-2", "OT-AA1-2", "OT-BB2-3"]);
+});
+
+test("a board watch link lands the inspector on the owning section, item highlighted", async () => {
+  const {hashes} = await bootBoard();
+  await click(tabFor("watchboard"));
+  await click($$(".wbl").find(a => a.getAttribute("data-item") === "OT-BB2-1")!);
+  assert.equal(isOn("scrInspector"), true);
+  assert.equal(($("#secSel") as HTMLSelectElement).value, "sec-obligation-ticket-list");
+  assert.match($("#scrInspector").innerHTML, /is-hl/);
+  assert.equal(hashes[hashes.length - 1], "#t=BB2&s=sec-obligation-ticket-list&item=OT-BB2-1");
 });
 
 test("a board ticket link selects the ticket and opens the inspector", async () => {
@@ -305,8 +413,9 @@ test("a board ticket link selects the ticket and opens the inspector", async () 
   await click(tabFor("watchboard"));
   await click($$(".wbl").find(a => a.getAttribute("data-t") === "BB2" && !a.getAttribute("data-item"))!);
   assert.equal(isOn("scrInspector"), true);
+  assert.equal(($("#secSel") as HTMLSelectElement).value, "sec-decision-log");
   assert.equal($$(".rentry").find(r => r.classList.contains("is-sel"))!.getAttribute("data-key"), "BB2");
-  assert.equal(hashes[hashes.length - 1], "#t=BB2");
+  assert.equal(hashes[hashes.length - 1], "#t=BB2&s=sec-decision-log");
 });
 
 test("a board header sorts, flips on repeat, and keeps the keyboard", async () => {
@@ -450,7 +559,7 @@ test("the boot never writes over a pending deep link", async () => {
   release();
   await settle();
   assert.equal(entry("BB2").classList.contains("is-sel"), true);
-  assert.equal(hashes[hashes.length - 1], "#t=BB2&item=OT-BB2-1");
+  assert.equal(hashes[hashes.length - 1], "#t=BB2&s=sec-obligation-ticket-list&item=OT-BB2-1");
 });
 
 test("a served page waiting for its corpus carries the ticket link through its hash writes", async () => {
@@ -549,7 +658,7 @@ test("a boot that failed honors its deep link when the corpus first answers", as
   await act(async () => { feed.onopen!(); });
   await settle();
   assert.equal(entry("AA1").classList.contains("is-sel"), true);
-  assert.equal(hashes[hashes.length - 1], "#t=AA1&item=DL-002");
+  assert.equal(hashes[hashes.length - 1], "#t=AA1&s=sec-decision-log&item=DL-002");
 });
 
 test("a boot that failed takes the default selection when the corpus first answers", async () => {
@@ -562,7 +671,7 @@ test("a boot that failed takes the default selection when the corpus first answe
   await settle();
   const first = $$(".rentry")[0].getAttribute("data-key");
   assert.deepEqual(marked(), [first]);
-  assert.equal(hashes[hashes.length - 1], "#t=" + first);
+  assert.equal(hashes[hashes.length - 1], "#t=" + first + "&s=sec-decision-log");
 });
 
 test("the live pill's status region is written only when its state changes", async () => {
@@ -610,9 +719,11 @@ test("a bare shared id selects neither ticket", async () => {
   assert.equal($$(".rentry").some(r => r.classList.contains("is-sel")), false);
 });
 
+// Each log names its own decision, so a test can tell which one the
+// inspector shows.
 const SHARED_TEXTS: Record<string, string> = {};
 for (const w of ["one", "two"]) SHARED_TEXTS["A-001-" + w + "/audit-log.md"] =
-  LOG.replace("# Audit Log — AA1 alpha", "# Audit Log — " + w).replace(/OT-AA1-/g, "OT-A001-");
+  LOG.replace("# Audit Log — AA1 alpha", "# Audit Log — " + w).replace("First decision", "Decision of " + w).replace(/OT-AA1-/g, "OT-A001-");
 const SHARED = {root: "demo", files: ["A-001-one/audit-log.md", "A-001-two/audit-log.md"]};
 
 test("a hash for the second shared-id ticket reopens it", async () => {
@@ -625,14 +736,28 @@ test("a directory hash for a ticket whose id is now unique marks its rail row", 
   assert.deepEqual(marked(), ["A001"]);
 });
 
-test("board links on shared-id tickets land on their own directories", async () => {
+test("a rail click on each shared-id ticket opens that directory", async () => {
+  const {hashes} = await boot({fetch: liveCorpus(SHARED, SHARED_TEXTS).fetch});
+  for (const word of ["one", "two"]){
+    await click(entry("A-001-" + word));
+    assert.match($("#scrInspector").innerHTML, new RegExp("Decision of " + word));
+    assert.equal(hashes[hashes.length - 1], "#t=A-001-" + word + "&s=sec-decision-log");
+  }
+});
+
+test("board and ledger links on shared-id tickets land on their own directories", async () => {
   const {hashes} = await boot({fetch: liveCorpus(SHARED, SHARED_TEXTS).fetch});
   for (const word of ["one", "two"]){
     await click(tabFor("watchboard"));
     await click($$(".wbl").find(a => a.getAttribute("data-t") === "A-001-" + word && a.getAttribute("data-item") === "OT-A001-1")!);
     assert.equal(isOn("scrInspector"), true);
+    assert.equal(($("#secSel") as HTMLSelectElement).value, "sec-obligation-ticket-list");
     assert.deepEqual(marked(), ["A-001-" + word]);
-    assert.equal(hashes[hashes.length - 1], "#t=A-001-" + word + "&item=OT-A001-1");
+    assert.equal(hashes[hashes.length - 1], "#t=A-001-" + word + "&s=sec-obligation-ticket-list&item=OT-A001-1");
+    await click(tabFor("ledgers"));
+    await click($$(".wbl").find(a => a.getAttribute("data-t") === "A-001-" + word && a.getAttribute("data-item") === "DL-001")!);
+    assert.equal(isOn("scrInspector"), true);
+    assert.match($("#scrInspector").innerHTML, new RegExp("Decision of " + word));
   }
 });
 
@@ -753,6 +878,1551 @@ test("the open menu closes when the full header fits again", async () => {
   assert.equal($("#menuBtn").getAttribute("aria-expanded"), "false");
 });
 
+// ---- the inspector ----
+
+/* The vanilla inspector tests ran over AA1 with its prompt and a
+   prompt-only AV002, so the carried tests run over the same corpus. */
+const PROMPT_AA1 = ['schema_version: "1.0"', "task:", '  id: "20260101-AA1-alpha"', '  title: "AA1 alpha"',
+  '  author: "rbeye"', '  date: "2026-01-01"', "prompt: |", "  Make the **alpha** path work.", "  Keep it small.", ""].join("\n");
+const PROMPT_AV2 = PROMPT_AA1.replace('"20260101-AA1-alpha"', '"AV-002-beta"').replace("AA1 alpha", "beta brief");
+const LISTING_I = {root: "demo", files: ["20260101-AA1-alpha/audit-log.md", "20260101-AA1-alpha/prompt.yaml", "AV-002-beta/prompt.yaml"]};
+const TEXTS_I: Record<string, string> = {"20260101-AA1-alpha/audit-log.md": LOG,
+  "20260101-AA1-alpha/prompt.yaml": PROMPT_AA1, "AV-002-beta/prompt.yaml": PROMPT_AV2};
+const bootCorpus = (opts: BootOpts = {}) => boot({fetch: liveCorpus(LISTING_I, TEXTS_I).fetch, ...opts});
+const op = (attr: string, v: string) => $$(".op").find(o => o.getAttribute(attr) === v)!;
+const secVal = () => ($("#secSel") as HTMLSelectElement).value;
+const insp = () => $("#scrInspector").innerHTML;
+const last = (hashes: string[]) => hashes[hashes.length - 1];
+
+// jsdom has no scrollIntoView, so a test that checks a jump installs one
+// that records which elements asked to scroll.
+function recordScrolls(){
+  const seen: Element[] = [];
+  Element.prototype.scrollIntoView = function(this: Element){ seen.push(this); };
+  return seen;
+}
+function stubClipboard(write?: (t: string) => Promise<void>){
+  const got: string[] = [];
+  Object.defineProperty(navigator, "clipboard", {configurable: true,
+    value: {writeText: write || (async (t: string) => { got.push(t); })}});
+  return got;
+}
+afterEach(() => {
+  delete (Element.prototype as {scrollIntoView?: unknown}).scrollIntoView;
+  delete (navigator as {clipboard?: unknown}).clipboard;
+});
+
+test("the corpus boot selects the first rail entry; a full ticket renders its spine", async () => {
+  const {hashes} = await bootCorpus();
+  // AA1 is actionable attention, and AV002 is a prompt-only ticket still in
+  // flight, so it sits in progress with its missing-sections ribbon intact.
+  assert.match($("#rail").innerHTML, /in progress[\s\S]*AV002/);
+  assert.match($("#rail").innerHTML, /9 SECTIONS MISSING/);
+  const scr = insp();
+  // The section body went through the parser library's Decision Log renderer.
+  assert.match(scr, /dl-card/);
+  assert.match(scr, /DL-001/);
+  // The nav lists the prompt, 5 real sections, and 5 missing canonicals.
+  assert.equal($$("#secSel option").length, 11);
+  assert.equal(secVal(), "sec-decision-log");
+  assert.match(scr, /shipped · inferred/);
+  assert.match(scr, /decisions cited by Decision Log/);
+  assert.match(scr, /open 1/);
+  assert.match(scr, /validated 1/);
+  assert.equal(last(hashes), "#t=AA1&s=sec-decision-log");
+});
+
+test("section navigation steps, drops, and marks section states", async () => {
+  const {hashes} = await bootCorpus();
+  await click(entry("AA1"));
+  const html = $("#secSel").innerHTML;
+  assert.match(html, /Aside Notes — non-canonical/);
+  assert.match(html, /Knowledge Gap — missing/);
+  assert.match(html, /Obligation Ticket List — unanchored watches/);
+  // Next from the spine lands on the non-canonical section.
+  await click(op("data-secstep", "1"));
+  assert.equal(secVal(), "sec-aside-notes");
+  assert.match(insp(), /non-canonical/);
+  await pickSection("sec-pr-summary");
+  assert.equal(last(hashes), "#t=AA1&s=sec-pr-summary");
+});
+
+test("a phase-scoped section shows only what it cites, with backlink chips", async () => {
+  await bootCorpus();
+  await click(entry("AA1"));
+  await pickSection("sec-pr-summary");
+  const scr = insp();
+  assert.match(scr, /decisions cited by PR Summary/);
+  assert.ok(scr.includes("DL-001"));
+  assert.ok(!scr.includes(`data-dl="DL-002"`));
+  assert.match(scr, /watches cited by PR Summary/);
+  assert.ok(scr.includes("OT-AA1-2"));
+  assert.ok(!scr.includes(`data-item="OT-AA1-1"`));
+  assert.match(scr, /class="pc"/);
+});
+
+test("a backlink chip names an ad hoc section by its kind instead of §", async () => {
+  await bootCorpus();
+  await click(entry("AA1"));
+  const scr = insp();
+  assert.match(scr, /data-key="sec-aside-notes"[^>]*>ad-hoc</);
+  assert.match(scr, /data-key="sec-obligation-ticket-list"[^>]*>P9</);
+  assert.ok(!/>§</.test(scr));
+});
+
+test("a decision row opens its card and the back link returns", async () => {
+  const scrolls = recordScrolls();
+  const {hashes} = await bootCorpus();
+  await click(entry("AA1"));
+  await click($$(".dlrow").find(r => r.getAttribute("data-dl") === "DL-002")!);
+  assert.match(insp(), /\[DL-002\]/);
+  assert.match(insp(), /back to Decision Log/);
+  // The link scrolls the reader back to the nav and the content it changed.
+  assert.equal(scrolls.filter(e => e.classList.contains("secnav")).length, 1);
+  assert.equal(last(hashes), "#t=AA1&s=sec-decision-log&item=DL-002");
+  await click($(".backlink"));
+  assert.ok(!insp().includes("backlink"));
+  assert.equal(last(hashes), "#t=AA1&s=sec-decision-log");
+});
+
+test("a watch link jumps to the obligation section with the row highlighted", async () => {
+  const scrolls = recordScrolls();
+  const {hashes} = await bootCorpus();
+  await click(entry("AA1"));
+  await click($$(".wl").find(w => w.getAttribute("data-item") === "OT-AA1-1")!);
+  assert.equal(secVal(), "sec-obligation-ticket-list");
+  assert.match(insp(), /is-hl/);
+  assert.equal(scrolls.filter(e => e.classList.contains("secnav")).length, 1);
+  assert.match(insp(), /UNANCHORED/);
+  assert.equal(last(hashes), "#t=AA1&s=sec-obligation-ticket-list&item=OT-AA1-1");
+});
+
+test("the status pills filter the decisions table", async () => {
+  await bootCorpus();
+  await click(entry("AA1"));
+  await click($$(".fpill").find(p => p.getAttribute("data-dlf") === "open")!);
+  assert.ok(insp().includes(`data-dl="DL-002"`));
+  assert.ok(!insp().includes(`data-dl="DL-001"`));
+});
+
+// React keeps the DOM nodes across a render, so the control a reader
+// pressed is the control that still holds focus (DL-057).
+test("a filter pill keeps the keyboard through its own re-render", async () => {
+  await bootCorpus();
+  await click(entry("AA1"));
+  const pill = $$(".fpill").find(p => p.getAttribute("data-dlf") === "open")!;
+  pill.focus();
+  await click(pill);
+  same(document.activeElement, pill, "focus left the pill it pressed");
+  assert.ok($$(".fpill").includes(pill));
+});
+
+test("the section dropdown keeps focus across its change re-render", async () => {
+  await bootCorpus();
+  await click(entry("AA1"));
+  $("#secSel").focus();
+  await pickSection("sec-pr-summary");
+  same(document.activeElement, $("#secSel"), "focus left the section selector");
+});
+
+test("a header click sorts the decisions table and flips on repeat", async () => {
+  await bootCorpus();
+  await click(entry("AA1"));
+  const conf = () => $$(".sth").find(t => t.getAttribute("data-k") === "conf")!;
+  await click(conf());
+  assert.deepEqual($$(".dlrow").map(r => r.getAttribute("data-dl")), ["DL-002", "DL-001"]);
+  await click(conf());
+  assert.deepEqual($$(".dlrow").map(r => r.getAttribute("data-dl")), ["DL-001", "DL-002"]);
+});
+
+test("the full-log view renders every real section as a collapsible", async () => {
+  await bootCorpus();
+  await click(entry("AA1"));
+  await click(op("data-view", "full"));
+  const secs = $$(".fsec") as HTMLDetailsElement[];
+  // The prompt block heads the five real sections.
+  assert.equal(secs.length, 6);
+  assert.equal(secs[0].getAttribute("data-key"), "prompt");
+  assert.ok(secs.every(s => s.open));
+  await click(op("data-exp", "close"));
+  assert.ok(($$(".fsec") as HTMLDetailsElement[]).every(s => s.open === false));
+  await click(op("data-exp", "open"));
+  assert.ok(($$(".fsec") as HTMLDetailsElement[]).every(s => s.open));
+});
+
+test("a prompt-only ticket picked from the rail opens on its prompt", async () => {
+  await bootCorpus();
+  await click(entry("AV002"));
+  assert.equal(secVal(), "prompt");
+});
+
+test("the permalink control copies the current address", async () => {
+  const got = stubClipboard();
+  await bootCorpus();
+  await click(entry("AA1"));
+  await click($(".lnk"));
+  assert.equal(got.length, 1);
+  assert.match(got[0], /#t=AA1&s=sec-decision-log$/);
+  assert.equal($(".lnk").textContent, "copied");
+});
+
+test("a hash set before boot lands the named view with the item highlighted", async () => {
+  await bootCorpus({hash: "#t=AA1&s=sec-pr-summary&item=DL-001"});
+  assert.equal(secVal(), "sec-pr-summary");
+  assert.match(insp(), /\[DL-001\]/);
+  assert.match(insp(), /is-hl/);
+});
+
+test("an item-only link lands on the item's owning section", async () => {
+  await bootCorpus({hash: "#t=AA1&item=OT-AA1-2"});
+  assert.equal(secVal(), "sec-obligation-ticket-list");
+  assert.match(insp(), /is-hl/);
+});
+
+test("a link to a vanished section falls back with a visible notice", async () => {
+  await bootCorpus({hash: "#t=AA1&s=sec-retitled-away"});
+  assert.match(insp(), /was not found in this log/);
+  assert.equal(secVal(), "sec-decision-log");
+});
+
+/* Every hash the full fixture ticket could write before the prompt entry
+   existed, with the section and heading each one opened then. The vanilla
+   test captured the pairs from the page at 8cb020a. */
+const PINNED_LANDINGS = [
+  ["sec-problem-statement", "phase 1 · Problem Statement"],
+  ["sec-decision-log", "phase 5 · Decision Log"],
+  ["sec-aside-notes", "Aside Notes"],
+  ["sec-pr-summary", "phase 7 · PR Summary"],
+  ["sec-obligation-ticket-list", "phase 9 · Obligation Ticket List"],
+  ["missing:Knowledge Gap", "phase 2 · Knowledge Gap"],
+  ["missing:Recommendation Brief", "phase 3 · Recommendation Brief"],
+  ["missing:Pre-Mortem Report", "phase 4 · Pre-Mortem Report"],
+  ["missing:Test Adversary", "phase 6 · Test Adversary"],
+  ["missing:Deployment Risk", "phase 8 · Deployment Risk"]
+];
+
+test("every section hash lands where it landed before the prompt entry", async () => {
+  for (const [key, heading] of PINNED_LANDINGS){
+    await bootCorpus({hash: "#t=AA1&s=" + encodeURIComponent(key)});
+    assert.equal(secVal(), key);
+    assert.match(insp(), new RegExp("<h4>" + heading + "[ <]"));
+    assert.doesNotMatch(insp(), /was not found in this log/);
+    cleanup();
+    vi.restoreAllMocks();
+  }
+  const {hashes} = await bootCorpus({hash: "#t=AA1"});
+  assert.equal(secVal(), "sec-decision-log");
+  assert.equal(last(hashes), "#t=AA1&s=sec-decision-log");
+});
+
+test("a link to an absent ticket shows a notice instead of a silent default", async () => {
+  await bootCorpus({hash: "#t=ZZZ"});
+  assert.match(insp(), /"ZZZ" is not in this corpus/);
+});
+
+test("a link to a shared id names how many tickets carry it", async () => {
+  await boot({hash: "#t=A001", fetch: liveCorpus(SHARED, SHARED_TEXTS).fetch});
+  assert.match(insp(), /"A001" names 2 tickets in this corpus — pick one from the rail\./);
+});
+
+/* The vanilla test pasted this log. The app reads logs from the served
+   corpus alone, so the same hostile text arrives as a served log. */
+const HOSTILE = ["## <img src=x onerror=alert(1)> Evil Section", "", "<script>alert(2)</script>", "",
+  "## Decision Log", "", "### [DL-001] <img src=y> title", "- **Decision:** <script>alert(3)</script>",
+  '- **Confidence:** HIGH" onmouseover="alert(1)', "- **Status:** OPEN", ""].join("\n");
+
+test("a hostile served log never lands markup in the page", async () => {
+  await boot({fetch: liveCorpus({root: "demo", files: ["20260101-EV1-evil/audit-log.md"]},
+    {"20260101-EV1-evil/audit-log.md": HOSTILE}).fetch});
+  await click(entry("EV1"));
+  for (const s of options()){
+    await pickSection(s);
+    assert.ok(!$("#rail").innerHTML.includes("<img"), s);
+    assert.ok(!insp().includes("<img"), s);
+    assert.ok(!insp().includes("<script"), s);
+  }
+  // The quote-bearing confidence lands in the decisions panel as the
+  // cf-high class and inert cell text, and no tag carries the handler.
+  await pickSection("sec-decision-log");
+  assert.match(insp(), /class="cf-high nw"/);
+  assert.ok(!/<[^>]*onmouseover/.test(insp()));
+  assert.ok(!/<[^>]*onmouseover/.test($("#rail").innerHTML));
+  await click(op("data-view", "full"));
+  assert.ok(!insp().includes("<img"));
+  assert.ok(!insp().includes("<script"));
+});
+
+test("an entry housed outside the spine still opens as a card", async () => {
+  const log = ["## Decision Log", "", "(entries arrive in review responses)", "",
+    "## Review Response — PR #1", "", "### [DL-009] Late ruling", "- **Decision:** re-cut", "- **Status:** OPEN", ""].join("\n");
+  await boot({fetch: liveCorpus({root: "demo", files: ["20260101-LT1-late/audit-log.md"]}, {"20260101-LT1-late/audit-log.md": log}).fetch});
+  await click(entry("LT1"));
+  await click($$(".dlrow").find(r => r.getAttribute("data-dl") === "DL-009")!);
+  assert.match(insp(), /\[DL-009\]/);
+  assert.match(insp(), /dl-card|dl-grid/);
+  assert.ok(!insp().includes("not present in the loaded text"));
+});
+
+test("in the full log, the section selector jumps to the section and opens it", async () => {
+  const scrolls = recordScrolls();
+  const {hashes} = await bootCorpus();
+  await click(entry("AA1"));
+  await click(op("data-view", "full"));
+  await click(op("data-exp", "close"));
+  assert.ok(($$(".fsec") as HTMLDetailsElement[]).every(s => s.open === false));
+  await pickSection("sec-pr-summary");
+  const secs = $$(".fsec") as HTMLDetailsElement[];
+  const target = secs.find(s => s.getAttribute("data-key") === "sec-pr-summary")!;
+  assert.equal(target.open, true);
+  assert.equal(scrolls.filter(e => e === target).length, 1);
+  // The jump opens its target alone, and the rest keep their collapsed state.
+  assert.ok(secs.filter(s => s !== target).every(s => s.open === false));
+  assert.equal(last(hashes), "#t=AA1&s=sec-pr-summary");
+});
+
+test("prev/next in the full log jump too, and manual toggles survive renders", async () => {
+  const scrolls = recordScrolls();
+  await bootCorpus();
+  await click(entry("AA1"));
+  await click(op("data-view", "full"));
+  const fsec = (k: string) => ($$(".fsec") as HTMLDetailsElement[]).find(s => s.getAttribute("data-key") === k)!;
+  await click(fsec("sec-problem-statement").querySelector(".fsum")!);
+  assert.equal(fsec("sec-problem-statement").open, false);
+  await click(op("data-secstep", "1"));
+  assert.equal(secVal(), "sec-aside-notes");
+  assert.equal(fsec("sec-problem-statement").open, false);
+  assert.equal(fsec("sec-aside-notes").open, true);
+  assert.equal(scrolls.filter(e => e === fsec("sec-aside-notes")).length, 1);
+});
+
+test("a jump scrolls once, and a screen that mounts again does not replay it", async () => {
+  const scrolls = recordScrolls();
+  await bootCorpus();
+  await click(entry("AA1"));
+  await click($$(".dlrow").find(r => r.getAttribute("data-dl") === "DL-002")!);
+  assert.equal(scrolls.length, 1);
+  await click(tabFor("watchboard"));
+  await click(tabFor("inspector"));
+  assert.equal(scrolls.length, 1);
+});
+
+/* V15: the full log marks the section in view as the stage scrolls. jsdom
+   has no layout, so the test places each section by hand: the stage's top
+   sits at 100 and each section sits 300 below the last. */
+test("the scroll spy names the full-log section that reached the top of the stage", async () => {
+  const {hashes} = await bootCorpus();
+  await click(entry("AA1"));
+  await click(op("data-view", "full"));
+  const stage = $(".stage");
+  let scrolled = 0;
+  const rect = (top: number) => ({top, bottom: top + 300, left: 0, right: 0, width: 0, height: 300, x: 0, y: top, toJSON(){}}) as DOMRect;
+  stage.getBoundingClientRect = () => rect(100);
+  $$(".fsec").forEach((s, i) => { s.getBoundingClientRect = () => rect(100 + i * 300 - scrolled); });
+  const scrollTo = async (y: number) => {
+    scrolled = y;
+    fireEvent.scroll(stage);
+    await act(async () => { await new Promise(r => requestAnimationFrame(() => r(null))); });
+    await settle(1);
+  };
+  // The keys run prompt, problem statement, decision log, aside notes, and
+  // so on, 300 apart. A section counts once its top is no more than 20
+  // below the stage's top.
+  await scrollTo(599 - SPY_SLACK);
+  assert.equal(secVal(), "sec-problem-statement");
+  await scrollTo(600 - SPY_SLACK);
+  assert.equal(secVal(), "sec-decision-log");
+  assert.equal(last(hashes), "#t=AA1&s=sec-decision-log");
+  await scrollTo(905);
+  assert.equal(secVal(), "sec-aside-notes");
+  assert.equal(last(hashes), "#t=AA1&s=sec-aside-notes");
+  // The section view has one section, so its scroll marks nothing.
+  await click(op("data-view", "section"));
+  await scrollTo(0);
+  assert.equal(secVal(), "sec-aside-notes");
+});
+
+/* A fake observer stands in for the browser's: it reports once when it
+   starts, as the browser's does, and the test calls it again to stand for
+   a font that loads and moves the sections with no scroll event. */
+test("the scroll spy marks again when the full log's size changes without a scroll", async () => {
+  const reports: (() => void)[] = [];
+  vi.stubGlobal("ResizeObserver", class {
+    cb: () => void;
+    constructor(cb: () => void){ this.cb = cb; }
+    observe(){ reports.push(this.cb); this.cb(); }
+    disconnect(){}
+  });
+  try {
+    await bootCorpus();
+    await click(entry("AA1"));
+    const opened = secVal();
+    await click(op("data-view", "full"));
+    // jsdom places every section at 0, so a spy run here would mark the
+    // last. A size change before the first scroll keeps the selection.
+    reports.forEach(cb => cb());
+    await act(async () => { await new Promise(r => requestAnimationFrame(() => r(null))); });
+    assert.equal(secVal(), opened);
+    const stage = $(".stage");
+    let shift = 0;
+    const rect = (top: number) => ({top, bottom: top + 300, left: 0, right: 0, width: 0, height: 300, x: 0, y: top, toJSON(){}}) as DOMRect;
+    stage.getBoundingClientRect = () => rect(100);
+    $$(".fsec").forEach((s, i) => { s.getBoundingClientRect = () => rect(100 + i * 300 - 599 + SPY_SLACK - shift); });
+    const frame = async () => { await act(async () => { await new Promise(r => requestAnimationFrame(() => r(null))); }); await settle(1); };
+    fireEvent.scroll(stage);
+    await frame();
+    assert.equal(secVal(), "sec-problem-statement");
+    shift = 10;
+    assert.ok(reports.length > 0);
+    reports.forEach(cb => cb());
+    await frame();
+    assert.equal(secVal(), "sec-decision-log");
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+// The two builder checks of the vanilla page, held against the component
+// that replaced the builder.
+const panelRow = (statusKind: "validated" | "open") => ({id: "DL-001", title: "t", conf: "HIGH", confKind: "high" as const, statusKind,
+  watch: null, settled: {wid: "OT-1", outcome: "VALIDATED", closed: "2026-09-01"}, chips: [], hl: false});
+const panelProps = {label: "x", pills: null, sort: {k: "id", d: 1}, onSort(){}, onRow(){}, onWatch(){}, onChip(){}};
+
+test("a settled decision's watch cell keeps the id and puts the ruling on hover", () => {
+  const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [panelRow("validated")]}));
+  assert.ok(container.innerHTML.includes(`title="closed VALIDATED 2026-09-01">OT-1</a>`));
+  // The ruled state lives in the status column, and the cell never repeats it.
+  assert.ok(!container.innerHTML.includes(`st-closed`));
+});
+
+test("an open decision with only a settled watch leads with the marker", () => {
+  const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [panelRow("open")]}));
+  assert.ok(container.innerHTML.includes(`<span class="st-unanchored nw">no watch</span> <a class="wl"`));
+  assert.ok(container.innerHTML.includes(`title="closed VALIDATED 2026-09-01"`));
+});
+
+// ---- the inspector under live updates ----
+
+/* Two logged tickets and one prompt-only ticket, every file editable
+   between events, so a test can change one ticket while the reader works
+   in another. */
+const LOG_BB2 = LOG.replace("AA1 alpha", "BB2 beta").replace(/OT-AA1-/g, "OT-BB2-");
+const LOG_GROWN = LOG.replace("## Aside Notes", "## Test Adversary Document\n\nGrown while watched.\n\n## Aside Notes");
+const twoTickets = () => liveCorpus({root: "demo", files: ["20260101-AA1-alpha/audit-log.md",
+  "20260101-BB2-beta/audit-log.md", "20260101-CC3-gamma/prompt.yaml"]}, {"20260101-AA1-alpha/audit-log.md": LOG,
+  "20260101-BB2-beta/audit-log.md": LOG_BB2, "20260101-CC3-gamma/prompt.yaml": PROMPT_AA1.replace(/AA1/g, "CC3")});
+const change = async (feed: FakeFeed) => { await act(async () => { feed.onmessage!(); }); await settle(); };
+
+test("a served log that grows re-renders on its change event", async () => {
+  const live = liveCorpus(LISTING_I, {...TEXTS_I});
+  const {feed} = await boot({fetch: live.fetch});
+  assert.doesNotMatch(insp(), /Test Adversary Document/);
+  assert.match(entry("AA1").innerHTML, /5 SECTIONS MISSING/);
+  live.texts["20260101-AA1-alpha/audit-log.md"] = LOG_GROWN;
+  await change(feed);
+  assert.match(insp(), /Test Adversary Document/);
+  // The rail re-rendered too: AA1's own ribbon counts one section fewer.
+  assert.match(entry("AA1").innerHTML, /4 SECTIONS MISSING/);
+});
+
+test("an unchanged reload renders nothing and disturbs no reader state", async () => {
+  const live = liveCorpus(LISTING_I, {...TEXTS_I});
+  const {feed, hashes} = await boot({fetch: live.fetch});
+  await click(entry("AA1"));
+  const before = {rail: $("#rail").innerHTML, insp: insp(), writes: hashes.length, hash: location.hash};
+  await change(feed);
+  // Every render that changes the selection writes the hash, so an
+  // unchanged count is no render that moved anything.
+  assert.equal(hashes.length, before.writes);
+  assert.equal($("#rail").innerHTML, before.rail);
+  assert.equal(insp(), before.insp);
+  assert.equal(location.hash, before.hash);
+});
+
+test("a change to another ticket leaves the inspector's controls in place and still updates the rail", async () => {
+  const live = twoTickets();
+  const {feed} = await boot({fetch: live.fetch});
+  await click(entry("AA1"));
+  const sel = $("#secSel");
+  assert.match(entry("BB2").innerHTML, /5 SECTIONS MISSING/);
+  live.texts["20260101-BB2-beta/audit-log.md"] = LOG_BB2.replace("## Aside Notes", "## Test Adversary Document\n\nGrown elsewhere.\n\n## Aside Notes");
+  await change(feed);
+  same($("#secSel"), sel, "the selector was rebuilt");
+  assert.match(entry("BB2").innerHTML, /4 SECTIONS MISSING/);
+});
+
+test("an append to the shown section rewrites the pane and keeps the selector element", async () => {
+  const live = twoTickets();
+  const {feed} = await boot({fetch: live.fetch});
+  await click(entry("AA1"));
+  await pickSection("sec-aside-notes");
+  const sel = $("#secSel");
+  live.texts["20260101-AA1-alpha/audit-log.md"] = LOG.replace("Some **prose** citing DL-002.", "Some **prose** citing DL-002.\n\nA line the run just wrote.");
+  await change(feed);
+  assert.match(insp(), /A line the run just wrote/);
+  same($("#secSel"), sel, "the selector was rebuilt");
+  assert.equal(secVal(), "sec-aside-notes");
+});
+
+test("a new section on the shown ticket patches the selector in place and keeps its value", async () => {
+  const live = twoTickets();
+  const {feed} = await boot({fetch: live.fetch});
+  await click(entry("AA1"));
+  const sel = $("#secSel"), was = secVal();
+  live.texts["20260101-AA1-alpha/audit-log.md"] = LOG_GROWN;
+  await change(feed);
+  same($("#secSel"), sel, "the selector was rebuilt");
+  assert.equal(secVal(), was);
+  assert.ok([...sel.querySelectorAll("option")].some(o => /Test Adversary Document/.test(o.textContent!)));
+  assert.equal($("#scrInspector").querySelectorAll("select").length, 1);
+});
+
+test("a change event keeps focus on the focused control and scrolls nothing", async () => {
+  const scrolls = recordScrolls();
+  const live = twoTickets();
+  const {feed} = await boot({fetch: live.fetch});
+  await click(entry("AA1"));
+  const prev = op("data-secstep", "-1");
+  prev.focus();
+  live.texts["20260101-AA1-alpha/audit-log.md"] = LOG_GROWN;
+  await change(feed);
+  same(document.activeElement, prev, "focus left the prev button");
+  assert.equal(scrolls.length, 0);
+});
+
+test("a prompt-only ticket that gains its log on a change shows the full ticket view", async () => {
+  const live = twoTickets();
+  const {feed} = await boot({fetch: live.fetch});
+  await click(entry("CC3"));
+  assert.equal(secVal(), "prompt");
+  live.listing = {...live.listing, files: live.listing.files.concat("20260101-CC3-gamma/audit-log.md")};
+  live.texts["20260101-CC3-gamma/audit-log.md"] = LOG.replace("AA1 alpha", "CC3 gamma").replace(/OT-AA1-/g, "OT-CC3-");
+  await change(feed);
+  assert.equal($("#scrInspector").querySelectorAll("select").length, 1);
+  assert.ok($$("#secSel option").some(o => /Decision Log/.test(o.textContent!)));
+  assert.equal(secVal(), "prompt");
+});
+
+test("the full log keeps a collapsed section collapsed across change events", async () => {
+  const live = twoTickets();
+  const {feed} = await boot({fetch: live.fetch});
+  await click(entry("AA1"));
+  await click(op("data-view", "full"));
+  const fsec = (k: string) => ($$(".fsec") as HTMLDetailsElement[]).find(d => d.getAttribute("data-key") === k)!;
+  await click(fsec("sec-aside-notes").querySelector(".fsum")!);
+  assert.equal(fsec("sec-aside-notes").open, false);
+  const held = fsec("sec-aside-notes");
+  live.texts["20260101-BB2-beta/audit-log.md"] = LOG_BB2 + "\nlate prose.\n";
+  await change(feed);
+  same(fsec("sec-aside-notes"), held, "the collapsed section was rebuilt");
+  assert.equal(held.open, false);
+  live.texts["20260101-AA1-alpha/audit-log.md"] = LOG_GROWN;
+  await change(feed);
+  assert.ok($$(".fsec").some(d => /Test Adversary Document/.test(d.innerHTML)));
+  assert.equal(fsec("sec-aside-notes").open, false);
+});
+
+test("a hidden screen shows the change when the reader opens it", async () => {
+  const live = twoTickets();
+  const {feed} = await boot({fetch: live.fetch});
+  await click(entry("AA1"));
+  live.texts["20260101-BB2-beta/audit-log.md"] = LOG_BB2.replace("| OT-BB2-2 |",
+    "| OT-BB2-3 | DL-002 | late watch | LOW | done → VALIDATED | until 2099-01-01 |\n| OT-BB2-2 |");
+  await change(feed);
+  await click(tabFor("watchboard"));
+  assert.match($("#scrWatch").innerHTML, /OT-BB2-3/);
+});
+
+// ---- the ledgers ----
+
+const lgRows = () => $$(".lgrow").filter(r => r.getAttribute("data-dl"));
+
+test("the ledger rows every decision, open debt first, settled outcomes last", async () => {
+  await bootBoard();
+  await click(tabFor("ledgers"));
+  assert.deepEqual(lgRows().map(r => r.getAttribute("data-t") + "/" + r.getAttribute("data-dl")), ["AA1/DL-002", "BB2/DL-001", "AA1/DL-001"]);
+  // Watches never row here, because the board is the one watch surface.
+  assert.equal($$(".lgrow").filter(r => r.getAttribute("data-wid")).length, 0);
+  const scr = $("#scrLedgers").innerHTML;
+  assert.match(scr, /open 2/);
+  assert.match(scr, /validated 1/);
+  assert.ok(!scr.includes("invalidated"));
+});
+
+test("the ledger pills filter corpus-wide and leave the inspector's filter alone", async () => {
+  await bootBoard();
+  await click(entry("AA1"));
+  await click($$(".fpill").find(p => p.getAttribute("data-dlf") === "validated")!);
+  assert.deepEqual($$(".dlrow").map(r => r.getAttribute("data-dl")), ["DL-001"]);
+  await click(tabFor("ledgers"));
+  await click($$(".fpill").find(p => p.getAttribute("data-lgf") === "open")!);
+  assert.deepEqual(lgRows().map(r => r.getAttribute("data-dl")), ["DL-002", "DL-001"]);
+  await click(tabFor("inspector"));
+  assert.deepEqual($$(".dlrow").map(r => r.getAttribute("data-dl")), ["DL-001"]);
+  assert.match($$(".fpill").find(p => p.getAttribute("data-dlf") && p.classList.contains("is-on"))!.textContent!, /validated/);
+  // The ledger's own filter held through the round trip too.
+  await click(tabFor("ledgers"));
+  assert.match($$(".fpill").find(p => p.getAttribute("data-lgf") && p.classList.contains("is-on"))!.textContent!, /open/);
+});
+
+test("a ledger entry link lands the inspector on the item in its owning section", async () => {
+  const {hashes} = await bootBoard();
+  await click(tabFor("ledgers"));
+  await click($$(".wbl").find(a => a.getAttribute("data-item") === "DL-002")!);
+  assert.equal(isOn("scrInspector"), true);
+  assert.equal(secVal(), "sec-decision-log");
+  assert.match(insp(), /\[DL-002\]/);
+  assert.equal(last(hashes), "#t=AA1&s=sec-decision-log&item=DL-002");
+});
+
+test("a ledger coverage link lands the watch, and a ticket link the default view", async () => {
+  await bootBoard();
+  await click(tabFor("ledgers"));
+  await click($$(".wbl").find(a => a.getAttribute("data-item") === "OT-AA1-1")!);
+  assert.equal(secVal(), "sec-obligation-ticket-list");
+  assert.match(insp(), /is-hl/);
+  await click(tabFor("ledgers"));
+  await click($$(".wbl").find(a => a.getAttribute("data-t") === "BB2" && !a.getAttribute("data-item"))!);
+  assert.equal(secVal(), "sec-decision-log");
+});
+
+test("a ledgers deep link boots to the screen and a tab visit writes its token", async () => {
+  await bootBoard({hash: "#v=ledgers"});
+  assert.equal(isOn("scrLedgers"), true);
+  assert.ok($$(".lgrow").length > 0);
+  cleanup();
+  vi.restoreAllMocks();
+  const {hashes} = await bootBoard();
+  await click(tabFor("ledgers"));
+  assert.match(last(hashes), /^#v=ledgers/);
+});
+
+test("with no corpus the ledgers say so instead of rendering empty tables", async () => {
+  await boot();
+  await click(tabFor("ledgers"));
+  assert.match($("#scrLedgers").innerHTML, /no corpus behind this page/);
+  assert.ok(!$("#scrLedgers").innerHTML.includes("lgrow"));
+});
+
+test("the ledger's sorted header carries aria-sort and the arrow hides from the tree", async () => {
+  await bootBoard();
+  await click(tabFor("ledgers"));
+  const th = (k: string) => $$(".sth").find(t => t.getAttribute("data-t") === "la" && t.getAttribute("data-k") === k)!;
+  assert.ok($$(".sth").every(t => t.getAttribute("scope") === "col"));
+  assert.equal(th("status").getAttribute("aria-sort"), "ascending");
+  assert.equal(th("id").getAttribute("aria-sort"), null);
+  await click(th("id"));
+  assert.equal(th("id").getAttribute("aria-sort"), "ascending");
+  assert.equal(th("status").getAttribute("aria-sort"), null);
+  await click(th("id"));
+  assert.equal(th("id").getAttribute("aria-sort"), "descending");
+  assert.equal($$(".arr")[0].getAttribute("aria-hidden"), "true");
+});
+
+test("the ledger renders hostile harvested fields as text, and a pill carries the mark it was given", async () => {
+  const hostile = "<img src=x onerror=alert(1)>";
+  const log = ["## Decision Log", "", "### [DL-001] " + hostile, "- **Confidence:** " + hostile, "- **Status:** OPEN", "",
+    "## Obligation Ticket List", "", "| Ticket ID | Decision Log ref | Assumption to validate | Priority | Exit condition | Observation window |",
+    "|---|---|---|---|---|---|", "| OT-HX1-1 | DL-001 | " + hostile + " | HIGH | done → VALIDATED | " + hostile + " |", ""].join("\n");
+  await boot({fetch: liveCorpus({root: "demo", files: ["20260101-HX1-hostile/audit-log.md"]}, {"20260101-HX1-hostile/audit-log.md": log}).fetch});
+  await click(tabFor("ledgers"));
+  assert.ok(!$("#scrLedgers").innerHTML.includes("<img"));
+  assert.ok($("#scrLedgers").textContent!.includes(hostile));
+  cleanup();
+  const {container} = render(createElement(Pills, {counts: {all: 1, open: 1}, active: "all", mark: "data-lgf", onPick(){}}));
+  assert.match(container.innerHTML, /data-lgf="open"/);
+});
+
+// ---- the resume pack ----
+
+/* The pack tests serve the shipped packs from disk, so the screen renders
+   the real files. The corpus is the board's pair, which carries an open
+   decision, live and settled watches, and an overdue one. */
+const PACKS_ROOT = path.join(import.meta.dirname, "..", "..", "packs");
+const PACK_FILES = fs.readdirSync(PACKS_ROOT).filter(f => f.endsWith(".pack.md")).sort();
+const PACK_NAMES = PACK_FILES.map(f => f.replace(/\.pack\.md$/, ""));
+const packText = (f: string) => fs.readFileSync(path.join(PACKS_ROOT, f), "utf8");
+function packsFetch(inner: FetchFn, listing?: {packs: string[]}): FetchFn {
+  return u => {
+    if (u === "packs.json") return ok(listing || {packs: PACK_FILES});
+    if (u.startsWith("packs/")){
+      const f = decodeURIComponent(u.slice("packs/".length));
+      return PACK_FILES.includes(f) ? ok(packText(f)) : miss();
+    }
+    return inner(u);
+  };
+}
+const bootPacks = (opts: BootOpts = {}, texts = TEXTS) => {
+  const live = liveCorpus(LISTING, texts);
+  return boot({fetch: packsFetch(live.fetch), ...opts}).then(b => ({...b, live}));
+};
+const selectedPacks = () => $$(".pk").filter(b => b.classList.contains("is-on")).map(b => b.getAttribute("data-pk"));
+const packOf = (name: string) => $$(".pk").find(b => b.getAttribute("data-pk") === name)!;
+const packBlock = () => document.getElementById("packText");
+
+/* What the page must show for a ticket: the same corpus built the way the
+   seam builds it, swept the way the app sweeps it, and filled by the
+   library for that ticket on the index's day. */
+function expectedPack(name: string, key: string | null, texts = TEXTS){
+  const files = LISTING.files.map(p => (p in texts ? {path: p, text: texts[p]} : {path: p}));
+  const index = Bld.buildIndex(files, {project: "demo", generated: S.localDate(), source: "working-tree"});
+  const t = index.tickets.find(x => (x.id || x.dir) === key) || null;
+  return S.fillPack(packText(name + ".pack.md"), S.packContext(index, t, index.generated, Bld.lintCorpus(files)));
+}
+const marking = () => $$(".rentry").find(r => r.classList.contains("is-sel"))!.getAttribute("data-key")!;
+
+test("the pack screen rows every pack in listing order with resume-ticket selected by default", async () => {
+  await bootPacks();
+  await click(tabFor("resume pack"));
+  assert.deepEqual($$(".pk").map(b => b.getAttribute("data-pk")), PACK_NAMES);
+  assert.deepEqual(selectedPacks(), ["resume-ticket"]);
+  assert.match($(".packsrc").textContent!, /source: packs\/resume-ticket\.pack\.md/);
+  assert.match($("#scrPack").innerHTML, /add your own pack/);
+  assert.match($(".slotlist").textContent!, /\{\{index\.generated\}\}/);
+});
+
+test("the block carries the lib's fill for the selected ticket, and a rail pick refills it in place", async () => {
+  await bootPacks();
+  await click(tabFor("resume pack"));
+  const first = marking();
+  assert.equal(packBlock()!.textContent, expectedPack("resume-ticket", first));
+  const other = first === "BB2" ? "AA1" : "BB2";
+  await click(entry(other));
+  assert.equal(isOn("scrPack"), true);
+  assert.equal(packBlock()!.textContent, expectedPack("resume-ticket", other));
+  assert.notEqual(expectedPack("resume-ticket", first), expectedPack("resume-ticket", other));
+});
+
+test("a pack button switches the pack, refills the block, and keeps the keyboard", async () => {
+  await bootPacks();
+  await click(tabFor("resume pack"));
+  const key = marking();
+  const btn = packOf("audit-sweep");
+  btn.focus();
+  await click(btn);
+  assert.deepEqual(selectedPacks(), ["audit-sweep"]);
+  assert.match($(".packsrc").textContent!, /audit-sweep\.pack\.md/);
+  assert.equal(packBlock()!.textContent, expectedPack("audit-sweep", key));
+  same(document.activeElement, btn, "focus left the pack button");
+});
+
+test("copy writes the block's text to the clipboard and the label reports it, then rests", async () => {
+  const got = stubClipboard();
+  await bootPacks();
+  await click(tabFor("resume pack"));
+  const key = marking();
+  const copy = () => op("data-op", "copypack");
+  vi.useFakeTimers({toFake: ["Date", "setTimeout", "clearTimeout"]});
+  vi.setSystemTime(NOW);
+  fireEvent.click(copy());
+  await act(async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); });
+  assert.deepEqual(got, [expectedPack("resume-ticket", key)]);
+  assert.equal(copy().textContent, "copied");
+  await act(async () => { vi.advanceTimersByTime(1200); });
+  assert.equal(copy().textContent, "⧉ copy pack");
+});
+
+test("a denied clipboard write says so and copies nothing", async () => {
+  const got = stubClipboard(() => Promise.reject(new Error("denied")));
+  await bootPacks();
+  await click(tabFor("resume pack"));
+  await click(op("data-op", "copypack"));
+  assert.deepEqual(got, []);
+  assert.match(op("data-op", "copypack").textContent!, /copy failed/);
+});
+
+test("a resume pack deep link boots to the screen and a tab visit writes its token", async () => {
+  await bootPacks({hash: "#v=resume%20pack"});
+  assert.equal(isOn("scrPack"), true);
+  assert.ok(packBlock());
+  cleanup();
+  vi.restoreAllMocks();
+  const {hashes} = await bootPacks();
+  await click(tabFor("resume pack"));
+  assert.match(last(hashes), /^#v=resume%20pack/);
+});
+
+// A record naming a ticket id with no card: the advisory sweep's phantom.
+const LOG_PHANTOM = LOG_B.replace("- **OT-BB2-3 CLOSED 2026-08-10 → VALIDATED.** The window ended quiet.",
+  "- **OT-BB2-3 CLOSED 2026-08-10 → VALIDATED.** The window ended quiet.\n- **OT-BB2-9 CLOSED 2026-08-11 → VALIDATED.** No row carries this id.");
+
+test("the ledger-integrity pack fills from the sweep over the served corpus", async () => {
+  const {feed, live} = await bootPacks({}, {...TEXTS});
+  await click(tabFor("resume pack"));
+  await click(packOf("ledger-integrity"));
+  assert.equal(packBlock()!.textContent, expectedPack("ledger-integrity", marking()));
+  assert.match(packBlock()!.textContent!, /the corpus linted clean/);
+  // A record appended under the watched log reaches the pack on its change event.
+  live.texts["20260102-BB2-beta/audit-log.md"] = LOG_PHANTOM;
+  await change(feed);
+  assert.match(packBlock()!.textContent!, /\[phantom\] BB2 OT-BB2-9/);
+  assert.equal(packBlock()!.textContent, expectedPack("ledger-integrity", marking(), live.texts));
+});
+
+/* The sweep costs a second walk of every log, so it runs once per corpus
+   that lands and never on a reload that changed nothing. */
+test("a reload that adopts nothing runs no advisory sweep", async () => {
+  const {feed, live} = await bootPacks({}, {...TEXTS});
+  await click(tabFor("resume pack"));
+  await click(packOf("ledger-integrity"));
+  const sweeps = vi.mocked(Bld.lintCorpus).mock.calls.length;
+  const before = packBlock()!.textContent;
+  await change(feed);
+  assert.equal(vi.mocked(Bld.lintCorpus).mock.calls.length, sweeps);
+  assert.equal(packBlock()!.textContent, before);
+  live.texts["20260102-BB2-beta/audit-log.md"] = LOG_PHANTOM;
+  await change(feed);
+  assert.equal(vi.mocked(Bld.lintCorpus).mock.calls.length, sweeps + 1);
+  assert.notEqual(packBlock()!.textContent, before);
+});
+
+test("a corpus that never loads leaves the screen on its notice", async () => {
+  await boot({fetch: packsFetch(miss)});
+  await click(tabFor("resume pack"));
+  await click(packOf("ledger-integrity"));
+  assert.match($("#scrPack").innerHTML, /no corpus behind this page/);
+  assert.equal(packBlock(), null);
+});
+
+test("with no packs behind the page the screen says so and rows nothing", async () => {
+  await bootBoard();
+  await click(tabFor("resume pack"));
+  assert.match($("#scrPack").innerHTML, /no packs behind this page/);
+  assert.equal($$(".pk").length, 0);
+  assert.equal(packBlock(), null);
+});
+
+test("an empty packs directory is named as empty, not as absent", async () => {
+  await boot({fetch: packsFetch(liveCorpus(LISTING, TEXTS).fetch, {packs: []})});
+  await click(tabFor("resume pack"));
+  assert.match($("#scrPack").innerHTML, /packs directory is empty/);
+});
+
+test("with packs but no corpus the screen rows the packs and says there is no corpus to fill from", async () => {
+  await boot({fetch: packsFetch(miss)});
+  await click(tabFor("resume pack"));
+  assert.equal($$(".pk").length, PACK_NAMES.length);
+  assert.match($("#scrPack").innerHTML, /no corpus behind this page/);
+  assert.equal(packBlock(), null);
+});
+
+test("a corpus-wide pack fills with no ticket selected, and a ticket pack still asks for one", async () => {
+  await bootPacks({hash: "#t=ZZZ"});
+  await click(tabFor("resume pack"));
+  assert.match($("#scrPack").innerHTML, /"ZZZ" is not in this corpus/);
+  assert.equal(packBlock(), null);
+  await click(packOf("watch-audit"));
+  assert.equal(packBlock()!.textContent, expectedPack("watch-audit", null));
+  assert.doesNotMatch($("#scrPack").innerHTML, /select a ticket/);
+  await click(packOf("close-watch"));
+  assert.equal(packBlock(), null);
+  // Picking a ticket fills the pack without leaving the screen.
+  await click(entry("AA1"));
+  assert.equal(isOn("scrPack"), true);
+  assert.equal(packBlock()!.textContent, expectedPack("close-watch", "AA1"));
+});
+
+// ---- calibration ----
+
+const calTab = () => click(tabFor("calibration"));
+
+test("the calibration screen tiles the corpus and rows every confidence with the ledger's counts", async () => {
+  await bootBoard();
+  // The overdue count moves with the date, so the board's chip states it.
+  await click(tabFor("watchboard"));
+  const overdue = $$(".fpill").find(p => p.getAttribute("data-ws") === "overdue")!.textContent!.match(/overdue (\d+)/)![1];
+  await calTab();
+  const scr = $("#scrCalib").innerHTML;
+  assert.deepEqual($$(".caltile-n").map(t => t.textContent), ["2", "2", "3", overdue + "+1"]);
+  assert.deepEqual($$(".caltile").map(t => t.getAttribute("data-tile")), ["tickets", "shipped", "decisions", "watches"]);
+  assert.deepEqual($$(".calrow").map(r => r.getAttribute("data-conf")), ["high", "medium", "low"]);
+  assert.match(scr, /1 validated/);
+  assert.match(scr, /1 of 1 ruled validated/);
+  assert.match(scr, /none ruled yet/);
+  // The separator leads the count it belongs to, so no line can end on one.
+  assert.match(scr, /<span class="calnw">· 1 open<\/span>/);
+  assert.ok(!/·\s*<\/span>/.test(scr));
+  const segs = (k: string) => (scr.match(new RegExp(`class="calseg calseg-${k}"`, "g")) || []).length;
+  assert.equal(segs("open"), 2);
+  assert.equal(segs("validated"), 1);
+  assert.equal(segs("invalidated"), 0);
+  for (const k of ["validated", "invalidated", "open", "unknown", "other"])
+    assert.match(scr, new RegExp(`<i class="calseg-${k}"></i>${k}`));
+  // The open count agrees with the ledger's pill on the same corpus.
+  const open = (scr.match(/(\d+) open</g) || []).reduce((n, s) => n + parseInt(s, 10), 0);
+  await click(tabFor("ledgers"));
+  assert.match($("#scrLedgers").innerHTML, new RegExp(`open ${open}`));
+});
+
+const oneLog = (log: string) => liveCorpus({root: "demo", files: ["20260103-CC3-gamma/audit-log.md"]}, {"20260103-CC3-gamma/audit-log.md": log}).fetch;
+
+test("the calibration screen counts a ruled entry by its ruling, never its card", async () => {
+  await boot({fetch: oneLog(["# Audit Log — CC3 gamma", "", "## Decision Log", "", "### [DL-001] Ruled off the card",
+    "- **Decision:** pick d", "- **Confidence:** MEDIUM", "- **Status:** OPEN", "", "- **DL-001 CLOSED 2026-08-10 → VALIDATED.** The ruling.", ""].join("\n"))});
+  await calTab();
+  const scr = $("#scrCalib").innerHTML;
+  assert.match(scr, /1 validated/);
+  assert.match(scr, /1 of 1 ruled validated/);
+  assert.ok(!scr.includes('class="calseg calseg-open"'));
+});
+
+test("a calibration deep link boots to the screen and a tab visit writes its token", async () => {
+  await bootBoard({hash: "#v=calibration"});
+  assert.equal(isOn("scrCalib"), true);
+  assert.equal($$(".caltile").length, 4);
+  cleanup();
+  vi.restoreAllMocks();
+  const {hashes} = await bootBoard();
+  await calTab();
+  assert.match(last(hashes), /^#v=calibration/);
+});
+
+test("with no corpus the calibration screen says so instead of tiling zeros", async () => {
+  await boot();
+  await calTab();
+  assert.match($("#scrCalib").innerHTML, /no corpus behind this page/);
+  assert.equal($$(".caltile").length, 0);
+  assert.equal($$(".calrow").length, 0);
+});
+
+test("a corpus with no decisions tiles its zeros and names the empty record", async () => {
+  await boot({fetch: oneLog("# Audit Log — CC3 gamma\n\n## Problem Statement\n\n**What the problem is:** empty.\n")});
+  await calTab();
+  assert.deepEqual($$(".caltile-n").map(t => t.textContent), ["1", "0", "0", "0+0"]);
+  assert.match($("#scrCalib").innerHTML, /no decisions on record/);
+  assert.equal($$(".calrow").length, 0);
+});
+
+test("a bar segment lands the ledger filtered to its cell, with focus on the status pill", async () => {
+  const {hashes} = await bootBoard();
+  await calTab();
+  const seg = $$(".calseg").find(s => s.getAttribute("data-calc") === "high" && s.getAttribute("data-calk") === "open")!;
+  assert.match(seg.getAttribute("aria-label")!, /^1 open at HIGH/);
+  await click(seg);
+  assert.equal(isOn("scrLedgers"), true);
+  assert.match(last(hashes), /^#v=ledgers/);
+  assert.deepEqual(lgRows().map(r => r.getAttribute("data-t") + "/" + r.getAttribute("data-dl")), ["BB2/DL-001"]);
+  const on = (attr: string) => $$(".fpill").find(p => p.getAttribute(attr) && p.classList.contains("is-on"))!;
+  assert.match(on("data-lgf").textContent!, /^open 2/);
+  assert.match(on("data-lgc").textContent!, /^high 2/);
+  assert.equal($("#scrLedgers").innerHTML.includes("pilllab"), true);
+  same(document.activeElement, on("data-lgf"), "focus is not on the status pill");
+  // Widening the confidence back to all keeps the status cut.
+  await click($$(".fpill").find(p => p.getAttribute("data-lgc") === "all")!);
+  assert.deepEqual(lgRows().map(r => r.getAttribute("data-dl")), ["DL-002", "DL-001"]);
+  // The confidence filter is ledger state, so it holds across a tab round trip.
+  await click($$(".fpill").find(p => p.getAttribute("data-lgc") === "low")!);
+  await click(tabFor("inspector"));
+  await click(tabFor("ledgers"));
+  assert.match(on("data-lgc").textContent!, /^low 1/);
+  assert.deepEqual(lgRows().map(r => r.getAttribute("data-dl")), ["DL-002"]);
+});
+
+test("the ledger pills row every kind the record holds, so no segment lands on an empty pill", async () => {
+  await boot({fetch: oneLog(["# Audit Log — CC3 gamma", "", "## Decision Log", "",
+    "### [DL-001] Parked", "- **Decision:** a", "- **Confidence:** CERTAIN", "- **Status:** PARKED", "",
+    "### [DL-002] Unjudged", "- **Decision:** b", "- **Confidence:** LOW", "- **Status:** UNKNOWN", ""].join("\n"))});
+  await calTab();
+  await click($$(".calseg").find(s => s.getAttribute("data-calc") === "other")!);
+  const pills = $$(".fpill").map(p => p.textContent);
+  assert.ok(pills.includes("other 1") && pills.includes("unknown 1"));
+  assert.deepEqual(lgRows().map(r => r.getAttribute("data-dl")), ["DL-001"]);
+});
+
+test("a change event keeps focus on the calibration segment it held", async () => {
+  const live = liveCorpus(LISTING, {...TEXTS});
+  const {feed} = await boot({fetch: live.fetch});
+  await calTab();
+  const seg = $$(".calseg").find(s => s.getAttribute("data-calc") === "low")!;
+  seg.focus();
+  live.texts["20260102-BB2-beta/audit-log.md"] = LOG_B + "\n## Amendment Notes\n\nlate news.\n";
+  await change(feed);
+  same(document.activeElement, seg, "focus left the segment");
+});
+
+// ---- the prompt view ----
+
+// Every top-level key a builder can write, in a file order that differs
+// from the builder's, plus one key the builder does not know.
+const FULL_PROMPT = ["protocol:", "  apply: true", "  artifacts:", "    - problem_statement", "    - pr_summary",
+  'schema_version: "1.0"', "task:", '  id: "T-9-full"', '  title: "Full prompt"', '  author: "rbeye"', '  date: "2026-10-18"',
+  "preamble: |", "  Hold the old decisions.", "  Do not reopen them.", "role:", '  lens: "Front-end engineer"', "  priorities:",
+  '    - "Keep `hashWrite` stable"', "prompt: |", "  Add the **view**.", "  Keep it read-only.", "constraints:", "  out_of_scope:",
+  '    - "Editing"', "  must_not:", '    - "Change the index"', "context:", "  background: |",
+  "    The developer reads prompts in a terminal.", "    See [the docs](https://example.com/docs).", "  references:",
+  '    - path: "scripts/adp-serve.py"', '      lines: "84-114"', '      note: "serves the corpus"', "  links:",
+  '    - "https://example.com/ticket"', "lessons_learned:", '  - context: "loads are all-or-null"',
+  '    takeaway: "display data fails alone"', "output:", '  format: "code"', '  destination: "Edit in place"', "requirements:",
+  '  - id: "R1"', '    statement: "The view shows"', '    verify: "A test asserts it"', "reviewer_notes: |",
+  "  A key the builder never writes.", "  It still shows.", ""].join("\n");
+const promptHtml = (yaml: string) => render(createElement(PromptCards, {obj: PL.parseYAML(yaml)})).container.innerHTML;
+
+test("the prompt view renders every top-level key, the unknown one included", () => {
+  const issues: string[] = [];
+  PL.parseYAML(FULL_PROMPT, issues);
+  assert.deepEqual(issues, []);
+  const html = promptHtml(FULL_PROMPT);
+  const heads = [...html.matchAll(/<span class="pcard-title">([^<]+)<\/span>/g)].map(m => m[1]);
+  assert.deepEqual(heads, ["Schema Version", "Task", "Preamble", "Role", "Prompt", "Constraints",
+    "Context", "Lessons Learned", "Output", "Requirements", "Protocol", "Reviewer Notes"]);
+  assert.match(html, /<span class="pcard-key">lessons_learned<\/span>/);
+  assert.match(html, /<span class="pcard-title">Schema Version<\/span><span class="pcard-val">1\.0<\/span>/);
+  assert.match(html, /<div class="pcard-k">title<\/div><div class="pcard-v">Full prompt<\/div>/);
+  assert.match(html, /<th>path<\/th><th>lines<\/th><th>note<\/th>/);
+  assert.match(html, /<th>id<\/th><th>statement<\/th><th>verify<\/th>/);
+  assert.match(html, /Add the <strong>view<\/strong>/);
+  assert.match(html, /Keep `hashWrite` stable/);
+  assert.match(html, /<a href="https:\/\/example\.com\/docs"[^>]*>the docs<\/a>/);
+  assert.match(html, /<a href="https:\/\/example\.com\/ticket"[^>]*>https:\/\/example\.com\/ticket<\/a>/);
+  for (const v of ["T-9-full", "Front-end engineer", "Editing", "Change the index", "scripts/adp-serve.py",
+    "84-114", "display data fails alone", "Edit in place", "The view shows", "A test asserts it",
+    "problem_statement", "true", "A key the builder never writes."])
+    assert.ok(html.includes(v), v);
+});
+
+test("block text inside a table cell renders as markdown", () => {
+  const html = promptHtml(["requirements:", "  - id: \"R1\"", "    statement: \"Keep **this** exact\"", "    verify: |",
+    "      First paragraph with **bold**.", "", "      Second paragraph."].join("\n") + "\n");
+  const cell = html.match(/<td>((?:(?!<\/td>)[\s\S])*Second paragraph[\s\S]*?)<\/td>/)![1];
+  assert.match(cell, /<p>First paragraph with <strong>bold<\/strong>\.<\/p>/);
+  assert.match(cell, /<p>Second paragraph\.<\/p>/);
+  assert.match(html, /<td>Keep \*\*this\*\* exact<\/td>/);
+});
+
+test("prompt text renders inert", () => {
+  const html = promptHtml(["prompt: |", "  <script>alert(1)</script>", '  <img src=x onerror="alert(2)">',
+    "  [click](javascript:alert(3))", "context:", "  background: |", "    [go](javascript:alert(4)) and <b onmouseover=x>hi</b>",
+    "    [rel](data:text/html,x)", "  links:", '    - "javascript:alert(5)"', '    - "JaVaScRiPt:alert(6)"', '    - "relative/path"',
+    '    - "mailto:a@b.c"', 'task:', '  title: "<svg onload=alert(7)>"', '  id: "[go](https://example.com/x)"', ""].join("\n"));
+  const tags = [...html.matchAll(/<([a-z][a-z0-9]*)\b([^>]*)>/g)];
+  assert.ok(tags.length);
+  for (const [, name, attrs] of tags){
+    assert.ok(!["script", "img", "svg", "iframe", "object"].includes(name), name);
+    assert.doesNotMatch(attrs, /\son[a-z]+\s*=/i);
+    const href = attrs.match(/href="([^"]*)"/);
+    if (href) assert.match(href[1], /^(https?|mailto):/i);
+  }
+  assert.match(html, /&lt;script&gt;/);
+  assert.match(html, /<a href="mailto:a@b\.c"/);
+  assert.match(html, /<li>relative\/path<\/li>/);
+  assert.match(html, /<li>javascript:alert\(5\)<\/li>/);
+  assert.match(html, /<div class="pcard-v">\[go\]\(https:\/\/example\.com\/x\)<\/div>/);
+});
+
+test("a ticket with a prompt lists it ahead of phase 1 and steps to it", async () => {
+  await bootCorpus({hash: "#t=AA1&s=sec-problem-statement"});
+  assert.deepEqual(options().slice(0, 2), ["prompt", "sec-problem-statement"]);
+  await click(op("data-secstep", "-1"));
+  assert.equal(secVal(), "prompt");
+  const scr = insp();
+  assert.match(scr, /<h4>prompt\.yaml /);
+  assert.match(scr, /Make the <strong>alpha<\/strong> path work/);
+  assert.match(scr, /secchit t-ok">complete/);
+  assert.match(scr, /data-secstep="-1" disabled/);
+});
+
+test("the prompt view has a deep link", async () => {
+  const {hashes} = await bootCorpus();
+  await click(entry("AA1"));
+  await pickSection("prompt");
+  assert.equal(last(hashes), "#t=AA1&s=prompt");
+  cleanup();
+  vi.restoreAllMocks();
+  await bootCorpus({hash: "#t=AA1&s=prompt"});
+  assert.equal(secVal(), "prompt");
+  assert.match(insp(), /<h4>prompt\.yaml /);
+  assert.doesNotMatch(insp(), /was not found in this log/);
+});
+
+test("a prompt-only ticket shows its prompt instead of the no-audit-log notice", async () => {
+  await boot({hash: "#t=AV002", fetch: liveCorpus({root: "demo", files: LISTING_I.files.concat(["CC-3-gamma/notes.txt"])}, TEXTS_I).fetch});
+  assert.equal(secVal(), "prompt");
+  assert.match(insp(), /beta brief/);
+  assert.doesNotMatch(insp(), /no audit log yet/);
+  await click(entry("CC3"));
+  assert.match(insp(), /no audit log yet/);
+});
+
+test("a missing or unparseable prompt.yaml affects only its own ticket", async () => {
+  const texts = {"20260101-AA1-alpha/audit-log.md": LOG, "AV-002-beta/prompt.yaml": "[1, 2, 3]\n"};
+  await boot({hash: "#t=AA1&s=prompt", fetch: liveCorpus(LISTING_I, texts).fetch});
+  assert.equal($$(".rentry").length, 2);
+  assert.match(insp(), /prompt\.yaml is listed in the corpus but could not be read\./);
+  assert.match(insp(), /secchit t-bad">unreadable/);
+  await click(entry("AV002"));
+  assert.match(insp(), /did not parse as YAML/);
+  assert.match(insp(), /<pre class="rawpre">\[1, 2, 3\]/);
+  cleanup();
+  vi.restoreAllMocks();
+  // A partial parse renders formatted and names what it skipped.
+  await boot({hash: "#t=AV002", fetch: liveCorpus(LISTING_I, {...texts, "AV-002-beta/prompt.yaml": PROMPT_AV2 + "extra: [a, b]\n"}).fetch});
+  assert.match(insp(), /parsed with 1 issue: extra \(flow sequence is unsupported/);
+  assert.match(insp(), /beta brief/);
+});
+
+test("the prompt view follows an edit on its change event", async () => {
+  const live = liveCorpus(LISTING_I, {...TEXTS_I});
+  const {feed} = await boot({hash: "#t=AA1&s=prompt", fetch: live.fetch});
+  assert.match(insp(), /Keep it small\./);
+  live.texts["20260101-AA1-alpha/prompt.yaml"] = PROMPT_AA1.replace("Keep it small.", "Keep it smaller.");
+  await change(feed);
+  assert.match(insp(), /Keep it smaller\./);
+});
+
+test("an unchanged reload keeps the inspector in place, whatever order the prompts arrive in", async () => {
+  let flip = false;
+  const base = liveCorpus(LISTING_I, TEXTS_I).fetch;
+  const fetchFn: FetchFn = u => {
+    if (!u.endsWith("prompt.yaml")) return base(u);
+    // We hold back one prompt per reload, a different one each time, so the
+    // completion order alternates between reloads.
+    const late = (u.includes("AA1") === flip) ? 5 : 0;
+    return new Promise(r => setTimeout(r, late)).then(() => base(u));
+  };
+  const {feed} = await boot({hash: "#t=AA1&s=prompt", fetch: fetchFn});
+  await act(async () => { await new Promise(r => setTimeout(r, 20)); });
+  await settle();
+  const before = $("#secSel");
+  for (let i = 0; i < 3; i++){
+    flip = !flip;
+    await act(async () => { feed.onmessage!(); await new Promise(r => setTimeout(r, 20)); });
+    await settle();
+  }
+  same($("#secSel"), before, "the selector was rebuilt");
+});
+
+// ---- the reviews screen ----
+
+/* Two tickets with prreview rounds and one without. RV1 holds two PRs, and
+   PR #7's rounds are r1, r2, and r10, so a string sort would misorder them.
+   RV2 holds one PR: a round whose text tries to run script, a round with no
+   verdict yet, and a round whose fetch fails. AV-002 holds no rounds. */
+type ReviewOpts = {pr: number; k: number; dir: string; prior?: string; findings?: string; noVerdict?: boolean; verdict?: string};
+const review = (o: ReviewOpts) => [
+  `# PR Review — PR #${o.pr} round ${o.k} · ${o.dir}`, "",
+  "## Review Target", `- **Round:** ${o.k}`, "",
+  "## Inspected", "| Item | Value |", "|------|-------|", `| Prior review files | ${o.prior || "—"} |`, "",
+  "## Findings", "", o.findings || `Round ${o.k} of PR #${o.pr} found nothing.`, "",
+  ...(o.noVerdict ? [] : ["## Review Verdict", `- **Verdict:** ${o.verdict || "APPROVE"}`,
+    "- **Confidence:** HIGH", "- **Counts:** must 0 / should 1 / question 0 / nit 0",
+    "- **Opened:** PR-ADP-001", "- **Closed:** —", "- **Carried open:** —", "- **Summary:** done."]), ""
+].join("\n");
+const RV1 = "20260101-RV1-rounds", RV2 = "20260101-RV2-other";
+const LOG_RV1 = ["# Audit Log — RV1 rounds", "", "## Problem Statement", "", "**What the problem is:** demo.", "",
+  "## Review findings — PR #5, in-review (2026-01-02, first)", "", "An older pointer that names no file.", "",
+  "## Review findings — PR #7 round 2 (2026-01-03)", "",
+  `- **Review file:** \`.adp/${RV1}/pr-review-PR7-20260103-r2.md\``, ""].join("\n");
+const LOG_RV2 = LOG_RV1.replace(/RV1/g, "RV2").split("\n## Review findings")[0];
+const XSS = "<script>alert(1)</script> <img src=x onerror=alert(1)> [bad](javascript:alert(1))";
+function reviewCorpus(){
+  const texts: Record<string, string> = {
+    [`${RV1}/audit-log.md`]: LOG_RV1,
+    [`${RV1}/pr-review-PR7-20260102-r1.md`]: review({pr: 7, k: 1, dir: RV1}),
+    [`${RV1}/pr-review-PR7-20260103-r2.md`]: review({pr: 7, k: 2, dir: RV1, prior: "pr-review-PR7-20260102-r1.md"}),
+    [`${RV1}/pr-review-PR8-20260104-r3.md`]: review({pr: 8, k: 3, dir: RV1}),
+    [`${RV1}/pr-review-PR7-20260105-r10.md`]: review({pr: 7, k: 10, dir: RV1}),
+    [`${RV1}/notes.md`]: "not a round",
+    [`${RV1}/refs/pr-review-PR7-20260105-r11.md`]: "a deeper file",
+    [`${RV2}/audit-log.md`]: LOG_RV2,
+    [`${RV2}/pr-review-PR9-20260106-r1.md`]: review({pr: 9, k: 1, dir: RV2, verdict: "APPROVE <b onmouseover=x>",
+      findings: XSS, prior: `\`.adp/${RV1}/pr-review-PR7-20260103-r2.md\`, \`.adp/NOPE-gone/pr-review-PR9-20260101-r1.md\``}),
+    [`${RV2}/pr-review-PR9-20260107-r2.md`]: review({pr: 9, k: 2, dir: RV2, noVerdict: true}),
+    "AV-002-beta/prompt.yaml": PROMPT_AV2
+  };
+  // RV2's third round is listed but never answers.
+  return liveCorpus({root: "demo", files: Object.keys(texts).concat([`${RV2}/pr-review-PR9-20260108-r3.md`]).sort()}, texts);
+}
+const bootReviews = (live: ReturnType<typeof liveCorpus>, hash: string) => boot({fetch: live.fetch, hash});
+const revHtml = () => $("#scrReviews").innerHTML;
+const within = (id: string, sel: string) => [...document.getElementById(id)!.querySelectorAll(sel)] as HTMLElement[];
+const revStep = (d: number) => click(op("data-revstep", String(d)));
+const pickSelect = async (el: Element, value: string) => { fireEvent.change(el, {target: {value}}); await settle(1); };
+
+test("a reviews deep link opens the ticket's latest round with its head", async () => {
+  await bootReviews(reviewCorpus(), "#v=reviews&t=RV1");
+  assert.equal(isOn("scrReviews"), true);
+  const head = $("#revHead").innerHTML;
+  assert.match(head, /PR #7 · round 10/);
+  assert.match(head, /2026-01-05/);
+  assert.match(head, /APPROVE/);
+  assert.match(head, /must 0 \/ should 1 \/ question 0 \/ nit 0/);
+  assert.match(head, /PR-ADP-001/);
+  assert.match($("#revBody").innerHTML, /Round 10 of PR #7 found nothing\./);
+  assert.match(location.hash, /^#v=reviews&t=RV1&s=pr-review-PR7-20260105-r10\.md$/);
+});
+
+test("the step controls walk one PR's rounds in number order and stop at both ends", async () => {
+  await bootReviews(reviewCorpus(), "#v=reviews&t=RV1");
+  const seen: string[] = [];
+  for (let i = 0; i < 3; i++){
+    seen.push(($("#revSel") as HTMLSelectElement).value);
+    if (i < 2) await revStep(-1);
+  }
+  assert.deepEqual(seen, ["pr-review-PR7-20260105-r10.md", "pr-review-PR7-20260103-r2.md", "pr-review-PR7-20260102-r1.md"]);
+  assert.equal(op("data-revstep", "-1").hasAttribute("disabled"), true);
+  assert.equal(op("data-revstep", "1").hasAttribute("disabled"), false);
+  await revStep(1); await revStep(1);
+  assert.equal(op("data-revstep", "1").hasAttribute("disabled"), true);
+  assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
+});
+
+test("a ticket with two PRs offers a PR select, and a switch lands on that PR's latest round", async () => {
+  const c = reviewCorpus();
+  await bootReviews(c, "#v=reviews&t=RV1");
+  assert.deepEqual([...$("#revPr").children].map(o => o.textContent), ["PR #7", "PR #8"]);
+  await pickSelect($("#revPr"), "PR8");
+  assert.match($("#revHead").innerHTML, /PR #8 · round 3/);
+  assert.deepEqual([...$("#revSel").children].map(o => o.getAttribute("value")), ["pr-review-PR8-20260104-r3.md"]);
+  assert.equal(location.hash, "#v=reviews&t=RV1&s=pr-review-PR8-20260104-r3.md");
+  // The hash reopens the same round in a fresh page.
+  const hash = location.hash;
+  cleanup();
+  vi.restoreAllMocks();
+  await bootReviews(c, hash);
+  assert.match($("#revHead").innerHTML, /PR #8 · round 3/);
+  await click(entry("RV2"));
+  assert.equal(document.getElementById("revPr"), null);
+});
+
+test("the reviews screen follows the rail, and a ticket with no rounds shows an empty state", async () => {
+  await bootReviews(reviewCorpus(), "#v=reviews&t=RV1");
+  await click(entry("RV2"));
+  assert.equal(isOn("scrReviews"), true);
+  assert.match($("#revHead").innerHTML, /PR #9 · round/);
+  await click(entry("AV002"));
+  assert.equal(isOn("scrReviews"), true);
+  assert.match(revHtml(), /this ticket has no review files/);
+  assert.equal(entry("AV002").classList.contains("is-sel"), true);
+});
+
+// The filter, the collapsed sections, and the round each belong to the
+// ticket on show, so a rail pick starts the next ticket clean.
+test("a rail pick resets the decisions filter, the collapsed sections, and the review round", async () => {
+  const c = reviewCorpus();
+  c.texts[`${RV1}/audit-log.md`] = LOG.replace("AA1 alpha", "RV1 rounds").replace(/OT-AA1-/g, "OT-RV1-");
+  await bootReviews(c, "#t=RV1&s=sec-decision-log");
+  await click($$(".fpill").find(p => p.getAttribute("data-dlf") === "open")!);
+  await click(op("data-view", "full"));
+  await click(($$(".fsec") as HTMLDetailsElement[]).find(d => d.getAttribute("data-key") === "sec-problem-statement")!.querySelector(".fsum")!);
+  await click(entry("RV2"));
+  await click(entry("RV1"));
+  const ps = ($$(".fsec") as HTMLDetailsElement[]).find(d => d.getAttribute("data-key") === "sec-problem-statement")!;
+  assert.equal(ps.open, true);
+  await click(op("data-view", "section"));
+  await pickSection("sec-decision-log");
+  assert.equal($$(".fpill").find(p => p.getAttribute("data-dlf") === "all")!.classList.contains("is-on"), true);
+  await click(tabFor("reviews"));
+  assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
+  await click(entry("RV2"));
+  assert.match($("#revHead").innerHTML, /PR #9 · round 3/);
+  assert.doesNotMatch($("#revHead").innerHTML, /was not found in this ticket/);
+});
+
+test("a round's text renders inert in the head and the body", async () => {
+  await bootReviews(reviewCorpus(), "#v=reviews&t=RV2&s=pr-review-PR9-20260106-r1.md");
+  // The parsed tree is the check that matters: no live element and no event
+  // attribute exists, whatever the markup string looks like.
+  assert.equal(within("scrReviews", "script").length, 0);
+  assert.equal(within("scrReviews", "img").length, 0);
+  for (const el of within("scrReviews", "*"))
+    assert.deepEqual(el.getAttributeNames().filter(k => /^on/i.test(k)), [], el.tagName);
+  const html = revHtml();
+  assert.doesNotMatch(html, /<script/i);
+  assert.doesNotMatch(html, /<img[^>]*onerror/i);
+  assert.doesNotMatch(html, /<b onmouseover/i);
+  assert.doesNotMatch(html, /href="javascript:/i);
+  for (const a of within("scrReviews", "a")){
+    const href = a.getAttribute("href");
+    if (href != null) assert.match(href, /^(#|https?:|mailto:)/);
+  }
+  assert.match(html, /&lt;script&gt;/);
+});
+
+test("prior rounds in another ticket link to that ticket's reviews tab", async () => {
+  await bootReviews(reviewCorpus(), "#v=reviews&t=RV2&s=pr-review-PR9-20260106-r1.md");
+  const links = within("revHead", ".rvl");
+  assert.deepEqual(links.map(a => a.textContent), [`pr-review-PR7-20260103-r2.md · ${RV1}`, "pr-review-PR9-20260101-r1.md · NOPE-gone"]);
+  assert.equal(links[0].getAttribute("href"), "#v=reviews&t=RV1&s=pr-review-PR7-20260103-r2.md");
+  await click(links[1]);
+  assert.match($("#revHead").innerHTML, /ticket "NOPE-gone" is not in this corpus\./);
+  assert.match($("#revHead").innerHTML, /PR #9 · round 1/);
+  await click(within("revHead", ".rvl")[0]);
+  assert.match($("#revHead").innerHTML, /PR #7 · round 2/);
+  assert.equal(entry("RV1").classList.contains("is-sel"), true);
+  assert.equal(location.hash, "#v=reviews&t=RV1&s=pr-review-PR7-20260103-r2.md");
+});
+
+test("an unreadable round, a round with no verdict, and a stale round link each show a notice", async () => {
+  const c = reviewCorpus();
+  await bootReviews(c, "#v=reviews&t=RV2&s=pr-review-PR9-20260108-r3.md");
+  assert.match($("#revHead").innerHTML, /pr-review-PR9-20260108-r3\.md is listed in the corpus but could not be read\./);
+  assert.equal($("#revBody").innerHTML, "");
+  await revStep(-1);
+  assert.match($("#revHead").innerHTML, /no Review Verdict section yet/);
+  assert.match($("#revBody").innerHTML, /Round 2 of PR #9 found nothing\./);
+  cleanup();
+  vi.restoreAllMocks();
+  await bootReviews(c, "#v=reviews&t=RV1&s=pr-review-PR7-20990101-r99.md");
+  assert.match($("#revHead").innerHTML, /was not found in this ticket/);
+  assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
+});
+
+test("an inspector pointer section links to its round, and the inspector keeps its section", async () => {
+  await bootReviews(reviewCorpus(), "#t=RV1");
+  const optFor = (re: RegExp) => $$("#secSel option").find(o => re.test(o.textContent!))!.getAttribute("value")!;
+  await pickSection(optFor(/PR #5, in-review/));
+  assert.equal(within("scrInspector", ".rvl").length, 0);
+  const key = optFor(/PR #7 round 2/);
+  await pickSection(key);
+  const link = within("scrInspector", ".rvl")[0];
+  assert.equal(link.textContent, "open round in reviews ›");
+  await click(link);
+  assert.equal(isOn("scrReviews"), true);
+  assert.match($("#revHead").innerHTML, /PR #7 · round 2/);
+  await click(tabFor("inspector"));
+  assert.equal(secVal(), key);
+  assert.equal(location.hash, "#t=RV1&s=" + encodeURIComponent(key));
+});
+
+test("a quiet reload leaves every reviews region in place, and a new round extends the round select", async () => {
+  const c = reviewCorpus();
+  const {feed} = await bootReviews(c, "#v=reviews&t=RV1");
+  const ids = ["revTop", "revNav", "revHead", "revBody"];
+  const kids = () => ids.map(id => document.getElementById(id)!.children[0]);
+  const before = kids(), sel = $("#revSel");
+  const held = (what: string) => kids().forEach((k, i) => same(k, before[i], what + ": " + ids[i] + " was rebuilt"));
+  await change(feed); await change(feed);
+  held("a quiet reload");
+  // A change in another ticket writes nothing here either.
+  c.texts[`${RV2}/pr-review-PR9-20260107-r2.md`] += "\nmore";
+  await change(feed);
+  held("another ticket's change");
+  // A new PR #7 round keeps the shown round, and the select keeps its element.
+  c.texts[`${RV1}/pr-review-PR7-20260109-r11.md`] = review({pr: 7, k: 11, dir: RV1});
+  c.listing = {...c.listing, files: c.listing.files.concat([`${RV1}/pr-review-PR7-20260109-r11.md`]).sort()};
+  await change(feed);
+  same($("#revSel"), sel, "the round select was rebuilt");
+  assert.equal(($("#revSel") as HTMLSelectElement).value, "pr-review-PR7-20260105-r10.md");
+  assert.equal($("#revSel").children.length, 4);
+  same(document.getElementById("revBody")!.children[0], before[3], "the round body was rebuilt");
+});
+
+const card = (id: string, o: {title?: string; severity?: string; claim?: string; status?: string} = {}) => [
+  `### [${id}] ${o.title || "A finding title"}`, `- **Severity:** ${o.severity || "should"}`, "- **Category:** COR — Correctness",
+  `- **Claim:** ${o.claim || "The code does the wrong thing."}`, "- **Confidence:** HIGH",
+  "- **Confidence basis:** DIRECT EVIDENCE — a repro.", `- **Status:** ${o.status || "OPEN"}`].join("\n");
+const ledgerLine = (id: string, outcome: string, note: string) => `- **${id} CLOSED 2026-01-03 → ${outcome}.** ${note}`;
+const withLedger = (text: string, lines: string[]) => text.replace("## Review Verdict", "## Prior Findings\n" + lines.join("\n") + "\n\n## Review Verdict");
+const bodyHtml = (text: string, ledger: S.ReviewLedger, tok = "RV1") =>
+  render(createElement(ReviewBody, {text, ctx: {ledger, tok, onRound(){}}})).container.innerHTML;
+// A note that mixes author text with our link sits in a contents span (DL-069).
+const CONTENTS = '(?:<span style="display: contents;">)?';
+
+test("a finding renders as a card, and its status pill reads the ledger, not the stale card", () => {
+  const text = review({pr: 7, k: 1, dir: RV1, findings: card("PR-COR-001") + "\n\n" + card("PR-TST-002", {severity: "nit"})});
+  const html = bodyHtml(text, {"PR-COR-001": {id: "PR-COR-001", file: "pr-review-PR7-20260103-r2.md", k: 2, date: "2026-01-03", outcome: "RESOLVED", note: "fixed **now**."}});
+  const cards = html.split('<div class="dl-cards">')[1].split("Review Verdict")[0].split('<div class="dl-card ').slice(1);
+  assert.equal(cards.length, 2);
+  assert.match(cards[0], /^rail-ok"/);
+  assert.match(cards[0], /<i>severity<\/i>should/);
+  assert.match(cards[0], /<i>conf<\/i>HIGH/);
+  assert.match(cards[0], /<i>status<\/i>RESOLVED/);
+  assert.doesNotMatch(cards[0], /<i>status<\/i>OPEN/);
+  assert.match(cards[0], new RegExp(`2026-01-03 in <a class="rvl"[^>]*data-rf="pr-review-PR7-20260103-r2\\.md">round 2</a> · ${CONTENTS}fixed <strong>now</strong>\\.`));
+  assert.match(cards[0], /<span class="dl-k revk">Confidence basis<\/span>/);
+  assert.doesNotMatch(cards[0], /dl-k revk">(Severity|Confidence|Status)</);
+  assert.match(cards[1], /^rail-open"/);
+  assert.match(cards[1], /<i>severity<\/i>nit/);
+  assert.match(cards[1], /<i>status<\/i>OPEN/);
+  assert.match(html, /<h4>Findings<\/h4><div class="md"><div class="dl-cards">/);
+});
+
+test("Review Target, Review Verdict, and Prior Findings render as grids, and a stray line keeps markdown", () => {
+  const text = withLedger(review({pr: 7, k: 2, dir: RV1}), [ledgerLine("PR-COR-001", "RESOLVED", "fixed.")]);
+  const html = bodyHtml(text, {});
+  assert.equal(html.split("dl-card revcard").length - 1, 3);
+  assert.match(html, /<span class="dl-k revk">Round<\/span><span class="dl-v revv">2<\/span>/);
+  assert.match(html, new RegExp(`<span class="dl-k revk">PR-COR-001</span><span class="dl-v revv"><span class="pill dl-pill p-ok"><i>closed</i>RESOLVED</span> 2026-01-03 · ${CONTENTS}fixed\\.`));
+  assert.match(html, /<table/);
+  assert.match(html, /Round 2 of PR #7 found nothing\./);
+  assert.deepEqual([...html.matchAll(/<div class="doc"><h4>([^<]*)<\/h4>/g)].map(x => x[1]),
+    ["Review Target", "Inspected", "Findings", "Prior Findings", "Review Verdict"]);
+  assert.doesNotMatch(html, /PR Review — PR #7/);
+  assert.equal(html.split('<div class="doc"><h4>').length - 1, html.split('</h4><div class="md">').length - 1);
+  cleanup();
+  const stray = bodyHtml(text.replace("## Prior Findings\n", "## Prior Findings\nA note that is not a ledger line.\n"), {});
+  assert.equal(stray.split("dl-card revcard").length - 1, 2);
+  assert.match(stray, /A note that is not a ledger line\./);
+  assert.match(stray, /PR-COR-001 CLOSED 2026-01-03/);
+});
+
+test("a finding card renders its text inert, and an unknown outcome word picks no class", () => {
+  const text = review({pr: 9, k: 1, dir: RV2, findings: card("PR-SEC-001", {title: XSS, claim: XSS, severity: "<b>x</b> later"})});
+  const html = bodyHtml(text, {"PR-SEC-001": {id: "PR-SEC-001", file: "f.md", k: 2, date: "2026-01-03", outcome: "WEIRD", note: XSS}}, "RV2");
+  assert.doesNotMatch(html, /<script|<img|<b>|href="javascript:/i);
+  assert.match(html, /&lt;script&gt;/);
+  assert.match(html, /<span class="pill dl-pill p-low"><i>status<\/i>WEIRD<\/span>/);
+  assert.match(html, /<div class="dl-card ">/);
+  assert.match(html, /dl-k revk">severity note</);
+});
+
+test("a later round's closure repaints an earlier round's card on its change event", async () => {
+  const c = reviewCorpus();
+  c.texts[`${RV1}/pr-review-PR7-20260102-r1.md`] = review({pr: 7, k: 1, dir: RV1, findings: card("PR-COR-001")});
+  const {feed} = await bootReviews(c, "#v=reviews&t=RV1&s=pr-review-PR7-20260102-r1.md");
+  assert.match($("#revBody").innerHTML, /dl-pill p-open"><i>status<\/i>OPEN/);
+  c.texts[`${RV1}/pr-review-PR7-20260103-r2.md`] = withLedger(c.texts[`${RV1}/pr-review-PR7-20260103-r2.md`], [ledgerLine("PR-COR-001", "RESOLVED", "fixed.")]);
+  await change(feed);
+  assert.match($("#revBody").innerHTML, /dl-pill p-ok"><i>status<\/i>RESOLVED/);
+  assert.doesNotMatch($("#revBody").innerHTML, /dl-pill p-open/);
+  await click(within("revBody", ".rvl")[0]);
+  assert.match($("#revHead").innerHTML, /PR #7 · round 2/);
+  assert.equal(location.hash, "#v=reviews&t=RV1&s=pr-review-PR7-20260103-r2.md");
+});
+
+/* AA1's log defines DL-001, DL-002, OT-AA1-1, and OT-AA1-2. Its round cites
+   DL-002 and OT-AA1-1 in prose, DL-001 only inside a code fence, and DL-099,
+   which the log never defines. */
+const AA1 = "20260101-AA1-alpha";
+const AA1_ROUND = review({pr: 3, k: 1, dir: AA1, findings: card("PR-COR-001") + "\n- **Refs:** DL-002, OT-AA1-1, DL-099\n\n```\nDL-001\n```"});
+const citedCorpus = () => {
+  const texts = {[`${AA1}/audit-log.md`]: LOG, [`${AA1}/pr-review-PR3-20260102-r1.md`]: AA1_ROUND,
+    [`${AA1}/pr-review-PR3-20260103-r2.md`]: review({pr: 3, k: 2, dir: AA1})};
+  return liveCorpus({root: "demo", files: Object.keys(texts).sort()}, texts);
+};
+
+test("a round shows the decisions and watches it cites, and a round that cites none shows no panel", async () => {
+  await bootReviews(citedCorpus(), "#v=reviews&t=AA1&s=pr-review-PR3-20260102-r1.md");
+  const body = $("#revBody").innerHTML;
+  assert.match(body, /decisions cited by PR #3 · round 1/);
+  assert.match(body, /watches cited by PR #3 · round 1/);
+  assert.deepEqual(within("revBody", ".dlrow").map(r => r.getAttribute("data-dl")), ["DL-002"]);
+  assert.deepEqual(within("revBody", ".wrow").map(r => r.getAttribute("data-item")), ["OT-AA1-1"]);
+  assert.ok(within("revBody", ".pc").length > 0);
+  await revStep(1);
+  assert.doesNotMatch($("#revBody").innerHTML, /cited by/);
+});
+
+test("the reviews filter is its own, and a cited row opens its entry in the inspector", async () => {
+  await bootReviews(citedCorpus(), "#v=reviews&t=AA1&s=pr-review-PR3-20260102-r1.md");
+  const rpill = (f: string) => within("revBody", ".fpill").find(p => p.getAttribute("data-rdf") === f)!;
+  assert.deepEqual(within("revBody", ".fpill").map(p => p.getAttribute("data-rdf")), ["all", "open"]);
+  await click(rpill("open"));
+  assert.equal(rpill("open").classList.contains("is-on"), true);
+  assert.equal(isOn("scrReviews"), true);
+  await click(within("revBody", ".dlrow")[0]);
+  assert.equal(isOn("scrInspector"), true);
+  assert.match(insp(), /\[DL-002\]/);
+  // The inspector's own filter never saw the reviews click.
+  await click(within("scrInspector", ".backlink")[0]);
+  await pickSection("sec-decision-log");
+  const ipill = (f: string) => within("scrInspector", ".fpill").find(p => p.getAttribute("data-dlf") === f)!;
+  assert.equal(ipill("all").classList.contains("is-on"), true);
+  assert.equal(ipill("open").classList.contains("is-on"), false);
+});
+
+test("a column sort on one screen reaches the other screen's cited table the next time it shows", async () => {
+  const texts = {[`${AA1}/audit-log.md`]: LOG, [`${AA1}/pr-review-PR3-20260102-r1.md`]: review({pr: 3, k: 1, dir: AA1,
+    findings: card("PR-COR-001") + "\n- **Refs:** DL-001, DL-002"})};
+  await bootReviews(liveCorpus({root: "demo", files: Object.keys(texts).sort()}, texts), "#t=AA1&s=sec-decision-log");
+  const ids = (id: string) => within(id, ".dlrow").map(r => r.getAttribute("data-dl")).join(",");
+  const idTh = (id: string) => within(id, ".sth").find(t => t.getAttribute("data-t") === "dec" && t.getAttribute("data-k") === "id")!;
+  assert.equal(ids("scrInspector"), "DL-001,DL-002");
+  await click(tabFor("reviews"));
+  await click(idTh("revBody"));
+  assert.equal(ids("revBody"), "DL-002,DL-001");
+  await click(tabFor("inspector"));
+  assert.equal(ids("scrInspector"), "DL-002,DL-001");
+  assert.equal(idTh("scrInspector").getAttribute("aria-sort"), "descending");
+  await click(idTh("scrInspector"));
+  assert.equal(ids("scrInspector"), "DL-001,DL-002");
+  await click(tabFor("reviews"));
+  assert.equal(ids("revBody"), "DL-001,DL-002");
+  assert.equal(idTh("revBody").getAttribute("aria-sort"), "ascending");
+});
+
+test("a severity word that names an Object member takes the fallback class", () => {
+  const html = bodyHtml(review({pr: 9, k: 1, dir: RV2, findings: card("PR-COR-001", {severity: "constructor"})}), {}, "RV2");
+  assert.match(html, /<span class="pill dl-pill p-low"><i>severity<\/i>constructor<\/span>/);
+  assert.doesNotMatch(html, /function/);
+});
+
+// ---- the panels' markup ----
+
+test("the closed group starts collapsed, and a click opens it", async () => {
+  await bootCorpus();
+  const closed = () => $$(".railsec").find(s => s.getAttribute("data-sec") === "closed")!;
+  assert.match(closed().innerHTML, /▸/);
+  await click(closed());
+  assert.match(closed().innerHTML, /▾/);
+});
+
+test("the rail renders hostile harvested fields as text", () => {
+  const hostile = "<img src=x onerror=alert(1)>";
+  const {container} = render(createElement(Rail, {groups: [["needs attention", [{key: hostile, id: hostile, date: hostile,
+    slug: hostile, closable: false, ribbon: {reasons: [{txt: hostile, tone: "warn"}], more: 0}}]]],
+    selKey: null, collapsed: new Set<string>(), onPick(){}, onToggle(){}}));
+  assert.ok(!container.innerHTML.includes("<img"));
+  assert.ok(container.textContent!.includes(hostile));
+});
+
+test("the decisions panel renders hostile harvested fields as text", () => {
+  const hostile = "<img src=x onerror=alert(1)>";
+  const {container} = render(createElement(DecisionsPanel, {...panelProps, label: hostile, rows: [{id: hostile, title: hostile, conf: hostile,
+    confKind: "other", statusKind: "open", watch: hostile, settled: null, chips: [{key: hostile, label: hostile, title: hostile}], hl: false}]}));
+  assert.ok(!container.innerHTML.includes("<img"));
+  assert.ok(container.textContent!.includes(hostile));
+});
+
+test("a decision card in a companion section renders as a card in the inspector", async () => {
+  const log = LOG.replace("Some **prose** citing DL-002.",
+    "Some **prose** citing DL-002.\n\n### [DL-009] An aside decision\n- **Decision:** x\n- **Confidence:** HIGH\n- **Status:** OPEN\n\nAfter the card.");
+  await boot({fetch: liveCorpus(LISTING_I, {...TEXTS_I, "20260101-AA1-alpha/audit-log.md": log}).fetch});
+  await pickSection("sec-aside-notes");
+  const pane = insp();
+  assert.match(pane, /class="dl-card rail-open"/);
+  assert.match(pane, /class="pill dl-pill p-ok"><i>conf<\/i>HIGH</);
+  assert.match(pane, /<\/div><\/div><p>After the card\.<\/p>/);
+});
+
+test("a due cell in the watches panel holds a date on one line and lets window prose wrap", () => {
+  const prose = "until the developer's next live session with the testbed, no later than the start of ZUP-B3";
+  const row = (o: {dueText: string; dueDated: boolean}) => ({wid: "OT-A1-1", what: "w", dls: [], state: "upcoming" as const,
+    stateLabel: "upcoming 30d", chips: [], hl: false, ...o});
+  const {container} = render(createElement(WatchesPanel, {label: "x", sort: {k: "wid", d: 1}, onSort(){}, onWatch(){}, onChip(){},
+    rows: [row({dueText: "2026-12-24", dueDated: true}), {...row({dueText: prose, dueDated: false}), wid: "OT-A1-2"}]}));
+  const html = container.innerHTML;
+  assert.ok(html.includes('<td class="mono nw">2026-12-24</td>'));
+  assert.ok(html.includes('<td class="mono">until the developer'));
+  assert.ok(html.includes('<td class="mono nw">OT-A1-1</td>'));
+  assert.ok(html.includes('<span class="st-upcoming nw">upcoming 30d</span>'));
+});
+
+test("the inspector marks an anchored watch's due text as dated and an unanchored one as prose", async () => {
+  await bootCorpus();
+  await pickSection("sec-obligation-ticket-list");
+  assert.ok(insp().includes('<td class="mono nw">2099-01-01</td>'));
+  assert.ok(insp().includes('<td class="mono">60 days after merge</td>'));
+});
+
+test("the decisions panel and the ledger hold every id, label, and age on one line", async () => {
+  const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [{id: "DL-104", title: "t", conf: "MEDIUM",
+    confKind: "medium", statusKind: "open", watch: null, settled: null, chips: [], hl: false}]}));
+  const panel = container.innerHTML;
+  assert.ok(panel.includes('<td class="mono nw">DL-104</td>'));
+  assert.ok(panel.includes('<span class="cf-medium nw">MEDIUM</span>'));
+  assert.ok(panel.includes('<span class="st-open nw">open</span>'));
+  assert.ok(panel.includes('<td><span class="st-unanchored nw">no watch</span></td>'));
+  cleanup();
+  const log = ["## Decision Log", "", "### [DL-104] t", "- **Confidence:** MEDIUM", "- **Created:** 2026-08-13", "- **Status:** OPEN", ""].join("\n");
+  await boot({fetch: liveCorpus({root: "demo", files: ["20260101-A1-one/audit-log.md"]}, {"20260101-A1-one/audit-log.md": log}).fetch});
+  await click(tabFor("ledgers"));
+  const ledger = $("#scrLedgers").innerHTML;
+  assert.match(ledger, /<td class="mono nw"><a class="wbl"[^>]*data-item="DL-104">DL-104<\/a><\/td>/);
+  assert.ok(ledger.includes('<span class="cf-medium nw">MEDIUM</span>'));
+  assert.ok(ledger.includes('<span class="st-open nw">open</span>'));
+  assert.ok(ledger.includes('<td class="mono nw">12d</td>'));
+});
+
 // ---- what the app leaves out ----
 
 test("the app offers no file input, no drop mask, and no opened-documents group", async () => {
@@ -761,6 +2431,17 @@ test("the app offers no file input, no drop mask, and no opened-documents group"
   assert.equal($$(".shellmask").length, 0);
   assert.equal($$(".rclose").length, 0);
   assert.ok(!$$(".railsec").some(s => s.getAttribute("data-sec") === "opened documents"));
+});
+
+// V4, V5, and V6: the inspector keeps its view toggles and loses every
+// control that loaded a file from outside .adp (DL-071, DL-072, DL-073).
+test("the inspector offers no open, reload, or paste control and no paste drawer", async () => {
+  await bootCorpus();
+  for (const name of ["openwatch", "reload", "paste"]) assert.equal($$('[data-op="' + name + '"]').length, 0, name);
+  assert.equal(document.getElementById("pasteArea"), null);
+  assert.equal(document.getElementById("pasteImport"), null);
+  assert.ok(!$("#scrInspector").textContent!.includes("drag & drop"));
+  assert.deepEqual($$("#scrInspector .op.tgl").map(b => b.getAttribute("data-view")), ["section", "full"]);
 });
 
 test("the app closes its event stream when it unmounts", async () => {
