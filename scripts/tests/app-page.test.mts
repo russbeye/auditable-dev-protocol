@@ -1217,6 +1217,8 @@ test("the scroll spy names the full-log section that reached the top of the stag
   let scrolled = 0;
   const rect = (top: number) => ({top, bottom: top + 300, left: 0, right: 0, width: 0, height: 300, x: 0, y: top, toJSON(){}}) as DOMRect;
   stage.getBoundingClientRect = () => rect(100);
+  // A stage far from its end, so the spy holds no picked section.
+  Object.defineProperty(stage, "scrollHeight", {configurable: true, value: 100000});
   $$(".fsec").forEach((s, i) => { s.getBoundingClientRect = () => rect(100 + i * 300 - scrolled); });
   const scrollTo = async (y: number) => {
     scrolled = y;
@@ -1266,6 +1268,7 @@ test("the scroll spy marks again when the full log's size changes without a scro
     let shift = 0;
     const rect = (top: number) => ({top, bottom: top + 300, left: 0, right: 0, width: 0, height: 300, x: 0, y: top, toJSON(){}}) as DOMRect;
     stage.getBoundingClientRect = () => rect(100);
+    Object.defineProperty(stage, "scrollHeight", {configurable: true, value: 100000});
     $$(".fsec").forEach((s, i) => { s.getBoundingClientRect = () => rect(100 + i * 300 - 599 + SPY_SLACK - shift); });
     const frame = async () => { await act(async () => { await new Promise(r => requestAnimationFrame(() => r(null))); }); await settle(1); };
     fireEvent.scroll(stage);
@@ -1279,6 +1282,46 @@ test("the scroll spy marks again when the full log's size changes without a scro
   } finally {
     vi.unstubAllGlobals();
   }
+});
+
+/* A short section at the end of a log never reaches the top of the stage.
+   The stage here is 600 tall and scrolled to its end, with the last
+   section's top at 400, so the spy alone would name the one before it. */
+test("a pick or a step onto a section that cannot reach the stage's top survives the scroll it causes", async () => {
+  recordScrolls();
+  const {hashes} = await bootCorpus();
+  await click(entry("AA1"));
+  await click(op("data-view", "full"));
+  const stage = $(".stage");
+  const secs = $$(".fsec");
+  const keys = secs.map(s => s.getAttribute("data-key")!);
+  const n = secs.length;
+  let scrolled = 0;
+  const rect = (top: number, height: number) => ({top, bottom: top + height, left: 0, right: 0, width: 0, height, x: 0, y: top, toJSON(){}}) as DOMRect;
+  stage.getBoundingClientRect = () => rect(100, 600);
+  secs.forEach((s, i) => { s.getBoundingClientRect = () => rect(100 + i * 300 - scrolled, 300); });
+  const end = (n - 1) * 300 - 300;
+  Object.defineProperty(stage, "clientHeight", {configurable: true, value: 600});
+  Object.defineProperty(stage, "scrollHeight", {configurable: true, value: end + 600});
+  const scrollTo = async (y: number) => {
+    scrolled = y;
+    stage.scrollTop = y;
+    fireEvent.scroll(stage);
+    await act(async () => { await new Promise(r => requestAnimationFrame(() => r(null))); });
+    await settle(1);
+  };
+  await pickSection(keys[n - 1]);
+  await scrollTo(end);
+  assert.equal(secVal(), keys[n - 1]);
+  assert.equal(last(hashes), "#t=AA1&s=" + keys[n - 1]);
+  // The reader's own scroll back up moves the mark again.
+  await scrollTo(end - 100);
+  assert.equal(secVal(), keys[n - 3]);
+  await scrollTo(end);
+  assert.equal(secVal(), keys[n - 2]);
+  await click(op("data-secstep", "1"));
+  await scrollTo(end);
+  assert.equal(secVal(), keys[n - 1]);
 });
 
 // The two builder checks of the vanilla page, held against the component

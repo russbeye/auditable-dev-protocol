@@ -336,11 +336,16 @@ function filterCounts(decisions: Ticket["decisions"]): Record<string, number> {
    the way the viewer's table of contents did. A section counts as in view
    once its top edge reaches the top of the stage's content. The mark is
    the section selector itself, so the selector, its state chit, and the
-   address all name the section the reader is in. */
+   address all name the section the reader is in. A section near the end
+   of a log may never reach the top. When the stage sits at its end and
+   the selected section is such a section in view, the selection stays, so
+   a pick or a step onto it holds until the reader scrolls back up. */
 const SPY_SLACK = 20;
-function useScrollSpy(on: boolean, onSpy: (key: string) => void){
+function useScrollSpy(on: boolean, selected: string | null, onSpy: (key: string) => void){
   const spy = useRef(onSpy);
   spy.current = onSpy;
+  const picked = useRef(selected);
+  picked.current = selected;
   useEffect(() => {
     if (!on) return;
     const stage = document.querySelector(".stage");
@@ -350,9 +355,14 @@ function useScrollSpy(on: boolean, onSpy: (key: string) => void){
       tick = false;
       const secs = [...document.querySelectorAll<HTMLElement>("#scrInspector .fsec")];
       if (!secs.length) return;
-      const top = stage.getBoundingClientRect().top + SPY_SLACK;
-      let key = secs[0].getAttribute("data-key");
-      for (const s of secs){ if (s.getBoundingClientRect().top <= top) key = s.getAttribute("data-key"); else break; }
+      const box = stage.getBoundingClientRect();
+      const top = box.top + SPY_SLACK;
+      let at = 0;
+      for (const [i, s] of secs.entries()){ if (s.getBoundingClientRect().top <= top) at = i; else break; }
+      const held = secs.findIndex(s => s.getAttribute("data-key") === picked.current);
+      const atEnd = stage.scrollTop + stage.clientHeight >= stage.scrollHeight - 1;
+      if (atEnd && held > at && secs[held].getBoundingClientRect().top < box.bottom) return;
+      const key = secs[at].getAttribute("data-key");
       if (key) spy.current(key);
     };
     const mark = () => { if (tick) return; tick = true; requestAnimationFrame(run); };
@@ -375,7 +385,7 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
   const promptSrc = t && corpus ? corpus.prompts[t.dir] : undefined;
   const pd = useMemoText(text);
   const prompt = useMemoPrompt(promptSrc);
-  useScrollSpy(view === "full" && !!t, act.onSpy);
+  useScrollSpy(view === "full" && !!t, sel.s, act.onSpy);
   useLayoutEffect(() => {
     if (jump.seq <= jumped.current) return;
     jumped.current = jump.seq;
