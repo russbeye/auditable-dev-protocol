@@ -6,6 +6,8 @@
 import {afterEach, test, vi} from "vitest";
 import assert from "node:assert/strict";
 import {createRequire} from "node:module";
+import fs from "node:fs";
+import path from "node:path";
 import {createElement} from "react";
 import {act, cleanup, fireEvent, render} from "@testing-library/react";
 import {App} from "../../src/app/App.tsx";
@@ -90,6 +92,7 @@ const click = async (el: Element) => { fireEvent.click(el); await settle(1); };
 const key = async (el: Element, k: string) => { fireEvent.keyDown(el, {key: k}); await settle(1); };
 const wids = () => $$(".wbrow").map(r => r.getAttribute("data-wid"));
 const isOn = (id: string) => $("#" + id).classList.contains("is-on");
+const marked = () => $$(".rentry").filter(r => r.classList.contains("is-sel")).map(r => r.getAttribute("data-key"));
 // React keeps its fiber on every element it renders. A failed equal on two
 // elements makes Node compare those fiber graphs in depth before it writes
 // its message, which never ends, so we compare identity and name the miss.
@@ -182,6 +185,34 @@ test("the theme toggle flips the attribute, the icon, and the stored key", async
   assert.equal(document.documentElement.getAttribute("data-theme"), "light");
   assert.equal(localStorage.getItem("adp-theme"), "light");
   assert.equal($("#ttIcon").textContent, "☀");
+});
+
+/* The pre-paint script in app.html sets the theme before React loads, so
+   the first paint never flashes the wrong theme. We run that inline script
+   itself against a stub storage, media query, and root element. */
+const PRE_PAINT = fs.readFileSync(path.join(import.meta.dirname, "..", "app.html"), "utf8")
+  .match(/<script>\n([\s\S]*?)<\/script>/)![1];
+function prePaint({stored = null as string | null, light = false, throws = false} = {}){
+  const attrs: Record<string, string> = {};
+  const storage = {getItem: (k: string) => { if (throws) throw new Error("blocked"); return k === "adp-theme" ? stored : null; }};
+  const win = {matchMedia: (q: string) => ({matches: light && q === "(prefers-color-scheme: light)"})};
+  const doc = {documentElement: {setAttribute: (k: string, v: string) => { attrs[k] = v; }}};
+  new Function("window", "localStorage", "document", PRE_PAINT)(win, storage, doc);
+  return attrs["data-theme"];
+}
+
+test("the pre-paint ladder honors a stored preference", () => {
+  assert.equal(prePaint({stored: "light"}), "light");
+  assert.equal(prePaint({stored: "dark", light: true}), "dark");
+});
+
+test("the pre-paint ladder falls back to the system preference", () => {
+  assert.equal(prePaint({light: true}), "light");
+  assert.equal(prePaint({stored: "sepia"}), "dark");
+});
+
+test("the pre-paint ladder lands on dark when storage is blocked", () => {
+  assert.equal(prePaint({throws: true, light: true}), "dark");
 });
 
 test("a served corpus fills the chit, the footer, and the rail", async () => {
@@ -363,6 +394,14 @@ test("an all-settled corpus says the filters hide it, and the closed chip shows 
   assert.deepEqual(wids(), ["OT-DD4-1"]);
 });
 
+test("the board marks an anchored watch's due text as dated and an unanchored one as prose", async () => {
+  await bootBoard();
+  await click(tabFor("watchboard"));
+  const cell = (text: string) => $$("#scrWatch td").find(td => td.textContent === text)!;
+  assert.equal(cell("2099-01-01").className, "mono nw");
+  assert.equal(cell("60 days after merge").className, "mono");
+});
+
 test("board links carry real hash hrefs, so the keyboard can reach them", async () => {
   await bootBoard();
   await click(tabFor("watchboard"));
@@ -513,6 +552,19 @@ test("a boot that failed honors its deep link when the corpus first answers", as
   assert.equal(hashes[hashes.length - 1], "#t=AA1&item=DL-002");
 });
 
+test("a boot that failed takes the default selection when the corpus first answers", async () => {
+  const live = liveCorpus(LISTING, TEXTS);
+  live.down = true;
+  const {feed, hashes} = await boot({fetch: live.fetch});
+  assert.equal($$(".rentry").length, 0);
+  live.down = false;
+  await act(async () => { feed.onopen!(); });
+  await settle();
+  const first = $$(".rentry")[0].getAttribute("data-key");
+  assert.deepEqual(marked(), [first]);
+  assert.equal(hashes[hashes.length - 1], "#t=" + first);
+});
+
 test("the live pill's status region is written only when its state changes", async () => {
   const live = liveCorpus(LISTING, TEXTS);
   const {feed} = await boot({fetch: live.fetch});
@@ -556,6 +608,32 @@ test("a bare shared id selects neither ticket", async () => {
   await boot({hash: "#t=A001", fetch: liveCorpus({root: "demo", files: ["A-001-one/audit-log.md", "A-001-two/audit-log.md"]},
     {"A-001-one/audit-log.md": shared("one"), "A-001-two/audit-log.md": shared("two")}).fetch});
   assert.equal($$(".rentry").some(r => r.classList.contains("is-sel")), false);
+});
+
+const SHARED_TEXTS: Record<string, string> = {};
+for (const w of ["one", "two"]) SHARED_TEXTS["A-001-" + w + "/audit-log.md"] =
+  LOG.replace("# Audit Log — AA1 alpha", "# Audit Log — " + w).replace(/OT-AA1-/g, "OT-A001-");
+const SHARED = {root: "demo", files: ["A-001-one/audit-log.md", "A-001-two/audit-log.md"]};
+
+test("a hash for the second shared-id ticket reopens it", async () => {
+  await boot({hash: "#t=A-001-two", fetch: liveCorpus(SHARED, SHARED_TEXTS).fetch});
+  assert.deepEqual(marked(), ["A-001-two"]);
+});
+
+test("a directory hash for a ticket whose id is now unique marks its rail row", async () => {
+  await boot({hash: "#t=A-001-two", fetch: liveCorpus({root: "demo", files: ["A-001-two/audit-log.md"]}, SHARED_TEXTS).fetch});
+  assert.deepEqual(marked(), ["A001"]);
+});
+
+test("board links on shared-id tickets land on their own directories", async () => {
+  const {hashes} = await boot({fetch: liveCorpus(SHARED, SHARED_TEXTS).fetch});
+  for (const word of ["one", "two"]){
+    await click(tabFor("watchboard"));
+    await click($$(".wbl").find(a => a.getAttribute("data-t") === "A-001-" + word && a.getAttribute("data-item") === "OT-A001-1")!);
+    assert.equal(isOn("scrInspector"), true);
+    assert.deepEqual(marked(), ["A-001-" + word]);
+    assert.equal(hashes[hashes.length - 1], "#t=A-001-" + word + "&item=OT-A001-1");
+  }
 });
 
 // ---- the header menu ----
