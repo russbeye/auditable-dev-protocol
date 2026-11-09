@@ -1324,6 +1324,38 @@ test("the scroll spy marks again when the full log's size changes without a scro
   }
 });
 
+/* A rail pick keeps the full log on, and the new ticket's log has not been
+   scrolled yet. Its size report must keep the section the pick opened, as
+   the first report on any full log does. Only the newest observer counts,
+   because a real one stops reporting once it is disconnected. */
+test("a rail pick in the full log starts the scroll spy over, so a size change before the next scroll keeps the selection", async () => {
+  const reports: (() => void)[] = [];
+  vi.stubGlobal("ResizeObserver", class {
+    cb: () => void;
+    constructor(cb: () => void){ this.cb = cb; }
+    observe(){ reports.push(this.cb); this.cb(); }
+    disconnect(){}
+  });
+  try {
+    // Two tickets that both hold a log, so the full log stays on through the pick.
+    await boot({fetch: liveCorpus(LISTING, TEXTS).fetch});
+    await click(entry("AA1"));
+    await click(op("data-view", "full"));
+    const frame = async () => { await act(async () => { await new Promise(r => requestAnimationFrame(() => r(null))); }); await settle(1); };
+    fireEvent.scroll($(".stage"));
+    await frame();
+    await click(entry("BB2"));
+    assert.ok($$(".fsec").length > 1, "the pick kept the full log on");
+    const opened = secVal();
+    // jsdom places every section at 0, so a spy run here would mark the last.
+    reports.at(-1)!();
+    await frame();
+    assert.equal(secVal(), opened);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 /* A short section at the end of a log never reaches the top of the stage.
    The stage here is 600 tall and scrolled to its end, with the last
    section's top at 400, so the spy alone would name the one before it. */
@@ -3593,7 +3625,10 @@ async function everyScreen(look: () => void){
   for (const s of S.TAB_SCREENS) { await tabTo(s); look(); }
   for (const t of rentries()){
     await tabTo("inspector");
+    // A rail pick keeps the view the last ticket used, so we choose the
+    // section view ourselves.
     await click(entry(t));
+    await click($('[data-view="section"]'));
     look();
     await click($('[data-view="full"]'));
     look();
@@ -3633,10 +3668,10 @@ test("no screen offers a file input, a paste field, or a drop target", async () 
 /* Everything the app paints outside a rendered document takes its classes
    from adp-shell.css. Rendered documents sit in .md, where the theme's
    document styles apply. Two theme classes are deliberate: .md itself, and
-   .sr-live, which hides New task's spoken verdict. Three classes carry no
+   .sr-live, which hides New task's spoken verdict. Four classes carry no
    style at all, because the handlers and the tests select by them. */
 const THEME_CLASSES = new Set(["md", "sr-live"]);
-const HOOK_CLASSES = new Set(["sth", "wbrow", "lgrow"]);
+const HOOK_CLASSES = new Set(["sth", "wbrow", "wrow", "lgrow"]);
 test("the app's screens use only adp-shell.css classes outside rendered documents", async () => {
   const css = fs.readFileSync(path.join(import.meta.dirname, "..", "adp-shell.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   const shell = new Set<string>();

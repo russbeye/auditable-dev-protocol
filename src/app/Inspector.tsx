@@ -340,9 +340,11 @@ function filterCounts(decisions: Ticket["decisions"]): Record<string, number> {
    address all name the section the reader is in. A section near the end
    of a log may never reach the top. When the stage sits at its end and
    the selected section is such a section in view, the selection stays, so
-   a pick or a step onto it holds until the reader scrolls back up. */
+   a pick or a step onto it holds until the reader scrolls back up. A rail
+   pick keeps the full log on, and the new ticket's log is still unread, so
+   the spy starts over for each ticket. */
 const SPY_SLACK = 20;
-function useScrollSpy(on: boolean, selected: string | null, onSpy: (key: string) => void){
+function useScrollSpy(on: boolean, ticket: string | undefined, selected: string | null, onSpy: (key: string) => void){
   const spy = useRef(onSpy);
   spy.current = onSpy;
   const picked = useRef(selected);
@@ -378,7 +380,7 @@ function useScrollSpy(on: boolean, selected: string | null, onSpy: (key: string)
     const screen = document.querySelector("#scrInspector");
     if (screen) resize.observe(screen);
     return () => { stage.removeEventListener("scroll", scroll); resize.disconnect(); };
-  }, [on]);
+  }, [on, ticket]);
 }
 
 function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, missNotice, fullClosed, decSort, iwSort, jump, jumped, act}: InspectorProps){
@@ -386,7 +388,7 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
   const promptSrc = t && corpus ? corpus.prompts[t.dir] : undefined;
   const pd = useMemoText(text);
   const prompt = useMemoPrompt(promptSrc);
-  useScrollSpy(view === "full" && !!t, sel.s, act.onSpy);
+  useScrollSpy(view === "full" && !!t, t?.dir, sel.s, act.onSpy);
   useLayoutEffect(() => {
     if (jump.seq <= jumped.current) return;
     jumped.current = jump.seq;

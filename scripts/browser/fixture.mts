@@ -86,7 +86,10 @@ export async function everyScreen(page: Page, url: string, look: (where: string)
   const keys = await page.locator(".rentry").evaluateAll(r => r.map(x => x.getAttribute("data-key")!));
   for (const k of keys){
     await go(page, "inspector");
+    // A rail pick keeps the view the last ticket used, so we choose the
+    // section view ourselves.
     await page.click(`.rentry[data-key="${k}"]`);
+    await page.click('[data-view="section"]');
     await look(k + " section");
     await page.click('[data-view="full"]');
     await look(k + " full log");

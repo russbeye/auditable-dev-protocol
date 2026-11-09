@@ -96,7 +96,7 @@ test("the scroll spy names the full-log section at the stage's top", async ({pag
    the corpus at ADP_LIVE_ROOT when it is set, so a developer can run it on
    a real repo. CI has no live corpus, so there it walks the fixture. */
 const THEME_CLASSES = new Set(["md", "sr-live"]);
-const HOOK_CLASSES = new Set(["sth", "wbrow", "lgrow"]);
+const HOOK_CLASSES = new Set(["sth", "wbrow", "wrow", "lgrow"]);
 test("every class painted outside a rendered document comes from adp-shell.css", async ({page}) => {
   test.setTimeout(300_000);
   const css = fs.readFileSync(path.join(SCRIPTS_DIR, "adp-shell.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
