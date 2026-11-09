@@ -2,8 +2,7 @@
    index document from (path, text) pairs and nothing else: no filesystem, no
    clock, no git state. Splitting and title matching come from adp-parser-lib,
    grammars and vocabularies from adp-index-lib, so the contract keeps one
-   owner per rule. The vanilla pages read it as the global `ADPIndexBuilder`
-   from the build in dist/. */
+   owner per rule. */
 import * as P from "./adp-parser-lib.ts";
 import * as I from "./adp-index-lib.ts";
 

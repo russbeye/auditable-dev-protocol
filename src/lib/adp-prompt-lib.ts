@@ -1,9 +1,7 @@
 /* adp-prompt-lib.ts — shared pure logic for the ADP prompt builder.
-   parseYAML, buildYaml, validate, the blank-document shape and the shared
-   constants, extracted from prompt-builder.html and later extended with
-   import reporting and folded scalars. Node runs this module as it stands,
-   which lets validate-prompt.mts check a prompt before npm ci. The vanilla
-   pages read it as the global `ADPPromptLib` from the build in dist/. */
+   parseYAML, buildYaml, validate, the blank-document shape, the shared
+   constants, import reporting, and folded scalars. Node runs this module as
+   it stands, which lets validate-prompt.mts check a prompt before npm ci. */
 
 const ARTIFACTS = ["problem_statement","knowledge_gap","recommendation_brief","premortem","decision_log","test_adversary","pr_summary","deployment_risk","obligation_tickets"];
 const FORMATS = ["code","patch","json","yaml","markdown","prose"];
@@ -455,9 +453,8 @@ function createStatusAnnouncer<V = number>(opts: StatusAnnouncerOptions<V>): Sta
   const debounceMs=opts.debounceMs;
   const setT: (fn: () => void, ms: number) => unknown=opts.setTimeout||setTimeout;
   const clearT: (timer: unknown) => void=opts.clearTimeout||clearTimeout as (timer: unknown) => void;
-  // Without a format option we keep the builder's wording, mirroring its
-  // visual pill. If the pill wording in prompt-builder.html changes, change
-  // this default with it.
+  // Without a format option we speak an issue count, in the words the
+  // builder's badge has always used.
   const format: (value: V) => string=opts.format||function(count){
     return count===0 ? "Valid" : count+" "+(count===1?"issue":"issues");
   };

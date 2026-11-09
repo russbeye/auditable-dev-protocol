@@ -1,7 +1,8 @@
 /* The builder's example document, in the state shape gather() produces. This
-   mirrors the EXAMPLE object in scripts/prompt-builder.html. If that example
-   changes, update this file to match, then regenerate the golden output from
-   the repo root and review the diff before committing:
+   mirrors exampleDocument() in src/lib/adp-prompt-lib.ts, and
+   prompt-lib-seams.test.js holds the two equal. If that example changes,
+   update this file to match, then regenerate the golden output from the repo
+   root and review the diff before committing:
 
      node -e "const l=require('./src/lib/adp-prompt-lib.ts'),s=require('./scripts/tests/fixtures/builder-example.js');require('fs').writeFileSync('scripts/tests/fixtures/builder-example.yaml',l.buildYaml(s))"
 */

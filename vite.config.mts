@@ -1,34 +1,10 @@
 import fs from "node:fs";
-import {build, type InlineConfig} from "vite";
 import {defineConfig} from "vitest/config";
-import {BUILD_MARK, SKILL_DIR, stamp} from "./scripts/adp-runtime.mts";
+import {BUILD_MARK, stamp} from "./scripts/adp-runtime.mts";
 
 let startStamp = "";
 
-/* The React app is an ES module, and rolldown builds an IIFE from one entry
-   only, so the app needs a build of its own. We run it from inside the
-   libraries build, so the launcher and the suite still run one command and
-   the stamp covers both bundles. Lib mode leaves process.env.NODE_ENV for a
-   consumer to set, and the page is that consumer, so we set it here. */
-const APP_BUILD: InlineConfig = {
-  configFile: false,
-  root: SKILL_DIR,
-  logLevel: "warn",
-  define: {"process.env.NODE_ENV": JSON.stringify("production")},
-  // Vite picks the JSX transform from the NODE_ENV the build inherits, and
-  // the suite and the launcher can hand it "test". The define above loads
-  // React's production build, which has no jsxDEV, so we pin the transform
-  // to match it.
-  oxc: {jsx: {development: false}},
-  build: {
-    outDir: "dist",
-    emptyOutDir: false,
-    minify: false,
-    lib: {entry: "src/app/main.tsx", formats: ["es"], fileName: () => "adp-app.js"},
-  },
-};
-
-export default defineConfig({
+export default defineConfig(({command}) => ({
   plugins: [{
     // The launcher compares this stamp with the sources to decide whether
     // the bundle is current. We take the stamp before the build reads any
@@ -38,21 +14,26 @@ export default defineConfig({
     name: "adp-build-stamp",
     apply: "build",
     buildStart(){ startStamp = stamp(); },
-    async writeBundle(){
-      await build(APP_BUILD);
-      fs.writeFileSync(BUILD_MARK, startStamp);
-    },
+    writeBundle(){ fs.writeFileSync(BUILD_MARK, startStamp); },
   }],
+  // Lib mode leaves process.env.NODE_ENV for a consumer to set, and the page
+  // is that consumer, so the build sets it. Vite picks the JSX transform from
+  // the NODE_ENV the build inherits, and the suite and the launcher can hand
+  // it "test". React's production build has no jsxDEV, so we pin the
+  // transform to match it. Both settings shape the shipped bundle, so we
+  // apply them to the build alone, and the suite transforms the app the way
+  // it transforms every other source.
+  ...(command === "build" ? {
+    define: {"process.env.NODE_ENV": JSON.stringify("production")},
+    oxc: {jsx: {development: false}},
+  } : {}),
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    // The vanilla pages and the test harnesses read this file, so we keep
-    // it readable. A stack trace from the page then names real functions.
+    // We keep the bundle readable, so a stack trace from the page names
+    // real functions.
     minify: false,
-    lib: {entry: "src/globals.ts", formats: ["iife"], name: "ADPLibs", fileName: () => "adp-libs.js"},
-    // The modules are strict by being modules. The bundle is a plain
-    // script, so it needs the directive to keep them strict.
-    rolldownOptions: {output: {strict: true}},
+    lib: {entry: "src/app/main.tsx", formats: ["es"], fileName: () => "adp-app.js"},
   },
   test: {
     include: ["scripts/tests/*.test.{js,mts}"],
@@ -61,4 +42,4 @@ export default defineConfig({
     // test's silenced console never hides another test's warnings.
     restoreMocks: true,
   },
-});
+}));

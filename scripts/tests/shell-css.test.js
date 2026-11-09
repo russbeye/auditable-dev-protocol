@@ -22,8 +22,8 @@ function classesIn(cssText){
   return out;
 }
 
-/* The declarations of one top-level rule, by exact selector text. The page
-   harness has no layout engine, so a layout rule is pinned here by what it
+/* The declarations of one top-level rule, by exact selector text. jsdom
+   has no layout engine, so a layout rule is pinned here by what it
    declares: an edit that drops the declaration fails a test instead of a
    browser check. At-rule blocks are stripped first, so a media override
    never reads as the rule it overrides. */
@@ -104,23 +104,6 @@ test("no page root in either sheet clips horizontal overflow", () => {
   }
 });
 
-test("the shell page and its tab strip use only adp-shell.css classes", () => {
-  const shell = classesIn(read("adp-shell.css"));
-  const html = fs.readFileSync(path.join(__dirname, "..", "mission-control.html"), "utf8");
-  const used = new Set();
-  for (const m of html.matchAll(/class="([^"]+)"/g)) {
-    m[1].split(/\s+/).forEach(c => used.add(c));
-  }
-  for (const m of S.tabsHtml("inspector").matchAll(/class="([^"]+)"/g)) {
-    m[1].split(/\s+/).forEach(c => used.add(c));
-  }
-  // The one deliberate theme class in shell markup: rendered document bodies
-  // are wrapped in .md, so adp-theme's document styles apply to parser-lib
-  // output. Everything else the shell paints, the shell sheet owns.
-  const allowed = new Set(["md"]);
-  const orphans = [...used].filter(c => !shell.has(c) && !allowed.has(c)).sort();
-  assert.deepEqual(orphans, []);
-});
 
 
 // The prompt view paints its cards from the shell sheet and borrows only the
@@ -265,13 +248,6 @@ test("the compact header folds the menu's children under one button, whatever th
   // The tabs stack in the panel, so a sixth tab adds a row, not width.
   assert.equal(declarationsOf(css, ".shell header.is-compact .tabs")["flex-direction"], "column");
   assert.equal(declarationsOf(css, ".shell header.is-compact .hdrmenu > .chit")["white-space"], "normal");
-});
-
-test("the folded builder grid lets the preview scroll instead of stretching the page", () => {
-  const html = read("prompt-builder.html");
-  const css = html.match(/<style>([\s\S]*?)<\/style>/)[1].replace(/@media \(/g, "@media(");
-  // A bare 1fr track keeps the yaml preview's min-content width as its floor.
-  assert.equal(mediaDeclarationsOf(css, "max-width:980px", ".grid")["grid-template-columns"], "minmax(0,1fr)");
 });
 
 test("the mono typeface and the one-line rule are separate classes", () => {

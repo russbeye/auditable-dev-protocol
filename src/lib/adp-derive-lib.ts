@@ -4,8 +4,7 @@
    today), with no DOM and no HTML, so Node tests exercise them directly and
    the later screens (watchboard, ledgers, calibration) consume the same
    vocabulary. Every date comparison takes today as an argument, because a
-   derivation that reads a clock cannot be replayed. The vanilla pages read
-   it as the global `ADPDeriveLib` from the build in dist/. */
+   derivation that reads a clock cannot be replayed. */
 import * as P from "./adp-parser-lib.ts";
 import * as I from "./adp-index-lib.ts";
 import type {Ticket, Decision, Watch, Section} from "./adp-index-lib.ts";

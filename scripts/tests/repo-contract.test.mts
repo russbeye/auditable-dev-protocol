@@ -42,7 +42,25 @@ test("SKILL.md launches mission control and validates through the Node scripts",
   const skill = fs.readFileSync(path.join(ROOT, "SKILL.md"), "utf8");
   assert.ok(skill.includes("node <skill-dir>/scripts/adp-launch.mts"), "launcher command");
   assert.ok(skill.includes("node <skill-dir>/scripts/validate-prompt.mts <file>"), "validator command");
-  for (const retired of ["adp-serve.py", "validate-prompt.py"]) assert.ok(!skill.includes(retired), retired);
+  for (const retired of ["adp-serve.py", "validate-prompt.py", ...RETIRED_PAGES]) assert.ok(!skill.includes(retired), retired);
+});
+
+/* The vanilla pages and the browser-globals bundle are gone, so no tracked
+   file may send a reader to one. Two kinds of file keep the names: the
+   frozen parity prompts, which are data the validator reads byte for byte,
+   and the launch test, which asserts that each retired route answers 404.
+   We build the names from parts, so this file does not match itself. */
+const RETIRED_PAGES = ["ADP-" + "Parser.html", "prompt-" + "builder.html", "mission-" + "control.html", "adp-" + "libs.js", "Artifact " + "Viewer"];
+const KEEPS_RETIRED = (f: string) => f.startsWith("scripts/tests/fixtures/parity/") || f === "scripts/tests/launch.test.mts";
+
+test("no tracked file outside the parity fixtures and the launch test names a retired page", () => {
+  const hits: string[] = [];
+  for (const f of tracked()){
+    if (KEEPS_RETIRED(f) || !fs.existsSync(path.join(ROOT, f))) continue;
+    const text = fs.readFileSync(path.join(ROOT, f), "utf8");
+    text.split("\n").forEach((line, i) => { if (RETIRED_PAGES.some(r => line.includes(r))) hits.push(`${f}:${i + 1}: ${line.trim()}`); });
+  }
+  assert.deepEqual(hits, []);
 });
 
 /* Corpus text reaches the page as React text, which React escapes. Only a

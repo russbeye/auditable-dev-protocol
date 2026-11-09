@@ -72,16 +72,3 @@ test("a hand-written linkless document validates clean and round-trips clean", (
   assert.deepEqual(lib.validate(reparsed), []);
   assert.equal(buildYaml(reparsed), y1);
 });
-
-// The importer names a defers block it cannot map, but naming a drop still
-// loses the data. This drives the real page through the vm harness and pins
-// the full contract: import, form state, and re-export in canonical bytes.
-test("the page re-exports an imported defers block in canonical form", async () => {
-  const {bootBuilder} = require("./builder-harness.js");
-  const h = bootBuilder();
-  const src = readFixture("parity/valid/protocol-defers-two.yaml");
-  h.importText(src);
-  const out = await h.exportYaml();
-  assert.equal(out, buildYaml(normalize(parseYAML(src))));
-  assert.deepEqual(parseYAML(out).protocol.defers, parseYAML(src).protocol.defers);
-});

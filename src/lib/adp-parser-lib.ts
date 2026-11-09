@@ -1,8 +1,6 @@
 /* adp-parser-lib.ts — shared pure rendering logic for the ADP artifact
    viewer. The markdown renderer, the section splitter with its key dedupe,
-   and the decision-log card pipeline, extracted from ADP-Parser.html.
-   Node runs this module as it stands, and the vanilla pages read it as the
-   global `ADPParserLib` from the build in dist/. */
+   and the decision-log card pipeline. Node runs this module as it stands. */
 
 /* =========================================================
    Hand-rolled markdown renderer (artifact subset)
