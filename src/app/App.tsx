@@ -54,7 +54,8 @@ function App({fetchFn, openFeed}: AppProps){
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   // The inspector's view, its decisions filter, its collapsed full-log
   // sections, and the notice for a section link that found nothing. A rail
-  // pick resets all four, because each one belongs to the ticket on show.
+  // pick resets the last three, because each one belongs to the ticket on
+  // show. The view stays, so a reader who walks the rail keeps the full log.
   const [view, setView] = useState<ViewMode>("section");
   const [dlFilter, setDlFilter] = useState("all");
   const [fullClosed, setFullClosed] = useState<ReadonlySet<string>>(() => new Set());
