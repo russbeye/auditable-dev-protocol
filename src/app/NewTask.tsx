@@ -164,6 +164,9 @@ function useNewTask(){
   // next render. The sequence number lets the same request repeat.
   const [focusTo, setFocusTo] = useState<{path: string; seq: number} | null>(null);
   const [yamlJump, setYamlJump] = useState(0);
+  // The last focus and yaml requests the screen served. The screen mounts
+  // again on each return, so it reads these to act on a request only once.
+  const served = useRef({focus: 0, yaml: 0});
   // The draft timer fires after the render that follows the edit, so it
   // reads the latest values here and never a stale closure.
   const latest = useRef<Draft>(first);
@@ -298,7 +301,7 @@ function useNewTask(){
     return next;
   });
 
-  return {doc, slug, issues, yaml, dir, showYaml, report, pending, copyLabel, clearLabel, closed, spoken, focusTo, yamlJump,
+  return {doc, slug, issues, yaml, dir, showYaml, report, pending, copyLabel, clearLabel, closed, spoken, focusTo, yamlJump, served,
     setField: (path: string, v: unknown) => edit(setPath(doc, path, v)),
     setSlug: (v: string) => { setSlug(v); setSlugEdited(!!v); draftSoon(); },
     startFrom, keep, clear, copy, download, toggleYaml, addRow, delRow, tickArtifact, toggleSection};
@@ -381,17 +384,20 @@ function NewTask({nt}: {nt: NewTaskState}){
   const act: Act = nt;
   // The keyboard lands in the row it asked for.
   useLayoutEffect(() => {
-    if (!nt.focusTo) return;
+    if (!nt.focusTo || nt.focusTo.seq === nt.served.current.focus) return;
+    nt.served.current.focus = nt.focusTo.seq;
     const row = nt.focusTo.path;
     const el = [...document.querySelectorAll<HTMLElement>("#scrNew .nt-in")].find(x => {
       const f = x.getAttribute("data-nf") || "";
       return f === row || f.startsWith(row + ".");
     });
     el?.focus();
-  }, [nt.focusTo]);
+  }, [nt.focusTo, nt.served]);
   useLayoutEffect(() => {
-    if (nt.yamlJump) document.getElementById("ntYaml")?.scrollIntoView?.();
-  }, [nt.yamlJump]);
+    if (!nt.yamlJump || nt.yamlJump === nt.served.current.yaml) return;
+    nt.served.current.yaml = nt.yamlJump;
+    document.getElementById("ntYaml")?.scrollIntoView?.();
+  }, [nt.yamlJump, nt.served]);
   return <><h2>new task</h2>
     <div id="ntOps"><Ops nt={nt}/></div>
     <div className="nt-grid"><div className="nt-form">

@@ -3417,3 +3417,23 @@ test("new task offers no open, paste, or example control and no drop hint", asyn
   assert.equal(document.getElementById("ntImport"), null);
   assert.ok(!$("#scrNew").textContent!.includes("drag & drop"));
 });
+
+// A focus request and a yaml scroll each serve the click that made them. A
+// later return to the screen mounts it again and must replay neither.
+test("a return to New task replays neither the last row's focus nor the yaml scroll", async () => {
+  const scrolled = recordScrolls();
+  await boot();
+  await click($("#newTaskBtn"));
+  await ntAdd("requirements");
+  same(document.activeElement, ntField("requirements.0.id"), "the new row did not take focus");
+  ntField("task.title").focus();
+  await ntOp("ntyaml");
+  assert.equal(scrolled.length, 1);
+  await tabTo("watchboard");
+  await click($("#newTaskBtn"));
+  assert.ok(document.activeElement !== ntField("requirements.0.id"), "the return replayed the row's focus");
+  assert.equal(scrolled.length, 1, "the return replayed the yaml scroll");
+  // The next request still acts once.
+  await ntAdd("requirements");
+  same(document.activeElement, ntField("requirements.1.id"), "a new request after the return did not take focus");
+});
