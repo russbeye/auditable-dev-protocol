@@ -1,7 +1,7 @@
 /* R12 in a real engine: Tab walks each screen in document order with a
    visible ring on every stop, New task's spoken verdict reaches its live
    region, and nothing moves under reduced motion. */
-import {everyScreen, expect, go, test, type Page} from "./fixture.mts";
+import {everyScreen, expect, go, open, test, type Page} from "./fixture.mts";
 
 test.use({viewport: {width: 1440, height: 900}});
 
@@ -20,14 +20,20 @@ const settle = (page: Page) => page.evaluate(() => new Promise(r => requestAnima
 
 /* The ring's look comes from the stylesheet or from the engine's own focus
    style, so we compare the focused control with itself unfocused. A change
-   to the outline, the box shadow, or the border counts as a ring. */
+   to the outline, the box shadow, or the border counts as a ring. The theme
+   eases a field's border color in over 0.12 s, so we finish every running
+   transition before each read, or we could compare two midway colors. The
+   header's blink never ends, so we leave animations alone. */
 const RING = ["outline-style", "outline-width", "outline-color", "box-shadow", "border-top-color"];
 async function ringOf(page: Page): Promise<string | null> {
   return page.evaluate(props => {
+    const done = () => document.getAnimations().forEach(x => { if (x instanceof CSSTransition) x.finish(); });
     const a = document.activeElement as HTMLElement;
+    done();
     const on = props.map(p => getComputedStyle(a).getPropertyValue(p));
     const ringed = getComputedStyle(a).outlineStyle !== "none" && parseFloat(getComputedStyle(a).outlineWidth) > 0;
     a.blur();
+    done();
     const off = props.map(p => getComputedStyle(a).getPropertyValue(p));
     a.focus({focusVisible: true} as FocusOptions);
     return ringed || on.some((v, i) => v !== off[i]) ? null : a.outerHTML.slice(0, 120);
@@ -63,6 +69,16 @@ test("Tab reaches every control in document order and shows a ring on each", asy
       });
       if (at.pos == null && !at.scroller){ faults.push(`${where}: Tab landed on ${at.html}`); break; }
       if (at.pos != null) seen.push(Number(at.pos));
+      // Focus that drops to the body between two reads means the app
+      // removed, hid, or disabled the control under it, so we name that
+      // control and its state rather than a missing ring.
+      const dropped = await page.evaluate(p => {
+        if (document.activeElement !== document.body) return null;
+        const e = p == null ? null : document.querySelector<HTMLElement>(`[data-tabpos="${p}"]`);
+        return !e ? "a control no longer in the page"
+          : `${e.outerHTML.slice(0, 120)}, connected ${e.isConnected}, visible ${e.checkVisibility()}, disabled ${e.matches(":disabled")}`;
+      }, at.pos);
+      if (dropped){ faults.push(`${where}: focus dropped to the body from ${at.html}, which is now ${dropped}`); break; }
       const bare = await ringOf(page);
       if (bare) faults.push(`${where}: no ring on ${bare}`);
     }
@@ -84,7 +100,7 @@ test("Tab reaches every control in document order and shows a ring on each", asy
 // OT-MC012-19 needs a screen reader. This test proves the text reaches the
 // region, which is what a reader would announce.
 test("New task's live region speaks the verdict after a start and after the task id is blanked", async ({page, server}) => {
-  await page.goto(server.url + "#t=FX091");
+  await open(page, server.url + "#t=FX091");
   await page.click('[data-op="startfrom"]');
   await expect(page.locator(".screen.is-on")).toHaveAttribute("data-s", "new task");
   const live = page.locator("#ntLive");

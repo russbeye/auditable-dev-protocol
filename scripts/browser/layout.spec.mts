@@ -1,7 +1,7 @@
 /* R11 in a real layout engine: at 720px nothing scrolls sideways, and at
    1290px a watch's window prose wraps while its ids and status words hold on
    one line. jsdom has no layout, so these checks live here. */
-import {everyScreen, expect, go, test} from "./fixture.mts";
+import {everyScreen, expect, go, open, test} from "./fixture.mts";
 
 test.describe("at 720px", () => {
   test.use({viewport: {width: 720, height: 900}});
@@ -21,8 +21,7 @@ test.describe("at 720px", () => {
   // OT-MC012-11. The header folds into its menu here, and the folded row
   // fits the window.
   test("the header folds and fits the window", async ({page, server}) => {
-    await page.goto(server.url);
-    await expect(page.locator("#liveTxt")).toHaveText("WATCHING");
+    await open(page, server.url);
     const hdr = page.locator(".shell header");
     await expect(hdr).toHaveClass(/is-compact/);
     expect(await hdr.evaluate(h => h.scrollWidth - h.clientWidth)).toBe(0);
@@ -35,8 +34,7 @@ test.describe("at 1920px", () => {
   test.use({viewport: {width: 1920, height: 900}});
 
   test("the header shows its full row on one line", async ({page, server}) => {
-    await page.goto(server.url);
-    await expect(page.locator("#liveTxt")).toHaveText("WATCHING");
+    await open(page, server.url);
     const hdr = page.locator(".shell header");
     await expect(hdr).not.toHaveClass(/is-compact/);
     const tops = await page.locator(".brand, #liveChit, #themeBtn, .mtab, #newTaskBtn").evaluateAll(els =>
@@ -51,7 +49,7 @@ test.describe("at 1290px", () => {
   // The MC-010 wrap. A line count comes from the client rects of the cell's
   // text, so we count lines the same way in every engine.
   test("a watch's window prose wraps while its ids and status stay on one line", async ({page, server}) => {
-    await page.goto(server.url);
+    await open(page, server.url);
     await go(page, "watchboard");
     const row = page.locator('.wbrow[data-wid="OT-BX001-1"]');
     const lines = (sel: string) => row.locator(sel).evaluate(el => {

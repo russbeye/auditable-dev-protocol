@@ -2,7 +2,7 @@
    ticket whose exit condition its result decides. */
 import fs from "node:fs";
 import path from "node:path";
-import {everyScreen, expect, fixtureRoot, freePort, startServer, TAB_SCREENS, test} from "./fixture.mts";
+import {everyScreen, expect, fixtureRoot, freePort, open, startServer, TAB_SCREENS, test} from "./fixture.mts";
 import {SCRIPTS_DIR} from "../adp-runtime.mts";
 
 test.use({viewport: {width: 1440, height: 900}});
@@ -13,9 +13,8 @@ test("the live chit returns from CACHED to WATCHING when the server restarts on 
   const port = await freePort();
   let s = await startServer(fixtureRoot(), port);
   try {
-    await page.goto(s.url);
+    await open(page, s.url);
     const chit = page.locator("#liveTxt");
-    await expect(chit).toHaveText("WATCHING");
     await s.stop();
     await expect(chit).toHaveText("CACHED");
     s = await startServer(fixtureRoot(), port);
@@ -37,9 +36,11 @@ test("a hostile log runs no script and leaves no live markup on any screen", asy
     if (found.length) live.push(`${where}: ${found.join(" | ")}`);
   };
   await everyScreen(page, server.url, look);
-  await page.goto(server.url + "#v=reviews&t=BX001&s=pr-review-PR1-20261109-r1.md");
+  await open(page, server.url + "#v=reviews&t=BX001&s=pr-review-PR1-20261109-r1.md");
+  await expect(page.locator("#scrReviews .dl-card").first()).toBeVisible();
   await look("BX001 round 1");
-  await page.goto(server.url + "#t=BX001&s=sec-decision-log");
+  await open(page, server.url + "#t=BX001&s=sec-decision-log");
+  await expect(page.locator(".stage .md").first()).toBeVisible();
   for (const a of await page.locator(".stage .md a").all()) await a.click({modifiers: ["Alt"], noWaitAfter: true}).catch(() => {});
   await look("BX001 after link clicks");
   expect(await page.evaluate(() => (window as unknown as {__adpHostile?: string}).__adpHostile)).toBeUndefined();
@@ -50,8 +51,9 @@ test("a hostile log runs no script and leaves no live markup on any screen", asy
 // OT-MC012-16, first half. A finding card's pills and a closure note sit in
 // contents spans, which must stay inline in every engine.
 test("a finding card's pills and its closure note stay on their lines", async ({page, server}) => {
-  await page.goto(server.url + "#v=reviews&t=BX001&s=pr-review-PR1-20261109-r1.md");
+  await open(page, server.url + "#v=reviews&t=BX001&s=pr-review-PR1-20261109-r1.md");
   const card = page.locator("#scrReviews .dl-card", {has: page.locator(".dl-pills")}).first();
+  await expect(card.locator(".dl-pills .pill")).toHaveCount(3);
   const tops = await card.locator(".dl-pills .pill").evaluateAll(els => els.map(e => Math.round(e.getBoundingClientRect().top)));
   expect(tops.length).toBe(3);
   expect(new Set(tops).size).toBe(1);
@@ -69,8 +71,9 @@ test("a finding card's pills and its closure note stay on their lines", async ({
 // OT-MC012-16, second half. The spy names the section whose top sits at the
 // stage's top, read from the selector the reader sees.
 test("the scroll spy names the full-log section at the stage's top", async ({page, server}) => {
-  await page.goto(server.url + "#t=BX001");
+  await open(page, server.url + "#t=BX001");
   await page.click('[data-view="full"]');
+  await expect(page.locator(".fsec").first()).toBeVisible();
   const keys = await page.locator(".fsec").evaluateAll(els => els.map(e => e.getAttribute("data-key")!));
   // The last sections cannot reach the stage's top, because the stage stops
   // scrolling at its end, so we check every section that can.

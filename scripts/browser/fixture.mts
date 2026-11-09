@@ -62,6 +62,16 @@ export async function go(page: Page, screen: string){
   await expect(page.locator(".screen.is-on")).toHaveAttribute("data-s", screen);
 }
 
+/* We load a page and wait until its first corpus lands. The header measures
+   itself once the corpus fills it, so a click before then can hit a tab that
+   the fold hides a moment later. The app reads the hash only at boot, and a
+   goto that changes only the hash never reloads, so we leave the page first. */
+export async function open(page: Page, url: string){
+  await page.goto("about:blank");
+  await page.goto(url);
+  await expect(page.locator("#liveTxt")).toHaveText("WATCHING");
+}
+
 export const TAB_SCREENS = ["inspector", "reviews", "watchboard", "ledgers", "calibration", "resume pack"];
 
 /* We visit what the jsdom walk in app-page.test.mts visits: the boot, each
@@ -69,8 +79,7 @@ export const TAB_SCREENS = ["inspector", "reviews", "watchboard", "ledgers", "ca
    closed group starts collapsed, so its tickets stay out of the walk unless
    the caller asks us to open every group first. */
 export async function everyScreen(page: Page, url: string, look: (where: string) => Promise<void>, openGroups = false){
-  await page.goto(url);
-  await expect(page.locator("#liveTxt")).toHaveText("WATCHING");
+  await open(page, url);
   await look("boot");
   for (const s of TAB_SCREENS){ await go(page, s); await look(s); }
   if (openGroups) for (const g of await page.locator(".railsec", {has: page.locator(".rcv", {hasText: "▸"})}).all()) await g.click();
