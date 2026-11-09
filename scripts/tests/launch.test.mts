@@ -232,7 +232,8 @@ test("an open event stream hears a log edit and a new task within 2 s, and nothi
     assert.equal(ev.res.headers.get("content-type"), "text/event-stream; charset=utf-8");
     assert.equal(ev.res.headers.get("cache-control"), "no-store");
     await new Promise(r => setTimeout(r, 1500));
-    assert.equal(ev.text, "");
+    // The stream opens with its retry field and then stays quiet.
+    assert.equal(ev.text, "retry: 1000\n\n");
     let t0 = Date.now();
     fs.appendFileSync(path.join(root, ".adp", "T-001", "audit-log.md"), "\n## Decision Log\n", "utf8");
     assert.ok(await ev.waitFor("data: change\n\n", 2000), "no event within 2 s of the edit");

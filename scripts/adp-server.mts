@@ -1,6 +1,6 @@
 /* The mission control server for one repo.
 
-   Usage: node adp-server.mts <repo-root> <state-file>
+   Usage: node adp-server.mts <repo-root> <state-file> [port]
 
    The launcher starts this process and never talks to it except over HTTP.
    We bind 127.0.0.1 on a free port, then write the state file the launcher
@@ -13,9 +13,12 @@ import http from "node:http";
 import path from "node:path";
 import {DIST_DIR, PACKS_DIR, SCRIPTS_DIR, stamp, type Health, type State} from "./adp-runtime.mts";
 
-const [rootArg, stateFile] = process.argv.slice(2);
-if (!rootArg || !stateFile){
-  process.stderr.write("usage: adp-server.mts <repo-root> <state-file>\n");
+// The launcher never passes a port. The browser tests pass one, so a server
+// they restart comes back on the port that the open page already watches.
+const [rootArg, stateFile, portArg = "0"] = process.argv.slice(2);
+const listenPort = Number(portArg);
+if (!rootArg || !stateFile || !Number.isInteger(listenPort) || listenPort < 0 || listenPort > 65535){
+  process.stderr.write("usage: adp-server.mts <repo-root> <state-file> [port]\n");
   process.exit(2);
 }
 const root = fs.realpathSync.native(rootArg);
@@ -123,10 +126,14 @@ function listen(req: http.IncomingMessage, res: http.ServerResponse){
     listeners.delete(res);
     if (!listeners.size && checker){ clearInterval(checker); checker = null; }
   });
-  // The page reloads the corpus when the stream opens, so the headers go out
-  // now rather than with the first change.
+  // The page reloads the corpus when the stream opens, so the stream opens
+  // now rather than with the first change. Firefox fires open only once the
+  // body brings a byte, so we send a retry field, which no page reads as an
+  // event. Without it, a Firefox page that reconnects stays CACHED until the
+  // corpus next changes. The field also asks for a reconnect after one
+  // second, where the engines' own defaults run from three to five.
   res.writeHead(200, {"Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store"});
-  res.flushHeaders();
+  res.write("retry: 1000\n\n");
 }
 
 function route(req: http.IncomingMessage, res: http.ServerResponse){
@@ -194,7 +201,7 @@ const server = http.createServer((req, res) => {
     else res.destroy();
   }
 });
-server.listen(0, "127.0.0.1", () => {
+server.listen(listenPort, "127.0.0.1", () => {
   const addr = server.address();
   if (!addr || typeof addr === "string") process.exit(1);
   const state: State = {root, port: addr.port, pid: process.pid, stamp: myStamp};
