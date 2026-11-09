@@ -3361,24 +3361,34 @@ test("a confirmed clear takes a pending question with the form", async () => {
 });
 
 // The verdict's spoken twin. The region speaks a change once the reader
-// pauses, and never the state the screen opened with.
-test("the live region speaks the verdict after an edit that flips it, and not before", async () => {
+// pauses, and a start from a ticket's prompt speaks the verdict it loads.
+// A boot and a restored draft speak nothing.
+test("the live region speaks the verdict after an edit or a start that flips it, and not before", async () => {
   const ctx = await bootPrompt();
-  await startFrom(ctx);
+  ntTimers();
+  await click($("#newTaskBtn"));
   const live = () => $("#ntLive");
   assert.equal(live().getAttribute("aria-live"), "polite");
+  await advance(1000);
   assert.equal(live().textContent, "");
-  ntTimers();
-  await ntSet("task.id", "");
+  // A start on a blank form loads a valid prompt, and the region says so
+  // once the pause ends.
+  await startFrom(ctx);
   await advance(799);
   assert.equal(live().textContent, "");
+  await advance(1);
+  assert.equal(live().textContent, "Valid");
+  await ntSet("task.id", "");
+  await advance(799);
+  assert.equal(live().textContent, "Valid");
   await advance(1);
   assert.equal(live().textContent, "1 protocol check unmet");
   // An edit that keeps the verdict says nothing new.
   await ntSet("task.title", "still valid otherwise");
   await advance(800);
   assert.equal(live().textContent, "1 protocol check unmet");
-  await ntSet("task.id", "GROW-1");
+  // A start that replaces a form in progress speaks the verdict it loads too.
+  await startFrom(ctx);
   await advance(800);
   assert.equal(live().textContent, "Valid");
 });
