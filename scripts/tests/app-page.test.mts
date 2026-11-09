@@ -3622,7 +3622,10 @@ test("no screen offers a file input, a paste field, or a drop target", async () 
         if (e.defaultPrevented) assert.fail(`${type} on <${target.tagName.toLowerCase()} class="${target.className}"> was cancelled`);
       }
   });
-  assert.ok(screens > S.TAB_SCREENS.length + 2, "the walk reached every ticket");
+  // The boot, each tab, two views of each ticket, and New task.
+  const tickets = rentries().length;
+  assert.ok(tickets > 1, "the fixture corpus holds more than one ticket");
+  assert.equal(screens, 1 + S.TAB_SCREENS.length + 2 * tickets + 1, "the walk reached every ticket");
 });
 
 // ---- the shell sheet owns the app's classes ----
