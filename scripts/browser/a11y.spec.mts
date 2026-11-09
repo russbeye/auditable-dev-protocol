@@ -41,6 +41,9 @@ async function ringOf(page: Page): Promise<string | null> {
 }
 
 test("Tab reaches every control in document order and shows a ring on each", async ({page, server}) => {
+  // The walk presses Tab once per control on every screen, which runs past
+  // the default 30 s in CI's WebKit.
+  test.setTimeout(180_000);
   const faults: string[] = [];
   await everyScreen(page, server.url, async where => {
     await settle(page);
