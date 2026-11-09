@@ -1,5 +1,5 @@
 /* Mission control as one React tree: the header, the rail, the screens, and
-   the footer. New task renders empty until its component exists. */
+   the footer. */
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from "react";
 import * as B from "../lib/adp-index-builder-lib.ts";
 import * as D from "../lib/adp-derive-lib.ts";
@@ -11,6 +11,7 @@ import type {FetchFn, HashSelection, Pack, RailModelGroup, Screen, SortState, Vi
 import {Inspector, promptOf, resolveSection, type InspectorActions} from "./Inspector.tsx";
 import {Calibration, Ledgers} from "./Ledgers.tsx";
 import {useLiveCorpus, type EventFeed} from "./live.ts";
+import {NewTask, useNewTask} from "./NewTask.tsx";
 import {PackScreen} from "./Pack.tsx";
 import {Rail} from "./Rail.tsx";
 import {Reviews, groupsOf, resolveRound, type ReviewsActions} from "./Reviews.tsx";
@@ -84,6 +85,8 @@ function App({fetchFn, openFeed}: AppProps){
   const [packs, setPacks] = useState<Pack[] | null>(null);
   const [selPack, setSelPack] = useState<string | null>(null);
   const [copyLabel, setCopyLabel] = useState<string | null>(null);
+  // New task keeps its form here, so a tab switch never drops a draft.
+  const nt = useNewTask();
   useEffect(() => {
     let alive = true;
     S.loadPacks(fetchFn).then(p => { if (alive) setPacks(p); });
@@ -330,7 +333,10 @@ function App({fetchFn, openFeed}: AppProps){
     onRound: openRound,
     // The spy names the section the reader scrolled to, and the address
     // follows it. It never scrolls, so it cannot fight the reader's wheel.
-    onSpy: key => setSel(prev => prev.s === key ? prev : {...prev, s: key, item: null})
+    onSpy: key => setSel(prev => prev.s === key ? prev : {...prev, s: key, item: null}),
+    // A ticket's prompt is the one way a written prompt reaches the form.
+    // New task comes forward with its report or its question.
+    onStartFrom: (text, source) => { nt.startFrom(text, source); setScreen("new task"); }
   };
   const reviewsActions: ReviewsActions = {...panelActions,
     onRound: openRound,
@@ -397,6 +403,7 @@ function App({fetchFn, openFeed}: AppProps){
             : s === "resume pack" ? <PackScreen packs={packs} sel={selPack} corpus={corpus} today={today} t={selTicket}
               advisories={advisories} bootNotice={bootNotice} copyLabel={copyLabel}
               onPick={name => { setSelPack(name); setCopyLabel(null); }} onCopy={copyPack}/>
+            : s === "new task" ? <NewTask nt={nt}/>
             : null}
         </section>)}
       </main>

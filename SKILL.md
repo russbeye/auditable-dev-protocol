@@ -175,7 +175,7 @@ browser (`xdg-open`, `open`, or `start`, whichever the platform has):
 
 ```
 node <skill-dir>/scripts/adp-launch.mts
-# prints e.g. http://127.0.0.1:38393/mission-control.html
+# prints e.g. http://127.0.0.1:38393/app.html
 ```
 
 The launcher prints the URL of the one server for this repo. It reuses a live server, or starts one

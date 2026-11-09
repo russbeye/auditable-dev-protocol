@@ -52,7 +52,7 @@ Invoke the skill with a request in hand and it offers to draft a filled template
 
 ## Browser tools
 
-Two pages run the template and its output. The mission control server serves both, so open them through the URL `scripts/adp-launch.mts` prints, with the page name in place of `mission-control.html`. The pages read the libraries from the build in `dist/`, which the launcher writes, so a page opened from disk by hand finds no libraries.
+Two pages run the template and its output. The mission control server serves both, so open them through the URL `scripts/adp-launch.mts` prints, with the page name in place of `app.html`. The pages read the libraries from the build in `dist/`, which the launcher writes, so a page opened from disk by hand finds no libraries.
 
 - **Prompt Builder** (`scripts/prompt-builder.html`) fills the template through a form instead of a text editor. Paste an existing `prompt.yaml` to import it, or load the example, then copy or download the result. It reports any keys it does not recognize.
 - **Artifact Viewer** (`scripts/ADP-Parser.html`) renders the protocol's markdown output and is the run's observability layer. The mission control server serves it at `ADP-Parser.html?file=/corpus/<task-id>/audit-log.md`, and the page re-renders on every append. The page also supports Open & watch file (Chromium), paste, and drop.

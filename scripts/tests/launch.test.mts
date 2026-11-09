@@ -48,7 +48,7 @@ async function launch(root: string, tmp: string): Promise<string> {
   return r.stdout.trim();
 }
 
-const baseOf = (url: string) => url.replace(/\/mission-control\.html$/, "");
+const baseOf = (url: string) => url.replace(/\/app\.html$/, "");
 const health = async (url: string) => (await fetch(baseOf(url) + "/health")).json();
 
 function stateDirIn(tmp: string): string {
@@ -78,7 +78,7 @@ beforeAll(async () => {
 });
 
 test("the launcher prints the mission control URL and nothing else", () => {
-  assert.match(firstStdout, /^http:\/\/127\.0\.0\.1:\d+\/mission-control\.html\n$/);
+  assert.match(firstStdout, /^http:\/\/127\.0\.0\.1:\d+\/app\.html\n$/);
 });
 
 for (const route of ["/adp-shell.css", "/mission-control.html", "/ADP-Parser.html", "/adp-libs.js", "/app.html", "/adp-app.js", "/corpus.json",
@@ -122,6 +122,33 @@ test("/corpus/ refuses a symlink that leaves the .adp directory", {skip: !POSIX}
   fs.symlinkSync(path.join(repo, "secret.txt"), path.join(repo, ".adp", "T-001", "link.md"));
   const res = await fetch(base + "/corpus/T-001/link.md");
   assert.equal(res.status, 404);
+});
+
+// Mode 000 stops only a process without root's override, so the test skips
+// where permissions mean nothing.
+const UNREADABLE_OK = POSIX && process.getuid?.() !== 0;
+test("an unreadable corpus file or directory fails its own request and leaves the server up", {skip: !UNREADABLE_OK}, async () => {
+  const r = makeRepo("unreadable-repo");
+  fs.mkdirSync(path.join(r, ".adp", "U-001"));
+  fs.mkdirSync(path.join(r, ".adp", "U-002"));
+  const file = path.join(r, ".adp", "U-001", "prompt.yaml"), dir = path.join(r, ".adp", "U-002");
+  fs.writeFileSync(file, "task:\n  id: U-001\n");
+  fs.writeFileSync(path.join(dir, "audit-log.md"), "# U-002\n");
+  fs.chmodSync(file, 0o000);
+  fs.chmodSync(dir, 0o000);
+  try {
+    const url = await launch(r, fs.mkdtempSync(path.join(sandbox, "tmp-")));
+    await track(url);
+    const b = baseOf(url);
+    assert.equal((await fetch(b + "/corpus/U-001/prompt.yaml")).status, 500);
+    assert.equal((await fetch(b + "/health")).status, 200);
+    // The listing skips the directory it cannot read and keeps the rest.
+    assert.deepEqual((await (await fetch(b + "/corpus.json")).json()).files, ["T-001/audit-log.md", "U-001/prompt.yaml"]);
+    assert.equal((await fetch(b + "/health")).status, 200);
+  } finally {
+    fs.chmodSync(file, 0o600);
+    fs.chmodSync(dir, 0o700);
+  }
 });
 
 test("/packs.json lists every shipped .pack.md, sorted", async () => {

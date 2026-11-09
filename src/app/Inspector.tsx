@@ -264,6 +264,7 @@ type InspectorActions = PanelActions & {
   onExpand(open: boolean, keys: string[]): void;
   onRound(tok: string, file: string): void;
   onSpy(key: string): void;
+  onStartFrom(text: string, source: string): void;
 };
 type InspectorProps = {
   corpus: Corpus | null;
@@ -460,7 +461,12 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
       {card ? <Html as="div" className="md" html={P.renderDLCard(card)}/> : null}
     </DocPane>;
   } else if (sel.s === PROMPT_KEY){
-    pane = <DocPane heading="prompt.yaml" notice={missNotice || promptNotice(prompt!)}><PromptBody pr={prompt!}/></DocPane>;
+    // A prompt that did not parse still gets the action, so New task can
+    // say why it took nothing.
+    const pr = prompt!;
+    const start = pr.state === "unreadable" ? null : <div className="mops">
+      <button type="button" className="op op-acc" data-op="startfrom" onClick={() => act.onStartFrom(pr.text, t.dir + "/prompt.yaml")}>start from this prompt</button></div>;
+    pane = <DocPane heading="prompt.yaml" notice={missNotice || promptNotice(pr)} action={start}><PromptBody pr={pr}/></DocPane>;
   } else pane = sectionPane(entries.find(x => x.key === sel.s) || entries[0]);
 
   if (view !== "full"){
