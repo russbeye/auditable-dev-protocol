@@ -49,7 +49,11 @@ function corpus(): string | null {
 function corpusFiles(dir: string): string[] {
   const out: string[] = [];
   const walk = (d: string) => {
-    for (const e of fs.readdirSync(d, {withFileTypes: true})){
+    // A directory we cannot read has no file we could serve, so the listing
+    // goes on without it rather than failing the whole corpus.
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(d, {withFileTypes: true}); } catch { return; }
+    for (const e of entries){
       const p = path.join(d, e.name);
       if (e.isDirectory()) walk(p);
       else if (e.isFile()) out.push(path.relative(dir, p).split(path.sep).join("/"));
@@ -180,7 +184,16 @@ function route(req: http.IncomingMessage, res: http.ServerResponse){
   return notFound(res, "not found");
 }
 
-const server = http.createServer(route);
+/* A file we cannot read, or one removed between its check and its read,
+   throws inside route(). Uncaught, that error ends the process and blanks
+   every open page, so the one request fails and the server stays up. */
+const server = http.createServer((req, res) => {
+  try { route(req, res); }
+  catch {
+    if (!res.headersSent) send(res, 500, "text/plain; charset=utf-8", "unreadable\n");
+    else res.destroy();
+  }
+});
 server.listen(0, "127.0.0.1", () => {
   const addr = server.address();
   if (!addr || typeof addr === "string") process.exit(1);

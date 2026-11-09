@@ -42,6 +42,7 @@ const BASELINE = JSON.parse(readFixture("screen-baseline.json")) as Record<strin
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  fakeTimeouts = false;
   history.replaceState(null, "", "/");
 });
 
@@ -80,17 +81,23 @@ function liveCorpus(listing: {root: string; files: string[]}, texts: Record<stri
   return live;
 }
 
+/* A test that fakes the timeouts sets this flag, because a zero timeout
+   then never fires. settle flushes the microtasks alone in that mode. */
+let fakeTimeouts = false;
 const settle = async (turns = 8) => {
-  for (let i = 0; i < turns; i++) await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+  for (let i = 0; i < turns; i++)
+    await act(async () => { await (fakeTimeouts ? Promise.resolve() : new Promise(r => setTimeout(r, 0))); });
 };
 
-type BootOpts = {fetch?: FetchFn; hash?: string; now?: number};
-async function boot({fetch = () => new Promise<FetchResponse>(() => {}), hash = "", now = NOW}: BootOpts = {}){
+// A draft is the text New task finds under its storage key at boot.
+type BootOpts = {fetch?: FetchFn; hash?: string; now?: number; draft?: string};
+async function boot({fetch = () => new Promise<FetchResponse>(() => {}), hash = "", now = NOW, draft}: BootOpts = {}){
   vi.useFakeTimers({toFake: ["Date"]});
   vi.setSystemTime(now);
   history.replaceState(null, "", "/" + hash);
   document.documentElement.setAttribute("data-theme", "dark");
   localStorage.clear();
+  if (draft != null) localStorage.setItem("adp-mc-draft", draft);
   const hashes: string[] = [];
   const real = history.replaceState.bind(history);
   vi.spyOn(history, "replaceState").mockImplementation((d, u, url) => { hashes.push(String(url)); real(d, u, url); });
@@ -138,7 +145,7 @@ test("the app's watchboard state shows what the vanilla page showed, region for 
    the comparison takes exactly these entries out of each inspector state
    and fails when the baseline lacks one. Every other entry must match. */
 const REMOVED_OPS = {text: ["⌖ open", "↻ reload", "⌨ paste", "drag & drop .md anywhere"], attrs: ["title=pick audit logs to open"]};
-function withoutOps(r: Region): Region {
+function withoutOps(r: Region, gone: Region = REMOVED_OPS): Region {
   const drop = (list: string[], gone: string[]) => {
     const out = list.slice();
     for (const g of gone){
@@ -148,7 +155,18 @@ function withoutOps(r: Region): Region {
     }
     return out;
   };
-  return {text: drop(r.text, REMOVED_OPS.text), attrs: drop(r.attrs, REMOVED_OPS.attrs)};
+  return {text: drop(r.text, gone.text), attrs: drop(r.attrs, gone.attrs)};
+}
+/* The prompt pane holds one control the vanilla page lacked: "start from
+   this prompt", the one way a written prompt reaches New task. We take that
+   entry out of the app's render of a prompt state, and fail when the app
+   lacks it. */
+const START_FROM = "start from this prompt";
+function withoutStart(snap: Snapshot): Snapshot {
+  const text = snap.main!.text.slice(), i = text.indexOf(START_FROM);
+  assert.ok(i >= 0, "the prompt pane lacks " + START_FROM);
+  text.splice(i, 1);
+  return {...snap, main: {...snap.main!, text}};
 }
 const tabTo = (name: string) => click(tabFor(name));
 const rentries = () => $$(".rentry").map(r => r.getAttribute("data-key")!);
@@ -170,7 +188,8 @@ test("the app's inspector shows what the vanilla page showed, for every section 
       await pickSection(s);
       const k = "inspector|" + t + "|section|" + s, want = BASELINE[k];
       assert.ok(want, "the baseline has no state " + k);
-      assert.deepEqual(snapshot(document), {...want, main: withoutOps(want.main!)}, k);
+      const got = s === "prompt" ? withoutStart(snapshot(document)) : snapshot(document);
+      assert.deepEqual(got, {...want, main: withoutOps(want.main!)}, k);
       seen.push(k);
     }
     await click($('[data-view="full"]'));
@@ -2491,4 +2510,940 @@ test("the app closes its event stream when it unmounts", async () => {
   const {feed} = await bootBoard();
   cleanup();
   assert.equal(feed.closed, true);
+});
+
+// ---- New task ----
+
+const GOLDEN = readFixture("builder-example.yaml");
+const {bootBuilder} = require("./builder-harness.js") as {bootBuilder(): {
+  click(el: unknown): Promise<void>; $(sel: string): {value: string} & Record<string, unknown>;
+  addRow(name: string): Promise<void>; fireInput(el: unknown): void; listEls(name: string): {querySelector(s: string): {value: string}}[];
+  importText(t: string): Promise<void>; exportYaml(): Promise<string>}};
+// The ticket the prompt tests start from. Its prompt is the whole ticket,
+// so the inspector opens on the prompt pane.
+const PFILE = "20260618-GROW6687-email-validation/prompt.yaml";
+const stamped = (d: PL.PromptDocument) => { d.schema_version = "1.0"; return d; };
+const ntField = (nf: string) => $$("#scrNew .nt-in").find(el => el.getAttribute("data-nf") === nf) as HTMLInputElement;
+const ntOp = (name: string) => click($$("#scrNew .op").find(o => o.getAttribute("data-op") === name)!);
+const ntType = async (el: Element, value: string) => { fireEvent.change(el, {target: {value}}); await settle(1); };
+const ntSet = (nf: string, value: string) => ntType(ntField(nf), value);
+const ntOps = () => $("#ntOps").textContent!;
+const ntSide = () => $("#ntSide");
+const ntChecks = () => $$("#ntSide code").map(c => c.textContent!);
+const ntAdd = (list: string) => click($$(".nt-add").find(b => b.getAttribute("data-nadd") === list)!);
+const ntChip = (a: string) => $$("#scrNew input").find(i => i.getAttribute("data-nart") === a) as HTMLInputElement;
+const ntSwitch = (k: string) => $$("#scrNew input").find(i => i.getAttribute("data-nf") === "protocol." + k) as HTMLInputElement;
+const ticked = () => $$("#scrNew input").filter(i => (i as HTMLInputElement).checked && i.getAttribute("data-nart")).map(i => i.getAttribute("data-nart"));
+const draft = () => JSON.parse(localStorage.getItem("adp-mc-draft")!);
+async function preview(){
+  if (!document.getElementById("ntYamlPre")) await ntOp("ntyaml");
+  return $("#ntYamlPre").textContent!;
+}
+// The timers New task arms: the draft pause, the clear window, and the copy
+// label. Date stays at the boot's fixed day.
+function ntTimers(){
+  vi.useFakeTimers({toFake: ["Date", "setTimeout", "clearTimeout"]});
+  vi.setSystemTime(NOW);
+  fakeTimeouts = true;
+}
+// A second boot in one test needs the first one's spies and timers gone.
+function reboot(){
+  cleanup();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+  fakeTimeouts = false;
+}
+const advance = (ms: number) => act(async () => { vi.advanceTimersByTime(ms); });
+const today = () => S.localDate();
+
+/* A corpus with one prompt-only ticket. A test changes the prompt's text,
+   and the server's event brings the new text in, the way an edit on disk
+   reaches a served page. */
+async function bootPrompt(text = GOLDEN, opts: BootOpts = {}){
+  const live = liveCorpus({root: "demo", files: [PFILE]}, {[PFILE]: text});
+  const b = await boot({fetch: live.fetch, ...opts});
+  return {...b, live};
+}
+type PromptBoot = Awaited<ReturnType<typeof bootPrompt>>;
+async function startFrom(ctx: PromptBoot, text?: string, answer: "replace" | "keep" | null = "replace"){
+  if (text != null){
+    ctx.live.texts[PFILE] = text;
+    await act(async () => { ctx.feed.onmessage!(); });
+    await settle();
+  }
+  await tabTo("inspector");
+  await click(op("data-op", "startfrom"));
+  if (answer === "replace" && document.getElementById("ntReplace")) await click($("#ntReplace"));
+  if (answer === "keep" && document.getElementById("ntKeep")) await click($("#ntKeep"));
+}
+
+// R8, the write half. The vanilla ops row held four controls that loaded a
+// prompt from outside .adp, and the app has none of them.
+const REMOVED_NT_OPS = {text: ["↑ open yaml", "⌨ paste", "load example", "drag & drop .yaml anywhere"], attrs: ["title=open a prompt.yaml"]};
+test("the app's new task screen shows what the vanilla page showed, less the four load controls", async () => {
+  await baselineBoot();
+  await click($("#newTaskBtn"));
+  const want = BASELINE["new task"];
+  assert.deepEqual(snapshot(document), {...want, main: withoutOps(want.main!, REMOVED_NT_OPS)});
+});
+
+test("the new task screen carries the standalone's field set and boots with today's date", async () => {
+  const ctx = await bootPrompt(GOLDEN, {hash: "#v=new%20task"});
+  assert.equal(isOn("scrNew"), true);
+  assert.equal($("#newTaskBtn").classList.contains("is-on"), true);
+  await startFrom(ctx);
+  const nfs = $$("#scrNew .nt-in").map(el => el.getAttribute("data-nf")).filter(Boolean) as string[];
+  for (const k of ["task.id", "task.title", "task.author", "task.date", "preamble", "role.lens",
+    "role.priorities.0", "prompt", "constraints.out_of_scope.0", "constraints.must_not.0",
+    "context.background", "context.references.0.path", "context.references.0.lines",
+    "context.references.0.note", "context.links.0", "lessons_learned.0.context",
+    "lessons_learned.0.takeaway", "output.format", "output.destination", "output.structure",
+    "requirements.0.id", "requirements.0.statement", "requirements.0.verify",
+    "protocol.defers.0.phase", "protocol.defers.0.reason"]) assert.ok(nfs.includes(k), k);
+  assert.equal(["apply", "stake_single_recommendation", "log_assumptions", "flag_low_confidence"].filter(k => ntSwitch(k)).length, 4);
+  assert.deepEqual($$("#scrNew input").map(i => i.getAttribute("data-nart")).filter(Boolean), PL.ARTIFACTS);
+  // Every path names a key the lib's document holds.
+  const doc = stamped(PL.exampleDocument()) as unknown as Record<string, unknown>;
+  for (const nf of nfs)
+    assert.notEqual(nf.split(".").reduce<unknown>((o, k) => o == null ? undefined : (o as Record<string, unknown>)[k], doc), undefined, nf);
+  reboot();
+  // A fresh boot is blank apart from the date, and the badge counts the blank.
+  const {hashes} = await bootPrompt();
+  await click($("#newTaskBtn"));
+  assert.equal(ntField("task.date").value, today());
+  assert.equal(ntField("task.id").value, "");
+  assert.match(ntSide().textContent!, /7 protocol checks unmet/);
+  assert.equal(ntChecks()[0], "task.id");
+  assert.match(ntSide().textContent!, /— required/);
+  assert.match(last(hashes), /^#v=new%20task/);
+});
+
+// The ticket's prompt.yaml becomes the draft, field for field.
+test("start from this prompt loads the ticket's prompt.yaml into a new draft equal to its parsed fields", async () => {
+  const ctx = await bootPrompt();
+  assert.equal(isOn("scrInspector"), true);
+  await startFrom(ctx, undefined, null);
+  assert.equal(isOn("scrNew"), true);
+  const want = stamped(PL.normalize(PL.parseYAML(GOLDEN)));
+  assert.deepEqual(draft().doc, want);
+  assert.equal(draft().slug, "");
+  assert.match(ntOps(), new RegExp(`imported ${PFILE} — all recognized fields\\.`));
+  assert.equal(ntField("task.id").value, "GROW-6687-email-validation");
+  assert.equal(ntField("protocol.defers.1.reason").value, "Follow-up obligations ride the GROW-6688 cleanup ticket");
+  assert.equal(await preview(), GOLDEN);
+  assert.equal(await preview(), PL.buildYaml(want));
+  assert.match(ntSide().textContent!, /valid · schema 1\.0/);
+});
+
+test("the start action sits on the prompt pane alone, and an unreadable prompt has none", async () => {
+  await bootCorpus();
+  // AA1 opens on a log section, so its prompt pane is one pick away.
+  assert.equal($$('[data-op="startfrom"]').length, 0);
+  await pickSection("prompt");
+  assert.equal($$('[data-op="startfrom"]').length, 1);
+  await click($('[data-view="full"]'));
+  assert.equal($$('[data-op="startfrom"]').length, 0);
+  reboot();
+  await boot({fetch: liveCorpus({root: "demo", files: [PFILE]}, {}).fetch});
+  assert.match($("#scrInspector").textContent!, /could not be read/);
+  assert.equal($$('[data-op="startfrom"]').length, 0);
+});
+
+test("an import reports the keys it could not place and a failed parse leaves the form alone", async () => {
+  const ctx = await bootPrompt(GOLDEN + "\nfoo: bar\n");
+  await startFrom(ctx);
+  assert.match(ntOps(), new RegExp(`imported ${PFILE} with 1 issue: foo`));
+  assert.equal(ntField("task.id").value, "GROW-6687-email-validation");
+  // Not YAML: the form keeps what it held, and the report says so.
+  await ntSet("task.title", "kept");
+  await startFrom(ctx, ":::\n  - [");
+  assert.equal(isOn("scrNew"), true);
+  assert.match(ntOps(), new RegExp(`couldn't parse ${PFILE} as YAML`));
+  assert.equal(ntField("task.title").value, "kept");
+  await startFrom(ctx, "   ");
+  assert.match(ntOps(), new RegExp(`nothing to import — ${PFILE} is empty\\.`));
+  // A foreign version is named before the builder stamps its own.
+  await startFrom(ctx, GOLDEN.replace('schema_version: "1.0"', 'schema_version: "2.0"'));
+  assert.match(ntOps(), /schema_version is "2\.0"/);
+  assert.match(await preview(), /^schema_version: "1\.0"/);
+});
+
+test("copy, download, and the directory line carry the export bytes and the convention's name", async () => {
+  const got = stubClipboard();
+  await boot();
+  await click($("#newTaskBtn"));
+  const day = today().replace(/-/g, "");
+  assert.equal($("#ntDir").textContent, `.adp/${day}-<TASKID>-<slug>/prompt.yaml`);
+  await ntSet("task.title", "Shared shell chrome, extracted!");
+  await ntSet("task.id", "AV-016");
+  assert.equal(($("#ntSlug") as HTMLInputElement).value, "");
+  assert.equal($("#ntDir").textContent, `.adp/${day}-AV016-shared-shell-chrome-extracted/prompt.yaml`);
+  await ntType($("#ntSlug"), "custom");
+  assert.equal($("#ntDir").textContent, `.adp/${day}-AV016-custom/prompt.yaml`);
+  await ntType($("#ntSlug"), "");
+  assert.equal($("#ntDir").textContent, `.adp/${day}-AV016-shared-shell-chrome-extracted/prompt.yaml`);
+  // The slug never reaches the yaml.
+  assert.ok(!/slug/.test(await preview()));
+  // Copy writes the preview's bytes and reports, then rests.
+  ntTimers();
+  fireEvent.click(op("data-op", "ntcopy"));
+  await act(async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); });
+  assert.equal(got.at(-1), await preview());
+  assert.equal(op("data-op", "ntcopy").textContent, "copied");
+  await advance(1200);
+  assert.equal(op("data-op", "ntcopy").textContent, "⧉ copy yaml");
+  // Download hands the export bytes to an anchor named for the task id.
+  const blobs: Blob[] = [], clicked: string[] = [];
+  URL.createObjectURL = (b: Blob) => { blobs.push(b); return "blob:nt"; };
+  URL.revokeObjectURL = () => {};
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function(this: HTMLAnchorElement){ clicked.push(this.download); });
+  fireEvent.click(op("data-op", "ntdl"));
+  assert.deepEqual(clicked, ["AV-016.yaml"]);
+  assert.equal(await blobs[0].text(), await preview());
+});
+
+test("a denied clipboard write says so and opens the yaml it sends the reader to", async () => {
+  const got = stubClipboard(() => Promise.reject(new Error("denied")));
+  const scrolled = recordScrolls();
+  await boot();
+  await click($("#newTaskBtn"));
+  await click(op("data-op", "ntcopy"));
+  assert.match(op("data-op", "ntcopy").textContent!, /copy failed — select the text/);
+  assert.ok(document.getElementById("ntYamlPre"));
+  assert.ok(scrolled.includes($("#ntYaml")));
+  assert.deepEqual(got, []);
+});
+
+test("rows add and remove by path, an emptied defers editor drops the key, and chips keep the lib's order", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  await ntAdd("requirements");
+  same(document.activeElement, ntField("requirements.0.id"), "focus left the new row");
+  await ntSet("requirements.0.id", "R1");
+  await ntSet("requirements.0.statement", "it works");
+  await ntSet("requirements.0.verify", "run it");
+  await ntAdd("protocol.defers");
+  await ntSet("protocol.defers.0.phase", "analysis");
+  await ntSet("protocol.defers.0.reason", "manual pass");
+  assert.match(await preview(), /defers:\n    - phase: "analysis"\n      reason: "manual pass"/);
+  await click($$(".nt-del").find(b => b.getAttribute("data-ndel") === "protocol.defers.0")!);
+  assert.ok(!/defers/.test(await preview()));
+  assert.match(await preview(), /- id: "R1"\n    statement: "it works"\n    verify: "run it"/);
+  // Artifacts tick in any order and export in the lib's.
+  await click(ntChip("problem_statement"));
+  await click(ntChip("decision_log"));
+  assert.match(await preview(), /artifacts:\n    - problem_statement\n    - test_adversary\n/);
+  await click(ntSwitch("apply"));
+  assert.match(await preview(), /apply: false/);
+  await ntSet("output.format", "patch");
+  assert.match(await preview(), /format: "patch"/);
+});
+
+test("a draft saves on a pause, flushes on pagehide, restores on the next boot, and clear needs a second click", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  ntTimers();
+  await ntSet("task.id", "AV-016");
+  await ntSet("task.title", "A title");
+  await ntType($("#ntSlug"), "own-slug");
+  assert.equal(localStorage.getItem("adp-mc-draft"), null);
+  await advance(400);
+  assert.equal(draft().doc.task.id, "AV-016");
+  assert.equal(draft().slug, "own-slug");
+  await ntSet("task.author", "russbeye");
+  fireEvent(window, new Event("pagehide"));
+  assert.equal(draft().doc.task.author, "russbeye");
+  const saved = localStorage.getItem("adp-mc-draft")!;
+  reboot();
+  await boot({draft: saved});
+  await click($("#newTaskBtn"));
+  assert.equal(ntField("task.id").value, "AV-016");
+  assert.equal(($("#ntSlug") as HTMLInputElement).value, "own-slug");
+  assert.equal($("#ntDir").textContent, `.adp/${today().replace(/-/g, "")}-AV016-own-slug/prompt.yaml`);
+  // One click arms, the timer disarms, and two clicks wipe and drop the key.
+  ntTimers();
+  await ntOp("ntclear");
+  assert.match(ntOps(), /confirm clear/);
+  assert.equal(ntField("task.id").value, "AV-016");
+  await advance(1200);
+  assert.ok(!/confirm clear/.test(ntOps()));
+  await ntOp("ntclear");
+  await ntOp("ntclear");
+  assert.equal(ntField("task.id").value, "");
+  assert.equal(ntField("task.date").value, today());
+  assert.equal(localStorage.getItem("adp-mc-draft"), null);
+});
+
+test("a blocked storage and an unreadable draft both boot the blank form", async () => {
+  const warn = vi.spyOn(console, "warn");
+  const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+  const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+  await boot();
+  await click($("#newTaskBtn"));
+  assert.equal(ntField("task.id").value, "");
+  ntTimers();
+  await ntSet("task.id", "X-1");
+  await advance(400);
+  assert.equal(warn.mock.calls.length, 0);
+  get.mockRestore(); set.mockRestore();
+  reboot();
+  await boot({draft: "{not json"});
+  await click($("#newTaskBtn"));
+  assert.equal(ntField("task.id").value, "");
+  assert.equal(localStorage.getItem("adp-mc-draft"), null);
+  reboot();
+  // A draft in an older shape adopts what normalize reads.
+  await boot({draft: JSON.stringify({doc: {task: {id: "OLD-1"}, lessons_learned: [null]}})});
+  await click($("#newTaskBtn"));
+  assert.equal(ntField("task.id").value, "OLD-1");
+});
+
+test("the builder renders the full form with no corpus", async () => {
+  await boot({hash: "#v=new%20task"});
+  assert.equal(isOn("scrNew"), true);
+  // The blank form's twelve scalar fields. The lists start empty.
+  assert.equal($$("#scrNew .nt-in").length, 12);
+  assert.match(ntSide().textContent!, /7 protocol checks unmet/);
+  assert.equal(ntField("task.date").value, today());
+});
+
+test("a corpus change never rebuilds the form under a typing reader", async () => {
+  const ctx = await bootPrompt();
+  await click($("#newTaskBtn"));
+  const title = ntField("task.title");
+  await ntType(title, "half a ti");
+  title.focus();
+  ctx.live.texts[PFILE] = GOLDEN.replace("GROW-6687", "GROW-1");
+  await act(async () => { ctx.feed.onmessage!(); });
+  await settle();
+  same(ntField("task.title"), title, "the title input was rebuilt");
+  assert.equal(title.value, "half a ti");
+  same(document.activeElement, title, "the title input lost focus");
+  // The new corpus did land behind the form.
+  await tabTo("inspector");
+  assert.match($("#scrInspector").textContent!, /GROW-1/);
+});
+
+test("a switch or chip toggles in place and keeps the keyboard", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  const sw = ntSwitch("apply");
+  sw.focus();
+  await click(sw);
+  same(document.activeElement, sw, "the switch lost focus");
+  same(ntSwitch("apply"), sw, "the switch was rebuilt");
+  assert.equal(sw.parentElement!.classList.contains("is-on"), false);
+  assert.match(await preview(), /apply: false/);
+  const chip = ntChip("premortem");
+  chip.focus();
+  await click(chip);
+  same(document.activeElement, chip, "the chip lost focus");
+  assert.equal(chip.parentElement!.classList.contains("is-on"), true);
+  assert.match(await preview(), /- premortem\n/);
+});
+
+test("a select drops its placeholder color on a pick and takes it back on a clear", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  await ntSet("output.format", "patch");
+  assert.equal(ntField("output.format").classList.contains("is-unset"), false);
+  await ntSet("output.format", "");
+  assert.equal(ntField("output.format").classList.contains("is-unset"), true);
+});
+
+test("an imported format or phase the form cannot show is cleared and named, so the bytes match the form", async () => {
+  const ctx = await bootPrompt(GOLDEN.replace('format: "patch"', 'format: "docx"').replace('phase: "communication"', 'phase: "deploy"'));
+  await startFrom(ctx);
+  assert.match(ntOps(), /with 2 issues/);
+  assert.match(ntOps(), /output\.format "docx" is not a format/);
+  assert.match(ntOps(), /protocol\.defers\[0\]\.phase "deploy" is not a phase/);
+  assert.equal(ntField("output.format").value, "");
+  assert.equal(ntField("protocol.defers.0.phase").value, "");
+  const y = await preview();
+  assert.ok(!/format:/.test(y));
+  assert.ok(!/phase: "deploy"/.test(y));
+  assert.match(y, /- phase: ""\n/);
+  assert.ok(ntChecks().includes("output.format"));
+});
+
+test("a start onto a form in progress waits for a confirmation before it replaces the form and its draft", async () => {
+  const ctx = await bootPrompt();
+  await click($("#newTaskBtn"));
+  ntTimers();
+  await ntSet("task.id", "MINE-1");
+  await advance(400);
+  vi.useRealTimers();
+  fakeTimeouts = false;
+  await startFrom(ctx, undefined, null);
+  // New task shows, the form and the draft stand, and the question is asked.
+  assert.equal(isOn("scrNew"), true);
+  assert.equal(ntField("task.id").value, "MINE-1");
+  assert.equal(draft().doc.task.id, "MINE-1");
+  assert.match(ntOps(), new RegExp(`replace it with ${PFILE}\\?`));
+  await click($("#ntKeep"));
+  assert.equal(ntField("task.id").value, "MINE-1");
+  assert.ok(!/replace it with/.test(ntOps()));
+  assert.match(ntOps(), new RegExp(`kept the form — ${PFILE} was not imported\\.`));
+  await startFrom(ctx);
+  assert.equal(ntField("task.id").value, "GROW-6687-email-validation");
+  assert.equal(draft().doc.task.id, "GROW-6687-email-validation");
+  // A form loaded from a prompt is a form in progress too.
+  await startFrom(ctx, undefined, null);
+  assert.match(ntOps(), /replace it with/);
+});
+
+test("the pending question stands alone", async () => {
+  const ctx = await bootPrompt('foo: 1\ntask:\n  id: "A-1"\n');
+  await startFrom(ctx);
+  assert.match(ntOps(), /with 1 issue: foo/);
+  await startFrom(ctx, GOLDEN, null);
+  assert.match(ntOps(), /replace it with/);
+  assert.equal($$("#ntOps .nt-report").length, 1);
+  await click($("#ntKeep"));
+  assert.equal(ntField("task.id").value, "A-1");
+});
+
+test("a restored draft of a blank form takes a prompt at once", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  ntTimers();
+  await ntSet("task.id", "x");
+  await ntSet("task.id", "");
+  await advance(400);
+  const saved = localStorage.getItem("adp-mc-draft")!;
+  reboot();
+  const ctx = await bootPrompt(GOLDEN, {draft: saved});
+  await startFrom(ctx, undefined, null);
+  assert.ok(!/replace it with/.test(ntOps()));
+  assert.equal(ntField("task.id").value, "GROW-6687-email-validation");
+});
+
+test("the yaml panel sits in the form column under the sticky card and scrolls into view on show", async () => {
+  const scrolled = recordScrolls();
+  await boot();
+  await click($("#newTaskBtn"));
+  await ntOp("ntyaml");
+  assert.ok($("#ntYamlPre").closest(".nt-form"));
+  assert.equal(scrolled.filter(e => e.id === "ntYaml").length, 1);
+  await ntOp("ntyaml");
+  assert.equal(document.getElementById("ntYamlPre"), null);
+  await ntOp("ntyaml");
+  assert.equal(scrolled.filter(e => e.id === "ntYaml").length, 2);
+});
+
+test("the output path prints once, in the export card, under its own heading", async () => {
+  const ctx = await bootPrompt();
+  await startFrom(ctx);
+  const dir = $("#ntDir").textContent!;
+  assert.match(dir, /prompt\.yaml$/);
+  assert.equal($("#scrNew").textContent!.split(dir).length - 1, 1);
+  assert.equal($("#scrNew").firstElementChild!.outerHTML, "<h2>new task</h2>");
+  // The card and the document block cannot share a heading, or the unmet
+  // list's output.format key reads as a line about the card.
+  assert.equal(ntSide().firstElementChild!.outerHTML, "<h2>export</h2>");
+  await ntSet("task.id", "AV-099");
+  assert.match($("#ntDir").textContent!, /AV099/);
+});
+
+test("a deferral item that is not a mapping is dropped and named on import, and a draft holding one boots the form", async () => {
+  const ctx = await bootPrompt(GOLDEN.replace("  defers:\n", "  defers:\n    -\n    - communication\n"));
+  await startFrom(ctx);
+  assert.match(ntOps(), /with 2 issues/);
+  assert.match(ntOps(), /protocol\.defers\[0\] is not a map; skipped/);
+  assert.match(ntOps(), /protocol\.defers\[1\] is not a map; skipped/);
+  assert.equal(ntField("protocol.defers.0.phase").value, "communication");
+  assert.equal(ntField("protocol.defers.2.phase"), undefined);
+  assert.deepEqual(draft().doc.protocol.defers.map((d: {phase: string}) => d.phase), ["communication", "obligations"]);
+  reboot();
+  await boot({draft: JSON.stringify({doc: {task: {id: "D-1"},
+    protocol: {apply: true, defers: [null, "communication", {phase: "analysis", reason: "r"}]}}})});
+  await click($("#newTaskBtn"));
+  assert.equal(ntField("task.id").value, "D-1");
+  assert.equal(ntField("protocol.defers.0.phase").value, "analysis");
+  assert.equal(ntField("protocol.defers.1.phase"), undefined);
+});
+
+test("a restored draft that differs from the blank only by its date takes a prompt at once", async () => {
+  const ctx = await bootPrompt(GOLDEN, {draft: JSON.stringify({doc: {task: {date: "2020-01-01"}}})});
+  await click($("#newTaskBtn"));
+  // The restore re-dates a draft nobody typed into, so the field reads today.
+  assert.equal(ntField("task.date").value, today());
+  await startFrom(ctx, undefined, null);
+  assert.ok(!/replace it with/.test(ntOps()));
+  assert.equal(ntField("task.id").value, "GROW-6687-email-validation");
+  reboot();
+  // A field the reader typed beside the date still asks.
+  const ctx2 = await bootPrompt(GOLDEN, {draft: JSON.stringify({doc: {task: {date: "2020-01-01", id: "MINE-1"}}})});
+  await startFrom(ctx2, undefined, null);
+  assert.match(ntOps(), /replace it with/);
+});
+
+test("an import drops every wrong-shaped key and list item, names each one, and the bytes carry no blank row for them", async () => {
+  const text = GOLDEN
+    .replace("  priorities:\n", "  priorities:\n    -\n")
+    .replace("  references:\n", "  references:\n    - \"src/bare.ts\"\n    -\n")
+    .replace("  links:\n    - \"https://example.atlassian.net/browse/GROW-6687\"\n", "  links: nope\n")
+    .replace(/lessons_learned:\n(  .*\n)+/, "lessons_learned: \"s\"\n")
+    .replace("requirements:\n", "requirements:\n  -\n")
+    .replace('format: "patch"', "format: true")
+    .replace('phase: "communication"', "phase: 5");
+  const ctx = await bootPrompt(text);
+  await startFrom(ctx);
+  const ops = ntOps();
+  assert.match(ops, /with 8 issues/);
+  for (const line of ["role\\.priorities\\[0\\] is not a plain value; skipped", "context\\.references\\[0\\] is not a map; skipped",
+    "context\\.references\\[1\\] is not a map; skipped", "context\\.links is not a list; skipped", "lessons_learned is not a list; skipped",
+    "requirements\\[0\\] is not a map; skipped", 'output\\.format "true" is not a format; cleared', 'protocol\\.defers\\[0\\]\\.phase "5" is not a phase; cleared'])
+    assert.match(ops, new RegExp(line));
+  // The survivors sit at the head of each list, with no blank row before them.
+  assert.equal(ntField("role.priorities.0").value, "Reject invalid input before it reaches the database");
+  assert.equal(ntField("role.priorities.2"), undefined);
+  assert.equal(ntField("context.references.0.path").value, "src/signup/handler.ts");
+  assert.equal(ntField("context.references.1.path"), undefined);
+  assert.equal(ntField("context.links.0"), undefined);
+  assert.equal(ntField("lessons_learned.0.context"), undefined);
+  assert.equal(ntField("requirements.0.id").value, "R1");
+  assert.equal(ntField("requirements.1.id"), undefined);
+  assert.equal(ntField("output.format").value, "");
+  assert.equal(ntField("protocol.defers.0.phase").value, "");
+  const y = await preview();
+  assert.match(y, /  references:\n    - path: "src\/signup\/handler.ts"\n/);
+  assert.ok(!/lessons_learned:/.test(y));
+  assert.ok(!/links:/.test(y));
+  assert.match(y, /requirements:\n  - id: "R1"\n/);
+  assert.ok(!/format:/.test(y));
+});
+
+test("an artifact name no chip carries is named and dropped, and the export carries the ticked chips only", async () => {
+  const ctx = await bootPrompt(GOLDEN.replace("    - decision_log\n", "    - decision_log\n    - 7\n    - not_an_artifact\n    - a: 1\n"));
+  await startFrom(ctx);
+  assert.match(ntOps(), /with 3 issues/);
+  assert.match(ntOps(), /protocol\.artifacts\[3\] is not a plain value; skipped/);
+  assert.match(ntOps(), /protocol\.artifacts "7" is not an artifact; cleared/);
+  assert.match(ntOps(), /protocol\.artifacts "not_an_artifact" is not an artifact; cleared/);
+  assert.deepEqual(ticked(), ["decision_log", "test_adversary"]);
+  const y = await preview();
+  assert.match(y, /  artifacts:\n    - decision_log\n    - test_adversary\n/);
+  // The bytes read back as the chips the form ticks, with nothing stringified.
+  const skipped: string[] = [];
+  assert.deepEqual((PL.parseYAML(y, skipped) as {protocol: {artifacts: string[]}}).protocol.artifacts, ["decision_log", "test_adversary"]);
+  assert.deepEqual(skipped, []);
+});
+
+test("a map where a field's value belongs is dropped and named, and its row keeps its place", async () => {
+  const ctx = await bootPrompt(GOLDEN
+    .replace('    - path: "src/signup/handler.ts"', "    - path:\n        deep: 1")
+    .replace('  - id: "R1"', "  - id:\n      deep: 1"));
+  await startFrom(ctx);
+  assert.match(ntOps(), /with 2 issues/);
+  assert.match(ntOps(), /context\.references\[0\]\.path is not a plain value; skipped/);
+  assert.match(ntOps(), /requirements\[0\]\.id is not a plain value; skipped/);
+  assert.equal(ntField("context.references.0.path").value, "");
+  assert.equal(ntField("context.references.0.lines").value, "42-88");
+  assert.equal(ntField("requirements.0.id").value, "");
+  assert.equal(ntField("requirements.0.statement").value, "A malformed email returns 422 and is not persisted");
+  assert.ok(ntChecks().includes("context.references[0].path"));
+  assert.ok(ntChecks().includes("requirements[0].id"));
+  const y = await preview();
+  assert.ok(!/\[object Object\]/.test(y));
+  assert.match(y, /    - path: ""\n      lines: "42-88"\n/);
+});
+
+test("a toggle value that is not true or false is named and read as the state the toggle shows", async () => {
+  const ctx = await bootPrompt(GOLDEN.replace("  apply: true", '  apply: "yes"').replace("  flag_low_confidence: true", "  flag_low_confidence: 0"));
+  await startFrom(ctx);
+  assert.match(ntOps(), /with 2 issues/);
+  assert.match(ntOps(), /protocol\.apply "yes" is not true or false; kept as true/);
+  assert.match(ntOps(), /protocol\.flag_low_confidence "0" is not true or false; kept as true/);
+  assert.deepEqual([ntSwitch("apply").checked, ntSwitch("flag_low_confidence").checked], [true, true]);
+  const y = await preview();
+  assert.match(y, /  apply: true\n/);
+  assert.match(y, /  flag_low_confidence: true\n/);
+  assert.ok(!ntChecks().includes("protocol.apply"));
+});
+
+test("the enum report numbers the row the form shows, not the row the prompt held", async () => {
+  const ctx = await bootPrompt(GOLDEN.replace("  defers:\n", "  defers:\n    - later\n").replace('phase: "communication"', 'phase: "deploy"'));
+  await startFrom(ctx);
+  assert.match(ntOps(), /with 2 issues/);
+  assert.match(ntOps(), /protocol\.defers\[0\] is not a map; skipped/);
+  assert.match(ntOps(), /protocol\.defers\[0\]\.phase "deploy" is not a phase; cleared/);
+  assert.ok(!/protocol\.defers\[1\]\.phase/.test(ntOps()));
+  assert.equal(ntField("protocol.defers.0.phase").value, "");
+  assert.equal(ntField("protocol.defers.1.phase").value, "obligations");
+});
+
+test("a multiline value in a single-line field is flattened, named, and the bytes read back", async () => {
+  const ctx = await bootPrompt(GOLDEN.replace('  title: "Add server-side validation to the signup email field"', "  title: |\n    line one\n    line two"));
+  await startFrom(ctx);
+  assert.match(ntOps(), /with 1 issue: task\.title \(multiline value flattened to one line\)/);
+  assert.equal(ntField("task.title").value, "line one line two");
+  const y = await preview();
+  assert.match(y, /  title: "line one line two"\n/);
+  assert.match(ntSide().textContent!, /valid · schema 1\.0/);
+  const skipped: string[] = [];
+  assert.equal((PL.parseYAML(y, skipped) as {task: {title: string}}).task.title, "line one line two");
+  assert.deepEqual(skipped, []);
+});
+
+test("a map or a list where a block's own field belongs is dropped and named", async () => {
+  const ctx = await bootPrompt(GOLDEN
+    .replace('  title: "Add server-side validation to the signup email field"', "  title:\n    deep: 1")
+    .replace('  lens: "Staff engineer accountable for data integrity"', "  lens:\n    - a\n    - b")
+    .replace('  destination: "Edit files in place"', "  destination:\n    x: 1")
+    .replace('  format: "patch"', "  format:\n    x: 1")
+    .replace("  apply: true", "  apply:\n    x: 1"));
+  await startFrom(ctx);
+  const ops = ntOps();
+  assert.match(ops, /with 5 issues/);
+  for (const line of ["task\\.title is not a plain value; skipped", "role\\.lens is not a plain value; skipped",
+    "output\\.destination is not a plain value; skipped", "output\\.format is not a plain value; skipped",
+    "protocol\\.apply is not true or false; kept as true"]) assert.match(ops, new RegExp(line));
+  assert.ok(!/\[object Object\]/.test(ops));
+  for (const nf of ["task.title", "role.lens", "output.destination", "output.format"]) assert.equal(ntField(nf).value, "", nf);
+  const y = await preview();
+  assert.ok(!/\[object Object\]/.test(y));
+  assert.ok(!/lens|destination|format:/.test(y));
+  assert.match(y, /  apply: true\n/);
+  assert.match($("#ntDir").textContent!, /-<slug>\/prompt\.yaml$/);
+});
+
+test("the export image trims every value and drops a blank row from a list of plain values", async () => {
+  const ctx = await bootPrompt();
+  await startFrom(ctx);
+  await ntAdd("context.links");
+  await ntSet("task.title", "  padded title  ");
+  await ntSet("task.author", "   ");
+  // The form keeps what the reader typed, so a caret stays where it was.
+  assert.equal(ntField("task.title").value, "  padded title  ");
+  assert.equal(ntField("context.links.1").value, "");
+  const y = await preview();
+  assert.match(y, /  title: "padded title"\n/);
+  assert.ok(!/author:/.test(y));
+  assert.ok(!/- ""/.test(y));
+  assert.ok(ntChecks().includes("task.author"));
+  reboot();
+  // A form holding only padding carries no export bytes, so a prompt lands
+  // without a question.
+  const ctx2 = await bootPrompt();
+  await click($("#newTaskBtn"));
+  await ntSet("task.id", "   ");
+  await ntSet("task.date", ` ${today()} `);
+  await startFrom(ctx2, undefined, null);
+  assert.ok(!/replace it with/.test(ntOps()));
+});
+
+test("the same form contents export the same bytes on both builders", async () => {
+  const ctx = await bootPrompt();
+  await startFrom(ctx);
+  await ntAdd("context.links");
+  await ntSet("task.title", "  padded title  ");
+  await ntSet("role.priorities.0", " padded priority ");
+  const b = bootBuilder();
+  await b.click(b.$("#example"));
+  await b.addRow("links");
+  b.$("#t_title").value = "  padded title  ";
+  b.fireInput(b.$("#t_title"));
+  const prio = b.listEls("priorities")[0].querySelector("input");
+  prio.value = " padded priority ";
+  b.fireInput(prio);
+  assert.equal(await preview(), await b.exportYaml());
+});
+
+test("a draft nobody has typed into takes today's date, and one with content keeps its own", async () => {
+  await boot({draft: JSON.stringify({doc: {task: {date: "2026-09-28"}}})});
+  await click($("#newTaskBtn"));
+  assert.equal(ntField("task.date").value, today());
+  assert.match($("#ntDir").textContent!, new RegExp("^\\.adp/" + today().replace(/-/g, "") + "-"));
+  reboot();
+  await boot({draft: JSON.stringify({doc: {task: {id: "ZUP-1", date: "2026-09-28"}}})});
+  await click($("#newTaskBtn"));
+  assert.equal(ntField("task.date").value, "2026-09-28");
+  reboot();
+  // A typed slug is content too, even with every field blank.
+  await boot({draft: JSON.stringify({doc: {task: {date: "2026-09-28"}}, slug: "mine", slugEdited: true})});
+  await click($("#newTaskBtn"));
+  assert.equal(ntField("task.date").value, "2026-09-28");
+});
+
+/* The prompts below carry a field shape the standalone builder reads too,
+   so each one checks that both builders write the same bytes. */
+async function sameOnBoth(text: string){
+  const b = bootBuilder();
+  await b.importText(text);
+  assert.equal(await preview(), await b.exportYaml());
+}
+
+test("an empty field in an imported row exports blank, and both builders write the same bytes", async () => {
+  const text = GOLDEN.replace('    verify: "Integration test posts a bad address and asserts 422 plus no new row"', "    verify:");
+  const ctx = await bootPrompt(text);
+  await startFrom(ctx);
+  assert.equal(ntField("requirements.0.verify").value, "");
+  const y = await preview();
+  assert.match(y, /    verify: ""\n/);
+  assert.ok(!/"null"/.test(y));
+  assert.ok(ntChecks().includes("requirements[0].verify"));
+  await sameOnBoth(text);
+});
+
+test("a number or a boolean in a field reads as its text, and a block scalar takes one too", async () => {
+  const text = GOLDEN
+    .replace('  title: "Add server-side validation to the signup email field"', "  title: true")
+    .replace("  background: |\n    Signup currently trusts the client to validate. Bad addresses reach the users table.", "  background: 5");
+  const ctx = await bootPrompt(text);
+  await startFrom(ctx);
+  assert.match(ntOps(), /— all recognized fields/);
+  assert.equal(ntField("task.title").value, "true");
+  assert.equal(ntField("context.background").value, "5");
+  assert.match(ntSide().textContent!, /valid · schema 1\.0/);
+  const y = await preview();
+  assert.match(y, /  title: "true"\n/);
+  assert.match(y, /  background: \|\n    5\n/);
+  await sameOnBoth(text);
+});
+
+test("imported artifacts take the chip row's order with each name once", async () => {
+  const text = GOLDEN.replace("    - decision_log\n    - test_adversary", "    - test_adversary\n    - decision_log\n    - decision_log");
+  const ctx = await bootPrompt(text);
+  await startFrom(ctx);
+  assert.deepEqual(ticked(), ["decision_log", "test_adversary"]);
+  assert.match(await preview(), /  artifacts:\n    - decision_log\n    - test_adversary\n/);
+  await sameOnBoth(text);
+});
+
+test("an imported deferral with no reason exports the blank, and both builders write the same bytes", async () => {
+  const text = GOLDEN.replace('      reason: "Ships behind the existing signup flag, so no deploy note goes out"\n', "");
+  const ctx = await bootPrompt(text);
+  await startFrom(ctx);
+  assert.equal(ntField("protocol.defers.0.reason").value, "");
+  assert.equal(ntField("protocol.defers.0.phase").value, "communication");
+  const y = await preview();
+  assert.ok(!/undefined/.test(y));
+  assert.match(y, /    - phase: "communication"\n      reason: ""\n/);
+  assert.ok(ntChecks().includes("protocol.defers[0].reason"));
+  await sameOnBoth(text);
+});
+
+test("the badge numbers a requirement row the way the form does", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  await ntAdd("requirements");
+  await ntAdd("requirements");
+  await ntSet("requirements.1.id", "R9");
+  // The partial row sits second on the screen, so the panel names it second.
+  assert.ok(ntChecks().includes("requirements[1].statement"));
+  assert.ok(!ntChecks().some(k => /^requirements\[0\]/.test(k)));
+  const y = await preview();
+  assert.match(y, /requirements:\n  - id: "R9"\n/);
+  assert.ok(!y.includes('id: "-"'));
+  reboot();
+  // A list with no real row asks for a requirement rather than reading the
+  // placeholder as one.
+  await boot();
+  await click($("#newTaskBtn"));
+  await ntAdd("requirements");
+  assert.ok(ntChecks().includes("requirements"));
+  assert.ok(!ntChecks().some(k => /^requirements\[/.test(k)));
+});
+
+test("an artifacts key with no value imports as the untouched chip row on both builders", async () => {
+  const text = 'task:\n  id: "A-1"\nprotocol:\n  apply: true\n  artifacts:\n';
+  const ctx = await bootPrompt(text);
+  await startFrom(ctx);
+  assert.match(ntOps(), /— all recognized fields/);
+  assert.equal(ntField("task.id").value, "A-1");
+  assert.deepEqual(ticked(), PL.DEFAULT_ARTIFACTS);
+  await sameOnBoth(text);
+});
+
+test("a toggle written with no value keeps the blank document's state, as the standalone does", async () => {
+  for (const line of ["  apply:", '  apply: ""']){
+    const text = `task:\n  id: "A-1"\nprotocol:\n${line}\n`;
+    const ctx = await bootPrompt(text);
+    await startFrom(ctx);
+    assert.match(ntOps(), /protocol\.apply[^\n]*is not true or false; kept as true/, line);
+    assert.equal(ntSwitch("apply").checked, true, line);
+    const y = await preview();
+    assert.match(y, /  apply: true\n/, line);
+    // A blank value must never read as the protocol turned off.
+    assert.ok(!/apply: false/.test(y), line);
+    await sameOnBoth(text);
+    reboot();
+  }
+});
+
+test("the slug input holds the slug a person typed, and the directory line holds the name the export lands under", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  await ntSet("task.title", "First title");
+  await ntAdd("context.links");
+  assert.equal(($("#ntSlug") as HTMLInputElement).value, "");
+  assert.match($("#ntDir").textContent!, /-first-title\/prompt\.yaml$/);
+  await ntSet("task.title", "Second title");
+  assert.equal(($("#ntSlug") as HTMLInputElement).value, "");
+  assert.match($("#ntDir").textContent!, /-second-title\/prompt\.yaml$/);
+  // A typed slug owns the line, and clearing it hands the line back.
+  await ntType($("#ntSlug"), "mine");
+  assert.match($("#ntDir").textContent!, /-mine\/prompt\.yaml$/);
+  await ntType($("#ntSlug"), "");
+  assert.match($("#ntDir").textContent!, /-second-title\/prompt\.yaml$/);
+});
+
+test("a blur on a text field leaves the export card's buttons in the document", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  const title = ntField("task.title");
+  await ntType(title, "Hello");
+  const copy = op("data-op", "ntcopy");
+  // A browser fires change when the field loses focus, on the mousedown of
+  // the click on this button, so the button must survive it.
+  fireEvent.blur(title);
+  await settle(1);
+  same(op("data-op", "ntcopy"), copy, "the copy button was rebuilt");
+  assert.match(await preview(), /  title: "Hello"\n/);
+});
+
+test("a typed slug reaches the directory line in the convention's kebab case", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  await ntType($("#ntSlug"), "My Slug!");
+  // The input keeps what the person typed, so the caret stays where it is.
+  assert.equal(($("#ntSlug") as HTMLInputElement).value, "My Slug!");
+  assert.match($("#ntDir").textContent!, /-my-slug\/prompt\.yaml$/);
+  await ntSet("task.id", "AV-016");
+  assert.equal(Bld.parseDirName($("#ntDir").textContent!.split("/")[1])!.slug, "my-slug");
+});
+
+test("a confirmed clear takes its disarm timer with it, and a re-armed clear holds its full window", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  ntTimers();
+  await ntOp("ntclear");
+  await ntOp("ntclear");
+  await ntOp("ntclear");
+  assert.match(ntOps(), /confirm clear/);
+  // The pending timer is the new arm's own, so it holds the window the
+  // button promises instead of the leftover from the arm before it.
+  assert.equal(vi.getTimerCount(), 1);
+  await advance(1200);
+  assert.ok(!/confirm clear/.test(ntOps()));
+});
+
+test("a second copy inside the window takes the label timer with it", async () => {
+  stubClipboard();
+  await boot();
+  await click($("#newTaskBtn"));
+  ntTimers();
+  const flush = () => act(async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); });
+  fireEvent.click(op("data-op", "ntcopy"));
+  await flush();
+  await advance(600);
+  fireEvent.click(op("data-op", "ntcopy"));
+  await flush();
+  // The first copy's timer would rest the label here.
+  await advance(600);
+  assert.equal(op("data-op", "ntcopy").textContent, "copied");
+  await advance(600);
+  assert.equal(op("data-op", "ntcopy").textContent, "⧉ copy yaml");
+});
+
+test("a confirmed clear takes a pending question with the form", async () => {
+  const ctx = await bootPrompt();
+  await click($("#newTaskBtn"));
+  await ntSet("task.title", "typed");
+  await startFrom(ctx, undefined, null);
+  assert.match(ntOps(), /replace it with/);
+  await ntOp("ntclear");
+  await ntOp("ntclear");
+  assert.equal(ntField("task.title").value, "");
+  assert.ok(!/replace it with/.test(ntOps()));
+  assert.ok(!ntOps().includes(PFILE));
+});
+
+// The verdict's spoken twin. The region speaks a change once the reader
+// pauses, and a start from a ticket's prompt speaks the verdict it loads.
+// A boot and a restored draft speak nothing.
+test("the live region speaks the verdict after an edit or a start that flips it, and not before", async () => {
+  const ctx = await bootPrompt();
+  ntTimers();
+  await click($("#newTaskBtn"));
+  const live = () => $("#ntLive");
+  assert.equal(live().getAttribute("aria-live"), "polite");
+  await advance(1000);
+  assert.equal(live().textContent, "");
+  // A start on a blank form loads a valid prompt, and the region says so
+  // once the pause ends.
+  await startFrom(ctx);
+  await advance(799);
+  assert.equal(live().textContent, "");
+  await advance(1);
+  assert.equal(live().textContent, "Valid");
+  await ntSet("task.id", "");
+  await advance(799);
+  assert.equal(live().textContent, "Valid");
+  await advance(1);
+  assert.equal(live().textContent, "1 protocol check unmet");
+  // An edit that keeps the verdict says nothing new.
+  await ntSet("task.title", "still valid otherwise");
+  await advance(800);
+  assert.equal(live().textContent, "1 protocol check unmet");
+  // A start that replaces a form in progress speaks the verdict it loads too.
+  await startFrom(ctx);
+  await advance(800);
+  assert.equal(live().textContent, "Valid");
+});
+
+// Each form section folds by its heading, and the fold survives a tab
+// switch and leaves the section's values in place.
+test("a form section collapses and reopens by its heading", async () => {
+  const ctx = await bootPrompt();
+  await startFrom(ctx);
+  const head = (name: string) => $$(".nt-sechead").find(b => b.textContent === name)!;
+  assert.deepEqual($$(".nt-sechead").map(b => b.textContent),
+    ["task", "role", "context", "lessons learned", "requirements id + statement + how to verify", "output", "protocol"]);
+  const role = head("role");
+  assert.equal(role.getAttribute("aria-expanded"), "true");
+  const body = document.getElementById(role.getAttribute("aria-controls")!)!;
+  assert.equal(body.hidden, false);
+  await click(role);
+  assert.equal(role.getAttribute("aria-expanded"), "false");
+  assert.equal(body.hidden, true);
+  assert.equal(ntField("role.lens").value, "Staff engineer accountable for data integrity");
+  await tabTo("watchboard");
+  await click($("#newTaskBtn"));
+  assert.equal(head("role").getAttribute("aria-expanded"), "false");
+  await click(head("role"));
+  assert.equal(document.getElementById(head("role").getAttribute("aria-controls")!)!.hidden, false);
+  assert.match(await preview(), /lens: "Staff engineer accountable for data integrity"/);
+});
+
+// New task has no open, paste, or example control, and no drop hint. The
+// one way in for a written prompt is the start action on a ticket.
+test("new task offers no open, paste, or example control and no drop hint", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  for (const name of ["ntopen", "ntpaste", "ntexample"]) assert.equal($$('[data-op="' + name + '"]').length, 0, name);
+  assert.equal(document.getElementById("ntPaste"), null);
+  assert.equal(document.getElementById("ntImport"), null);
+  assert.ok(!$("#scrNew").textContent!.includes("drag & drop"));
+});
+
+// A focus request and a yaml scroll each serve the click that made them. A
+// later return to the screen mounts it again and must replay neither.
+test("a return to New task replays neither the last row's focus nor the yaml scroll", async () => {
+  const scrolled = recordScrolls();
+  await boot();
+  await click($("#newTaskBtn"));
+  await ntAdd("requirements");
+  same(document.activeElement, ntField("requirements.0.id"), "the new row did not take focus");
+  ntField("task.title").focus();
+  await ntOp("ntyaml");
+  assert.equal(scrolled.length, 1);
+  await tabTo("watchboard");
+  await click($("#newTaskBtn"));
+  assert.ok(document.activeElement !== ntField("requirements.0.id"), "the return replayed the row's focus");
+  assert.equal(scrolled.length, 1, "the return replayed the yaml scroll");
+  // The next request still acts once.
+  await ntAdd("requirements");
+  same(document.activeElement, ntField("requirements.1.id"), "a new request after the return did not take focus");
 });

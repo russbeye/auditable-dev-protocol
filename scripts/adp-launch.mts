@@ -152,7 +152,7 @@ async function prepare(dir: string){
   } finally { fs.rmSync(lock, {force: true}); }
 }
 
-const url = (port: number) => `http://127.0.0.1:${port}/mission-control.html`;
+const url = (port: number) => `http://127.0.0.1:${port}/app.html`;
 
 async function launch(root: string): Promise<string> {
   await prepare(trustedStateDir());
