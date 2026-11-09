@@ -1,7 +1,6 @@
-/* The viewer's example document, verbatim. This mirrors the EXAMPLE template
-   literal in scripts/ADP-Parser.html. If that example changes, update this
-   file to match, then regenerate the golden output from the repo root and
-   review the diff before committing:
+/* The viewer's example document, verbatim, and the input of the renderer
+   golden. If you change it, regenerate the golden output from the repo root
+   and review the diff before committing:
 
      node -e "const h=require('./scripts/tests/helpers.js');require('fs').writeFileSync('scripts/tests/fixtures/viewer-example.html',h.renderViewerGolden(require('./scripts/tests/fixtures/viewer-example.js')))"
 */

@@ -4,7 +4,6 @@ import {test} from "vitest";
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const vm = require("node:vm");
 
 const builder = require(path.join(__dirname, "..", "..", "src", "lib", "adp-index-builder-lib.ts"));
 const indexLib = require(path.join(__dirname, "..", "..", "src", "lib", "adp-index-lib.ts"));
@@ -653,18 +652,6 @@ test("prompt-only and unmatched directories are real tickets", () => {
   assert.equal(misc.id, null);
   assert.equal(misc.slug, "misc-notes");
   assert.equal(misc.title, null);
-});
-
-test("the browser build matches the Node build byte for byte", () => {
-  const context = vm.createContext({});
-  const f = path.join(__dirname, "..", "..", "dist", "adp-libs.js");
-  vm.runInContext(fs.readFileSync(f, "utf8"), context, {filename: f});
-  const files = readCorpus(CORPUS);
-  context.__files = JSON.parse(JSON.stringify(files));
-  const browserBytes = vm.runInContext(
-    "ADPIndexLib.serializeIndex(ADPIndexBuilder.buildIndex(__files, " +
-    "{project: 'fixture-corpus', generated: '2026-08-20', source: 'snapshot'}))", context);
-  assert.equal(browserBytes, indexLib.serializeIndex(builder.buildIndex(files, OPTS)));
 });
 
 /* The live corpus is gitignored, so a fresh clone skips this and the fixture

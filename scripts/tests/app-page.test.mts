@@ -693,6 +693,27 @@ test("a boot that failed takes the default selection when the corpus first answe
   assert.equal(hashes[hashes.length - 1], "#t=" + first + "&s=sec-decision-log");
 });
 
+test("a boot that failed honors the screen token at once and the ticket token when the corpus answers", async () => {
+  const live = liveCorpus(LISTING, TEXTS);
+  live.down = true;
+  const {feed} = await boot({fetch: live.fetch, hash: "#v=watchboard&t=AA1"});
+  assert.equal($("#scrWatch").classList.contains("is-on"), true);
+  live.down = false;
+  await act(async () => { feed.onopen!(); });
+  await settle();
+  assert.equal($("#scrWatch").classList.contains("is-on"), true);
+  assert.deepEqual(marked(), ["AA1"]);
+});
+
+test("a served page with no corpus directory probes quietly", async () => {
+  const warn = vi.spyOn(console, "warn");
+  const {feed} = await boot({fetch: () => miss()});
+  await act(async () => { feed.onopen!(); });
+  await settle();
+  assert.equal(warn.mock.calls.length, 0);
+  assert.equal($("#projChit").textContent, "no corpus");
+});
+
 test("the live pill's status region is written only when its state changes", async () => {
   const live = liveCorpus(LISTING, TEXTS);
   const {feed} = await boot({fetch: live.fetch});
@@ -2515,10 +2536,10 @@ test("the app closes its event stream when it unmounts", async () => {
 // ---- New task ----
 
 const GOLDEN = readFixture("builder-example.yaml");
-const {bootBuilder} = require("./builder-harness.js") as {bootBuilder(): {
-  click(el: unknown): Promise<void>; $(sel: string): {value: string} & Record<string, unknown>;
-  addRow(name: string): Promise<void>; fireInput(el: unknown): void; listEls(name: string): {querySelector(s: string): {value: string}}[];
-  importText(t: string): Promise<void>; exportYaml(): Promise<string>}};
+// The bytes the standalone builder exported for the same form contents and
+// for each prompt that sameOnBoth() starts from, so the app keeps writing
+// what the standalone wrote.
+const STANDALONE = JSON.parse(readFixture("standalone-exports.json")) as {form: string; prompts: {input: string; output: string}[]};
 // The ticket the prompt tests start from. Its prompt is the whole ticket,
 // so the inspector opens on the prompt pane.
 const PFILE = "20260618-GROW6687-email-validation/prompt.yaml";
@@ -3139,15 +3160,7 @@ test("the same form contents export the same bytes on both builders", async () =
   await ntAdd("context.links");
   await ntSet("task.title", "  padded title  ");
   await ntSet("role.priorities.0", " padded priority ");
-  const b = bootBuilder();
-  await b.click(b.$("#example"));
-  await b.addRow("links");
-  b.$("#t_title").value = "  padded title  ";
-  b.fireInput(b.$("#t_title"));
-  const prio = b.listEls("priorities")[0].querySelector("input");
-  prio.value = " padded priority ";
-  b.fireInput(prio);
-  assert.equal(await preview(), await b.exportYaml());
+  assert.equal(await preview(), STANDALONE.form);
 });
 
 test("a draft nobody has typed into takes today's date, and one with content keeps its own", async () => {
@@ -3166,12 +3179,12 @@ test("a draft nobody has typed into takes today's date, and one with content kee
   assert.equal(ntField("task.date").value, "2026-09-28");
 });
 
-/* The prompts below carry a field shape the standalone builder reads too,
-   so each one checks that both builders write the same bytes. */
+/* The prompts below carry a field shape the standalone builder read too,
+   so each one checks the app's bytes against the standalone's. */
 async function sameOnBoth(text: string){
-  const b = bootBuilder();
-  await b.importText(text);
-  assert.equal(await preview(), await b.exportYaml());
+  const want = STANDALONE.prompts.filter(p => p.input === text);
+  assert.equal(want.length, 1, "standalone-exports.json holds this prompt once");
+  assert.equal(await preview(), want[0].output);
 }
 
 test("an empty field in an imported row exports blank, and both builders write the same bytes", async () => {
@@ -3232,7 +3245,9 @@ test("the badge numbers a requirement row the way the form does", async () => {
   await ntSet("requirements.1.id", "R9");
   // The partial row sits second on the screen, so the panel names it second.
   assert.ok(ntChecks().includes("requirements[1].statement"));
+  assert.ok(ntChecks().includes("requirements[1].verify"));
   assert.ok(!ntChecks().some(k => /^requirements\[0\]/.test(k)));
+  assert.ok(!ntChecks().includes("requirements"));
   const y = await preview();
   assert.match(y, /requirements:\n  - id: "R9"\n/);
   assert.ok(!y.includes('id: "-"'));
@@ -3244,6 +3259,126 @@ test("the badge numbers a requirement row the way the form does", async () => {
   await ntAdd("requirements");
   assert.ok(ntChecks().includes("requirements"));
   assert.ok(!ntChecks().some(k => /^requirements\[/.test(k)));
+});
+
+// ---- New task: the standalone builder's page cases ----
+
+// The checks a blank form fails, in the order the side card lists them.
+const BLANK_KEYS = ["task.id", "task.title", "task.author", "prompt",
+  "output.format", "output.destination", "requirements"];
+const ntRows = (list: string) => $$(`#scrNew .nt-in[data-nf^="${list}."]`);
+
+test("the blank form pins its exact issue keys, and one defers row adds its phase and reason", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  assert.deepEqual(ntChecks(), BLANK_KEYS);
+  await ntAdd("protocol.defers");
+  assert.deepEqual(ntChecks(), BLANK_KEYS.concat(["protocol.defers[0].phase", "protocol.defers[0].reason"]));
+  // Each check row prints its key and the fixed word required.
+  const rows = $$("#ntSide .nt-checks li").map(li => li.innerHTML);
+  assert.equal(rows.length, 9);
+  for (const row of rows) assert.match(row, /^<code>[^<]+<\/code> — required$/);
+});
+
+test("the phase select offers exactly the nine phases, and a phase with no reason adds one check", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  const before = ntChecks();
+  await ntAdd("protocol.defers");
+  const sel = ntField("protocol.defers.0.phase") as unknown as HTMLSelectElement;
+  assert.deepEqual([...sel.options].map(o => o.value), [""].concat(PL.PHASES));
+  await ntSet("protocol.defers.0.phase", "analysis");
+  assert.deepEqual(ntChecks().filter(k => !before.includes(k)), ["protocol.defers[0].reason"]);
+});
+
+test("the defers controls carry accessible names and button semantics", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  const add = $$(".nt-add").find(b => b.getAttribute("data-nadd") === "protocol.defers")!;
+  assert.equal(add.tagName, "BUTTON");
+  assert.equal(add.textContent, "+ add deferral");
+  await ntAdd("protocol.defers");
+  assert.equal(ntField("protocol.defers.0.phase").getAttribute("aria-label"), "phase");
+  assert.equal(ntField("protocol.defers.0.reason").getAttribute("aria-label"), "Why this phase does not run");
+  const rm = $$(".nt-del").find(b => b.getAttribute("data-ndel") === "protocol.defers.0")!;
+  assert.equal(rm.tagName, "BUTTON");
+  assert.equal(rm.getAttribute("aria-label"), "remove row");
+});
+
+test("defers rows ride the draft across a reload, and a draft with no defers restores none", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  await ntAdd("protocol.defers");
+  await ntSet("protocol.defers.0.phase", "analysis");
+  await ntSet("protocol.defers.0.reason", "Manual test pass only this release");
+  fireEvent(window, new Event("pagehide"));
+  const saved = localStorage.getItem("adp-mc-draft")!;
+  reboot();
+  await boot({draft: saved});
+  await click($("#newTaskBtn"));
+  assert.equal(ntField("protocol.defers.0.phase").value, "analysis");
+  assert.equal(ntField("protocol.defers.0.reason").value, "Manual test pass only this release");
+  reboot();
+  await boot({draft: JSON.stringify({doc: {task: {id: "legacy-draft"}}})});
+  await click($("#newTaskBtn"));
+  assert.equal(ntField("task.id").value, "legacy-draft");
+  assert.deepEqual(ntRows("protocol.defers"), []);
+});
+
+test("a pristine form exports the lib's blank document, with no defers key, once its date is cleared", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  const y = await preview();
+  assert.ok(!y.includes("defers"));
+  assert.equal(y, PL.buildYaml(PL.normalize({task: {date: today()}})));
+  await ntSet("task.date", "");
+  assert.equal(await preview(), PL.buildYaml(PL.blankDocument()));
+});
+
+test("a confirmed clear resets the phase selections with the rest of the form", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  await ntAdd("protocol.defers");
+  await ntSet("protocol.defers.0.phase", "hypothesis");
+  await ntSet("protocol.defers.0.reason", "r");
+  await ntOp("ntclear");
+  await ntOp("ntclear");
+  assert.deepEqual(ntRows("protocol.defers"), []);
+  assert.ok(!/defers/.test(await preview()));
+});
+
+test("an unknown protocol key lands in the import report, and the defers beside it still fill their rows", async () => {
+  const ctx = await bootPrompt('protocol:\n  apply: true\n  wat: true\n  defers:\n    - phase: "analysis"\n      reason: "Manual pass"\n');
+  await startFrom(ctx);
+  assert.match(ntOps(), new RegExp(`imported ${PFILE} with 1 issue: protocol\\.wat`));
+  assert.equal(ntField("protocol.defers.0.phase").value, "analysis");
+  assert.equal(ntField("protocol.defers.0.reason").value, "Manual pass");
+});
+
+test("the golden prompt starts VALID with no checks", async () => {
+  const ctx = await bootPrompt();
+  await startFrom(ctx);
+  assert.deepEqual(ntChecks(), []);
+  assert.match(ntSide().textContent!, /valid · schema 1\.0/);
+});
+
+test("a priorities row without a lens adds exactly the role.lens check", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  await ntAdd("role.priorities");
+  await ntSet("role.priorities.0", "ship it");
+  assert.deepEqual(ntChecks(), ["task.id", "task.title", "task.author",
+    "role.lens", "prompt", "output.format", "output.destination", "requirements"]);
+});
+
+test("an all-empty lessons row keeps a later flagged row on its own index", async () => {
+  await boot();
+  await click($("#newTaskBtn"));
+  await ntAdd("lessons_learned");
+  await ntAdd("lessons_learned");
+  await ntSet("lessons_learned.1.context", "only context");
+  assert.ok(ntChecks().includes("lessons_learned[1]"));
+  assert.ok(!ntChecks().includes("lessons_learned[0]"));
 });
 
 test("an artifacts key with no value imports as the untouched chip row on both builders", async () => {
@@ -3446,4 +3581,72 @@ test("a return to New task replays neither the last row's focus nor the yaml scr
   // The next request still acts once.
   await ntAdd("requirements");
   same(document.activeElement, ntField("requirements.1.id"), "a new request after the return did not take focus");
+});
+
+// ---- every screen ----
+
+// Visits every screen the fixture corpus reaches: the boot, each tab, each
+// ticket's section and full log, and New task. We call look() on each one.
+async function everyScreen(look: () => void){
+  await baselineBoot();
+  look();
+  for (const s of S.TAB_SCREENS) { await tabTo(s); look(); }
+  for (const t of rentries()){
+    await tabTo("inspector");
+    await click(entry(t));
+    look();
+    await click($('[data-view="full"]'));
+    look();
+  }
+  await click($("#newTaskBtn"));
+  look();
+}
+
+/* R15. A drop handler cancels dragover and drop, because the browser's own
+   default opens the dropped file in place of the page. An event bubbles up
+   from its target, so we dispatch on every leaf element. Every element is a
+   leaf or an ancestor of one, so a handler anywhere in the page sees one of
+   our events, and a drop that stays uncancelled everywhere shows that no
+   handler took it. */
+test("no screen offers a file input, a paste field, or a drop target", async () => {
+  let screens = 0;
+  await everyScreen(() => {
+    screens++;
+    assert.equal($$('input[type="file"]').length, 0);
+    assert.equal($$('[data-op="paste"], [data-op="openwatch"], [data-op="openyaml"], #pasteArea, #pasteDrawer, .shellmask').length, 0);
+    const leaves = $$("body *").filter(el => el.childElementCount === 0);
+    for (const type of ["dragover", "drop"])
+      for (const target of leaves){
+        const e = new Event(type, {bubbles: true, cancelable: true});
+        target.dispatchEvent(e);
+        if (e.defaultPrevented) assert.fail(`${type} on <${target.tagName.toLowerCase()} class="${target.className}"> was cancelled`);
+      }
+  });
+  // The boot, each tab, two views of each ticket, and New task.
+  const tickets = rentries().length;
+  assert.ok(tickets > 1, "the fixture corpus holds more than one ticket");
+  assert.equal(screens, 1 + S.TAB_SCREENS.length + 2 * tickets + 1, "the walk reached every ticket");
+});
+
+// ---- the shell sheet owns the app's classes ----
+
+/* Everything the app paints outside a rendered document takes its classes
+   from adp-shell.css. Rendered documents sit in .md, where the theme's
+   document styles apply. Two theme classes are deliberate: .md itself, and
+   .sr-live, which hides New task's spoken verdict. Three classes carry no
+   style at all, because the handlers and the tests select by them. */
+const THEME_CLASSES = new Set(["md", "sr-live"]);
+const HOOK_CLASSES = new Set(["sth", "wbrow", "lgrow"]);
+test("the app's screens use only adp-shell.css classes outside rendered documents", async () => {
+  const css = fs.readFileSync(path.join(import.meta.dirname, "..", "adp-shell.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const shell = new Set<string>();
+  for (const seg of css.split(/\{[^{}]*\}/)) for (const m of seg.matchAll(/\.([A-Za-z_-][A-Za-z0-9_-]*)/g)) shell.add(m[1]);
+  const used = new Set<string>();
+  const take = () => { for (const el of $$("[class]")) if (!el.parentElement?.closest(".md"))
+    for (const c of el.getAttribute("class")!.split(/\s+/)) if (c) used.add(c); };
+  await everyScreen(take);
+  const orphans = [...used].filter(c => !shell.has(c) && !THEME_CLASSES.has(c) && !HOOK_CLASSES.has(c)).sort();
+  assert.deepEqual(orphans, []);
+  // A hook that gains a rule belongs in the sheet's set, not in this list.
+  for (const c of HOOK_CLASSES) assert.ok(used.has(c) && !shell.has(c), c);
 });

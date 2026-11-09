@@ -103,7 +103,7 @@ when something breaks.
 An audit log's H2 headings are its sections, and every section has a kind. The kinds below come
 from a census of the logs on record: thirty-two logs wrote the same fourteen canonical headings and
 a small recurring set of companions. The registry in `src/lib/adp-parser-lib.ts` tags each kind,
-and both viewers label a section with it. The set is defined, not closed: a section the set does
+and mission control labels a section with it. The set is defined, not closed: a section the set does
 not cover is `ad-hoc`, which is a named kind and never an error.
 
 | Kind | What it is for | When a run writes it | Heading forms on record |
@@ -221,7 +221,7 @@ offset of the byte. The advisory never fails a check and never enters an index d
 6. The developer is an interrogator, not an approver.
 7. Follow-up obligations are first-class work. Unvalidated assumptions do not expire; they become
    tickets.
-8. The audit log is the observability layer. The developer watches the file in the Artifact Viewer,
+8. The audit log is the observability layer. The developer watches the file in mission control,
    not the chat. Keep session output to gate questions and needed answers, and never narrate
    artifacts into the session.
 
@@ -232,7 +232,7 @@ offset of the byte. The advisory never fails a check and never enters an index d
 **Do:** Restate the problem in your own words before any planning. The restatement must cover what
 the problem is, what it is not, and what success looks like at a human level rather than a test
 level. Create `.adp/<task.id>/audit-log.md` now (see *The artifact chain*), write the Problem
-Statement into it as the first entry, and open the Artifact Viewer on it with the one-line notice
+Statement into it as the first entry, and open mission control on it with the one-line notice
 (see *the observability layer*). Every later artifact appends to the same file, live and in full.
 
 **Gate:** The developer must confirm the restatement. Loop on corrections until confirmed, then treat
@@ -542,7 +542,7 @@ successor row:
 | No silent assumptions | An assumption missing from the Decision Log does not exist, protocol-wise. |
 | No artifact deferred to the conversation | Every phase's artifact is written to the audit log in full. A phase reduced to a summary that points at the conversation, or any other ephemeral context, is a violation; that context may be gone at audit time. |
 | The log is written live, not reconstructed | Append each artifact the moment you formulate it. The developer must be able to watch the file grow. |
-| Artifacts stay out of the session | The audit log rendered in the Artifact Viewer is the observability layer. Restating or summarizing artifacts in session output is a violation; only gate questions and the one-line viewer notice belong in the conversation. |
+| Artifacts stay out of the session | The audit log rendered in mission control is the observability layer. Restating or summarizing artifacts in session output is a violation; only gate questions and the one-line viewer notice belong in the conversation. |
 | No hedged recommendations | Commit to a position. Options without a defense are a hedge and get sent back. |
 | No PR without a Test Adversary Document | Analysis completes before synthesis. |
 | No open HIGH-likelihood failure modes | The Pre-Mortem must show every HIGH item resolved before implementation starts. |

@@ -2,8 +2,7 @@
    index document against the numbered rules in references/adp-index-1.md and
    returns findings that name the violated rule. The vocabularies and key
    orders live here as data so the stage-2 builder and the shell consume one
-   source. The vanilla pages read it as the global `ADPIndexLib` from the
-   build in dist/. */
+   source. */
 
 const SCHEMA = "adp-index/1";
 const SOURCES = ["working-tree", "snapshot", "picked"];

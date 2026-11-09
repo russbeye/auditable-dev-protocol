@@ -81,7 +81,7 @@ test("the launcher prints the mission control URL and nothing else", () => {
   assert.match(firstStdout, /^http:\/\/127\.0\.0\.1:\d+\/app\.html\n$/);
 });
 
-for (const route of ["/adp-shell.css", "/mission-control.html", "/ADP-Parser.html", "/adp-libs.js", "/app.html", "/adp-app.js", "/corpus.json",
+for (const route of ["/adp-shell.css", "/app.html", "/adp-app.js", "/corpus.json",
     "/corpus/T-001/audit-log.md", "/packs.json", "/packs/resume-ticket.pack.md", "/health"]){
   test(`${route} answers no-store with a UTF-8 charset`, async () => {
     const res = await fetch(base + route);
@@ -90,6 +90,11 @@ for (const route of ["/adp-shell.css", "/mission-control.html", "/ADP-Parser.htm
     assert.match(res.headers.get("content-type") ?? "", /; charset=utf-8$/);
   });
 }
+
+test("the retired pages and the browser-globals bundle answer 404", async () => {
+  for (const route of ["/mission-control.html", "/ADP-Parser.html", "/prompt-builder.html", "/adp-libs.js"])
+    assert.equal((await fetch(base + route)).status, 404, route);
+});
 
 test("/health names the repo root this server serves", async () => {
   const h = await (await fetch(base + "/health")).json();
@@ -183,7 +188,7 @@ function getWithHost(url: string, host: string): Promise<number> {
 
 test("the server refuses a request whose Host is not its own address", async () => {
   const port = new URL(base).port;
-  for (const route of ["/corpus.json", "/corpus/T-001/audit-log.md", "/health", "/mission-control.html"]){
+  for (const route of ["/corpus.json", "/corpus/T-001/audit-log.md", "/health", "/app.html"]){
     assert.equal(await getWithHost(base + route, "attacker.example"), 403, route);
     assert.equal(await getWithHost(base + route, "attacker.example:" + port), 403, route);
     assert.equal(await getWithHost(base + route, "127.0.0.1:" + port), 200, route);
@@ -458,8 +463,9 @@ test("a clone installs and builds on first launch, and a source edit rebuilds an
   assert.match(first.stderr, /building the app/);
   const old = await health(first.stdout.trim());
   pids.add(old.pid);
-  for (const route of ["/mission-control.html", "/adp-libs.js"])
+  for (const route of ["/app.html", "/adp-app.js"])
     assert.equal((await fetch(baseOf(first.stdout.trim()) + route)).status, 200, route);
+  assert.deepEqual(fs.readdirSync(path.join(skill, "dist")).sort(), [".adp-build-stamp", "adp-app.js"]);
 
   // An unchanged clone reuses its install, its build, and its server.
   const again = await launchAsync(r, tmp, launcher);

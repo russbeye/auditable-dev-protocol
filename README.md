@@ -8,8 +8,8 @@
     <img alt="Artifacts: auditable" src="https://img.shields.io/badge/artifacts-auditable-6f42c1">
   </p>
   <p>
-    <img alt="Prompt Builder interface" src="assets/builder.png" width="48%">
-    <img alt="ADP Parser interface" src="assets/parser.png" width="48%">
+    <img alt="Mission control inspector on an audit log's Decision Log" src="assets/inspector.png" width="48%">
+    <img alt="Mission control New task form" src="assets/new-task.png" width="48%">
   </p>
 </div>
 
@@ -22,8 +22,8 @@ A nine-phase protocol for AI-assisted development. The model defends one recomme
 - `references/prompt-template-annotated.yaml`: the same template with every field and option documented.
 - `references/failure-modes.md`: maps a symptom to the artifact you open first when something breaks.
 - `scripts/validate-prompt.mts`: checks a filled prompt for structure, types, and allowed values.
-- `scripts/prompt-builder.html`: a browser form for filling the template, with import and YAML export.
-- `scripts/ADP-Parser.html`: a browser viewer that watches the audit log and renders it by section. This is the protocol's observability layer.
+- `scripts/app.html` and `src/app/`: mission control, the browser app that watches every audit log in the repo and builds new prompts. This is the protocol's observability layer.
+- `src/lib/`: the typed libraries the app, the validator, and the tests share.
 - `scripts/adp-launch.mts`: prints the URL of mission control for the current repo, starting its localhost server (`scripts/adp-server.mts`) when none is live. Run it with `npm start` or `node scripts/adp-launch.mts`. It needs Node 22.18 or later.
 - `packs/`: the resume packs mission control fills from the corpus index, one `.pack.md` per pack. Drop a file in to add one.
 
@@ -50,9 +50,14 @@ The YAML prompt template is the preferred way to frame a request, but the skill 
 
 Invoke the skill with a request in hand and it offers to draft a filled template from what you gave it, saved to `.adp/<task-id>/prompt.yaml`.
 
-## Browser tools
+## Mission control
 
-Two pages run the template and its output. The mission control server serves both, so open them through the URL `scripts/adp-launch.mts` prints, with the page name in place of `app.html`. The pages read the libraries from the build in `dist/`, which the launcher writes, so a page opened from disk by hand finds no libraries.
+Mission control is the one browser UI. Run `npm start` or `node scripts/adp-launch.mts` from the repo you work in, and open the URL it prints. The first launch installs the dependencies and builds the app into `dist/`. A later launch rebuilds only when a source changed, and it reuses the server that is already live for the repo.
 
-- **Prompt Builder** (`scripts/prompt-builder.html`) fills the template through a form instead of a text editor. Paste an existing `prompt.yaml` to import it, or load the example, then copy or download the result. It reports any keys it does not recognize.
-- **Artifact Viewer** (`scripts/ADP-Parser.html`) renders the protocol's markdown output and is the run's observability layer. The mission control server serves it at `ADP-Parser.html?file=/corpus/<task-id>/audit-log.md`, and the page re-renders on every append. The page also supports Open & watch file (Chromium), paste, and drop.
+Mission control reads logs and prompts from the repo's `.adp/` directory and nothing else. It has no file picker, no paste field, and no drop target. Each screen re-renders when a file under `.adp/` changes.
+
+- **Inspector** renders a ticket's audit log by section, or in full, and shows its `prompt.yaml`.
+- **Reviews** shows the PR review rounds the `prreview` skill wrote for a ticket.
+- **Watchboard**, **Ledgers**, and **Calibration** show the open watches, the decisions, and the confidence record across every ticket.
+- **Resume pack** fills a pack from `packs/` with a ticket's state, ready to paste into a new session.
+- **New task** fills the prompt template through a form, checks it as you type, and copies or downloads the YAML. "Start from this prompt" on a ticket's prompt view loads that ticket's `prompt.yaml` into the form.

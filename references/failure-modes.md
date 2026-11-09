@@ -34,7 +34,7 @@ as a mitigation that is unverified, not merely moved.
 In a Claude Code session the home is `.adp/<task-id>/audit-log.md` at the project root. The model
 creates it in Phase 1 and appends each artifact as it produces it, so the full chain of every phase
 sits in that one file. The run's other artifacts, such as a prompt drafted in session, sit beside it
-in `.adp/<task-id>/`. The file, rendered live in the Artifact Viewer, is the observability layer.
+in `.adp/<task-id>/`. The file, rendered live in mission control, is the observability layer.
 The conversation carries only gate questions and can be summarized or lost, so no artifact may live
 only there. Persisting from Phase 1, even when the work fits in one session, is what lets the developer
 watch the log grow and what keeps the record alive through context loss.

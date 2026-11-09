@@ -1,12 +1,11 @@
 /* adp-shell-lib.ts — shared chrome and screen builders for the mission-control
    shell. Screen tabs, theme, status text, the corpus seam, the hash grammar,
-   and the rail/inspector HTML builders live here, so the page IIFE stays thin
-   glue and the harness drives the same code the browser runs. Builders are
-   pure string functions over prepared models, and every interpolated field is
-   escaped — the page renders documents people paste in. Effects are injected:
-   loadCorpus takes a fetch function and applyTheme takes the document and
-   storage, so Node tests pass stubs instead of faking globals. The vanilla
-   page reads it as the global `ADPShellLib` from the build in dist/. */
+   and the rail/inspector HTML builders live here, so the app and the Node
+   tests run the same code. Builders are pure string functions over prepared
+   models, and every interpolated field is escaped, because the app renders
+   whatever a repo's logs hold. Effects are injected: loadCorpus takes a fetch
+   function and applyTheme takes the document and storage, so Node tests pass
+   stubs instead of faking globals. */
 import * as B from "./adp-index-builder-lib.ts";
 import * as P from "./adp-parser-lib.ts";
 import * as D from "./adp-derive-lib.ts";

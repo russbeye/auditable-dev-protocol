@@ -29,8 +29,8 @@ function readReference(name){
 // normalize so the suites keep one import site for it.
 const normalize = lib.normalize;
 
-/* We compose the viewer golden the same way render() in ADP-Parser.html
-   routes sections, minus the DOM. Each section becomes a marker comment with
+/* We compose the viewer golden by routing sections the way the renderer
+   does, minus the DOM. Each section becomes a marker comment with
    its deduped key, registry tag (or kind, when it has no phase), and title,
    followed by the rendered body
    HTML. The golden test and the regeneration one-liner in

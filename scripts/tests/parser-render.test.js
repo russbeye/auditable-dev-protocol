@@ -1,29 +1,17 @@
-/* Trap pins for adp-parser-lib.ts. The lib was extracted from ADP-Parser.html
-   under the rule that behavior moves before it improves, so every test here
-   pins what the page already did. If one of these fails after an edit, the
+/* Trap pins for adp-parser-lib.ts. We hold the renderer to the rule that
+   behavior moves before it improves, so every test here pins what the
+   renderer already does. If one of these fails after an edit, the
    renderer's observable output changed and the change needs its own fixture. */
 "use strict";
 
 import {test} from "vitest";
 const assert = require("node:assert/strict");
-const vm = require("node:vm");
 const fs = require("node:fs");
 const path = require("node:path");
 const {parserLib} = require("./helpers.js");
 const {esc, escAttr, inline, decorate, parseSections, sectionKeys, slug, metaFor, ART, SECTION_KINDS,
        renderMarkdown, dlChipSplit, dlConfKind, dlConfPill, dlStatusPill, dlRail, renderDLCard,
        renderDecisionLog, dlStatusKind, parseDLEntries, dlEntryStatus, dlStatusCounts} = parserLib;
-
-// ---- dual export (R2) ----
-
-test("the browser leg exposes the same API as require()", () => {
-  const src = fs.readFileSync(path.join(__dirname, "..", "..", "dist", "adp-libs.js"), "utf8");
-  const sandbox = {};
-  vm.createContext(sandbox);
-  vm.runInContext(src, sandbox);
-  assert.deepEqual(Object.keys(sandbox.ADPParserLib).sort(), Object.keys(parserLib).sort());
-  assert.equal(sandbox.ADPParserLib.renderMarkdown("**hi**"), parserLib.renderMarkdown("**hi**"));
-});
 
 // ---- section splitter ----
 

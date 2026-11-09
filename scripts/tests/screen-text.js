@@ -1,22 +1,18 @@
-/* The R8 text baseline. We boot the real mission-control.html in jsdom over
-   the fixture corpus and the shipped packs, walk every screen the page can
-   reach from that corpus, and record what each one shows: its text and every
-   title and aria-label. The React screens must later show the same record,
-   so the record comes from a real DOM and not from the hand-written harness,
-   whose parser loses the order of text inside mixed content. */
+/* The R8 text record. fixtures/screen-baseline.json holds what every screen
+   of the vanilla page showed over the fixture corpus and the shipped packs:
+   its text and every title and aria-label. The React screens must show the
+   same record, so the app tests take it with the same code. */
 "use strict";
 
 const fs = require("node:fs");
 const path = require("node:path");
-const {JSDOM} = require("jsdom");
 
 const SCRIPTS = path.join(__dirname, "..");
 const CORPUS = path.join(__dirname, "fixtures", "corpus");
 const PACKS = path.join(SCRIPTS, "..", "packs");
-const LIBS_PATH = path.join(SCRIPTS, "..", "dist", "adp-libs.js");
 
-// Due labels count days from today, so every capture runs at one fixed
-// local noon. Noon keeps the local calendar day the same in every zone CI uses.
+// Due labels count days from today, so the baseline and every comparison run
+// at one fixed local noon. Noon keeps the local calendar day the same in every zone CI uses.
 const NOW = new Date(2026, 10, 6, 12, 0, 0).getTime();
 
 function corpusFiles(dir){
@@ -48,44 +44,6 @@ function diskFetch(){
     }
     return miss();
   };
-}
-
-function pageScripts(html){
-  const blocks = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(m => m[1]).filter(s => s.trim());
-  const prePaint = blocks.find(s => s.includes("prefers-color-scheme"));
-  const main = blocks.find(s => s.includes("ADPShellLib"));
-  if (!prePaint || !main) throw new Error("expected scripts not found in mission-control.html");
-  return {prePaint, main};
-}
-
-/* Boots the page and resolves once the corpus and the packs have loaded. The
-   caller must call close(), because the page's poll interval keeps running. */
-async function bootPage(){
-  const html = fs.readFileSync(path.join(SCRIPTS, "mission-control.html"), "utf8");
-  const dom = new JSDOM(html.replace(/<script[\s\S]*?<\/script>/g, ""),
-    {url: "http://127.0.0.1:1/mission-control.html", runScripts: "outside-only", pretendToBeVisual: true});
-  const w = dom.window;
-  const RealDate = w.Date;
-  w.Date = class extends RealDate {
-    constructor(...a){ if (a.length) super(...a); else super(NOW); }
-    static now(){ return NOW; }
-  };
-  w.matchMedia = () => ({matches: false, addEventListener(){}, removeEventListener(){}});
-  w.fetch = diskFetch();
-  w.localStorage.setItem("adp-theme", "dark");
-  const {prePaint, main} = pageScripts(html);
-  w.eval(prePaint);
-  w.eval(fs.readFileSync(LIBS_PATH, "utf8"));
-  w.eval(main);
-  await settle(w);
-  return {window: w, document: w.document, close: () => w.close()};
-}
-
-/* Lets the page's promise chains run. The boot needs many turns, because
-   the corpus load awaits one fetch per file. A click renders synchronously,
-   so one turn after it is enough. */
-async function settle(w, turns = 20){
-  for (let i = 0; i < turns; i++) await new Promise(r => w.setTimeout(r, 0));
 }
 
 const ATTRS = ["title", "aria-label", "placeholder", "alt"];
@@ -148,48 +106,4 @@ function snapshot(d){
   };
 }
 
-/* Every screen the page reaches from the fixture corpus, keyed by how we got
-   there. The inspector shows each section of each ticket, its full log, and
-   its prompt. The resume pack screen shows each pack for each ticket. The
-   corpus-wide boards and the new task screen show once each. */
-async function captureAll(){
-  const p = await bootPage();
-  const d = p.document, w = p.window;
-  const out = {};
-  const click = el => { el.dispatchEvent(new w.MouseEvent("click", {bubbles: true})); return settle(w, 1); };
-  const tab = name => click([...d.querySelectorAll(".mtab")].find(t => t.getAttribute("data-s") === name));
-  try {
-    out["boot"] = snapshot(d);
-    const tickets = [...d.querySelectorAll(".rentry")].map(r => r.getAttribute("data-key"));
-    for (const t of tickets){
-      await tab("inspector");
-      await click([...d.querySelectorAll(".rentry")].find(r => r.getAttribute("data-key") === t));
-      await click(d.querySelector('[data-view="section"]'));
-      const secs = [...d.querySelectorAll("#secSel option")].map(o => o.value);
-      for (const s of secs){
-        const sel = d.getElementById("secSel");
-        sel.value = s;
-        sel.dispatchEvent(new w.Event("change", {bubbles: true}));
-        await settle(w, 1);
-        out["inspector|" + t + "|section|" + s] = snapshot(d);
-      }
-      await click(d.querySelector('[data-view="full"]'));
-      out["inspector|" + t + "|full"] = snapshot(d);
-      await click(d.querySelector('[data-view="section"]'));
-      await tab("resume pack");
-      for (const pk of [...d.querySelectorAll(".pk")].map(b => b.getAttribute("data-pk"))){
-        await click([...d.querySelectorAll(".pk")].find(b => b.getAttribute("data-pk") === pk));
-        out["resume pack|" + t + "|" + pk] = snapshot(d);
-      }
-    }
-    for (const name of ["reviews", "watchboard", "ledgers", "calibration"]){
-      await tab(name);
-      out[name] = snapshot(d);
-    }
-    await click(d.getElementById("newTaskBtn"));
-    out["new task"] = snapshot(d);
-  } finally { p.close(); }
-  return out;
-}
-
-module.exports = {bootPage, settle, captureAll, record, snapshot, diskFetch, NOW};
+module.exports = {record, snapshot, diskFetch, NOW};
