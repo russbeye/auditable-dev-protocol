@@ -500,10 +500,9 @@ function asExported(d: unknown): unknown{
   return d;
 }
 
-/* The one example document both builders load. The values are the
-   standalone builder's example, and the suite pins buildYaml over this
-   document to its golden fixture, so the bytes an example produces are
-   the same on either page. Callers get a fresh copy each time. */
+/* The one example document. The suite pins buildYaml over this document
+   to its golden fixture, and the tests start from it. Callers get a fresh
+   copy each time. */
 const EXAMPLE: PromptDocument={
   task:{id:"GROW-6687-email-validation",title:"Add server-side validation to the signup email field",author:"rbeye",date:"2026-06-18"},
   preamble:"Ignore prior memories about the visual config builder.\nAssume the reader knows the signup runtime, not the builder.",

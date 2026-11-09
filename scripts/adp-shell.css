@@ -1,15 +1,13 @@
 /* adp-shell.css — layout and chrome for the mission-control shell page.
-   adp-theme.css owns the palette, the fonts, and the standalone pages'
-   component styles. This sheet owns the shell chrome alone, under class names
+   adp-theme.css owns the palette, the fonts, and the document styles. This sheet owns the shell chrome alone, under class names
    that appear in no adp-theme rule, so the two styles never leak into each
    other. A suite test keeps the two class sets disjoint. The mockup calls
    these .tab, .on, .dropmask, and .msg. adp-theme already owns those names,
    so here they are .mtab, .is-on, .shellmask, and .maskmsg. */
 
 /* The shell keeps the theme's dark accent, and the approved mockup flips the
-   light accent to the theme's blue with white ink on the fills. We scope both
-   here, so the standalone pages, which never load this sheet, keep their own
-   accent untouched. */
+   light accent to the theme's blue with white ink on the fills. We set both
+   here, so adp-theme.css keeps its own accent values. */
 :root{--accent-ink:#05060c}
 :root[data-theme="light"]{--accent:#0000f2;--accent-ink:#ffffff}
 
@@ -18,8 +16,8 @@
    so the status line stays visible while the stage scrolls internally. */
 .shell{display:grid;grid-template-rows:auto 1fr auto;height:100vh;height:100dvh}
 
-/* adp-theme.css reserves a scrollbar track on the page so the standalone pages
-   hold still when their content grows past the window. The shell never
+/* adp-theme.css reserves a scrollbar track on the page so a page holds still
+   when its content grows past the window. The shell never
    scrolls the page, so that track would stay an empty band at the right edge.
    We hand the space back to the shell. */
 html{scrollbar-gutter:auto}

@@ -3603,19 +3603,23 @@ async function everyScreen(look: () => void){
 }
 
 /* R15. A drop handler cancels dragover and drop, because the browser's own
-   default opens the dropped file in place of the page. So a drop that stays
-   uncancelled on every screen shows that no handler took it. */
+   default opens the dropped file in place of the page. An event bubbles up
+   from its target, so we dispatch on every leaf element. Every element is a
+   leaf or an ancestor of one, so a handler anywhere in the page sees one of
+   our events, and a drop that stays uncancelled everywhere shows that no
+   handler took it. */
 test("no screen offers a file input, a paste field, or a drop target", async () => {
   let screens = 0;
   await everyScreen(() => {
     screens++;
     assert.equal($$('input[type="file"]').length, 0);
     assert.equal($$('[data-op="paste"], [data-op="openwatch"], [data-op="openyaml"], #pasteArea, #pasteDrawer, .shellmask').length, 0);
+    const leaves = $$("body *").filter(el => el.childElementCount === 0);
     for (const type of ["dragover", "drop"])
-      for (const target of [document.body, $(".shell")]){
+      for (const target of leaves){
         const e = new Event(type, {bubbles: true, cancelable: true});
         target.dispatchEvent(e);
-        assert.equal(e.defaultPrevented, false, type);
+        if (e.defaultPrevented) assert.fail(`${type} on <${target.tagName.toLowerCase()} class="${target.className}"> was cancelled`);
       }
   });
   assert.ok(screens > S.TAB_SCREENS.length + 2, "the walk reached every ticket");
