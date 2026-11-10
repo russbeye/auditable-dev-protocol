@@ -1,7 +1,8 @@
 /* R12 in a real engine: Tab walks each screen in document order with a
    visible ring on every stop, New task's spoken verdict reaches its live
    region, and nothing moves under reduced motion. */
-import {everyScreen, expect, go, open, test, type Page} from "./fixture.mts";
+import type {Page} from "@playwright/test";
+import {everyScreen, expect, go, open, test} from "./fixture.mts";
 
 test.use({viewport: {width: 1440, height: 900}});
 

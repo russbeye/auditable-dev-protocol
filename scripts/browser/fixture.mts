@@ -26,12 +26,6 @@ export async function startServer(root: string, port = 0): Promise<Server> {
   const state = path.join(dir, "state.json");
   const child: ChildProcess = spawn(process.execPath, [path.join(SCRIPTS_DIR, "adp-server.mts"), root, state, String(port)],
     {stdio: ["ignore", "ignore", "inherit"]});
-  const end = Date.now() + 10_000;
-  while (!fs.existsSync(state)){
-    if (Date.now() > end || child.exitCode !== null) throw new Error("the server wrote no state file");
-    await new Promise(r => setTimeout(r, 50));
-  }
-  const bound = (JSON.parse(fs.readFileSync(state, "utf8")) as {port: number}).port;
   const stop = async () => {
     if (child.exitCode === null){
       const gone = new Promise(r => child.once("exit", r));
@@ -40,6 +34,17 @@ export async function startServer(root: string, port = 0): Promise<Server> {
     }
     fs.rmSync(dir, {recursive: true, force: true});
   };
+  const end = Date.now() + 10_000;
+  while (!fs.existsSync(state)){
+    // A server that starts too slowly would outlive the failed test, so we
+    // stop it and remove its state directory before we fail.
+    if (Date.now() > end || child.exitCode !== null){
+      await stop();
+      throw new Error("the server wrote no state file");
+    }
+    await new Promise(r => setTimeout(r, 50));
+  }
+  const bound = (JSON.parse(fs.readFileSync(state, "utf8")) as {port: number}).port;
   return {url: `http://127.0.0.1:${bound}/app.html`, port: bound, stop};
 }
 
