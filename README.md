@@ -61,3 +61,13 @@ Mission control reads logs and prompts from the repo's `.adp/` directory and not
 - **Watchboard**, **Ledgers**, and **Calibration** show the open watches, the decisions, and the confidence record across every ticket.
 - **Resume pack** fills a pack from `packs/` with a ticket's state, ready to paste into a new session.
 - **New task** fills the prompt template through a form, checks it as you type, and copies or downloads the YAML. "Start from this prompt" on a ticket's prompt view loads that ticket's `prompt.yaml` into the form.
+
+## Tests
+
+Run `npm ci` once, then:
+
+- `npm test` runs the library, page, server, and launcher tests under Vitest.
+- `npm run typecheck` checks every TypeScript file.
+- `npm run test:browser` downloads Chromium, Firefox, and WebKit for Playwright, then runs the browser tests in `scripts/browser/` against a fixture corpus. They check the layout at 720px and 1290px, keyboard order and focus rings, the live region, reduced motion, and the live event stream.
+
+WebKit needs system libraries that Playwright installs only on Ubuntu and Debian. On another Linux, run `npm run test:browser -- --project=chromium --project=firefox`, and let CI run WebKit. To walk your own corpus for unstyled classes, set `ADP_LIVE_ROOT` to the repo root, for example `ADP_LIVE_ROOT=$PWD npm run test:browser -- -g "every class painted"`.
