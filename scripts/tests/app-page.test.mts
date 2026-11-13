@@ -1996,7 +1996,7 @@ const LOG_PHANTOM = LOG_B.replace("- **OT-BB2-3 CLOSED 2026-08-10 → VALIDATED.
 test("the ledger-integrity pack fills from the sweep over the served corpus", async () => {
   const {feed, live} = await bootPacks({}, {...TEXTS});
   await click(tabFor("resume pack"));
-  await pickPack(("ledger-integrity"));
+  await pickPack("ledger-integrity");
   assert.equal(packBlock()!.textContent, expectedPack("ledger-integrity", marking()));
   assert.match(packBlock()!.textContent!, /the corpus linted clean/);
   // A record appended under the watched log reaches the pack on its change event.
@@ -2011,7 +2011,7 @@ test("the ledger-integrity pack fills from the sweep over the served corpus", as
 test("a reload that adopts nothing runs no advisory sweep", async () => {
   const {feed, live} = await bootPacks({}, {...TEXTS});
   await click(tabFor("resume pack"));
-  await pickPack(("ledger-integrity"));
+  await pickPack("ledger-integrity");
   const sweeps = vi.mocked(Bld.lintCorpus).mock.calls.length;
   const before = packBlock()!.textContent;
   await change(feed);
@@ -2026,7 +2026,7 @@ test("a reload that adopts nothing runs no advisory sweep", async () => {
 test("a corpus that never loads leaves the screen on its notice", async () => {
   await boot({fetch: packsFetch(miss)});
   await click(tabFor("resume pack"));
-  await pickPack(("ledger-integrity"));
+  await pickPack("ledger-integrity");
   assert.match($("#packDrawer").innerHTML, /no corpus behind this page/);
   assert.equal(packBlock(), null);
 });
@@ -2058,10 +2058,10 @@ test("a corpus-wide pack fills with no ticket selected, and a ticket pack still 
   await click(tabFor("resume pack"));
   assert.match($("#packDrawer").innerHTML, /"ZZZ" is not in this corpus/);
   assert.equal(packBlock(), null);
-  await pickPack(("watch-audit"));
+  await pickPack("watch-audit");
   assert.equal(packBlock()!.textContent, expectedPack("watch-audit", null));
   assert.doesNotMatch($("#packDrawer").innerHTML, /select a ticket/);
-  await pickPack(("close-watch"));
+  await pickPack("close-watch");
   assert.equal(packBlock(), null);
   // Picking a ticket fills the pack without leaving the screen.
   await click(entry("AA1"));
