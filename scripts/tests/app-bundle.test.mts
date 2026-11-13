@@ -29,7 +29,7 @@ test("the app bundle calls the production JSX runtime when the build inherits NO
    ourselves, because jsdom does not load module scripts. The bundle has no
    import or export, so it runs as a plain script. The page fetches the
    fixture corpus from disk, and a fake EventSource stands in for /events. */
-test("the built bundle boots app.html and renders the header, the rail, and the live chit", async () => {
+test("the built bundle boots app.html and renders the top bar, the rail, and the live word", async () => {
   const errors: string[] = [];
   const virtualConsole = new VirtualConsole();
   virtualConsole.on("jsdomError", e => errors.push(String((e as Error).stack || e)));
@@ -53,7 +53,7 @@ test("the built bundle boots app.html and renders the header, the rail, and the 
       await new Promise(r => setTimeout(r, 20));
     assert.deepEqual(errors, [], "the page reported an error");
     assert.ok(doc.querySelector(".rentry"), "the rail rendered no entry within 5 s");
-    assert.match(doc.querySelector(".brand")?.textContent ?? "", /MISSION CONTROL/);
+    assert.equal(doc.querySelector(".adp-topbar__product")?.textContent, "ADP · Mission Control");
     assert.equal(doc.getElementById("liveTxt")?.textContent, "WATCHING");
     assert.deepEqual(feeds.map(f => f.url), ["events"]);
   } finally {

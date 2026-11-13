@@ -1,20 +1,22 @@
-/* Mission control as one React tree: the header, the rail, the screens, and
-   the footer. */
-import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from "react";
+/* Mission control as one React tree: the top bar, the rail, the screens,
+   and the Packs drawer. */
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import * as B from "../lib/adp-index-builder-lib.ts";
 import * as D from "../lib/adp-derive-lib.ts";
 import * as I from "../lib/adp-index-lib.ts";
 import * as S from "../lib/adp-shell-lib.ts";
 import type {DueState} from "../lib/adp-derive-lib.ts";
 import type {Ticket} from "../lib/adp-index-lib.ts";
-import type {FetchFn, HashSelection, Pack, RailModelGroup, Screen, SortState, ViewMode} from "../lib/adp-shell-lib.ts";
+import type {FetchFn, HashSelection, Pack, RailModelGroup, Screen, SortState, ThemeChoice, ViewMode} from "../lib/adp-shell-lib.ts";
 import {Inspector, promptOf, resolveSection, type InspectorActions} from "./Inspector.tsx";
 import {Calibration, Ledgers} from "./Ledgers.tsx";
 import {useLiveCorpus, type EventFeed} from "./live.ts";
 import {NewTask, useNewTask} from "./NewTask.tsx";
-import {PackScreen} from "./Pack.tsx";
+import {PackDrawer} from "./Pack.tsx";
 import {Rail} from "./Rail.tsx";
 import {Reviews, groupsOf, resolveRound, type ReviewsActions} from "./Reviews.tsx";
+import {StatusPage} from "./StatusPage.tsx";
+import {TopBar} from "./TopBar.tsx";
 import {Watchboard} from "./Watchboard.tsx";
 
 type AppProps = {fetchFn: FetchFn; openFeed: () => EventFeed | null};
@@ -23,8 +25,15 @@ type AppProps = {fetchFn: FetchFn; openFeed: () => EventFeed | null};
 // selection then follows the ticket rather than stranding on the old token.
 type Sel = {dir: string | null; s: string | null; item: string | null};
 
+// Calibration and the resume pack are no longer screens. Calibration heads
+// the Ledger, and the packs open as a drawer over any view.
+const SHOWN: Screen[] = ["inspector", "reviews", "watchboard", "ledgers", "new task"];
 const SCREEN_IDS: Record<Screen, string> = {"inspector": "scrInspector", "reviews": "scrReviews", "watchboard": "scrWatch",
-  "ledgers": "scrLedgers", "calibration": "scrCalib", "resume pack": "scrPack", "new task": "scrNew"};
+  "ledgers": "scrLedgers", "calibration": "scrLedgers", "resume pack": "scrInspector", "new task": "scrNew"};
+const SHORTCUTS: [string, string][] = [["f", "Section or full log"]];
+const prefersLight = () => !!window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+// A shortcut never fires while the reader types into a field.
+const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName));
 const NO_SEL: Sel = {dir: null, s: null, item: null};
 
 function readHash(): HashSelection | null {
@@ -32,12 +41,13 @@ function readHash(): HashSelection | null {
 }
 
 function App({fetchFn, openFeed}: AppProps){
-  const {corpus, stale, booting} = useLiveCorpus(fetchFn, openFeed);
+  const {corpus, stale, booting, at, retry} = useLiveCorpus(fetchFn, openFeed);
   // The hash is read before the corpus exists, so the ticket it names waits
   // as pending until the first corpus lands. A screen needs no corpus.
   const [pending, setPending] = useState<HashSelection | null>(readHash);
-  const [screen, setScreen] = useState<Screen>(() =>
-    pending && pending.v && (S.SCREENS as string[]).includes(pending.v) ? pending.v as Screen : "inspector");
+  const [screen, setScreen] = useState<Screen>(() => S.screenFromHash(pending ? pending.v : null).screen);
+  const [packsOpen, setPacksOpen] = useState(() => S.screenFromHash(pending ? pending.v : null).packs);
+  const packsOpener = useRef<HTMLElement | null>(null);
   const [sel, setSel] = useState<Sel>(NO_SEL);
   const [settled, setSettled] = useState(false);
   // The closed group starts collapsed, because it is the archive and its
@@ -47,11 +57,9 @@ function App({fetchFn, openFeed}: AppProps){
   // the due column in its derived order: overdue first, unanchored last.
   const [wbShow, setWbShow] = useState<ReadonlySet<DueState>>(() => new Set<DueState>(["overdue", "soon", "upcoming", "unanchored"]));
   const [wbSort, setWbSort] = useState<SortState>({k: "due", d: 1});
-  const [theme, setTheme] = useState(() => document.documentElement.getAttribute("data-theme"));
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [compact, setCompact] = useState(false);
-  const hdrRef = useRef<HTMLElement>(null);
-  const menuBtnRef = useRef<HTMLButtonElement>(null);
+  const [theme, setTheme] = useState<ThemeChoice>(() => {
+    try { return S.themeChoice(localStorage.getItem("adp-theme")); } catch { return "system"; }
+  });
   // The inspector's view, its decisions filter, its collapsed full-log
   // sections, and the notice for a section link that found nothing. A rail
   // pick resets the last three, because each one belongs to the ticket on
@@ -192,58 +200,37 @@ function App({fetchFn, openFeed}: AppProps){
     try { history.replaceState(null, "", h || "#"); } catch {}
   }, [booting, screen, sel, selKey, pending, revSel]);
 
-  // The header folds into its menu when the full row cannot fit on one line.
-  // We measure the full form with every label held to one line, never the
-  // compact form, so one window width gives one answer and the two forms
-  // cannot flip back and forth.
-  const measure = useCallback(() => {
-    const hdr = hdrRef.current;
-    if (!hdr) return;
-    const had = hdr.classList.contains("is-compact");
-    hdr.classList.remove("is-compact");
-    hdr.classList.add("is-measuring");
-    const over = hdr.scrollWidth > hdr.clientWidth;
-    hdr.classList.remove("is-measuring");
-    hdr.classList.toggle("is-compact", had);
-    setCompact(over);
-  }, []);
-  useLayoutEffect(measure);
+  /* The theme follows the reader's choice. System stores nothing and tracks
+     the system preference while the page is open. */
   useEffect(() => {
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [measure]);
+    const set = () => document.documentElement.setAttribute("data-theme", S.themeFor(theme, prefersLight()));
+    set();
+    try { if (theme === "system") localStorage.removeItem("adp-theme"); else localStorage.setItem("adp-theme", theme); } catch {}
+    if (theme !== "system" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    mq.addEventListener("change", set);
+    return () => mq.removeEventListener("change", set);
+  }, [theme]);
 
-  // A pick from the open menu hides the control that holds focus. We hand
-  // focus back to the menu button, so the next Tab goes on from the header
-  // and does not restart at the top of the page.
-  const closeMenu = useCallback(() => {
-    const a = document.activeElement;
-    if (a && a.closest(".hdrmenu")) menuBtnRef.current?.focus();
-    setMenuOpen(false);
-  }, []);
-  useEffect(() => { if (!compact && menuOpen) closeMenu(); }, [compact, menuOpen, closeMenu]);
-  useEffect(() => {
-    if (!menuOpen) return;
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") closeMenu(); };
-    const click = (e: MouseEvent) => {
-      const t = e.target as Element | null;
-      if (!t || !t.closest || (!t.closest(".hdrmenu") && !t.closest(".menubtn"))) closeMenu();
-    };
-    document.addEventListener("keydown", key);
-    document.addEventListener("click", click);
-    return () => { document.removeEventListener("keydown", key); document.removeEventListener("click", click); };
-  }, [menuOpen, closeMenu]);
+  useEffect(() => { document.title = S.pageTitle(corpus ? corpus.index : null); }, [corpus]);
 
-  // A pick from the full header keeps focus on the control it pressed. Only
-  // a pick from the open menu hands focus to the menu button.
-  const go = (s: Screen) => { setScreen(s); if (menuOpen) closeMenu(); };
-  const toggleTheme = () => {
-    const next = theme === "light" ? "dark" : "light";
-    // The library writes the theme and its stored choice. We draw the icon,
-    // so the library finds no icon element to write.
-    S.applyTheme({documentElement: document.documentElement, getElementById: () => null}, localStorage, next);
-    setTheme(next);
+  const go = (s: Screen) => setScreen(s);
+  // The drawer hands focus back to the control that opened it.
+  const openPacks = (opener: HTMLElement | null, name?: string) => {
+    packsOpener.current = opener;
+    if (name) setSelPack(name);
+    setCopyLabel(null);
+    setPacksOpen(true);
   };
+  const closePacks = useCallback(() => setPacksOpen(false), []);
+  // The page behind the drawer is inert until the render after it closes,
+  // so focus goes back to the opener only once that render lands.
+  useEffect(() => {
+    const o = packsOpener.current;
+    if (packsOpen || !o) return;
+    packsOpener.current = null;
+    if (o.isConnected) o.focus();
+  }, [packsOpen]);
   // A new ticket on show drops the state that belonged to the last one.
   const resetTicket = () => {
     setDlFilter("all"); setMissNotice(null); setFullClosed(new Set());
@@ -253,7 +240,7 @@ function App({fetchFn, openFeed}: AppProps){
     setSel({dir: t ? t.dir : key, s: null, item: null});
     resetTicket();
     setRevSel(null); setRevNotice(null); setRevDlFilter("all");
-    if (screen !== "resume pack" && screen !== "reviews") setScreen("inspector");
+    if (screen !== "reviews") setScreen("inspector");
   };
   const toggleRail = (name: string) => setRailCollapsed(prev => {
     const next = new Set(prev);
@@ -337,7 +324,9 @@ function App({fetchFn, openFeed}: AppProps){
     onSpy: key => setSel(prev => prev.s === key ? prev : {...prev, s: key, item: null}),
     // A ticket's prompt is the one way a written prompt reaches the form.
     // New task comes forward with its report or its question.
-    onStartFrom: (text, source) => { nt.startFrom(text, source); setScreen("new task"); }
+    onStartFrom: (text, source) => { nt.startFrom(text, source); setScreen("new task"); },
+    // The reviews entry opens the latest round, which the reviews screen settles when it shows.
+    onReviews: () => { setRevSel(null); setRevNotice(null); setScreen("reviews"); }
   };
   const reviewsActions: ReviewsActions = {...panelActions,
     onRound: openRound,
@@ -368,27 +357,39 @@ function App({fetchFn, openFeed}: AppProps){
   // failed or whose event stream broke, kept on screen until a reload
   // answers. WATCHING is a corpus the server keeps current.
   const live = !corpus ? "IDLE" : stale ? "CACHED" : "WATCHING";
-  const hdrClass = [compact ? "is-compact" : "", menuOpen ? "menu-open" : ""].filter(Boolean).join(" ");
-  return <div className="shell">
-    <header ref={hdrRef} className={hdrClass || undefined}>
-      <span className="brand">ADP · <b>MISSION CONTROL</b></span>
-      <span className={"chit poll poll-" + (live === "WATCHING" ? "ok" : live === "CACHED" ? "warn" : "idle")} id="liveChit" role="status"><i aria-hidden="true"></i><span id="liveTxt">{live}</span></span>
-      <button type="button" className="chit click" id="themeBtn" title="Toggle light / dark" onClick={toggleTheme}><span id="ttIcon" aria-hidden="true">{theme === "dark" ? "☾" : "☀"}</span> theme</button>
-      <button type="button" className="menubtn" id="menuBtn" ref={menuBtnRef} aria-expanded={menuOpen} aria-controls="hdrMenu"
-        onClick={() => menuOpen ? closeMenu() : setMenuOpen(true)}><span aria-hidden="true">≡</span> <span id="menuTxt">{screen}</span></button>
-      <div className="hdrmenu" id="hdrMenu">
-        <span className="chit" id="projChit">{S.projectChitText(corpus ? corpus.index : null)}</span>
-        <nav className="tabs" id="tabs" role="tablist">
-          {S.TAB_SCREENS.map(s => <button key={s} className={"mtab" + (s === screen ? " is-on" : "")} role="tab"
-            aria-selected={s === screen} data-s={s} onClick={() => go(s)}>{s}</button>)}
-        </nav>
-        <button className={"newtask" + (screen === "new task" ? " is-on" : "")} id="newTaskBtn" onClick={() => go("new task")}>+ new task</button>
-      </div>
-    </header>
-    <div className="main">
+  const root = corpus ? corpus.index.project : null;
+  // The about lines keep what the old footer said, then name the served
+  // folder and the port, which is all the page knows of where it runs.
+  const about = [S.footerText(corpus ? corpus.index : null), ...(root ? [root + " · :" + location.port] : [])];
+  // The Tickets view has nothing to show until a ticket exists, so it shows
+  // why instead of an empty rail and stage.
+  const status = booting && !corpus ? "loading" : !corpus ? "failed" : !tickets.length ? "empty" : null;
+
+  // f flips the ticket between its section and its full log.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "f" || e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || packsOpen) return;
+      if (screen !== "inspector" || !selTicket) return;
+      e.preventDefault();
+      setView(v => v === "full" ? "section" : "full");
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [screen, selTicket, packsOpen]);
+
+  return <div className="shell" style={{display: "grid", gridTemplateRows: "auto 1fr", height: "100dvh"}}>
+    <TopBar repo={S.repoLabel(corpus ? corpus.index : null)} live={live} down={status === "failed"} at={at} screen={screen} theme={theme}
+      about={about} shortcuts={SHORTCUTS} onView={go} onPacks={o => openPacks(o)} onNewTask={() => go("new task")} onTheme={setTheme}
+      inert={packsOpen}/>
+    {/* The drawer is modal, so the page behind it takes no focus or clicks while it is open. */}
+    <div className="main" inert={packsOpen} style={screen === "inspector" && status ? {display: "flex", flexDirection: "column", overflowY: "auto"} : undefined}>
+      {screen === "inspector" && status
+        ? <StatusPage kind={status} root={root} host={location.host} onRetry={retry} onNewTask={() => go("new task")}
+          onBootstrap={o => openPacks(o, "bootstrap-project")}/>
+        : <>
       <Rail groups={railModel} selKey={selKey} collapsed={railCollapsed} onPick={pick} onToggle={toggleRail}/>
       <main className="stage">
-        {S.SCREENS.map(s => <section key={s} className={"screen" + (s === "new task" ? " nt-wide" : "") + (s === screen ? " is-on" : "")}
+        {SHOWN.map(s => <section key={s} className={"screen" + (s === "new task" ? " nt-wide" : "") + (s === screen ? " is-on" : "")}
           data-s={s} id={SCREEN_IDS[s]}>
           {s !== screen ? null
             : s === "inspector" ? <Inspector corpus={corpus} today={today} t={selTicket} tokenOf={tokenOf} notice={bootNotice}
@@ -398,18 +399,19 @@ function App({fetchFn, openFeed}: AppProps){
               dlFilter={revDlFilter} decSort={decSort} iwSort={iwSort} act={reviewsActions}/>
             : s === "watchboard" ? <Watchboard corpus={corpus} today={today} sort={wbSort} show={wbShow}
               onSort={sortBoard} onToggleState={toggleState} onOpen={openWatch}/>
-            : s === "ledgers" ? <Ledgers corpus={corpus} today={today} sort={laSort} status={lgFilter} conf={lgConf}
-              onSort={k => setLaSort(prev => ({k, d: prev.k === k ? -prev.d : 1}))} onStatus={setLgFilter} onConf={setLgConf} onOpen={openWatch}/>
-            : s === "calibration" ? <Calibration corpus={corpus} today={today} onCell={openLedgerCell}/>
-            : s === "resume pack" ? <PackScreen packs={packs} sel={selPack} corpus={corpus} today={today} t={selTicket}
-              advisories={advisories} bootNotice={bootNotice} copyLabel={copyLabel}
-              onPick={name => { setSelPack(name); setCopyLabel(null); }} onCopy={copyPack}/>
+            : s === "ledgers" ? <>
+              <div id="scrCalib"><Calibration corpus={corpus} today={today} onCell={openLedgerCell}/></div>
+              <Ledgers corpus={corpus} today={today} sort={laSort} status={lgFilter} conf={lgConf}
+                onSort={k => setLaSort(prev => ({k, d: prev.k === k ? -prev.d : 1}))} onStatus={setLgFilter} onConf={setLgConf} onOpen={openWatch}/></>
             : s === "new task" ? <NewTask nt={nt}/>
             : null}
         </section>)}
       </main>
+        </>}
     </div>
-    <footer id="foot">{S.footerText(corpus ? corpus.index : null)}</footer>
+    {packsOpen ? <PackDrawer packs={packs} sel={selPack} corpus={corpus} today={today} t={selTicket}
+      advisories={advisories} bootNotice={bootNotice} copyLabel={copyLabel}
+      onPick={name => { setSelPack(name); setCopyLabel(null); }} onCopy={copyPack} onClose={closePacks}/> : null}
   </div>;
 }
 

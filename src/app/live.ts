@@ -1,10 +1,12 @@
 /* The served corpus, kept current by the server's change events. */
-import {useEffect, useState} from "react";
+import {useCallback, useEffect, useRef, useState} from "react";
 import * as S from "../lib/adp-shell-lib.ts";
 import type {Corpus, FetchFn} from "../lib/adp-shell-lib.ts";
 
 type EventFeed = Pick<EventSource, "onopen" | "onmessage" | "onerror" | "close">;
-type LiveCorpus = {corpus: Corpus | null; stale: boolean; booting: boolean};
+// at is the time of the last good load, which the top bar shows once updates stop.
+type LiveCorpus = {corpus: Corpus | null; stale: boolean; booting: boolean; at: number | null; retry(): void};
+type LiveState = Omit<LiveCorpus, "retry">;
 
 // The signature is the whole load, so an unchanged reload never re-renders
 // and a page left open past midnight still rolls its day-based ages.
@@ -20,7 +22,8 @@ const sigOf = (c: Corpus) => JSON.stringify([c.index.generated, c.index.tickets,
    that break until the stream opens again, and the corpus it delivers
    arrives already stale. */
 function useLiveCorpus(fetchFn: FetchFn, openFeed: () => EventFeed | null): LiveCorpus {
-  const [live, setLive] = useState<LiveCorpus>({corpus: null, stale: false, booting: true});
+  const [live, setLive] = useState<LiveState>({corpus: null, stale: false, booting: true, at: null});
+  const loadRef = useRef<() => void>(() => {});
   useEffect(() => {
     let alive = true, loading = false, again = false, broken = false, sig = "";
     const load = async () => {
@@ -33,14 +36,15 @@ function useLiveCorpus(fetchFn: FetchFn, openFeed: () => EventFeed | null): Live
         const s = c ? sigOf(c) : null;
         if (c && s !== sig){
           sig = s!;
-          setLive({corpus: c, stale: broken, booting: false});
+          setLive({corpus: c, stale: broken, booting: false, at: Date.now()});
         } else setLive(prev => {
           const stale = c ? broken : !!prev.corpus;
-          return prev.stale === stale && !prev.booting ? prev : {corpus: prev.corpus, stale, booting: false};
+          return prev.stale === stale && !prev.booting ? prev : {...prev, stale, booting: false};
         });
       } while (again);
       loading = false;
     };
+    loadRef.current = load;
     load();
     const feed = openFeed();
     if (feed){
@@ -50,7 +54,9 @@ function useLiveCorpus(fetchFn: FetchFn, openFeed: () => EventFeed | null): Live
     }
     return () => { alive = false; feed?.close(); };
   }, [fetchFn, openFeed]);
-  return live;
+  // A retry is one more load through the same queue, so it never races a load already running.
+  const retry = useCallback(() => loadRef.current(), []);
+  return {...live, retry};
 }
 
 export {useLiveCorpus};

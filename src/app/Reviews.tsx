@@ -131,9 +131,9 @@ const Md = ({text}: {text: string}) => <Html html={P.renderMarkdown(text)}/>;
    repeats what the round head already says, so we drop it. */
 function ReviewBody({text, ctx}: {text: string; ctx: BodyCtx}){
   const doc = P.parseSections(text);
-  if (doc.front != null) return <div className="revdoc"><Panel title="" md={text}/></div>;
+  if (doc.front != null) return <div><Panel title="" md={text}/></div>;
   const intro = doc.intro.replace(/^#\s.*\n?/, "").trim();
-  return <div className="revdoc">
+  return <div>
     {intro ? <Panel title="" md={intro}/> : null}
     {doc.secs.map((sec, i) => {
       const t = sec.title.trim(), body = sec.body.join("\n");

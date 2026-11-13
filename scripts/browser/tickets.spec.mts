@@ -2,14 +2,14 @@
    ticket whose exit condition its result decides. */
 import fs from "node:fs";
 import path from "node:path";
-import {everyScreen, expect, fixtureRoot, freePort, open, startServer, TAB_SCREENS, test} from "./fixture.mts";
+import {everyScreen, expect, fixtureRoot, freePort, open, startServer, test, VIEW_SCREENS} from "./fixture.mts";
 import {SCRIPTS_DIR} from "../adp-runtime.mts";
 
 test.use({viewport: {width: 1440, height: 900}});
 
 // OT-MC012-10. The launcher's server always binds a free port, so only a
 // test can bring one back on the port an open page still watches.
-test("the live chit returns from CACHED to WATCHING when the server restarts on its port", async ({page}) => {
+test("the live word returns from CACHED to WATCHING when the server restarts on its port", async ({page}) => {
   const port = await freePort();
   let s = await startServer(fixtureRoot(), port);
   try {
@@ -96,26 +96,29 @@ test("the scroll spy names the full-log section at the stage's top", async ({pag
    the corpus at ADP_LIVE_ROOT when it is set, so a developer can run it on
    a real repo. CI has no live corpus, so there it walks the fixture. */
 const THEME_CLASSES = new Set(["md", "sr-live"]);
-const HOOK_CLASSES = new Set(["sth", "wbrow", "wrow", "lgrow"]);
-test("every class painted outside a rendered document comes from adp-shell.css", async ({page}) => {
+const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow"]);
+test("every class painted outside a rendered document comes from adp-bundle.css or adp-shell.css", async ({page}) => {
   test.setTimeout(300_000);
-  const css = fs.readFileSync(path.join(SCRIPTS_DIR, "adp-shell.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   const shell = new Set<string>();
-  for (const seg of css.split(/\{[^{}]*\}/)) for (const m of seg.matchAll(/\.([A-Za-z_-][A-Za-z0-9_-]*)/g)) shell.add(m[1]);
+  for (const sheet of ["adp-bundle.css", "adp-shell.css"]){
+    const css = fs.readFileSync(path.join(SCRIPTS_DIR, sheet), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const seg of css.split(/\{[^{}]*\}/)) for (const m of seg.matchAll(/\.([A-Za-z_-][A-Za-z0-9_-]*)/g)) shell.add(m[1]);
+  }
   const s = await startServer(process.env.ADP_LIVE_ROOT || fixtureRoot());
   const used = new Set<string>();
-  let walked = 0;
+  let walked = 0, reviewed = 0;
   try {
-    await everyScreen(page, s.url, async () => {
+    reviewed = await everyScreen(page, s.url, async () => {
       for (const c of await page.evaluate(() => [...document.querySelectorAll("[class]")]
         .filter(el => !el.parentElement?.closest(".md")).flatMap(el => el.getAttribute("class")!.split(/\s+/)).filter(Boolean))) used.add(c);
       walked++;
     }, true);
-    // The boot, each tab, two views of each ticket, and New task. Every
-    // directory in the corpus is one ticket.
+    // The boot, each view, the drawer, two views of each ticket, each
+    // ticket's reviews, and New task. Every directory in the corpus is one
+    // ticket.
     const files = (await (await fetch(s.url.replace("app.html", "corpus.json"))).json() as {files: string[]}).files;
     const tickets = new Set(files.filter(f => f.includes("/")).map(f => f.split("/")[0])).size;
-    expect(walked).toBe(1 + TAB_SCREENS.length + 2 * tickets + 1);
+    expect(walked).toBe(1 + VIEW_SCREENS.length + 1 + 2 * tickets + reviewed + 1);
   } finally { await s.stop(); }
   const orphans = [...used].filter(c => !shell.has(c) && !THEME_CLASSES.has(c) && !HOOK_CLASSES.has(c)).sort();
   expect(orphans).toEqual([]);

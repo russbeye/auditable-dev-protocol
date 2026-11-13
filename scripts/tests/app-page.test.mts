@@ -33,7 +33,7 @@ globalThis.ResizeObserver ??= class { observe(){} unobserve(){} disconnect(){} }
 
 const require = createRequire(import.meta.url);
 type Region = {text: string[]; attrs: string[]};
-type Snapshot = {screen: string | null; header: Region; rail: Region; main: Region | null; footer: Region};
+type Snapshot = {screen: string | null; header: Region | null; rail: Region | null; main: Region | null; footer: Region | null; drawer?: Region};
 const {diskFetch, snapshot, NOW: BASELINE_NOW} = require("./screen-text.js") as
   {diskFetch(): FetchFn; snapshot(d: Document): Snapshot; NOW: number};
 const {readFixture} = require("./helpers.js") as {readFixture(name: string): string};
@@ -110,7 +110,12 @@ async function boot({fetch = () => new Promise<FetchResponse>(() => {}), hash = 
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 const $$ = (sel: string) => [...document.querySelectorAll(sel)] as HTMLElement[];
-const tabFor = (name: string) => $$(".mtab").find(t => t.getAttribute("data-s") === name)!;
+/* The control that opens a screen. The top bar's views open Tickets,
+   Watches, and Ledger. Calibration heads the Ledger, the resume pack opens
+   as the Packs drawer, and reviews open from the ticket head. */
+const tabFor = (name: string) => name === "new task" ? $("#newTaskBtn") : name === "resume pack" ? $("#packsBtn")
+  : name === "reviews" ? $("#reviewsBtn")
+  : $$(".adp-nav a").find(t => t.getAttribute("data-s") === (name === "calibration" ? "ledgers" : name))!;
 const entry = (key: string) => $$(".rentry").find(r => r.getAttribute("data-key") === key)!;
 const click = async (el: Element) => { fireEvent.click(el); await settle(1); };
 const key = async (el: Element, k: string) => { fireEvent.keyDown(el, {key: k}); await settle(1); };
@@ -124,9 +129,9 @@ const same = (got: unknown, want: unknown, what: string) => assert.ok(got === wa
 
 // ---- R8: the baseline ----
 
-test("the app's header, rail, and footer show what the vanilla page showed at boot", async () => {
+test("the app's rail shows what the vanilla page showed at boot, under the new top bar and no footer", async () => {
   await boot({fetch: diskFetch(), now: BASELINE_NOW});
-  const got = snapshot(document), want = BASELINE["boot"];
+  const got = snapshot(document), want = restyled(BASELINE["boot"]);
   assert.equal(got.screen, want.screen);
   assert.deepEqual(got.header, want.header);
   assert.deepEqual(got.rail, want.rail);
@@ -136,7 +141,7 @@ test("the app's header, rail, and footer show what the vanilla page showed at bo
 test("the app's watchboard state shows what the vanilla page showed, region for region", async () => {
   await boot({fetch: diskFetch(), now: BASELINE_NOW});
   await click(tabFor("watchboard"));
-  assert.deepEqual(snapshot(document), BASELINE["watchboard"]);
+  assert.deepEqual(snapshot(document), restyled(BASELINE["watchboard"]));
 });
 
 /* The vanilla inspector's ops row held four controls that loaded a file
@@ -169,6 +174,52 @@ function withoutStart(snap: Snapshot): Snapshot {
   return {...snap, main: {...snap.main!, text}};
 }
 const tabTo = (name: string) => click(tabFor(name));
+const pickPack = async (name: string) => { fireEvent.change($("#packSel"), {target: {value: name}}); await settle(1); };
+
+/* The top bar replaced the vanilla header and its footer (DL-012). The
+   baseline still records the old chrome, so each comparison first checks
+   that the old header and footer are exactly what the vanilla page showed,
+   then expects the new bar in their place and no footer. The footer's words
+   moved to the ⋯ menu's About section, which a test below checks. */
+const OLD_TABS = ["inspector", "reviews", "watchboard", "ledgers", "calibration", "resume pack"];
+const NEW_HEADER: Region = {text: ["corpus", "WATCHING", "ADP · Mission Control", "Tickets", "Watches", "Ledger", "Packs", "+ New task", "⋯"],
+  attrs: ["aria-label=Views", "aria-label=Settings and theme"]};
+function restyled(want: Snapshot, screen = want.screen): Snapshot {
+  assert.deepEqual(want.header, {text: ["ADP ·", "MISSION CONTROL", "WATCHING", "☾", "theme", "≡", want.screen!, "project: corpus",
+    ...OLD_TABS, "+ new task"], attrs: ["title=Toggle light / dark"]}, "the baseline header is not the vanilla header");
+  assert.match(want.footer!.text.join(" "), /^schema adp-index\/1 · \d+ tickets · read-only · rebuilt in-memory from the working tree$/);
+  return {...want, screen, header: NEW_HEADER, footer: null};
+}
+// A ticket with review rounds offers them in its head (DL-013). The vanilla
+// page had no such entry, so the comparison takes it out of the app's render.
+function withoutReviews(snap: Snapshot): Snapshot {
+  const text = snap.main!.text.filter(x => !/^reviews · \d+ rounds?$/.test(x));
+  return {...snap, main: {...snap.main!, text}};
+}
+/* The Packs drawer holds what the resume pack screen held, under new chrome
+   (DL-014). We drop the old screen's chrome and the drawer's chrome by exact
+   string, then every remaining entry must match in order: the pack names,
+   the filled text, and the guide to writing a pack. */
+function packChrome(old: Region, drawer: Region){
+  const drop = (list: string[], gone: (string | RegExp)[]) => {
+    const out = list.slice();
+    for (const g of gone){
+      const i = out.findIndex(x => typeof g === "string" ? x === g : g.test(x));
+      assert.ok(i >= 0, "the region lacks " + g);
+      out.splice(i, 1);
+    }
+    return out;
+  };
+  const file = old.text.find(x => x.startsWith("source: "))!.slice("source: ".length);
+  const filled = old.text.includes("⧉ copy pack");
+  const oldRest = drop(old.text, ["resume pack", "deterministic · copy into your next interactive session", "source: " + file,
+    ...(filled ? ["⧉ copy pack"] : []), "add your own pack"]);
+  const forTicket = drawer.text.some(x => /^for \S+$/.test(x));
+  const newRest = drop(drawer.text, ["Packs", "Paste into your next session", "×", "Pack", ...(forTicket ? [/^for \S+$/] : []),
+    ...(filled ? ["Copy pack", "Same index, same bytes"] : []), file, "▸", "Write your own pack"]);
+  assert.deepEqual(newRest, oldRest);
+  assert.deepEqual(drawer.attrs, [...old.attrs, "aria-label=Close packs"]);
+}
 const rentries = () => $$(".rentry").map(r => r.getAttribute("data-key")!);
 const options = () => [...($("#secSel") as HTMLSelectElement).options].map(o => o.value);
 async function pickSection(key: string){ fireEvent.change($("#secSel"), {target: {value: key}}); await settle(1); }
@@ -188,30 +239,33 @@ test("the app's inspector shows what the vanilla page showed, for every section 
       await pickSection(s);
       const k = "inspector|" + t + "|section|" + s, want = BASELINE[k];
       assert.ok(want, "the baseline has no state " + k);
-      const got = s === "prompt" ? withoutStart(snapshot(document)) : snapshot(document);
-      assert.deepEqual(got, {...want, main: withoutOps(want.main!)}, k);
+      const got = withoutReviews(s === "prompt" ? withoutStart(snapshot(document)) : snapshot(document));
+      assert.deepEqual(got, {...restyled(want), main: withoutOps(want.main!)}, k);
       seen.push(k);
     }
     await click($('[data-view="full"]'));
     const k = "inspector|" + t + "|full", want = BASELINE[k];
-    assert.deepEqual(snapshot(document), {...want, main: withoutOps(want.main!)}, k);
+    assert.deepEqual(withoutReviews(snapshot(document)), {...restyled(want), main: withoutOps(want.main!)}, k);
     seen.push(k);
   }
   assert.deepEqual(seen, keys);
 }, 120000);
 
-test("the app's resume pack screen shows what the vanilla page showed, for every pack and ticket", async () => {
+test("the Packs drawer shows what the vanilla resume pack screen showed, for every pack and ticket", async () => {
   await baselineBoot();
   const keys = Object.keys(BASELINE).filter(k => k.startsWith("resume pack|"));
   const seen: string[] = [];
   for (const t of rentries()){
+    if ($("#packDrawer")) await click($('[aria-label="Close packs"]'));
     await tabTo("inspector");
     await click(entry(t));
     await tabTo("resume pack");
-    for (const pk of $$(".pk").map(b => b.getAttribute("data-pk")!)){
-      await click($$(".pk").find(b => b.getAttribute("data-pk") === pk)!);
-      const k = "resume pack|" + t + "|" + pk;
-      assert.deepEqual(snapshot(document), BASELINE[k], k);
+    for (const pk of [...($("#packSel") as HTMLSelectElement).options].map(o => o.value)){
+      await pickPack(pk);
+      const k = "resume pack|" + t + "|" + pk, want = BASELINE[k], got = snapshot(document);
+      assert.deepEqual(got.header, restyled(want).header, k);
+      assert.deepEqual(got.rail, want.rail, k);
+      packChrome(want.main!, got.drawer!);
       seen.push(k);
     }
   }
@@ -220,13 +274,23 @@ test("the app's resume pack screen shows what the vanilla page showed, for every
 
 // The baseline took the boards after its walk, so the last rail ticket is
 // the one the reviews screen shows.
-test("the app's reviews, ledgers, and calibration screens show what the vanilla page showed", async () => {
+// Calibration now heads the Ledger, so the Ledger shows the vanilla
+// calibration screen's record, then the vanilla ledger screen's record.
+test("the app's reviews and Ledger screens show what the vanilla reviews, calibration, and ledgers screens showed", async () => {
   await baselineBoot();
   await click(entry(rentries().at(-1)!));
-  for (const name of ["reviews", "ledgers", "calibration"]){
-    await tabTo(name);
-    assert.deepEqual(snapshot(document), BASELINE[name], name);
-  }
+  // The last ticket has no rounds, so no control opens its reviews screen.
+  // Its old link still does.
+  const last = rentries().at(-1)!;
+  cleanup();
+  vi.restoreAllMocks();
+  await boot({fetch: diskFetch(), now: BASELINE_NOW, hash: "#v=reviews&t=" + encodeURIComponent(last)});
+  assert.equal($("#reviewsBtn"), null);
+  assert.deepEqual(snapshot(document), restyled(BASELINE["reviews"]), "reviews");
+  await tabTo("ledgers");
+  const cal = BASELINE["calibration"], led = restyled(BASELINE["ledgers"]);
+  restyled(cal);
+  assert.deepEqual(snapshot(document), {...led, main: {text: [...cal.main!.text, ...led.main!.text], attrs: [...cal.main!.attrs, ...led.main!.attrs]}});
 });
 
 // ---- the fixture the vanilla page tests use ----
@@ -272,33 +336,66 @@ test("a tab click lands even while the corpus load is still pending", async () =
   assert.equal(isOn("scrInspector"), false);
 });
 
-test("a tab switch keeps the same buttons, so focus survives the render", async () => {
+test("a view switch keeps the same links, so focus survives the render", async () => {
   await boot();
-  const before = $$(".mtab");
+  const before = $$(".adp-nav a");
   before[1].focus();
   await click(before[1]);
-  const after = $$(".mtab");
+  const after = $$(".adp-nav a");
   assert.equal(after.length, before.length);
-  before.forEach((tab, i) => same(after[i], tab, "tab " + i + " was rebuilt"));
-  assert.equal(before[1].getAttribute("aria-selected"), "true");
-  same(document.activeElement, before[1], "focus left the tab it pressed");
+  before.forEach((tab, i) => same(after[i], tab, "view link " + i + " was rebuilt"));
+  assert.equal(before[1].getAttribute("aria-current"), "page");
+  same(document.activeElement, before[1], "focus left the link it pressed");
 });
 
-test("new task lights the accent button and clears the tab strip", async () => {
+test("new task presses its button and leaves no view current", async () => {
   await boot();
   await click($("#newTaskBtn"));
-  assert.equal($("#newTaskBtn").classList.contains("is-on"), true);
+  assert.equal($("#newTaskBtn").getAttribute("aria-pressed"), "true");
   assert.equal(isOn("scrNew"), true);
-  assert.equal($$(".mtab").some(t => t.classList.contains("is-on")), false);
+  assert.equal($$(".adp-nav a").some(t => t.hasAttribute("aria-current")), false);
 });
 
-test("the theme toggle flips the attribute, the icon, and the stored key", async () => {
+// R6: the bar's controls, in the order the TopBar component and the Nav board draw them.
+test("the top bar holds the live dot, the repo, the product label, three views, Packs, New task, and the menu, in that order", async () => {
+  await bootBoard();
+  const bar = $("#topbar");
+  const parts = [...bar.querySelectorAll(".adp-livedot, [data-part=name], #liveTxt, .adp-topbar__product, .adp-nav a, #packsBtn, #newTaskBtn, #menuBtn")]
+    .map(e => e.classList.contains("adp-livedot") ? "dot" : e.textContent);
+  assert.deepEqual(parts, ["dot", "demo", "WATCHING", "ADP · Mission Control", "Tickets", "Watches", "Ledger", "Packs", "+ New task", "⋯"]);
+  assert.equal($$(".adp-nav a").find(a => a.hasAttribute("aria-current"))!.textContent, "Tickets");
+  assert.equal(document.title, "demo · ADP · Mission Control");
+});
+
+const themeOpt = (t: string) => $(`[data-theme-choice="${t}"]`);
+test("the menu's theme choice sets the attribute and the stored key, and System stores nothing", async () => {
   await boot();
-  assert.equal($("#ttIcon").textContent, "☾");
-  await click($("#themeBtn"));
+  await click($("#menuBtn"));
+  assert.equal(themeOpt("system").getAttribute("aria-checked"), "true");
+  await click(themeOpt("light"));
   assert.equal(document.documentElement.getAttribute("data-theme"), "light");
   assert.equal(localStorage.getItem("adp-theme"), "light");
-  assert.equal($("#ttIcon").textContent, "☀");
+  assert.equal(themeOpt("light").getAttribute("aria-checked"), "true");
+  await click(themeOpt("dark"));
+  assert.equal(document.documentElement.getAttribute("data-theme"), "dark");
+  assert.equal(localStorage.getItem("adp-theme"), "dark");
+  await click(themeOpt("system"));
+  assert.equal(localStorage.getItem("adp-theme"), null);
+});
+
+// PM9: a choice stored before the run reads as that choice.
+test("a theme stored before the run opens as that choice in the menu", async () => {
+  await boot();
+  cleanup();
+  vi.restoreAllMocks();
+  vi.useFakeTimers({toFake: ["Date"]});
+  vi.setSystemTime(NOW);
+  localStorage.setItem("adp-theme", "light");
+  render(createElement(App, {fetchFn: () => new Promise<FetchResponse>(() => {}), openFeed: () => new FakeFeed() as unknown as EventFeed}));
+  await settle();
+  assert.equal(document.documentElement.getAttribute("data-theme"), "light");
+  await click($("#menuBtn"));
+  assert.equal(themeOpt("light").getAttribute("aria-checked"), "true");
 });
 
 /* The pre-paint script in app.html sets the theme before React loads, so
@@ -329,23 +426,31 @@ test("the pre-paint ladder lands on dark when storage is blocked", () => {
   assert.equal(prePaint({throws: true, light: true}), "dark");
 });
 
-test("a served corpus fills the chit, the footer, and the rail", async () => {
+const about = async () => {
+  if (!$("#hdrMenu")) await click($("#menuBtn"));
+  return [...$("#hdrMenu").querySelectorAll(".adp-menu__section:last-child .adp-meta")].map(p => p.textContent);
+};
+test("a served corpus fills the repo name, the live word, the menu's About lines, and the rail", async () => {
   await bootBoard();
-  assert.equal($("#projChit").textContent, "project: demo");
+  assert.equal($("[data-part=name]").textContent, "demo");
   assert.equal($("#liveTxt").textContent, "WATCHING");
-  assert.equal($("#liveChit").className, "chit poll poll-ok");
-  assert.match($("#foot").textContent!, /2 tickets/);
+  assert.equal($(".adp-livedot").className, "adp-livedot");
+  assert.deepEqual(await about(), ["schema adp-index/1 · 2 tickets · read-only · rebuilt in-memory from the working tree", "demo · :" + location.port]);
+  const lines = $$("#hdrMenu .adp-menu__section:last-child .adp-meta");
+  assert.equal(lines[0].style.fontFamily, "");
+  assert.equal(lines[1].style.fontFamily, "var(--font-mono)");
   const rail = $("#rail").textContent!;
   assert.match(rail, /needs attention/);
   assert.match(rail, /AA1/);
   assert.match(rail, /BB2/);
 });
 
-test("with no corpus the chrome says so, and the live chit idles", async () => {
+test("with no corpus the bar names no repo, the live word idles, and About says so", async () => {
   await boot({fetch: () => miss()});
-  assert.equal($("#projChit").textContent, "no corpus");
+  assert.equal($("[data-part=name]").textContent, "");
   assert.equal($("#liveTxt").textContent, "IDLE");
-  assert.match($("#foot").textContent!, /^no corpus · /);
+  assert.match($(".adp-livedot").className, /adp-livedot--cached/);
+  assert.deepEqual(await about(), ["no corpus · launch mission control with adp-launch.mts to build the index in-memory"]);
 });
 
 // ---- the rail ----
@@ -630,7 +735,7 @@ test("an event during a load queues one more load, so the last change always lan
   await settle();
   assert.equal(live.listings, 3);
   assert.equal($$(".rentry").length, 1);
-  assert.match($("#foot").textContent!, /1 tickets/);
+  assert.match((await about())[0]!, /1 tickets/);
 });
 
 test("a broken stream or a failed reload marks the corpus CACHED, and a reopen recovers it", async () => {
@@ -639,7 +744,10 @@ test("a broken stream or a failed reload marks the corpus CACHED, and a reopen r
   assert.equal($("#liveTxt").textContent, "WATCHING");
   await act(async () => { feed.onerror!(); });
   assert.equal($("#liveTxt").textContent, "CACHED");
-  assert.equal($("#liveChit").className, "chit poll poll-warn");
+  // PM7: the dot goes hollow and the word and the last update time say why.
+  assert.equal($(".adp-livedot").className, "adp-livedot adp-livedot--cached");
+  assert.match($(".adp-topbar__since").textContent!, /^last update \d\d:\d\d · reconnecting$/);
+  assert.equal($("#liveTxt").getAttribute("role"), "status");
   assert.match($("#rail").textContent!, /AA1/);
   await act(async () => { feed.onopen!(); });
   await settle();
@@ -672,7 +780,7 @@ test("a boot that failed honors its deep link when the corpus first answers", as
   const live = liveCorpus(LISTING, TEXTS);
   live.down = true;
   const {feed, hashes} = await boot({fetch: live.fetch, hash: "#t=AA1&item=DL-002"});
-  assert.equal($("#projChit").textContent, "no corpus");
+  assert.equal($("[data-part=name]").textContent, "");
   live.down = false;
   await act(async () => { feed.onopen!(); });
   await settle();
@@ -711,7 +819,7 @@ test("a served page with no corpus directory probes quietly", async () => {
   await act(async () => { feed.onopen!(); });
   await settle();
   assert.equal(warn.mock.calls.length, 0);
-  assert.equal($("#projChit").textContent, "no corpus");
+  assert.equal($("[data-part=name]").textContent, "");
 });
 
 test("the live pill's status region is written only when its state changes", async () => {
@@ -801,121 +909,193 @@ test("board and ledger links on shared-id tickets land on their own directories"
   }
 });
 
-// ---- the header menu ----
+// ---- the Tickets view before a ticket exists ----
 
-// jsdom has no layout, so a test sets the header's two widths by hand. The
-// app reads them the way it reads a real box.
-function headerWidths(scroll: number | (() => number), client: number){
-  const hdr = $("header");
-  Object.defineProperty(hdr, "scrollWidth", {configurable: true, get: typeof scroll === "function" ? scroll : () => scroll});
-  Object.defineProperty(hdr, "clientWidth", {configurable: true, get: () => client});
-  return hdr;
+const statusOf = () => $("#statusPage")?.getAttribute("data-status") ?? null;
+
+test("while the first load runs, Tickets says it is building the index and shows no rail", async () => {
+  await boot();
+  assert.equal(statusOf(), "loading");
+  assert.equal($("#rail"), null);
+  assert.equal($("#statusPage h1").getAttribute("role"), "status");
+  assert.match($("#statusPage").textContent!, /Building the index from the working tree/);
+  assert.equal($(".adp-empty__path").textContent, "Reading .adp/");
+  assert.equal($("#liveTxt").style.color, "var(--dim)");
+  assert.ok(!$(".adp-topbar__since"), "a load still running shows no failure note");
+});
+
+// DL-027 V1: each status page sits in the middle of the stage, as the boards draw it.
+test("a status page centers in a stage that lays it out as a column", async () => {
+  await boot();
+  assert.equal($(".main").style.display, "flex");
+  assert.equal($(".main").style.flexDirection, "column");
+  assert.equal($("#statusPage").style.margin, "auto");
+});
+
+test("a first load that fails says the server stopped answering, and Retry runs one more load", async () => {
+  const live = liveCorpus(LISTING, TEXTS);
+  live.down = true;
+  await boot({fetch: live.fetch});
+  assert.equal(statusOf(), "failed");
+  assert.match($("#statusPage").textContent!, /server on .* stopped answering before the index arrived/);
+  assert.ok(!$(".adp-empty__mark"), "the failed page draws no mark");
+  assert.equal($(".adp-empty__path").textContent, "Watching .adp/");
+  // DL-029: the word stays IDLE, and the bar marks the failure beside it.
+  assert.equal($("#liveTxt").textContent, "IDLE");
+  assert.equal($("#liveTxt").style.color, "var(--bad)");
+  assert.equal($(".adp-livedot").style.boxShadow, "inset 0 0 0 2px var(--bad)");
+  assert.equal($(".adp-topbar__since").textContent, "no index yet · retrying");
+  live.down = false;
+  await click($("#retryBtn"));
+  await settle();
+  assert.equal(statusOf(), null);
+  assert.ok($$(".rentry").length > 0);
+});
+
+test("a repo with no logs offers New task and the bootstrap pack, and names the folder it watches", async () => {
+  await boot({fetch: packsFetch(liveCorpus({root: "demo", files: []}, {}).fetch)});
+  assert.equal(statusOf(), "empty");
+  assert.match($("#statusPage").textContent!, /No audit logs in this repo yet/);
+  assert.equal($(".adp-empty__path").textContent, "Watching demo/.adp/");
+  assert.equal($("#statusPage .adp-empty__text code.adp-code").textContent, ".adp/");
+  await click($$("#statusPage button").find(b => /Bootstrap pack/.test(b.textContent!))!);
+  assert.deepEqual(selectedPacks(), ["bootstrap-project"]);
+  await key(document.activeElement!, "Escape");
+  await click($$("#statusPage button").find(b => b.textContent === "+ New task")!);
+  assert.equal(isOn("scrNew"), true);
+});
+
+test("the other views still render while Tickets has nothing to show", async () => {
+  await boot();
+  await click(tabFor("watchboard"));
+  assert.equal(statusOf(), null);
+  assert.equal(isOn("scrWatch"), true);
+});
+
+// ---- the top bar's fold and its menu ----
+
+/* jsdom has no layout, so a test sets the widths by hand. The bar adds up
+   the widths its full row needs. With every part at zero that sum is 164px
+   of padding, gaps, and the dot, so the actions block carries the rest. */
+function barNeeds(need: number, client: number){
+  const bar = $("#topbar");
+  Object.defineProperty(bar, "clientWidth", {configurable: true, get: () => client});
+  Object.defineProperty(bar.querySelector(".adp-topbar__actions")!, "scrollWidth", {configurable: true, get: () => need - 164});
+  return bar;
 }
 const resize = async () => { await act(async () => { window.dispatchEvent(new Event("resize")); }); };
+const folded = () => $("#topbar .adp-nav").style.flexBasis === "100%";
 
-test("the header folds into the menu only while the full row overflows", async () => {
+test("the bar folds its views onto a second row only while the full row overflows", async () => {
   await boot();
-  const hdr = $("header");
-  assert.equal(hdr.classList.contains("is-compact"), false);
-  headerWidths(1080, 705);
+  // The zero floor keeps an overflowing row inside the bar, and a bar that
+  // is not positioned leaves the film grain over it.
+  assert.equal($("#topbar").style.minWidth, "0px");
+  assert.equal($("#topbar").style.position, "");
+  assert.equal(folded(), false);
+  barNeeds(1080, 705);
   await resize();
-  assert.equal(hdr.classList.contains("is-compact"), true);
-  headerWidths(1085, 1085);
+  assert.equal(folded(), true);
+  assert.equal($(".adp-topbar__product").style.visibility, "hidden");
+  barNeeds(1085, 1085);
   await resize();
-  assert.equal(hdr.classList.contains("is-compact"), false);
+  assert.equal(folded(), false);
 });
 
-test("the header folds when its labels would have to break to fit", async () => {
-  await boot();
-  const hdr = $("header");
-  headerWidths(() => hdr.classList.contains("is-measuring") ? 1180 : 1085, 1085);
-  await resize();
-  assert.equal(hdr.classList.contains("is-compact"), true);
-  assert.equal(hdr.classList.contains("is-measuring"), false);
-});
-
-test("every path that rewrites header text measures the header again", async () => {
+test("every path that rewrites the bar's text measures it again", async () => {
   const live = liveCorpus(LISTING, TEXTS);
   const {feed} = await boot({fetch: live.fetch});
-  const hdr = $("header");
-  headerWidths(1080, 705);
+  barNeeds(1080, 705);
   await click(tabFor("watchboard"));
-  assert.equal(hdr.classList.contains("is-compact"), true);
-  headerWidths(705, 705);
-  await click($("#themeBtn"));
-  assert.equal(hdr.classList.contains("is-compact"), false);
-  headerWidths(1080, 705);
+  assert.equal(folded(), true);
+  barNeeds(705, 705);
+  await click($("#newTaskBtn"));
+  assert.equal(folded(), false);
+  barNeeds(1080, 705);
   live.down = true;
   await act(async () => { feed.onmessage!(); });
   await settle();
   assert.equal($("#liveTxt").textContent, "CACHED");
-  assert.equal(hdr.classList.contains("is-compact"), true);
+  assert.equal(folded(), true);
 });
 
-test("the menu button opens the menu and names the current screen", async () => {
+test("the bar measures again when the web fonts finish loading", async () => {
+  // jsdom has no FontFaceSet, so we stand one in with a ready promise we settle by hand.
+  let ready!: () => void;
+  const fonts = Object.assign(new EventTarget(), {ready: new Promise<void>(r => { ready = r; })});
+  Object.defineProperty(document, "fonts", {configurable: true, get: () => fonts});
+  try {
+    await boot();
+    barNeeds(1080, 705);
+    assert.equal(folded(), false);
+    await act(async () => { ready(); await fonts.ready; });
+    assert.equal(folded(), true);
+    barNeeds(705, 705);
+    await act(async () => { fonts.dispatchEvent(new Event("loadingdone")); });
+    assert.equal(folded(), false);
+  } finally {
+    delete (document as {fonts?: unknown}).fonts;
+  }
+});
+
+test("the ⋯ button opens the menu and says so", async () => {
   await boot();
-  headerWidths(1080, 705);
-  await resize();
-  assert.equal($("#menuTxt").textContent, "inspector");
+  assert.equal($("#hdrMenu"), null);
   await click($("#menuBtn"));
-  assert.equal($("header").classList.contains("menu-open"), true);
+  assert.ok($("#hdrMenu"));
   assert.equal($("#menuBtn").getAttribute("aria-expanded"), "true");
+  assert.equal($("#topbar").style.position, "relative");
+  assert.equal($("#menuBtn").style.background, "var(--panel-2)");
+  assert.equal($("#menuBtn").style.borderColor, "var(--line-bright)");
   await click($("#menuBtn"));
-  assert.equal($("header").classList.contains("menu-open"), false);
+  assert.equal($("#menuBtn").style.background, "");
+  assert.equal($("#hdrMenu"), null);
   assert.equal($("#menuBtn").getAttribute("aria-expanded"), "false");
 });
 
-test("a pick from the open menu closes it and hands focus to the menu button", async () => {
-  await boot();
-  headerWidths(1080, 705);
-  await resize();
+// DL-009: the menu lists a shortcut only once it works.
+test("the menu lists the shortcuts that work, and f flips the ticket between section and full log", async () => {
+  await bootBoard();
   await click($("#menuBtn"));
-  tabFor("ledgers").focus();
-  await click(tabFor("ledgers"));
-  assert.equal($("header").classList.contains("menu-open"), false);
-  same(document.activeElement, $("#menuBtn"), "focus is not on the menu button");
-  assert.equal($("#menuTxt").textContent, "ledgers");
-  await click($("#menuBtn"));
-  $("#newTaskBtn").focus();
-  await click($("#newTaskBtn"));
-  assert.equal($("header").classList.contains("menu-open"), false);
-  same(document.activeElement, $("#menuBtn"), "focus is not on the menu button");
-  assert.equal($("#menuTxt").textContent, "new task");
+  assert.deepEqual([...$("#hdrMenu").querySelectorAll(".adp-keys dt, .adp-keys dd")].map(e => e.textContent), ["f", "Section or full log"]);
+  await key(document.body, "Escape");
+  assert.equal(op("data-view", "section").classList.contains("is-on"), true);
+  await key(document.body, "f");
+  assert.equal(op("data-view", "full").classList.contains("is-on"), true);
+  await key(document.body, "f");
+  assert.equal(op("data-view", "section").classList.contains("is-on"), true);
 });
 
-test("Escape closes the open menu and hands focus to the menu button", async () => {
+test("f does nothing while the reader types in a field or another view shows", async () => {
+  await bootBoard();
+  const field = document.createElement("input");
+  document.body.append(field);
+  await key(field, "f");
+  assert.equal(op("data-view", "section").classList.contains("is-on"), true);
+  field.remove();
+  await click(tabFor("watchboard"));
+  await key(document.body, "f");
+  await click(tabFor("inspector"));
+  assert.equal(op("data-view", "section").classList.contains("is-on"), true);
+});
+
+test("Escape closes the open menu and hands focus to the ⋯ button", async () => {
   await boot();
-  headerWidths(1080, 705);
-  await resize();
   await click($("#menuBtn"));
-  tabFor("ledgers").focus();
-  await key(tabFor("ledgers"), "Escape");
-  assert.equal($("header").classList.contains("menu-open"), false);
-  same(document.activeElement, $("#menuBtn"), "focus is not on the menu button");
+  themeOpt("dark").focus();
+  await key(themeOpt("dark"), "Escape");
+  assert.equal($("#hdrMenu"), null);
+  same(document.activeElement, $("#menuBtn"), "focus is not on the ⋯ button");
 });
 
 test("a click outside the menu closes it and leaves focus alone", async () => {
-  await boot();
-  headerWidths(1080, 705);
-  await resize();
+  await bootBoard();
   await click($("#menuBtn"));
   $("#rail").tabIndex = -1;
   $("#rail").focus();
   await click($("#rail"));
-  assert.equal($("header").classList.contains("menu-open"), false);
+  assert.equal($("#hdrMenu"), null);
   same(document.activeElement, $("#rail"), "focus left the rail");
-});
-
-test("the open menu closes when the full header fits again", async () => {
-  await boot();
-  headerWidths(1080, 705);
-  await resize();
-  await click($("#menuBtn"));
-  headerWidths(1385, 1385);
-  await resize();
-  assert.equal($("header").classList.contains("is-compact"), false);
-  assert.equal($("header").classList.contains("menu-open"), false);
-  assert.equal($("#menuBtn").getAttribute("aria-expanded"), "false");
 });
 
 // ---- the inspector ----
@@ -1557,7 +1737,9 @@ test("the ledger rows every decision, open debt first, settled outcomes last", a
   assert.deepEqual(lgRows().map(r => r.getAttribute("data-t") + "/" + r.getAttribute("data-dl")), ["AA1/DL-002", "BB2/DL-001", "AA1/DL-001"]);
   // Watches never row here, because the board is the one watch surface.
   assert.equal($$(".lgrow").filter(r => r.getAttribute("data-wid")).length, 0);
-  const scr = $("#scrLedgers").innerHTML;
+  // Calibration heads the Ledger and names every outcome in its legend, so
+  // we read the ledger's own part alone.
+  const scr = $("#scrLedgers").innerHTML.replace($("#scrCalib").outerHTML, "");
   assert.match(scr, /open 2/);
   assert.match(scr, /validated 1/);
   assert.ok(!scr.includes("invalidated"));
@@ -1670,8 +1852,8 @@ const bootPacks = (opts: BootOpts = {}, texts = TEXTS) => {
   const live = liveCorpus(LISTING, texts);
   return boot({fetch: packsFetch(live.fetch), ...opts}).then(b => ({...b, live}));
 };
-const selectedPacks = () => $$(".pk").filter(b => b.classList.contains("is-on")).map(b => b.getAttribute("data-pk"));
-const packOf = (name: string) => $$(".pk").find(b => b.getAttribute("data-pk") === name)!;
+const selectedPacks = () => [($("#packSel") as HTMLSelectElement).value];
+const packNames = () => [...($("#packSel") as HTMLSelectElement).options].map(o => o.value);
 const packBlock = () => document.getElementById("packText");
 
 /* What the page must show for a ticket: the same corpus built the way the
@@ -1688,11 +1870,18 @@ const marking = () => $$(".rentry").find(r => r.classList.contains("is-sel"))!.g
 test("the pack screen rows every pack in listing order with resume-ticket selected by default", async () => {
   await bootPacks();
   await click(tabFor("resume pack"));
-  assert.deepEqual($$(".pk").map(b => b.getAttribute("data-pk")), PACK_NAMES);
+  assert.deepEqual(packNames(), PACK_NAMES);
   assert.deepEqual(selectedPacks(), ["resume-ticket"]);
-  assert.match($(".packsrc").textContent!, /source: packs\/resume-ticket\.pack\.md/);
-  assert.match($("#scrPack").innerHTML, /add your own pack/);
-  assert.match($(".slotlist").textContent!, /\{\{index\.generated\}\}/);
+  assert.equal($("#packSrc").textContent, "packs/resume-ticket.pack.md");
+  assert.match($("#packDrawer").innerHTML, /Write your own pack/);
+  // DL-027 V8 and V9: the title shares the head row with its subtitle, and the
+  // pack path rides the copy row at its right end.
+  assert.ok($(".adp-drawer__title").parentElement === $(".adp-drawer__sub").parentElement, "title and subtitle share the head row");
+  assert.ok($("#packSrc").parentElement === $("[data-op=copypack]")?.parentElement, "the pack path sits in the copy row");
+  assert.equal($("#packSrc").style.marginLeft, "auto");
+  assert.equal($("#packText").style.flexGrow, "1");
+  assert.equal($(".adp-drawer__body").style.overflowY, "auto");
+  assert.match($("#packSlots").textContent!, /\{\{index\.generated\}\}/);
 });
 
 test("the block carries the lib's fill for the selected ticket, and a rail pick refills it in place", async () => {
@@ -1702,22 +1891,22 @@ test("the block carries the lib's fill for the selected ticket, and a rail pick 
   assert.equal(packBlock()!.textContent, expectedPack("resume-ticket", first));
   const other = first === "BB2" ? "AA1" : "BB2";
   await click(entry(other));
-  assert.equal(isOn("scrPack"), true);
+  assert.equal(!!$("#packDrawer"), true);
   assert.equal(packBlock()!.textContent, expectedPack("resume-ticket", other));
   assert.notEqual(expectedPack("resume-ticket", first), expectedPack("resume-ticket", other));
 });
 
-test("a pack button switches the pack, refills the block, and keeps the keyboard", async () => {
+test("the pack select switches the pack, refills the block, and keeps the keyboard", async () => {
   await bootPacks();
   await click(tabFor("resume pack"));
   const key = marking();
-  const btn = packOf("audit-sweep");
-  btn.focus();
-  await click(btn);
+  const sel = $("#packSel");
+  sel.focus();
+  await pickPack("audit-sweep");
   assert.deepEqual(selectedPacks(), ["audit-sweep"]);
-  assert.match($(".packsrc").textContent!, /audit-sweep\.pack\.md/);
+  assert.equal($("#packSrc").textContent, "packs/audit-sweep.pack.md");
   assert.equal(packBlock()!.textContent, expectedPack("audit-sweep", key));
-  same(document.activeElement, btn, "focus left the pack button");
+  same(document.activeElement, sel, "focus left the pack select");
 });
 
 test("copy writes the block's text to the clipboard and the label reports it, then rests", async () => {
@@ -1725,7 +1914,7 @@ test("copy writes the block's text to the clipboard and the label reports it, th
   await bootPacks();
   await click(tabFor("resume pack"));
   const key = marking();
-  const copy = () => op("data-op", "copypack");
+  const copy = () => $('[data-op="copypack"]');
   vi.useFakeTimers({toFake: ["Date", "setTimeout", "clearTimeout"]});
   vi.setSystemTime(NOW);
   fireEvent.click(copy());
@@ -1733,27 +1922,51 @@ test("copy writes the block's text to the clipboard and the label reports it, th
   assert.deepEqual(got, [expectedPack("resume-ticket", key)]);
   assert.equal(copy().textContent, "copied");
   await act(async () => { vi.advanceTimersByTime(1200); });
-  assert.equal(copy().textContent, "⧉ copy pack");
+  assert.equal(copy().textContent, "Copy pack");
 });
 
 test("a denied clipboard write says so and copies nothing", async () => {
   const got = stubClipboard(() => Promise.reject(new Error("denied")));
   await bootPacks();
   await click(tabFor("resume pack"));
-  await click(op("data-op", "copypack"));
+  await click($('[data-op="copypack"]'));
   assert.deepEqual(got, []);
-  assert.match(op("data-op", "copypack").textContent!, /copy failed/);
+  assert.match($('[data-op="copypack"]').textContent!, /copy failed/);
 });
 
-test("a resume pack deep link boots to the screen and a tab visit writes its token", async () => {
+// DL-015: the drawer is not a screen, so opening it writes no view token.
+test("a resume pack deep link opens the drawer over Tickets, and opening the drawer writes no view token", async () => {
   await bootPacks({hash: "#v=resume%20pack"});
-  assert.equal(isOn("scrPack"), true);
+  assert.equal(!!$("#packDrawer"), true);
+  assert.equal(isOn("scrInspector"), true);
   assert.ok(packBlock());
   cleanup();
   vi.restoreAllMocks();
   const {hashes} = await bootPacks();
+  const before = last(hashes);
   await click(tabFor("resume pack"));
-  assert.match(last(hashes), /^#v=resume%20pack/);
+  assert.equal(!!$("#packDrawer"), true);
+  assert.equal(last(hashes), before);
+  assert.doesNotMatch(last(hashes), /v=/);
+});
+
+// PM5: the drawer is modal, Escape closes it, and focus returns to its opener.
+test("the Packs drawer takes focus, makes the page behind it inert, and hands focus back on Escape or close", async () => {
+  await bootPacks();
+  $("#packsBtn").focus();
+  await click($("#packsBtn"));
+  same(document.activeElement, $("#packSel"), "focus did not move into the drawer");
+  assert.equal($(".main").hasAttribute("inert"), true);
+  assert.equal($("#topbar").hasAttribute("inert"), true);
+  assert.equal($("#packDrawer").getAttribute("aria-modal"), "true");
+  await key(document.activeElement!, "Escape");
+  assert.equal($("#packDrawer"), null);
+  assert.equal($(".main").hasAttribute("inert"), false);
+  same(document.activeElement, $("#packsBtn"), "focus did not return to the Packs button");
+  await click($("#packsBtn"));
+  await click($('[aria-label="Close packs"]'));
+  assert.equal($("#packDrawer"), null);
+  same(document.activeElement, $("#packsBtn"), "focus did not return after the close button");
 });
 
 // A record naming a ticket id with no card: the advisory sweep's phantom.
@@ -1763,7 +1976,7 @@ const LOG_PHANTOM = LOG_B.replace("- **OT-BB2-3 CLOSED 2026-08-10 → VALIDATED.
 test("the ledger-integrity pack fills from the sweep over the served corpus", async () => {
   const {feed, live} = await bootPacks({}, {...TEXTS});
   await click(tabFor("resume pack"));
-  await click(packOf("ledger-integrity"));
+  await pickPack(("ledger-integrity"));
   assert.equal(packBlock()!.textContent, expectedPack("ledger-integrity", marking()));
   assert.match(packBlock()!.textContent!, /the corpus linted clean/);
   // A record appended under the watched log reaches the pack on its change event.
@@ -1778,7 +1991,7 @@ test("the ledger-integrity pack fills from the sweep over the served corpus", as
 test("a reload that adopts nothing runs no advisory sweep", async () => {
   const {feed, live} = await bootPacks({}, {...TEXTS});
   await click(tabFor("resume pack"));
-  await click(packOf("ledger-integrity"));
+  await pickPack(("ledger-integrity"));
   const sweeps = vi.mocked(Bld.lintCorpus).mock.calls.length;
   const before = packBlock()!.textContent;
   await change(feed);
@@ -1793,46 +2006,46 @@ test("a reload that adopts nothing runs no advisory sweep", async () => {
 test("a corpus that never loads leaves the screen on its notice", async () => {
   await boot({fetch: packsFetch(miss)});
   await click(tabFor("resume pack"));
-  await click(packOf("ledger-integrity"));
-  assert.match($("#scrPack").innerHTML, /no corpus behind this page/);
+  await pickPack(("ledger-integrity"));
+  assert.match($("#packDrawer").innerHTML, /no corpus behind this page/);
   assert.equal(packBlock(), null);
 });
 
 test("with no packs behind the page the screen says so and rows nothing", async () => {
   await bootBoard();
   await click(tabFor("resume pack"));
-  assert.match($("#scrPack").innerHTML, /no packs behind this page/);
-  assert.equal($$(".pk").length, 0);
+  assert.match($("#packDrawer").innerHTML, /no packs behind this page/);
+  assert.equal($("#packSel"), null);
   assert.equal(packBlock(), null);
 });
 
 test("an empty packs directory is named as empty, not as absent", async () => {
   await boot({fetch: packsFetch(liveCorpus(LISTING, TEXTS).fetch, {packs: []})});
   await click(tabFor("resume pack"));
-  assert.match($("#scrPack").innerHTML, /packs directory is empty/);
+  assert.match($("#packDrawer").innerHTML, /packs directory is empty/);
 });
 
 test("with packs but no corpus the screen rows the packs and says there is no corpus to fill from", async () => {
   await boot({fetch: packsFetch(miss)});
   await click(tabFor("resume pack"));
-  assert.equal($$(".pk").length, PACK_NAMES.length);
-  assert.match($("#scrPack").innerHTML, /no corpus behind this page/);
+  assert.deepEqual(packNames(), PACK_NAMES);
+  assert.match($("#packDrawer").innerHTML, /no corpus behind this page/);
   assert.equal(packBlock(), null);
 });
 
 test("a corpus-wide pack fills with no ticket selected, and a ticket pack still asks for one", async () => {
   await bootPacks({hash: "#t=ZZZ"});
   await click(tabFor("resume pack"));
-  assert.match($("#scrPack").innerHTML, /"ZZZ" is not in this corpus/);
+  assert.match($("#packDrawer").innerHTML, /"ZZZ" is not in this corpus/);
   assert.equal(packBlock(), null);
-  await click(packOf("watch-audit"));
+  await pickPack(("watch-audit"));
   assert.equal(packBlock()!.textContent, expectedPack("watch-audit", null));
-  assert.doesNotMatch($("#scrPack").innerHTML, /select a ticket/);
-  await click(packOf("close-watch"));
+  assert.doesNotMatch($("#packDrawer").innerHTML, /select a ticket/);
+  await pickPack(("close-watch"));
   assert.equal(packBlock(), null);
   // Picking a ticket fills the pack without leaving the screen.
   await click(entry("AA1"));
-  assert.equal(isOn("scrPack"), true);
+  assert.equal(!!$("#packDrawer"), true);
   assert.equal(packBlock()!.textContent, expectedPack("close-watch", "AA1"));
 });
 
@@ -1880,15 +2093,13 @@ test("the calibration screen counts a ruled entry by its ruling, never its card"
   assert.ok(!scr.includes('class="calseg calseg-open"'));
 });
 
-test("a calibration deep link boots to the screen and a tab visit writes its token", async () => {
-  await bootBoard({hash: "#v=calibration"});
-  assert.equal(isOn("scrCalib"), true);
+// DL-007: calibration heads the Ledger, so its old link lands there.
+test("a calibration deep link boots to the Ledger with calibration at its top, and the Ledger writes its own token", async () => {
+  const {hashes} = await bootBoard({hash: "#v=calibration"});
+  assert.equal(isOn("scrLedgers"), true);
+  same($("#scrLedgers").firstElementChild, $("#scrCalib"), "calibration does not head the Ledger");
   assert.equal($$(".caltile").length, 4);
-  cleanup();
-  vi.restoreAllMocks();
-  const {hashes} = await bootBoard();
-  await calTab();
-  assert.match(last(hashes), /^#v=calibration/);
+  assert.match(last(hashes), /^#v=ledgers/);
 });
 
 test("with no corpus the calibration screen says so instead of tiling zeros", async () => {
@@ -2637,13 +2848,13 @@ test("the app's new task screen shows what the vanilla page showed, less the fou
   await baselineBoot();
   await click($("#newTaskBtn"));
   const want = BASELINE["new task"];
-  assert.deepEqual(snapshot(document), {...want, main: withoutOps(want.main!, REMOVED_NT_OPS)});
+  assert.deepEqual(snapshot(document), {...restyled(want), main: withoutOps(want.main!, REMOVED_NT_OPS)});
 });
 
 test("the new task screen carries the standalone's field set and boots with today's date", async () => {
   const ctx = await bootPrompt(GOLDEN, {hash: "#v=new%20task"});
   assert.equal(isOn("scrNew"), true);
-  assert.equal($("#newTaskBtn").classList.contains("is-on"), true);
+  assert.equal($("#newTaskBtn").getAttribute("aria-pressed"), "true");
   await startFrom(ctx);
   const nfs = $$("#scrNew .nt-in").map(el => el.getAttribute("data-nf")).filter(Boolean) as string[];
   for (const k of ["task.id", "task.title", "task.author", "task.date", "preamble", "role.lens",
@@ -3617,12 +3828,18 @@ test("a return to New task replays neither the last row's focus nor the yaml scr
 
 // ---- every screen ----
 
-// Visits every screen the fixture corpus reaches: the boot, each tab, each
-// ticket's section and full log, and New task. We call look() on each one.
+// Visits every screen the fixture corpus reaches: the boot, each view, the
+// Packs drawer, each ticket's section and full log, the reviews of each
+// ticket that has rounds, and New task. We call look() on each one, and
+// return how many tickets offered reviews.
 async function everyScreen(look: () => void){
   await baselineBoot();
   look();
-  for (const s of S.TAB_SCREENS) { await tabTo(s); look(); }
+  for (const v of S.VIEWS) { await tabTo(v.screen); look(); }
+  await tabTo("resume pack");
+  look();
+  await click($('[aria-label="Close packs"]'));
+  let reviewed = 0;
   for (const t of rentries()){
     await tabTo("inspector");
     // A rail pick keeps the view the last ticket used, so we choose the
@@ -3632,9 +3849,11 @@ async function everyScreen(look: () => void){
     look();
     await click($('[data-view="full"]'));
     look();
+    if ($("#reviewsBtn")){ await tabTo("reviews"); look(); reviewed++; }
   }
   await click($("#newTaskBtn"));
   look();
+  return reviewed;
 }
 
 /* R15. A drop handler cancels dragover and drop, because the browser's own
@@ -3645,7 +3864,7 @@ async function everyScreen(look: () => void){
    handler took it. */
 test("no screen offers a file input, a paste field, or a drop target", async () => {
   let screens = 0;
-  await everyScreen(() => {
+  const reviewed = await everyScreen(() => {
     screens++;
     assert.equal($$('input[type="file"]').length, 0);
     assert.equal($$('[data-op="paste"], [data-op="openwatch"], [data-op="openyaml"], #pasteArea, #pasteDrawer, .shellmask').length, 0);
@@ -3657,25 +3876,30 @@ test("no screen offers a file input, a paste field, or a drop target", async () 
         if (e.defaultPrevented) assert.fail(`${type} on <${target.tagName.toLowerCase()} class="${target.className}"> was cancelled`);
       }
   });
-  // The boot, each tab, two views of each ticket, and New task.
+  // The boot, each view, the drawer, two views of each ticket, each ticket's
+  // reviews, and New task.
   const tickets = rentries().length;
   assert.ok(tickets > 1, "the fixture corpus holds more than one ticket");
-  assert.equal(screens, 1 + S.TAB_SCREENS.length + 2 * tickets + 1, "the walk reached every ticket");
+  assert.equal(screens, 1 + S.VIEWS.length + 1 + 2 * tickets + reviewed + 1, "the walk reached every ticket");
 });
 
-// ---- the shell sheet owns the app's classes ----
+// ---- the sheets own the app's classes ----
 
 /* Everything the app paints outside a rendered document takes its classes
-   from adp-shell.css. Rendered documents sit in .md, where the theme's
+   from adp-bundle.css, or from adp-shell.css on a screen not yet moved onto
+   the design system. Rendered documents sit in .md, where the theme's
    document styles apply. Two theme classes are deliberate: .md itself, and
-   .sr-live, which hides New task's spoken verdict. Four classes carry no
-   style at all, because the handlers and the tests select by them. */
+   .sr-live, which hides New task's spoken verdict. Five classes carry no
+   style at all, because the handlers and the tests select by them. The
+   shell's grid sits in its own style attribute. */
 const THEME_CLASSES = new Set(["md", "sr-live"]);
-const HOOK_CLASSES = new Set(["sth", "wbrow", "wrow", "lgrow"]);
-test("the app's screens use only adp-shell.css classes outside rendered documents", async () => {
-  const css = fs.readFileSync(path.join(import.meta.dirname, "..", "adp-shell.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow"]);
+test("the app's screens use only adp-bundle.css and adp-shell.css classes outside rendered documents", async () => {
   const shell = new Set<string>();
-  for (const seg of css.split(/\{[^{}]*\}/)) for (const m of seg.matchAll(/\.([A-Za-z_-][A-Za-z0-9_-]*)/g)) shell.add(m[1]);
+  for (const sheet of ["adp-bundle.css", "adp-shell.css"]){
+    const css = fs.readFileSync(path.join(import.meta.dirname, "..", sheet), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const seg of css.split(/\{[^{}]*\}/)) for (const m of seg.matchAll(/\.([A-Za-z_-][A-Za-z0-9_-]*)/g)) shell.add(m[1]);
+  }
   const used = new Set<string>();
   const take = () => { for (const el of $$("[class]")) if (!el.parentElement?.closest(".md"))
     for (const c of el.getAttribute("class")!.split(/\s+/)) if (c) used.add(c); };

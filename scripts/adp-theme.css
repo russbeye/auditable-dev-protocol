@@ -8,28 +8,6 @@
   --disp:var(--sans);
   /* fluid base — type tracks the viewport with hard legibility floors */
   --u:clamp(13px, .28vw + 11.6px, 15px);
-  --shadow:0 4px 14px rgba(0,0,0,.40);   /* the ONE shadow token */
-  --accent:#edff45;                      /* acid chartreuse — the rare signal */
-}
-/* ---- dark theme · ink ground, depth from alpha-tinted blue (no gray ramp) ---- */
-:root[data-theme="dark"]{
-  color-scheme:dark;
-  --bg:#05060c; --panel:#0b0d1c; --panel-2:#12152e; --inset:#070811;
-  --line:#1c2150; --line-bright:#2c3473;
-  --ink:#f5f5f5; --dim:#9498c4; --faint:#565b86;
-  --blue:#0000f2; --blue-bright:#4d6bff; --blue-deep:#0000c4;
-  --warn:#faca15; --ok:#31c48d; --bad:#f98080; --unk:#ac94fa;
-  --code-fg:#5cd6a0; --code-bg:#181d40;
-}
-/* ---- light theme · paper ground, depth from alpha-tinted blue (no gray ramp) ---- */
-:root[data-theme="light"]{
-  color-scheme:light;
-  --bg:#f4f4ec; --panel:#ffffff; --panel-2:#e9ebff; --inset:#ffffff;
-  --line:#d6daff; --line-bright:#b7bdf2;
-  --ink:#040217; --dim:#3c4070; --faint:#787ca8;
-  --blue:#0000f2; --blue-bright:#0000c4; --blue-deep:#00009c;
-  --warn:#8e4b10; --ok:#046c4e; --bad:#e02424; --unk:#6c2bd9;
-  --code-fg:#046c4e; --code-bg:var(--inset);
 }
 
 *{box-sizing:border-box}
@@ -52,23 +30,6 @@ body::before{
   opacity:.08;mix-blend-mode:overlay;
   background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size:180px 180px;
-}
-/* geometric badge layer — Hermes-inspired, branded to the same blue/acid system */
-body::after{
-  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
-  opacity:.28;
-  background-image:url("adp-bg.svg");
-  background-repeat:repeat;
-  background-size:360px 360px;
-  mix-blend-mode:screen;
-}
-:root[data-theme='light'] body::after{
-  opacity:.16;
-  mix-blend-mode:multiply;
-  filter:saturate(1.05);
-}
-:root[data-theme='dark'] body::after{
-  opacity:.30;
 }
 /* smooth theme transition across surfaces */
 body,.console,.con-head,.toolbar,.paste-drawer,.paste-drawer textarea,

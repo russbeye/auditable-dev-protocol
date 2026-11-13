@@ -228,9 +228,14 @@ function DocPane({back, onBack, heading, badge, notice, action, children}: DocPa
   </div>;
 }
 
-function Tickhead({title, chits}: {title: string; chits: Chit[]}){
+/* The ticket head names the ticket and its state. A ticket with review
+   rounds also offers its reviews here, since the top bar has no Reviews
+   tab. The phase strip takes this entry over when the ticket view moves
+   onto the design system. */
+function Tickhead({title, chits, rounds, onReviews}: {title: string; chits: Chit[]; rounds: number; onReviews(): void}){
   return <div className="tickhead"><span className="tbig">{title}</span>
-    {chits.map((c, i) => <span key={i} className="chit" title={c.title}>{c.txt}</span>)}</div>;
+    {chits.map((c, i) => <span key={i} className="chit" title={c.title}>{c.txt}</span>)}
+    {rounds ? <button type="button" className="op" id="reviewsBtn" onClick={onReviews}>reviews · {rounds} {rounds === 1 ? "round" : "rounds"}</button> : null}</div>;
 }
 
 function SecNav({entries, states, selKey, onPick, onStep}: {entries: Entry[]; states: Record<string, SectionState>;
@@ -265,6 +270,7 @@ type InspectorActions = PanelActions & {
   onRound(tok: string, file: string): void;
   onSpy(key: string): void;
   onStartFrom(text: string, source: string): void;
+  onReviews(): void;
 };
 type InspectorProps = {
   corpus: Corpus | null;
@@ -411,8 +417,9 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     : "no corpus behind this page — the inspector reads the served corpus.")}</p></div>);
 
   const top = <><h2>inspector <span className="isub">{t.dir}</span></h2>{ops}</>;
+  const rounds = corpus && corpus.reviews ? S.reviewRounds(corpus.reviews[t.dir]).reduce((n, g) => n + g.rounds.length, 0) : 0;
   if (!t.sections.length && !prompt)
-    return regions(<>{top}<Tickhead title={t.id || t.dir} chits={[{txt: t.state + " · " + t.state_source}]}/></>, null,
+    return regions(<>{top}<Tickhead title={t.id || t.dir} chits={[{txt: t.state + " · " + t.state_source}]} rounds={rounds} onReviews={act.onReviews}/></>, null,
       <div className="ipanel"><p className="dnotice">this ticket has no audit log yet — only its prompt or other files sit in the directory.</p></div>);
 
   const entries = entriesOf(t, prompt);
@@ -486,7 +493,7 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     </>;
   }
 
-  return regions(<>{top}<Tickhead title={t.id || t.dir} chits={chits}/></>,
+  return regions(<>{top}<Tickhead title={t.id || t.dir} chits={chits} rounds={rounds} onReviews={act.onReviews}/></>,
     <SecNav entries={entries} states={states} selKey={sel.s} onPick={act.onSection} onStep={d => {
       const i = entries.findIndex(en => en.key === sel.s) + d;
       if (i >= 0 && i < entries.length) act.onStep(entries[i].key);

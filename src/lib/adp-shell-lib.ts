@@ -147,11 +147,44 @@ function footerText(index: IndexDocument | null): string{
   return `schema ${index.schema} · ${index.tickets.length} tickets · read-only · rebuilt in-memory from the working tree`;
 }
 
-// An index can build from a listing whose root never named the project. The
-// chit then shows a placeholder, so "no corpus" stays true to its words.
-function projectChitText(index: IndexDocument | null): string{
-  if (!index) return "no corpus";
-  return index.project ? "project: " + index.project : "project: —";
+/* The top bar's three views and the screen each one opens. Reviews belong to
+   a ticket, so the Tickets view stays current while a review round shows. */
+const VIEWS: {screen: Screen; label: string}[] = [
+  {screen: "inspector", label: "Tickets"}, {screen: "watchboard", label: "Watches"}, {screen: "ledgers", label: "Ledger"}];
+function viewOf(s: Screen): Screen | null{
+  return s === "reviews" ? "inspector" : VIEWS.some(v => v.screen === s) ? s : null;
+}
+
+/* Every view token a link has ever carried still lands somewhere. Calibration
+   now heads the Ledger, and a resume pack opens as the Packs drawer over
+   Tickets. Anything else opens Tickets. */
+function screenFromHash(v: string | null): {screen: Screen; packs: boolean}{
+  if (v === "calibration") return {screen: "ledgers", packs: false};
+  if (v === "resume pack") return {screen: "inspector", packs: true};
+  const known: Screen[] = ["inspector", "reviews", "watchboard", "ledgers", "new task"];
+  return {screen: known.includes(v as Screen) ? v as Screen : "inspector", packs: false};
+}
+
+// An index can build from a listing whose root never named the project, so
+// the name falls back to a dash. With no index yet, the bar shows no name.
+function repoLabel(index: IndexDocument | null): string{
+  return !index ? "" : index.project || "—";
+}
+
+// The repo leads the title, because several mission controls can run at once.
+function pageTitle(index: IndexDocument | null): string{
+  const repo = index ? index.project : null;
+  return repo ? repo + " · ADP · Mission Control" : "ADP · Mission Control";
+}
+
+/* The theme choice is what the reader picked. System stores nothing, so the
+   pre-paint script in app.html falls through to the system preference. */
+type ThemeChoice = "system" | "dark" | "light";
+function themeChoice(stored: string | null): ThemeChoice{
+  return stored === "dark" || stored === "light" ? stored : "system";
+}
+function themeFor(choice: ThemeChoice, prefersLight: boolean): "dark" | "light"{
+  return choice === "system" ? (prefersLight ? "light" : "dark") : choice;
 }
 
 function applyTheme(doc: ThemeDocument, storage: ThemeStorage, t: string): void{
@@ -1510,7 +1543,7 @@ function reviewBodyHtml(text: string | null | undefined, m?: ReviewBodyModel): s
   return `<div class="revdoc">${html}</div>`;
 }
 
-export {NT_KEYS, LINK_ITEM, SEVERITY_PILL, OUTCOME_PILL, ledgerRows, keyLabel, keyTitle, isFlat, isLine, isMap, NT_SWITCHES, SCREENS, TAB_SCREENS, localDate, tabsHtml, footerText, projectChitText,
+export {NT_KEYS, LINK_ITEM, SEVERITY_PILL, OUTCOME_PILL, ledgerRows, keyLabel, keyTitle, isFlat, isLine, isMap, NT_SWITCHES, SCREENS, TAB_SCREENS, localDate, tabsHtml, footerText, VIEWS, viewOf, screenFromHash, repoLabel, pageTitle, themeChoice, themeFor,
   applyTheme, hashRead, hashWrite, logPaths, promptPaths, reviewPaths, corpusUrl, loadCorpus,
   railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml, docPaneHtml, rawPaneHtml,
   promptViewHtml, reviewRounds, reviewHead, priorReviews, reviewFileRef, reviewNavHtml,
@@ -1519,7 +1552,7 @@ export {NT_KEYS, LINK_ITEM, SEVERITY_PILL, OUTCOME_PILL, ledgerRows, keyLabel, k
   assumptionLedgerHtml, fullLogHtml, calibrationHtml, fillPack, packSlots, packReadsTicket,
   packBasisKind, packGapKind, packContext, loadPacks, packScreenHtml, slugOf, promptDir, blankRow,
   unknownKeys, unknownValues, placeable, builderOpsHtml, builderSideHtml, builderHtml};
-export type {Screen, ThemeDocument, ThemeStorage, HashSelection, HashSelectionInput, FetchResponse, FetchFn,
+export type {Screen, ThemeChoice, ThemeDocument, ThemeStorage, HashSelection, HashSelectionInput, FetchResponse, FetchFn,
   LoadCorpusOptions, FetchedText, ReviewFile, Corpus, RailEntry, RailModelGroup, Chit, TickheadModel, ViewMode,
   OpsRowModel, SecNavEntry, DocPaneModel, RawPaneModel, SortState, CitationChip, WatchLink, CoverageRow,
   DecisionPanelRow, DecisionsPanelModel, WatchPanelRow, WatchesPanelModel, BoardRow, WatchboardModel,

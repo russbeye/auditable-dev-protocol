@@ -1,0 +1,134 @@
+{
+  "name": "ADP",
+  "version": 1,
+  "meta": {
+    "source": "github",
+    "repo": "russbeye/auditable-dev-protocol",
+    "ref": "main@e53949a",
+    "package": ".",
+    "paths": {
+      "tokens": ["scripts/adp-theme.css", "scripts/adp-shell.css"],
+      "fonts": ["scripts/adp-theme.css (Google Fonts @import)"],
+      "assets": [],
+      "docs": ["README.md", "scripts/adp-theme.css comments", "scripts/adp-shell.css comments"]
+    },
+    "components": {
+      "Button": "scripts/adp-theme.css .btn",
+      "Switch": "scripts/adp-theme.css .sw",
+      "Field": "scripts/adp-theme.css .field, label.lbl, input, select, textarea",
+      "Tab": "scripts/adp-theme.css .tab",
+      "StatusPill": "scripts/adp-theme.css .status",
+      "Pill": "scripts/adp-theme.css .pill",
+      "IdBadge": "scripts/adp-theme.css .idbadge, .dl-id",
+      "PanelCard": "scripts/adp-theme.css .panel-card",
+      "ArtifactCard": "scripts/adp-theme.css .art",
+      "DecisionCard": "scripts/adp-theme.css .dl-card",
+      "EmptyState": "scripts/adp-theme.css .empty-state",
+      "Toast": "scripts/adp-theme.css .toast",
+      "ShellHeader": "scripts/adp-shell.css .shell header, .brand, .mtab, .newtask",
+      "Chit": "scripts/adp-shell.css .chit"
+    },
+    "synced": "2026-10-28"
+  },
+  "color": {
+    "themes": [
+      {"id": "dark", "name": "Dark"},
+      {"id": "light", "name": "Light"}
+    ],
+    "tokens": [
+      {"name": "bg", "value": {"dark": "#05060c", "light": "#f4f4ec"}, "usage": "Page ground: ink in dark, paper in light. The film grain sits over it."},
+      {"name": "panel", "value": {"dark": "#0b0d1c", "light": "#ffffff"}, "usage": "Card and bar surfaces: panel cards, artifact cards, console head, toolbar, TOC, shell header."},
+      {"name": "panel-2", "value": {"dark": "#12152e", "light": "#e9ebff"}, "usage": "Raised or recessed second surface: drawers, the selected rail item, pressed segmented buttons, select options."},
+      {"name": "inset", "value": {"dark": "#070811", "light": "#f4f4ec"}, "usage": "Wells inside surfaces: inputs, textareas, code blocks. Sits a step below panel in both themes: near-black in dark, paper (the bg value) in light, so a well reads as sunken on a white panel."},
+      {"name": "line", "value": {"dark": "#1c2150", "light": "#d6daff"}, "usage": "Default 1px hairline: card borders, row dividers, header rule. Depth comes from these blue-tinted lines, not a gray ramp."},
+      {"name": "line-bright", "value": {"dark": "#2c3473", "light": "#b7bdf2"}, "usage": "Stronger hairline: control borders, table head rules, neutral tag borders. Decorative: 1.7:1 on panel in dark and 1.8:1 in light, below 3:1, so meaning never rides on it alone."},
+      {"name": "ink", "value": {"dark": "#f5f5f5", "light": "#040217"}, "usage": "Primary text on bg, panel, panel-2 and inset in both themes (17:1 and up)."},
+      {"name": "dim", "value": {"dark": "#9498c4", "light": "#3c4070"}, "usage": "Secondary text: labels, table heads, meta lines, footers. On panel 6.9:1 dark, 9.7:1 light."},
+      {"name": "ink-2", "value": {"dark": "#c7c9e4", "light": "#2a2e5c"}, "usage": "Strong secondary text, between ink and dim: settled card titles, list items under a heading, confidence words in tables, reviewer notes. On panel about 12:1 dark and 13:1 light."},
+      {"name": "faint", "value": {"dark": "#565b86", "light": "#787ca8"}, "usage": "Tertiary text: placeholders, quiet counts, disabled controls. Misses 4.5:1: on panel 3.0:1 dark and 4.0:1 light, and 3.6:1 as a placeholder on the light inset; keep it to non-essential text."},
+      {"name": "blue", "value": {"dark": "#0000f2", "light": "#0000f2"}, "usage": "Brand blue as a FILL: primary button, current phase box, toast, focus border on inputs. White on it reads 9.2:1. As text on dark surfaces it reads 2.1:1, so dark text uses blue-bright."},
+      {"name": "blue-bright", "value": {"dark": "#4d6bff", "light": "#0000c4"}, "usage": "Blue as TEXT and focus ring: links, IDs, list markers, the active tab underline, the pressed filter border. On panel 4.5:1 dark (4.47, a hair under; source value kept) and 11.7:1 light."},
+      {"name": "blue-deep", "value": {"dark": "#0000c4", "light": "#00009c"}, "usage": "Deepest blue step, declared for both themes; link hover in light."},
+      {"name": "accent", "value": {"dark": "#edff45", "light": "#edff45"}, "usage": "Acid chartreuse, the rare signal: the live watching dot and the logo's middle stripe in dark. Never body text, never a chip, tab or button fill. In light it is 1.1:1 on bg, so it swaps to blue there."},
+      {"name": "warn", "value": {"dark": "#faca15", "light": "#8e4b10"}, "usage": "Open states: OPEN chips, needs-attention counts, watches due within 14 days. On panel 12.4:1 dark, 6.6:1 light."},
+      {"name": "warn-fill", "value": {"dark": "#faca15", "light": "#c27c1a"}, "usage": "OPEN as a non-text fill: chart segments such as the Ledger calibration bars. Light warn (#8e4b10) sits too close to bad and ok in lightness to tell apart as a bar. Light value is 3.4:1 on panel: enough for a graphic, never for text."},
+      {"name": "ok", "value": {"dark": "#31c48d", "light": "#046c4e"}, "usage": "Validated and healthy states: VALIDATED and APPROVE chips, validated bar segments. On panel 8.7:1 dark, 6.4:1 light."},
+      {"name": "bad", "value": {"dark": "#f98080", "light": "#e02424"}, "usage": "Invalidated and high-risk states: INVALIDATED chips, invalidated bar segments. On panel 7.7:1 dark, 4.7:1 light. Always paired with a word, never hue alone."},
+      {"name": "unk", "value": {"dark": "#ac94fa", "light": "#6c2bd9"}, "usage": "Unknown or unverifiable states: UNKNOWN chips and bar segments. On panel 7.7:1 dark, 7.0:1 light."},
+      {"name": "code-fg", "value": {"dark": "#5cd6a0", "light": "#046c4e"}, "usage": "Inline code text on code-bg (9.0:1 dark, 6.4:1 light)."},
+      {"name": "code-bg", "value": {"dark": "#11152e", "light": "#e9ebff"}, "usage": "Inline code ground, drawn as a tint with no border so code never crowds the line above or below."}
+    ]
+  },
+  "type": {
+    "fonts": [],
+    "families": {
+      "sans": "'Space Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+      "mono": "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace"
+    },
+    "groups": [
+      {"name": "Grotesque", "family": "sans", "styles": [
+        {"name": "display", "fontSize": "48px", "lineHeight": "56px", "fontWeight": 600, "letterSpacing": "-0.01em", "usage": "Landing-page hero headline only.", "sample": "Ship AI-assisted changes you can defend."},
+        {"name": "page-title", "fontSize": "24px", "lineHeight": "32px", "fontWeight": 600, "usage": "Ticket title and view titles (Watches, Ledger, New task).", "sample": "lintCorpus stops advising on a review section the chain grew past"},
+        {"name": "empty-heading", "fontSize": "22px", "lineHeight": "32px", "fontWeight": 600, "usage": "Empty-state heading, sentence case.", "sample": "No audit logs in this repo yet"},
+        {"name": "section", "fontSize": "20px", "lineHeight": "28px", "fontWeight": 600, "usage": "Phase heading inside a ticket, review round heading.", "sample": "Problem Statement"},
+        {"name": "body", "fontSize": "16px", "lineHeight": "28px", "fontWeight": 400, "usage": "Audit log prose and card fields. Fixed size, set in a column of at most 72ch.", "sample": "The model defends one recommendation and logs every assumption."},
+        {"name": "card-title", "fontSize": "16px", "lineHeight": "24px", "fontWeight": 600, "usage": "Decision and finding card titles; settled entries drop to weight 500 in ink-2.", "sample": "A gate-style review placed above a finished chain goes unseen"},
+        {"name": "secondary", "fontSize": "15px", "lineHeight": "24px", "fontWeight": 400, "usage": "Tables, lists, notes and repo name in the top bar.", "sample": "Runs after merge write the re-review date in the window"},
+        {"name": "nav", "fontSize": "14px", "lineHeight": "24px", "fontWeight": 500, "usage": "Top-bar view tabs: Tickets, Watches, Ledger.", "sample": "Tickets"},
+        {"name": "meta", "fontSize": "13px", "lineHeight": "24px", "fontWeight": 400, "usage": "Footer lines, counts, helper text, created-by lines, in dim.", "sample": "Confirmed by rbeye on 2026-10-26 · No revisions"},
+        {"name": "logo-name", "fontSize": "64px", "lineHeight": "64px", "fontWeight": 700, "letterSpacing": "-0.01em", "usage": "ADP in the logo lockup; scales with the mark (20px at header size).", "sample": "ADP"}
+      ]},
+      {"name": "Mono", "family": "mono", "styles": [
+        {"name": "label", "fontSize": "11px", "lineHeight": "24px", "fontWeight": 500, "letterSpacing": "0.14em", "usage": "Eyebrow headings inside sections, field labels and rail group heads, uppercase, in dim.", "sample": "WHAT THE PROBLEM IS"},
+        {"name": "table-head", "fontSize": "10.5px", "lineHeight": "24px", "fontWeight": 500, "letterSpacing": "0.12em", "usage": "Table header cells, uppercase, in dim over a line-bright rule.", "sample": "ENTRY  DECISION  CONF  STATUS"},
+        {"name": "id", "fontSize": "12px", "lineHeight": "24px", "fontWeight": 400, "usage": "Ticket, decision and watch IDs, verbatim case, in blue-bright or ink.", "sample": "DL-014"},
+        {"name": "chip-m", "fontSize": "11px", "lineHeight": "24px", "fontWeight": 400, "letterSpacing": "0.08em", "usage": "Medium chip, 24px tall, 0 8px padding: headers and filter bars.", "sample": "OPEN"},
+        {"name": "chip-s", "fontSize": "10px", "lineHeight": "20px", "fontWeight": 400, "letterSpacing": "0.08em", "usage": "Small chip, 20px tall, 0 6px padding: inline in text and table cells.", "sample": "VALIDATED"},
+        {"name": "button", "fontSize": "11px", "lineHeight": "24px", "fontWeight": 400, "letterSpacing": "0.08em", "usage": "Buttons, uppercase, in a 28px box (36px for primary on pages). Not a chip.", "sample": "RESUME PACK"},
+        {"name": "input", "fontSize": "13px", "lineHeight": "24px", "fontWeight": 400, "usage": "Text inputs and selects in 32px or 36px boxes; prose fields such as Prompt use sans at 15/24.", "sample": "packs/resume-ticket.pack.md"},
+        {"name": "code-block", "fontSize": "12.5px", "lineHeight": "20px", "fontWeight": 400, "usage": "Packs, YAML preview and fenced code.", "sample": "=== ADP PACK resume-ticket/v1 ==="},
+        {"name": "logo-descriptor", "fontSize": "12px", "lineHeight": "20px", "fontWeight": 700, "letterSpacing": "0.16em", "usage": "The three-line Auditable / Development / Protocol stack in the logo lockup, uppercase.", "sample": "AUDITABLE DEVELOPMENT PROTOCOL"}
+      ]}
+    ]
+  },
+  "spacing": {
+    "tokens": [
+      {"name": "baseline", "value": "4px", "usage": "The grid unit. Every line height, vertical padding, margin, gap and fixed height is a multiple of it."},
+      {"name": "space-1", "value": "4px", "usage": "Label to its value, tight inline gaps."},
+      {"name": "space-2", "value": "8px", "usage": "Between chips and buttons in a row, between stacked cards, rail item padding."},
+      {"name": "space-3", "value": "12px", "usage": "Table cell and card head vertical padding, list item gap."},
+      {"name": "space-4", "value": "16px", "usage": "Card padding, paragraph spacing, gap between field rows."},
+      {"name": "space-5", "value": "20px", "usage": "Drawer and panel padding."},
+      {"name": "space-6", "value": "24px", "usage": "Top-bar side padding, grid gutters, page side gutter."},
+      {"name": "space-8", "value": "32px", "usage": "Above an eyebrow heading inside a section, ticket header to phase row."},
+      {"name": "space-10", "value": "40px", "usage": "Page top padding, between sections inside a phase."},
+      {"name": "space-12", "value": "48px", "usage": "Page side padding on wide screens, before page-level links."},
+      {"name": "space-14", "value": "56px", "usage": "Before the cited-decisions table at the end of a phase."},
+      {"name": "space-20", "value": "80px", "usage": "Page bottom padding."}
+    ]
+  },
+  "radius": {
+    "tokens": [
+      {"name": "radius-none", "value": "0", "usage": "Every corner. The system is square: buttons, inputs, tabs, chips and cards all set border-radius 0."}
+    ]
+  },
+  "shadow": {
+    "tokens": [
+      {"name": "shadow", "value": "0 4px 14px rgba(0,0,0,.40)", "usage": "The ONE shadow: toast and the ⋯ menu. Everything else separates by hairlines."}
+    ]
+  },
+  "layout": {
+    "tokens": [
+      {"name": "topbar-height", "value": "52px", "usage": "Top bar height, border included."},
+      {"name": "rail-width", "value": "248px", "usage": "Expanded tickets sidebar; it wraps above the content under 820px."},
+      {"name": "rail-collapsed", "value": "48px", "usage": "Collapsed tickets sidebar: show button, needs-attention count, current ticket ID."},
+      {"name": "reading-max", "value": "760px", "usage": "Ticket column; prose inside it caps at 72ch."},
+      {"name": "page-max", "value": "1120px", "usage": "Wide views: Watches, Ledger, New task, landing page."},
+      {"name": "chip-s-height", "value": "20px", "usage": "Small chip box."},
+      {"name": "chip-m-height", "value": "24px", "usage": "Medium chip box, phase boxes."},
+      {"name": "button-height", "value": "28px", "usage": "Standard button and segmented control."},
+      {"name": "input-height", "value": "36px", "usage": "Form inputs and selects; 32px in the sidebar filter and inline rows."},
+      {"name": "table-row", "value": "48px", "usage": "Single-line table row: 24px line plus 12px above and below."}
+    ]
+  }
+}

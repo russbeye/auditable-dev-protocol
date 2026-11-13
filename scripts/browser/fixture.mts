@@ -59,12 +59,15 @@ export const test = base.extend<{server: Server}>({
 });
 export {expect};
 
-/* A folded header keeps the tabs in its menu, so we open the menu first
-   whenever the menu button shows. */
+/* The control that opens each screen. The top bar's views open Tickets,
+   Watches, and Ledger, calibration heads the Ledger, and reviews open from
+   the ticket head. The folded bar keeps its views on a second row, so every
+   view stays one click away at any width. */
+const OPENER: Record<string, string> = {"inspector": '.adp-nav a[data-s="inspector"]', "watchboard": '.adp-nav a[data-s="watchboard"]',
+  "ledgers": '.adp-nav a[data-s="ledgers"]', "calibration": '.adp-nav a[data-s="ledgers"]', "reviews": "#reviewsBtn", "new task": "#newTaskBtn"};
 export async function go(page: Page, screen: string){
-  if (await page.locator("#menuBtn").isVisible()) await page.click("#menuBtn");
-  await page.click(screen === "new task" ? "#newTaskBtn" : `.mtab[data-s="${screen}"]`);
-  await expect(page.locator(".screen.is-on")).toHaveAttribute("data-s", screen);
+  await page.click(OPENER[screen]);
+  await expect(page.locator(".screen.is-on")).toHaveAttribute("data-s", screen === "calibration" ? "ledgers" : screen);
 }
 
 /* We load a page and wait until its first corpus lands. The header measures
@@ -77,16 +80,24 @@ export async function open(page: Page, url: string){
   await expect(page.locator("#liveTxt")).toHaveText("WATCHING");
 }
 
-export const TAB_SCREENS = ["inspector", "reviews", "watchboard", "ledgers", "calibration", "resume pack"];
+export const VIEW_SCREENS = ["inspector", "watchboard", "ledgers"];
 
 /* We visit what the jsdom walk in app-page.test.mts visits: the boot, each
-   tab, each ticket's section view and full log, and New task. The rail's
-   closed group starts collapsed, so its tickets stay out of the walk unless
-   the caller asks us to open every group first. */
-export async function everyScreen(page: Page, url: string, look: (where: string) => Promise<void>, openGroups = false){
+   view, the Packs drawer, each ticket's section view and full log, the
+   reviews of each ticket that has rounds, and New task. The rail's closed
+   group starts collapsed, so its tickets stay out of the walk unless the
+   caller asks us to open every group first. We return how many tickets
+   offered reviews, so a caller can count the stops. */
+export async function everyScreen(page: Page, url: string, look: (where: string) => Promise<void>, openGroups = false): Promise<number>{
   await open(page, url);
   await look("boot");
-  for (const s of TAB_SCREENS){ await go(page, s); await look(s); }
+  for (const s of VIEW_SCREENS){ await go(page, s); await look(s); }
+  await page.click("#packsBtn");
+  await expect(page.locator("#packDrawer")).toBeVisible();
+  await look("packs drawer");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#packDrawer")).toHaveCount(0);
+  let reviewed = 0;
   if (openGroups) for (const g of await page.locator(".railsec", {has: page.locator(".rcv", {hasText: "▸"})}).all()) await g.click();
   const keys = await page.locator(".rentry").evaluateAll(r => r.map(x => x.getAttribute("data-key")!));
   for (const k of keys){
@@ -98,7 +109,9 @@ export async function everyScreen(page: Page, url: string, look: (where: string)
     await look(k + " section");
     await page.click('[data-view="full"]');
     await look(k + " full log");
+    if (await page.locator("#reviewsBtn").count()){ await go(page, "reviews"); await look(k + " reviews"); reviewed++; }
   }
   await go(page, "new task");
   await look("new task");
+  return reviewed;
 }
