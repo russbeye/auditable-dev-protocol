@@ -141,12 +141,43 @@ test("loadCorpus percent-encodes each path segment of a fetch", async () => {
   assert.equal(got.index.tickets.length, 1);
 });
 
-// ---- lib: the chit ----
+// ---- lib: the top bar ----
 
-test("projectChitText separates a missing corpus from a nameless project", () => {
-  assert.equal(S.projectChitText(null), "no corpus");
-  assert.equal(S.projectChitText({project: null}), "project: —");
-  assert.equal(S.projectChitText({project: "demo"}), "project: demo");
+test("the repo label separates a missing corpus from a nameless project", () => {
+  assert.equal(S.repoLabel(null), "");
+  assert.equal(S.repoLabel({project: null}), "—");
+  assert.equal(S.repoLabel({project: "demo"}), "demo");
+});
+
+test("the page title leads with the repo when the index names one", () => {
+  assert.equal(S.pageTitle(null), "ADP · Mission Control");
+  assert.equal(S.pageTitle({project: null}), "ADP · Mission Control");
+  assert.equal(S.pageTitle({project: "demo"}), "demo · ADP · Mission Control");
+});
+
+// DL-007: every view token a link has carried lands on its screen's new home.
+test("every old view token lands on the new home of its screen", () => {
+  const got = Object.fromEntries([null, "inspector", "reviews", "watchboard", "ledgers", "calibration", "resume pack", "new task", "nonsense"]
+    .map(v => [String(v), S.screenFromHash(v)]));
+  assert.deepEqual(got, {
+    "null": {screen: "inspector", packs: false}, "inspector": {screen: "inspector", packs: false},
+    "reviews": {screen: "reviews", packs: false}, "watchboard": {screen: "watchboard", packs: false},
+    "ledgers": {screen: "ledgers", packs: false}, "calibration": {screen: "ledgers", packs: false},
+    "resume pack": {screen: "inspector", packs: true}, "new task": {screen: "new task", packs: false},
+    "nonsense": {screen: "inspector", packs: false}});
+});
+
+test("the views are Tickets, Watches, and Ledger, and a review round counts as Tickets", () => {
+  assert.deepEqual(S.VIEWS.map(v => v.label), ["Tickets", "Watches", "Ledger"]);
+  assert.equal(S.viewOf("reviews"), "inspector");
+  assert.equal(S.viewOf("new task"), null);
+});
+
+test("a stored theme reads as its choice, anything else as System, and System follows the preference", () => {
+  assert.deepEqual(["dark", "light", null, "sepia"].map(S.themeChoice), ["dark", "light", "system", "system"]);
+  assert.equal(S.themeFor("system", true), "light");
+  assert.equal(S.themeFor("system", false), "dark");
+  assert.equal(S.themeFor("dark", true), "dark");
 });
 
 // ---- lib: the hash grammar ----

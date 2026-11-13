@@ -12,7 +12,7 @@ test.use({viewport: {width: 1440, height: 900}});
    part of a closed details element. */
 const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
 const reachable = (page: Page) => page.locator(TABBABLE).evaluateAll(els => els
-  .filter(e => (e as HTMLElement).checkVisibility({visibilityProperty: true}) && !e.closest("details:not([open]) > :not(summary)"))
+  .filter(e => (e as HTMLElement).checkVisibility({visibilityProperty: true}) && !e.closest("details:not([open]) > :not(summary)") && !e.closest("[inert]"))
   .map((e, i) => { e.setAttribute("data-tabpos", String(i)); return i; }).length);
 
 // A click can start a jump or a spy run that lands a frame later, so we let
@@ -101,6 +101,22 @@ test("Tab reaches every control in document order and shows a ring on each", asy
   expect(faults).toEqual([]);
 });
 
+// PM5. Each overlay opens from the keyboard, Escape closes it, and focus
+// returns to the control that opened it, with its ring showing.
+for (const [name, opener, panel] of [["⋯ menu", "#menuBtn", "#hdrMenu"], ["Packs drawer", "#packsBtn", "#packDrawer"]])
+  test(`the ${name} closes on Escape and hands focus back to its opener`, async ({page, server}) => {
+    await open(page, server.url);
+    await page.focus(opener);
+    await page.keyboard.press("Enter");
+    await expect(page.locator(panel)).toBeVisible();
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(sel => !!document.activeElement?.closest(sel), panel)).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(page.locator(panel)).toHaveCount(0);
+    await expect(page.locator(opener)).toBeFocused();
+    expect(await ringOf(page)).toBeNull();
+  });
+
 // OT-MC012-19 needs a screen reader. This test proves the text reaches the
 // region, which is what a reader would announce.
 test("New task's live region speaks the verdict after a start and after the task id is blanked", async ({page, server}) => {
@@ -122,16 +138,16 @@ test.describe("under reduced motion", () => {
   test("no screen runs an animation or a transition", async ({page, server}) => {
     const moving: string[] = [];
     await everyScreen(page, server.url, async where => {
-      // A hover or a focus starts a transition, so we press on the theme
-      // toggle and hover a rail entry before we look.
-      await page.hover(".rentry");
-      await page.focus("#themeBtn");
+      // A hover or a focus starts a transition, so we focus the ⋯ button
+      // and hover a rail entry before we look. The drawer hides the rail.
+      if (!await page.locator("#packDrawer").count()){ await page.hover(".rentry"); await page.focus("#menuBtn"); }
       const names = await page.evaluate(() => document.getAnimations().map(a =>
         (a as CSSAnimation).animationName ?? (a as CSSTransition).transitionProperty ?? a.constructor.name));
       if (names.length) moving.push(`${where}: ${names.join(", ")}`);
     });
     await go(page, "inspector");
-    await page.click("#themeBtn");
+    await page.click("#menuBtn");
+    await page.click('[data-theme-choice="light"]');
     const after = await page.evaluate(() => document.getAnimations().length);
     expect(moving).toEqual([]);
     expect(after).toBe(0);

@@ -94,16 +94,21 @@ function record(el){
 }
 
 // The header, the rail, the footer, and the one screen on show. The other
-// screens keep whatever they last rendered, which no one can see.
+// screens keep whatever they last rendered, which no one can see. A region
+// the page does not draw records as null, and the Packs drawer records only
+// while it is open.
 function snapshot(d){
   const screen = d.querySelector("section.screen.is-on");
-  return {
+  const region = el => el ? record(el) : null;
+  const snap = {
     screen: screen ? screen.getAttribute("data-s") : null,
-    header: record(d.querySelector(".shell > header")),
-    rail: record(d.getElementById("rail")),
+    header: region(d.querySelector(".shell > header")),
+    rail: region(d.getElementById("rail")),
     main: screen ? record(screen) : null,
-    footer: record(d.getElementById("foot"))
+    footer: region(d.getElementById("foot"))
   };
+  const drawer = d.getElementById("packDrawer");
+  return drawer ? {...snap, drawer: record(drawer)} : snap;
 }
 
 module.exports = {record, snapshot, diskFetch, NOW};
