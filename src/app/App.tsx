@@ -30,7 +30,24 @@ type Sel = {dir: string | null; s: string | null; item: string | null};
 const SHOWN: Screen[] = ["inspector", "reviews", "watchboard", "ledgers", "new task"];
 const SCREEN_IDS: Record<Screen, string> = {"inspector": "scrInspector", "reviews": "scrReviews", "watchboard": "scrWatch",
   "ledgers": "scrLedgers", "calibration": "scrLedgers", "resume pack": "scrInspector", "new task": "scrNew"};
-const SHORTCUTS: [string, string][] = [["f", "Section or full log"]];
+const SHORTCUTS: [string, string][] = [["[", "Show or hide tickets"], ["← →", "Previous or next phase"], ["/", "Filter tickets"],
+  ["f", "Section or full log"]];
+/* Below this width the stage would fall under the 560px the boards give it
+   beside a 248px rail, so the rail folds to its strip and opens over the
+   page, as the 720px boards draw it. */
+const NARROW = "(max-width: 807px)";
+function useNarrow(): boolean {
+  const mq = () => window.matchMedia ? window.matchMedia(NARROW) : null;
+  const [narrow, setNarrow] = useState(() => !!mq()?.matches);
+  useEffect(() => {
+    const m = mq();
+    if (!m) return;
+    const on = () => setNarrow(m.matches);
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return narrow;
+}
 const prefersLight = () => !!window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
 // A shortcut never fires while the reader types into a field.
 const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName));
@@ -116,6 +133,37 @@ function App({fetchFn, openFeed}: AppProps){
       ribbon: D.ribbonModel(t, today), closable: false}))]), [tickets, tokenOf, today]);
   const selTicket = sel.dir ? tickets.find(x => x.dir === sel.dir) : undefined;
   const selKey = selTicket ? tokenOf(selTicket) : null;
+
+  /* The rail folds as a whole. On a wide window the fold is the reader's
+     choice, and we keep it per repo. On a narrow window the rail starts
+     folded and opens over the page, so that state is never stored. */
+  const narrow = useNarrow();
+  const railRepo = corpus ? corpus.index.project : null;
+  const [railFoldedWide, setRailFoldedWide] = useState(false);
+  const [railOver, setRailOver] = useState(false);
+  const [railFilter, setRailFilter] = useState("");
+  const [railFocus, setRailFocus] = useState(0);
+  useEffect(() => {
+    if (!railRepo) return;
+    try { setRailFoldedWide(localStorage.getItem("adp-rail:" + railRepo) === "folded"); } catch {}
+  }, [railRepo]);
+  useEffect(() => { if (!narrow) setRailOver(false); }, [narrow]);
+  const railFolded = narrow ? !railOver : railFoldedWide;
+  const foldRail = useCallback((folded: boolean) => {
+    if (narrow){ setRailOver(!folded); return; }
+    setRailFoldedWide(folded);
+    try {
+      if (!railRepo) return;
+      if (folded) localStorage.setItem("adp-rail:" + railRepo, "folded"); else localStorage.removeItem("adp-rail:" + railRepo);
+    } catch {}
+  }, [narrow, railRepo]);
+  // The filter matches the id, the slug, or the token of a row, in any case.
+  // A group it empties leaves the rail, except closed, which keeps its count.
+  const railQuery = railFilter.trim().toLowerCase();
+  const railShown: RailModelGroup[] = useMemo(() => !railQuery ? railModel : railModel
+    .map(([name, list]): RailModelGroup => [name, list.filter(e => [e.id, e.slug, e.key].some(x => !!x && x.toLowerCase().includes(railQuery)))])
+    .filter(([name, list]) => name === "closed" || list.length), [railModel, railQuery]);
+  const attention = railModel.find(g => g[0] === "needs attention")?.[1].length || 0;
   // The lint sweeps every log a second time, so it runs once per corpus
   // that lands and never on a render.
   const advisories = useMemo(() => corpus ? B.lintCorpus(corpus.files) : [], [corpus]);
@@ -325,8 +373,6 @@ function App({fetchFn, openFeed}: AppProps){
     // A ticket's prompt is the one way a written prompt reaches the form.
     // New task comes forward with its report or its question.
     onStartFrom: (text, source) => { nt.startFrom(text, source); setScreen("new task"); },
-    // The reviews entry opens the latest round, which the reviews screen settles when it shows.
-    onReviews: () => { setRevSel(null); setRevNotice(null); setScreen("reviews"); }
   };
   const reviewsActions: ReviewsActions = {...panelActions,
     onRound: openRound,
@@ -366,36 +412,49 @@ function App({fetchFn, openFeed}: AppProps){
   // no logs yet, so it shows the empty page and not the failed one.
   const status = booting && !corpus ? "loading" : !corpus ? (absent ? "empty" : "failed") : !tickets.length ? "empty" : null;
 
-  // f flips the ticket between its section and its full log.
+  const railOn = !(screen === "inspector" && status);
+  // f flips the ticket between its section and its full log, [ folds or opens
+  // the rail, and / opens the rail if it is folded and moves into its filter.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key !== "f" || e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || packsOpen) return;
-      if (screen !== "inspector" || !selTicket) return;
-      e.preventDefault();
-      setView(v => v === "full" ? "section" : "full");
+      if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || packsOpen) return;
+      if (e.key === "f" && screen === "inspector" && selTicket){
+        e.preventDefault();
+        setView(v => v === "full" ? "section" : "full");
+      } else if (e.key === "[" && railOn){
+        e.preventDefault();
+        foldRail(!railFolded);
+      } else if (e.key === "/" && railOn){
+        e.preventDefault();
+        if (railFolded) foldRail(false);
+        setRailFocus(n => n + 1);
+      }
     };
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
-  }, [screen, selTicket, packsOpen]);
+  }, [screen, selTicket, packsOpen, railOn, railFolded, foldRail]);
 
   return <div className="shell" style={{display: "grid", gridTemplateRows: "auto 1fr", height: "100dvh"}}>
     <TopBar repo={S.repoLabel(corpus ? corpus.index : null)} live={live} down={status === "failed"} at={at} screen={screen} theme={theme}
       about={about} shortcuts={SHORTCUTS} onView={go} onPacks={o => openPacks(o)} onNewTask={() => go("new task")} onTheme={setTheme}
       inert={packsOpen}/>
     {/* The drawer is modal, so the page behind it takes no focus or clicks while it is open. */}
-    <div className="main" inert={packsOpen} style={screen === "inspector" && status ? {display: "flex", flexDirection: "column", overflowY: "auto"} : undefined}>
+    <div className="main" inert={packsOpen} style={screen === "inspector" && status ? {display: "flex", flexDirection: "column", overflowY: "auto"}
+      : {position: "relative", gridTemplateColumns: (railFolded || narrow ? "var(--rail-collapsed)" : "var(--rail-width)") + " minmax(0, 1fr)"}}>
       {screen === "inspector" && status
         ? <StatusPage kind={status} root={root} host={location.host} onRetry={retry} onNewTask={() => go("new task")}
           onBootstrap={o => openPacks(o, "bootstrap-project")}/>
         : <>
-      <Rail groups={railModel} selKey={selKey} collapsed={railCollapsed} onPick={pick} onToggle={toggleRail}/>
+      <Rail groups={railShown} total={tickets.length} selKey={selKey} collapsed={railCollapsed} filter={railFilter} folded={railFolded}
+        narrow={narrow} attention={attention} selId={selTicket ? selTicket.id || selTicket.dir : null} focusFilter={railFocus}
+        onPick={k => { pick(k); if (narrow) setRailOver(false); }} onToggle={toggleRail} onFilter={setRailFilter} onFold={foldRail}/>
       <main className="stage">
         {SHOWN.map(s => <section key={s} className={"screen" + (s === "new task" ? " nt-wide" : "") + (s === screen ? " is-on" : "")}
           data-s={s} id={SCREEN_IDS[s]}>
           {s !== screen ? null
             : s === "inspector" ? <Inspector corpus={corpus} today={today} t={selTicket} tokenOf={tokenOf} notice={bootNotice}
               sel={sel} view={view} dlFilter={dlFilter} missNotice={missNotice} fullClosed={fullClosed}
-              decSort={decSort} iwSort={iwSort} jump={jump} jumped={jumped} act={inspectorActions}/>
+              decSort={decSort} iwSort={iwSort} jump={jump} jumped={jumped} arrows={!packsOpen} act={inspectorActions}/>
             : s === "reviews" ? <Reviews corpus={corpus} today={today} t={selTicket} tokenOf={tokenOf} round={revSel} notice={revNotice}
               dlFilter={revDlFilter} decSort={decSort} iwSort={iwSort} act={reviewsActions}/>
             : s === "watchboard" ? <Watchboard corpus={corpus} today={today} sort={wbSort} show={wbShow}

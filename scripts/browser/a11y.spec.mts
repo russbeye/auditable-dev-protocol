@@ -140,7 +140,7 @@ test.describe("under reduced motion", () => {
     await everyScreen(page, server.url, async where => {
       // A hover or a focus starts a transition, so we focus the ⋯ button
       // and hover a rail entry before we look. The drawer hides the rail.
-      if (!await page.locator("#packDrawer").count()){ await page.hover(".rentry"); await page.focus("#menuBtn"); }
+      if (!await page.locator("#packDrawer").count()){ await page.hover("#rail [data-key]"); await page.focus("#menuBtn"); }
       const names = await page.evaluate(() => document.getAnimations().map(a =>
         (a as CSSAnimation).animationName ?? (a as CSSTransition).transitionProperty ?? a.constructor.name));
       if (names.length) moving.push(`${where}: ${names.join(", ")}`);

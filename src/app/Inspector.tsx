@@ -13,6 +13,7 @@ import type {DLEntry, EscapedHtml, Section} from "../lib/adp-parser-lib.ts";
 import type {YamlMap, YamlValue} from "../lib/adp-prompt-lib.ts";
 import type {Chit, Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPanelRow} from "../lib/adp-shell-lib.ts";
 import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
+import {PhaseStrip, stripModel, type StripRound} from "./PhaseStrip.tsx";
 
 type HtmlProps = {html: EscapedHtml; as?: "div" | "span" | "td"; className?: string};
 
@@ -228,20 +229,26 @@ function DocPane({back, onBack, heading, badge, notice, action, children}: DocPa
   </div>;
 }
 
-/* The ticket head names the ticket and its state. A ticket with review
-   rounds also offers its reviews here, since the top bar has no Reviews
-   tab. The phase strip takes this entry over when the ticket view moves
-   onto the design system. */
-function Tickhead({title, chits, rounds, onReviews}: {title: string; chits: Chit[]; rounds: number; onReviews(): void}){
+// The ticket head names the ticket and its state. Its review rounds open
+// from the phase strip below it.
+function Tickhead({title, chits}: {title: string; chits: Chit[]}){
   return <div className="tickhead"><span className="tbig">{title}</span>
-    {chits.map((c, i) => <span key={i} className="chit" title={c.title}>{c.txt}</span>)}
-    {rounds ? <button type="button" className="op" id="reviewsBtn" onClick={onReviews}>reviews · {rounds} {rounds === 1 ? "round" : "rounds"}</button> : null}</div>;
+    {chits.map((c, i) => <span key={i} className="chit" title={c.title}>{c.txt}</span>)}</div>;
+}
+
+/* One strip box per review round, in round order. prreview numbers its
+   rounds across every PR of a ticket, so the last box is the latest round.
+   Under several PRs each box names its PR too. */
+function roundsOf(corpus: Corpus | null, tok: string, dir: string): StripRound[] {
+  const groups = corpus && corpus.reviews ? S.reviewRounds(corpus.reviews[dir]) : [];
+  return groups.flatMap(g => g.rounds.map(r => ({k: r.k, tok, file: r.file, title: g.label + " · round " + r.k,
+    label: groups.length > 1 ? g.label + " · " + r.k : "Review " + r.k})))
+    .sort((a, b) => a.k - b.k).map(({k: _k, ...r}) => r);
 }
 
 function SecNav({entries, states, selKey, onPick, onStep}: {entries: Entry[]; states: Record<string, SectionState>;
   selKey: string | null; onPick(key: string): void; onStep(d: number): void}){
   const i = entries.findIndex(en => en.key === selKey);
-  const cur = i >= 0 ? states[entries[i].key] : {label: "—", tone: "mute"};
   return <div className="secnav">
     <button type="button" className="op" data-secstep="-1" disabled={i <= 0} onClick={() => onStep(-1)}>‹ prev</button>
     <select id="secSel" className="secsel" aria-label="section" value={i >= 0 ? entries[i].key : ""} onChange={e => onPick(e.target.value)}>
@@ -252,7 +259,6 @@ function SecNav({entries, states, selKey, onPick, onStep}: {entries: Entry[]; st
       })}
     </select>
     <button type="button" className="op" data-secstep="1" disabled={i < 0 || i >= entries.length - 1} onClick={() => onStep(1)}>next ›</button>
-    <span className={"secchit t-" + cur.tone}>{cur.label}</span>
   </div>;
 }
 
@@ -270,7 +276,6 @@ type InspectorActions = PanelActions & {
   onRound(tok: string, file: string): void;
   onSpy(key: string): void;
   onStartFrom(text: string, source: string): void;
-  onReviews(): void;
 };
 type InspectorProps = {
   corpus: Corpus | null;
@@ -290,6 +295,8 @@ type InspectorProps = {
   // served, so a screen that mounts again does not replay an old jump.
   jump: {to: string | null; seq: number};
   jumped: {current: number};
+  // False while a modal holds the page, so ← and → leave the ticket alone.
+  arrows: boolean;
   act: InspectorActions;
 };
 
@@ -389,12 +396,39 @@ function useScrollSpy(on: boolean, ticket: string | undefined, selected: string 
   }, [on, ticket]);
 }
 
-function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, missNotice, fullClosed, decSort, iwSort, jump, jumped, act}: InspectorProps){
+// A key typed into a field belongs to the field, so no shortcut takes it.
+const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName));
+
+/* ← and → step through the boxes of the phase strip: the prompt, each
+   written phase, then the extra sections. A selection on no box, such as a
+   missing phase, steps from the strip's start. */
+function useArrows(on: boolean, steps: readonly string[], current: string | null, onStep: (key: string) => void){
+  useEffect(() => {
+    if (!on || !steps.length) return;
+    const key = (e: KeyboardEvent) => {
+      if ((e.key !== "ArrowLeft" && e.key !== "ArrowRight") || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || typing(e.target)) return;
+      const i = current == null ? -1 : steps.indexOf(current);
+      const next = e.key === "ArrowRight" ? (i < 0 ? 0 : i + 1) : i - 1;
+      if (next < 0 || next >= steps.length) return;
+      e.preventDefault();
+      onStep(steps[next]);
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [on, steps.join("\n"), current, onStep]);
+}
+
+function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, missNotice, fullClosed, decSort, iwSort, jump, jumped, arrows, act}: InspectorProps){
   const text = t && corpus ? corpus.texts[t.dir] || "" : "";
   const promptSrc = t && corpus ? corpus.prompts[t.dir] : undefined;
   const pd = useMemoText(text);
   const prompt = useMemoPrompt(promptSrc);
   useScrollSpy(view === "full" && !!t, t?.dir, sel.s, act.onSpy);
+  // The strip is built before any early return, because the arrow keys hook
+  // into it on every render.
+  const strip = stripModel(t && (t.sections.length || prompt) ? entriesOf(t, prompt) : [], sel.s);
+  const box = [strip.prompt, ...strip.phases, ...(strip.extra ? [strip.extra] : [])].find(b => b.current);
+  useArrows(arrows && !!t, strip.steps, box ? box.key : null, act.onStep);
   useLayoutEffect(() => {
     if (jump.seq <= jumped.current) return;
     jumped.current = jump.seq;
@@ -417,13 +451,15 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     : "no corpus behind this page — the inspector reads the served corpus.")}</p></div>);
 
   const top = <><h2>inspector <span className="isub">{t.dir}</span></h2>{ops}</>;
-  const rounds = corpus && corpus.reviews ? S.reviewRounds(corpus.reviews[t.dir]).reduce((n, g) => n + g.rounds.length, 0) : 0;
+  const rounds = roundsOf(corpus, revTok(corpus, tokenOf, t.dir), t.dir);
   if (!t.sections.length && !prompt)
-    return regions(<>{top}<Tickhead title={t.id || t.dir} chits={[{txt: t.state + " · " + t.state_source}]} rounds={rounds} onReviews={act.onReviews}/></>, null,
+    return regions(<>{top}<Tickhead title={t.id || t.dir} chits={[{txt: t.state + " · " + t.state_source}]}/></>,
+      rounds.length ? <PhaseStrip model={stripModel([], null)} rounds={rounds} onPick={act.onStep} onRound={act.onRound}/> : null,
       <div className="ipanel"><p className="dnotice">this ticket has no audit log yet — only its prompt or other files sit in the directory.</p></div>);
 
   const entries = entriesOf(t, prompt);
   const states = statesOf(t, entries, prompt, today);
+
   const chits: Chit[] = [{txt: t.state + " · " + t.state_source,
     title: "lifecycle state — declared in front matter, or inferred from section presence on legacy logs"}];
   if (t.pr) chits.push({txt: "pr " + t.pr});
@@ -493,11 +529,12 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     </>;
   }
 
-  return regions(<>{top}<Tickhead title={t.id || t.dir} chits={chits} rounds={rounds} onReviews={act.onReviews}/></>,
-    <SecNav entries={entries} states={states} selKey={sel.s} onPick={act.onSection} onStep={d => {
-      const i = entries.findIndex(en => en.key === sel.s) + d;
-      if (i >= 0 && i < entries.length) act.onStep(entries[i].key);
-    }}/>,
+  return regions(<>{top}<Tickhead title={t.id || t.dir} chits={chits}/></>,
+    <><PhaseStrip model={strip} rounds={rounds} onPick={act.onStep} onRound={act.onRound}/>
+      <SecNav entries={entries} states={states} selKey={sel.s} onPick={act.onSection} onStep={d => {
+        const i = entries.findIndex(en => en.key === sel.s) + d;
+        if (i >= 0 && i < entries.length) act.onStep(entries[i].key);
+      }}/></>,
     <>{pane}{panels}</>);
 }
 

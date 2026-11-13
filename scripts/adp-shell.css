@@ -21,7 +21,6 @@ html{scrollbar-gutter:auto}
   border:1px solid var(--line);padding:3px 8px;color:var(--dim);white-space:nowrap}
 .chit.src{border-color:var(--line-bright);color:var(--accent)}
 .main{display:grid;grid-template-columns:240px 1fr;min-height:0}
-.rail{border-right:1px solid var(--line);background:var(--panel);overflow-y:auto}
 .stage{overflow-y:auto;padding:20px 24px}
 .screen{display:none;max-width:1020px}
 .screen.is-on{display:block}
@@ -33,40 +32,6 @@ html{scrollbar-gutter:auto}
 .shellmask.is-on{display:grid}
 .shellmask .maskmsg{font-family:var(--mono);font-size:18px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
 
-/* ---- rail ---- */
-
-/* The mockup keeps these headers faint; rbeye asked for more contrast, so
-   each group gets a banded header with the name in full ink. The band mixes
-   ink into the panel, which lands darker than the rail in the light palette
-   and lighter in the dark one, so the delimiter reads in both. */
-.railsec{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;
-  font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--ink);background:color-mix(in srgb, var(--ink) 10%, var(--panel));
-  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
-  cursor:pointer;user-select:none}
-.railsec:hover .rname{color:var(--accent)}
-.rcv{display:inline-block;width:12px;color:var(--dim)}
-.rcount{color:var(--dim);font-weight:400}
-/* The entry and its close control are sibling buttons inside one positioned
-   row, so both take the keyboard; we clear the browser's button paint and
-   keep the card look. */
-.rrow{position:relative}
-.rentry{display:block;width:100%;text-align:left;background:none;
-  border:none;border-left:2px solid transparent;padding:7px 12px 8px;cursor:pointer;color:inherit}
-.rentry:hover{background:var(--inset)}
-.rentry.is-sel{background:var(--inset);border-left-color:var(--accent)}
-.rid{display:block;font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--ink)}
-.rdate{color:var(--faint);font-weight:400}
-.rslug{display:block;font-size:11.5px;color:var(--dim);margin-top:1px;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap}
-.rrib{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;margin-top:4px}
-.r-bad{color:var(--bad)}
-.r-warn{color:var(--warn)}
-.r-ok{color:var(--ok)}
-.rmore{color:var(--faint)}
-.rclose{position:absolute;top:6px;right:8px;font-family:var(--mono);color:var(--faint);
-  padding:0 3px;background:none;border:none;cursor:pointer;font-size:inherit}
-.rclose:hover{color:var(--bad)}
 
 /* ---- inspector chrome ---- */
 
@@ -106,14 +71,6 @@ html{scrollbar-gutter:auto}
   border:1px solid var(--line-bright);color:var(--ink);font-family:var(--mono);font-size:11px;
   padding:0 30px 0 10px;outline:none;text-overflow:ellipsis}
 .secsel:focus{border-color:var(--accent)}
-.secchit{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
-  border:1px solid currentColor;padding:0 8px;white-space:nowrap;
-  height:30px;display:inline-flex;align-items:center}
-.t-ok{color:var(--ok)}
-.t-warn{color:var(--warn)}
-.t-bad{color:var(--bad)}
-.t-accent{color:var(--accent)}
-.t-mute{color:var(--faint)}
 
 /* ---- doc pane and panels ---- */
 
