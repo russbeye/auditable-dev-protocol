@@ -41,7 +41,7 @@ function readHash(): HashSelection | null {
 }
 
 function App({fetchFn, openFeed}: AppProps){
-  const {corpus, stale, booting, at, retry} = useLiveCorpus(fetchFn, openFeed);
+  const {corpus, stale, booting, at, absent, retry} = useLiveCorpus(fetchFn, openFeed);
   // The hash is read before the corpus exists, so the ticket it names waits
   // as pending until the first corpus lands. A screen needs no corpus.
   const [pending, setPending] = useState<HashSelection | null>(readHash);
@@ -362,8 +362,9 @@ function App({fetchFn, openFeed}: AppProps){
   // folder and the port, which is all the page knows of where it runs.
   const about = [S.footerText(corpus ? corpus.index : null), ...(root ? [root + " · :" + location.port] : [])];
   // The Tickets view has nothing to show until a ticket exists, so it shows
-  // why instead of an empty rail and stage.
-  const status = booting && !corpus ? "loading" : !corpus ? "failed" : !tickets.length ? "empty" : null;
+  // why instead of an empty rail and stage. A repo with no .adp/ folder has
+  // no logs yet, so it shows the empty page and not the failed one.
+  const status = booting && !corpus ? "loading" : !corpus ? (absent ? "empty" : "failed") : !tickets.length ? "empty" : null;
 
   // f flips the ticket between its section and its full log.
   useEffect(() => {

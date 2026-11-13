@@ -4,8 +4,7 @@
    tests run the same code. Builders are pure string functions over prepared
    models, and every interpolated field is escaped, because the app renders
    whatever a repo's logs hold. Effects are injected: loadCorpus takes a fetch
-   function and applyTheme takes the document and storage, so Node tests pass
-   stubs instead of faking globals. */
+   function, so Node tests pass a stub instead of faking a global. */
 import * as B from "./adp-index-builder-lib.ts";
 import * as P from "./adp-parser-lib.ts";
 import * as D from "./adp-derive-lib.ts";
@@ -19,14 +18,9 @@ import type {PromptDocument, PromptProtocol, PromptReference, PromptLesson, Prom
   ValidationFinding, YamlMap, YamlValue} from "./adp-prompt-lib.ts";
 
 type Screen = "inspector" | "reviews" | "watchboard" | "ledgers" | "calibration" | "resume pack" | "new task";
-type ThemeDocument = {
-  documentElement: {setAttribute(name: string, value: string): void};
-  getElementById(id: string): {textContent: string | null} | null;
-};
-type ThemeStorage = {setItem(key: string, value: string): void};
 type HashSelection = {v: string | null; t: string | null; s: string | null; item: string | null};
 type HashSelectionInput = Partial<HashSelection>;
-type FetchResponse = {ok: boolean; json(): Promise<unknown>; text(): Promise<string>};
+type FetchResponse = {ok: boolean; status?: number; json(): Promise<unknown>; text(): Promise<string>};
 type FetchFn = (url: string) => Promise<FetchResponse>;
 type LoadCorpusOptions = {now?: Date};
 type CorpusListing = {files?: string[]; root?: unknown};
@@ -185,13 +179,6 @@ function themeChoice(stored: string | null): ThemeChoice{
 }
 function themeFor(choice: ThemeChoice, prefersLight: boolean): "dark" | "light"{
   return choice === "system" ? (prefersLight ? "light" : "dark") : choice;
-}
-
-function applyTheme(doc: ThemeDocument, storage: ThemeStorage, t: string): void{
-  doc.documentElement.setAttribute("data-theme", t);
-  const icon = doc.getElementById("ttIcon");
-  if (icon) icon.textContent = t === "dark" ? "☾" : "☀";
-  try{ storage.setItem("adp-theme", t); }catch(e){}
 }
 
 // ---- the hash grammar ----
@@ -1544,7 +1531,7 @@ function reviewBodyHtml(text: string | null | undefined, m?: ReviewBodyModel): s
 }
 
 export {NT_KEYS, LINK_ITEM, SEVERITY_PILL, OUTCOME_PILL, ledgerRows, keyLabel, keyTitle, isFlat, isLine, isMap, NT_SWITCHES, SCREENS, TAB_SCREENS, localDate, tabsHtml, footerText, VIEWS, viewOf, screenFromHash, repoLabel, pageTitle, themeChoice, themeFor,
-  applyTheme, hashRead, hashWrite, logPaths, promptPaths, reviewPaths, corpusUrl, loadCorpus,
+  hashRead, hashWrite, logPaths, promptPaths, reviewPaths, corpusUrl, loadCorpus,
   railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml, docPaneHtml, rawPaneHtml,
   promptViewHtml, reviewRounds, reviewHead, priorReviews, reviewFileRef, reviewNavHtml,
   reviewLinkHtml, reviewHeadHtml, reviewLedger, reviewBodyHtml, reviewItems, pillsHtml,
@@ -1552,7 +1539,7 @@ export {NT_KEYS, LINK_ITEM, SEVERITY_PILL, OUTCOME_PILL, ledgerRows, keyLabel, k
   assumptionLedgerHtml, fullLogHtml, calibrationHtml, fillPack, packSlots, packReadsTicket,
   packBasisKind, packGapKind, packContext, loadPacks, packScreenHtml, slugOf, promptDir, blankRow,
   unknownKeys, unknownValues, placeable, builderOpsHtml, builderSideHtml, builderHtml};
-export type {Screen, ThemeChoice, ThemeDocument, ThemeStorage, HashSelection, HashSelectionInput, FetchResponse, FetchFn,
+export type {Screen, ThemeChoice, HashSelection, HashSelectionInput, FetchResponse, FetchFn,
   LoadCorpusOptions, FetchedText, ReviewFile, Corpus, RailEntry, RailModelGroup, Chit, TickheadModel, ViewMode,
   OpsRowModel, SecNavEntry, DocPaneModel, RawPaneModel, SortState, CitationChip, WatchLink, CoverageRow,
   DecisionPanelRow, DecisionsPanelModel, WatchPanelRow, WatchesPanelModel, BoardRow, WatchboardModel,

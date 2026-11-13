@@ -822,6 +822,26 @@ test("a served page with no corpus directory probes quietly", async () => {
   assert.equal($("[data-part=name]").textContent, "");
 });
 
+// The server answers 404 for the listing while the repo has no .adp/ folder.
+test("a repo with no .adp/ folder shows the empty page, not the failed one, until a log appears", async () => {
+  const live = liveCorpus(LISTING, TEXTS);
+  let made = false;
+  const fetch = (u: string) => made ? live.fetch(u) : Promise.resolve({ok: false, status: 404} as FetchResponse);
+  const {feed} = await boot({fetch});
+  await act(async () => { feed.onopen!(); });
+  await settle();
+  assert.equal($("#statusPage")?.getAttribute("data-status"), "empty");
+  assert.equal($("#liveTxt").textContent, "IDLE");
+  assert.equal($("#liveTxt").style.color, "var(--dim)");
+  assert.equal($(".adp-livedot").style.boxShadow, "inset 0 0 0 2px var(--faint)");
+  assert.ok(!$(".adp-topbar__since"), "a repo with no logs shows no failure note");
+  made = true;
+  await act(async () => { feed.onmessage!(); });
+  await settle();
+  assert.ok(!$("#statusPage"), "the first log replaces the empty page");
+  assert.equal($("#liveTxt").textContent, "WATCHING");
+});
+
 test("the live pill's status region is written only when its state changes", async () => {
   const live = liveCorpus(LISTING, TEXTS);
   const {feed} = await boot({fetch: live.fetch});
