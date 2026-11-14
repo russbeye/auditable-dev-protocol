@@ -1064,6 +1064,31 @@ test("a bare shared id selects neither ticket", async () => {
   assert.equal($$("#rail [data-key]").some(r => r.getAttribute("aria-current") === "true"), false);
 });
 
+/* The rail scrolls to the selected row by the key the row carries, which is
+   the directory when two tickets share an id (DL-075). jsdom lays out
+   nothing, so we stand in a box and row geometry that put the selected row
+   below the rail's first screen, and record what the rail scrolls to. */
+test("the rail scrolls to a selected ticket whose id another ticket shares", async () => {
+  const shared = (w: string) => LOG.replace("# Audit Log — AA1 alpha", "# Audit Log — " + w).replace(/OT-AA1-/g, "OT-A001-");
+  const rect = Element.prototype.getBoundingClientRect;
+  const top = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTop");
+  Element.prototype.getBoundingClientRect = function(this: Element){
+    const r = (t: number, b: number) => ({top: t, bottom: b, left: 0, right: 100, width: 100, height: b - t, x: 0, y: t, toJSON(){}}) as DOMRect;
+    return this.id === "rail" ? r(0, 300) : (this as HTMLElement).dataset?.key === "A-001-two" ? r(500, 560) : r(0, 0);
+  };
+  Object.defineProperty(HTMLElement.prototype, "scrollTop", {configurable: true,
+    get(this: HTMLElement & {st?: number}){ return this.st || 0; }, set(this: HTMLElement & {st?: number}, v: number){ this.st = v; }});
+  try {
+    await boot({hash: "#t=A-001-two", fetch: liveCorpus({root: "demo", files: ["A-001-one/audit-log.md", "A-001-two/audit-log.md"]},
+      {"A-001-one/audit-log.md": shared("one"), "A-001-two/audit-log.md": shared("two")}).fetch});
+    assert.equal(entry("A-001-two").getAttribute("aria-current"), "true");
+    assert.equal($("#rail").scrollTop, 260, "the rail did not scroll to the selected row");
+  } finally {
+    Element.prototype.getBoundingClientRect = rect;
+    if (top) Object.defineProperty(HTMLElement.prototype, "scrollTop", top); else delete (HTMLElement.prototype as {scrollTop?: number}).scrollTop;
+  }
+});
+
 // Each log names its own decision, so a test can tell which one the
 // inspector shows.
 const SHARED_TEXTS: Record<string, string> = {};

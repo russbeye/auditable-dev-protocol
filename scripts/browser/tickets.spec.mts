@@ -116,6 +116,13 @@ test("no old stylesheet rule reaches the ticket view's system text", async ({pag
         }
       });
     };
+    // A click can start a transition, such as a step button moving to or
+    // from its disabled color. We read styles only once every transition
+    // and animation has finished, because a slow runner can still be mid-way
+    // after a fixed wait. The live dot pulses forever, so we wait only on
+    // the animations that end.
+    const running = () => document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).length;
+    const settled = async () => { for (let i = 0; i < 100 && running(); i++) await wait(20); };
     for (const g of document.querySelectorAll<HTMLElement>('#rail [data-sec][aria-expanded="false"]')) g.click();
     await wait(200);
     const keys = [...document.querySelectorAll("#rail [data-key]")].map(r => r.getAttribute("data-key")!);
@@ -123,6 +130,7 @@ test("no old stylesheet rule reaches the ticket view's system text", async ({pag
       document.querySelector<HTMLElement>(`#rail [data-key="${CSS.escape(k)}"]`)!.click(); await wait(150);
       for (const v of ["section", "full"]){
         document.querySelector<HTMLElement>(`[data-view="${v}"]`)!.click(); await wait(150);
+        await settled();
         strict(k + " " + v);
       }
       const reviews = document.querySelector<HTMLElement>('#phaseStrip [data-op="reviews"]');
@@ -133,6 +141,7 @@ test("no old stylesheet rule reaches the ticket view's system text", async ({pag
         sel.value = o.value; sel.dispatchEvent(new Event("change", {bubbles: true})); await wait(150);
         for (const h of document.querySelectorAll<HTMLElement>('#scrReviews .adp-dl__head[aria-expanded="false"]')) h.click();
         await wait(100);
+        await settled();
         strict(k + " " + o.value, "scrReviews");
         reviewed++;
       }

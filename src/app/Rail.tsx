@@ -90,12 +90,14 @@ function Rail(p: RailProps){
   const railRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const box = railRef.current;
-    const row = box && p.selId ? [...box.querySelectorAll<HTMLElement>("[data-key]")].find(el => el.dataset.key === p.selId) : null;
+    // We match on the row's own key, the ticket's token, which is the
+    // directory when another ticket shares the id.
+    const row = box && p.selKey ? [...box.querySelectorAll<HTMLElement>("[data-key]")].find(el => el.dataset.key === p.selKey) : null;
     if (!box || !row) return;
     const r = row.getBoundingClientRect(), b = box.getBoundingClientRect();
     if (r.top < b.top) box.scrollTop -= b.top - r.top;
     else if (r.bottom > b.bottom) box.scrollTop += r.bottom - b.bottom;
-  }, [p.selId, p.folded]);
+  }, [p.selKey, p.folded]);
 
   const strip = <Strip attention={p.attention} selId={p.selId} onFold={p.onFold} stripRef={stripRef}/>;
   if (p.folded) return strip;
