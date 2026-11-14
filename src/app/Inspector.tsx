@@ -15,7 +15,7 @@ import type {Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPa
 import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
 import {PhaseStrip, stripModel, type StripReviews} from "./PhaseStrip.tsx";
 
-type HtmlProps = {html: EscapedHtml; as?: "div" | "span" | "td"; className?: string; style?: CSSProperties;
+type HtmlProps = {html: EscapedHtml; as?: "div" | "span" | "td" | "dd"; className?: string; style?: CSSProperties;
   onClick?(e: ReactMouseEvent<HTMLElement>): void};
 
 /* The one place the app hands React a string of HTML. The prop takes only
@@ -628,7 +628,7 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
 // A round link is an in-page hash, so its href never carries a URL that
 // came out of a review file. A click routes in the app.
 function RoundLink({tok, file, label, onRound}: {tok: string; file: string; label: string; onRound(tok: string, file: string): void}){
-  return <a className="rvl" href={S.hashWrite({v: "reviews", t: tok, s: file})} data-t={tok} data-rf={file}
+  return <a className="rvl" href={S.hashWrite({v: "reviews", t: tok, s: file})} data-t={tok} data-rf={file} style={{overflowWrap: "anywhere"}}
     onClick={e => { e.preventDefault(); onRound(tok, file); }}>{label}</a>;
 }
 
@@ -652,5 +652,5 @@ function useMemoPrompt(p: FetchedText | undefined): PromptView | null {
   return ref.current.out;
 }
 
-export {FILL, Html, Inspector, typing, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
+export {FILL, Html, Inspector, Notice, PANE, P_GRID, P_K, P_V, SECTION_HEAD, typing, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
 export type {InspectorActions, InspSel, PromptView};

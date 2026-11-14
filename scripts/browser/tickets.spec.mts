@@ -49,11 +49,12 @@ test("a section heading renders in the system's section type", async ({page, ser
   expect(type).toEqual(["Space Grotesk", "20px", "28px", "600", "none"]);
 });
 
-/* No old rule reaches the system's text (DL-062). We copy the ticket view
-   into a frame that loads the system's two sheets alone, and compare every
-   element that belongs to the system with its copy: anything with an adp-
-   class, anything inside Prose, a decision card, the prompt view, or a
-   numbered list. A difference means a rule from an old sheet reached it. The
+/* No old rule reaches the system's text (DL-062, DL-065). We copy the ticket
+   view, and each review round with its cards open, into a frame that loads
+   the system's two sheets alone, and compare every element that belongs to
+   the system with its copy: anything with an adp- class, anything inside
+   Prose, a decision card, the prompt view, a review grid, or a numbered
+   list. A difference means a rule from an old sheet reached it. The
    decisions and watches panels convert in stage 3, so the walk skips them. */
 test("no old stylesheet rule reaches the ticket view's system text", async ({page, server}) => {
   test.setTimeout(120_000);
@@ -71,15 +72,15 @@ test("no old stylesheet rule reaches the ticket view's system text", async ({pag
     const PROPS = ["fontFamily", "fontSize", "lineHeight", "fontWeight", "letterSpacing", "textTransform", "color", "backgroundColor",
       "marginTop", "marginBottom", "paddingTop", "paddingBottom", "paddingLeft", "paddingRight"] as const;
     const out: string[] = [];
-    let checked = 0;
-    const strict = (where: string) => {
-      const root = document.getElementById("scrInspector")!;
+    let checked = 0, reviewed = 0;
+    const strict = (where: string, id = "scrInspector") => {
+      const root = document.getElementById(id)!;
       const box = f.contentDocument!.getElementById("box")!;
       box.replaceChildren(root.cloneNode(true));
       const a = [...root.querySelectorAll<HTMLElement>("*")], b = [...(box.firstChild as HTMLElement).querySelectorAll<HTMLElement>("*")];
       a.forEach((el, i) => {
         if (!el.checkVisibility() || el.closest(".ipanel")) return;
-        if (!([...el.classList].some(c => c.startsWith("adp-")) || el.closest(".adp-prose, .adp-dl, [data-p], [role=list]"))) return;
+        if (!([...el.classList].some(c => c.startsWith("adp-")) || el.closest(".adp-prose, .adp-dl, [data-p], [data-rev], [role=list]"))) return;
         checked++;
         const ca = getComputedStyle(el), cb = f.contentWindow!.getComputedStyle(b[i]);
         for (const p of PROPS){
@@ -98,11 +99,24 @@ test("no old stylesheet rule reaches the ticket view's system text", async ({pag
         document.querySelector<HTMLElement>(`[data-view="${v}"]`)!.click(); await wait(150);
         strict(k + " " + v);
       }
+      const reviews = document.querySelector<HTMLElement>('#phaseStrip [data-op="reviews"]');
+      if (!reviews) continue;
+      reviews.click(); await wait(150);
+      const sel = document.getElementById("revSel") as HTMLSelectElement;
+      for (const o of [...sel.options]){
+        sel.value = o.value; sel.dispatchEvent(new Event("change", {bubbles: true})); await wait(150);
+        for (const h of document.querySelectorAll<HTMLElement>('#scrReviews .adp-dl__head[aria-expanded="false"]')) h.click();
+        await wait(100);
+        strict(k + " " + o.value, "scrReviews");
+        reviewed++;
+      }
+      document.querySelector<HTMLElement>('[data-op="toticket"]')!.click(); await wait(150);
     }
     f.remove();
-    return {out: [...new Set(out)].slice(0, 20), checked, tickets: keys.length};
+    return {out: [...new Set(out)].slice(0, 20), checked, tickets: keys.length, reviewed};
   });
   expect(faults.tickets).toBeGreaterThan(3);
+  expect(faults.reviewed).toBeGreaterThan(0);
   expect(faults.checked).toBeGreaterThan(100);
   expect(faults.out).toEqual([]);
 });
@@ -137,7 +151,7 @@ test("a hostile log runs no script and leaves no live markup on any screen", asy
   };
   await everyScreen(page, server.url, look);
   await open(page, server.url + "#v=reviews&t=BX001&s=pr-review-PR1-20261109-r1.md");
-  await expect(page.locator("#scrReviews .dl-card").first()).toBeVisible();
+  await expect(page.locator("#scrReviews .adp-dl").first()).toBeVisible();
   await look("BX001 round 1");
   await open(page, server.url + "#t=BX001&s=sec-decision-log");
   await expect(page.locator(".stage .md").first()).toBeVisible();
@@ -148,18 +162,19 @@ test("a hostile log runs no script and leaves no live markup on any screen", asy
   expect(live).toEqual([]);
 });
 
-// OT-MC012-16, first half. A finding card's pills and a closure note sit in
-// contents spans, which must stay inline in every engine.
-test("a finding card's pills and its closure note stay on their lines", async ({page, server}) => {
+// OT-MC012-16, first half. A finding card's chips and a closure note sit in
+// one head row and one contents span, which must stay inline in every engine.
+test("a finding card's chips and its closure note stay on their lines", async ({page, server}) => {
   await open(page, server.url + "#v=reviews&t=BX001&s=pr-review-PR1-20261109-r1.md");
-  const card = page.locator("#scrReviews .dl-card", {has: page.locator(".dl-pills")}).first();
-  await expect(card.locator(".dl-pills .pill")).toHaveCount(3);
-  const tops = await card.locator(".dl-pills .pill").evaluateAll(els => els.map(e => Math.round(e.getBoundingClientRect().top)));
+  const card = page.locator("#scrReviews .adp-dl", {has: page.locator("dd", {hasText: "in round 2"})}).first();
+  if (await card.locator(".adp-dl__head").getAttribute("aria-expanded") === "false") await card.locator(".adp-dl__head").click();
+  await expect(card.locator(".adp-dl__head .adp-chip")).toHaveCount(3);
+  const tops = await card.locator(".adp-dl__head .adp-chip").evaluateAll(els => els.map(e => Math.round(e.getBoundingClientRect().top)));
   expect(tops.length).toBe(3);
   expect(new Set(tops).size).toBe(1);
   // The closed row holds its date, the round link, " · ", and the note. The
   // note's first line must share the line of the separator.
-  const lines = await card.locator(".revv", {hasText: "in round 2"}).evaluate(el => {
+  const lines = await card.locator("dd", {hasText: "in round 2"}).evaluate(el => {
     const sep = [...el.childNodes].find(n => n.nodeType === 3 && n.textContent!.includes("·"))!;
     const note = sep.nextSibling!;
     const top = (n: Node) => { const r = document.createRange(); r.selectNodeContents(n); return Math.round(r.getClientRects()[0].top); };
@@ -196,7 +211,7 @@ test("the scroll spy names the full-log section at the stage's top", async ({pag
    the corpus at ADP_LIVE_ROOT when it is set, so a developer can run it on
    a real repo. CI has no live corpus, so there it walks the fixture. */
 const THEME_CLASSES = new Set(["md", "sr-live"]);
-const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow", "fsec", "fsum"]);
+const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow", "fsec", "fsum", "rvl"]);
 test("every class painted outside a rendered document comes from adp-bundle.css or adp-shell.css", async ({page}) => {
   test.setTimeout(300_000);
   const shell = new Set<string>();

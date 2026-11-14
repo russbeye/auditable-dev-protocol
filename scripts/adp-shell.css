@@ -86,7 +86,6 @@ html{scrollbar-gutter:auto}
 .revfields dt{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
 .revfields dd{margin:0;color:var(--ink);overflow-wrap:anywhere}
 .revprior,.revopen{font-size:12px;color:var(--dim);margin:0 0 8px}
-.rvl{font-family:var(--mono);color:var(--accent);cursor:pointer;overflow-wrap:anywhere}
 /* The round body reuses the Decision Log card. A review label such as
    "Confidence basis" outgrows the card's fixed 150px column, so the column
    sizes to its longest label, up to 220px, and a label wraps there. */

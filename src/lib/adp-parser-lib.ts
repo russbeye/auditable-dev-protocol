@@ -550,6 +550,8 @@ function proseBlocks(h: string): string{
 // Markdown with the design system's blocks and chips, for a value that is not
 // a log section, such as a multi-line prompt field.
 const renderMarkdownDS=(md: unknown): EscapedHtml=>proseBlocks(renderMarkdown(md)) as EscapedHtml;
+// One line of inline text with the design system's chips, for a field value.
+const decorateDS=(v: unknown): EscapedHtml=>dsTokens(decorate(inline(v))) as EscapedHtml;
 const proseHtml=(md: unknown, opts?: DLRenderOpts): EscapedHtml=>opts&&opts.ds?renderProse(md):renderMarkdown(md);
 
 // open sets whether a design system card starts with its fields shown. It
@@ -689,7 +691,7 @@ export {esc, escAttr, safeLinkUrl, inline, decorate, TOK, renderMarkdown, ART, S
   metaFor, splitFrontMatter, parseSections, slug, sectionKeys, isTableStart, splitRow,
   parseDLFields, dlSplitBody, dlChipSplit, dlConfKind, dlConfPill, dlStatusPill, dlStatusKind,
   dlRail, parseDLEntries, dlEntryStatus, dlStatusCounts, renderDLCard, renderSectionBody,
-  renderDecisionLog, renderProse, renderMarkdownDS};
+  renderDecisionLog, renderProse, renderMarkdownDS, decorateDS};
 export type {EscapedHtml, SectionKind, SectionMeta, ArtEntry, FrontMatterSplit, Section, ParsedSections,
   DLField, DLChipSplit, DLChip, DLConfKind, DLStatusKind, DLBodySplit, DLEntry, DLEntries, DLStatusCounts, DLRenderOpts};
 

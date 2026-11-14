@@ -2730,68 +2730,77 @@ const card = (id: string, o: {title?: string; severity?: string; claim?: string;
   "- **Confidence basis:** DIRECT EVIDENCE — a repro.", `- **Status:** ${o.status || "OPEN"}`].join("\n");
 const ledgerLine = (id: string, outcome: string, note: string) => `- **${id} CLOSED 2026-01-03 → ${outcome}.** ${note}`;
 const withLedger = (text: string, lines: string[]) => text.replace("## Review Verdict", "## Prior Findings\n" + lines.join("\n") + "\n\n## Review Verdict");
-const bodyHtml = (text: string, ledger: S.ReviewLedger, tok = "RV1") =>
-  render(createElement(ReviewBody, {text, ctx: {ledger, tok, onRound(){}}})).container.innerHTML;
+const bodyEl = (text: string, ledger: S.ReviewLedger, tok = "RV1") =>
+  render(createElement(ReviewBody, {text, ctx: {ledger, tok, onRound(){}}})).container;
+// Each head chip as its kind, its word, and its class.
+const headChips = (c: Element) => [...c.querySelectorAll(".adp-dl__head .adp-chip")].map(x => [x.getAttribute("title"), x.textContent, x.className]);
+const fieldLabels = (c: Element) => [...c.querySelectorAll("dt")].map(d => d.textContent);
 // A note that mixes author text with our link sits in a contents span (DL-069).
 const CONTENTS = '(?:<span style="display: contents;">)?';
 
 test("a finding renders as a card, and its status pill reads the ledger, not the stale card", () => {
   const text = review({pr: 7, k: 1, dir: RV1, findings: card("PR-COR-001") + "\n\n" + card("PR-TST-002", {severity: "nit"})});
-  const html = bodyHtml(text, {"PR-COR-001": {id: "PR-COR-001", file: "pr-review-PR7-20260103-r2.md", k: 2, date: "2026-01-03", outcome: "RESOLVED", note: "fixed **now**."}});
-  const cards = html.split('<div class="dl-cards">')[1].split("Review Verdict")[0].split('<div class="dl-card ').slice(1);
+  const box = bodyEl(text, {"PR-COR-001": {id: "PR-COR-001", file: "pr-review-PR7-20260103-r2.md", k: 2, date: "2026-01-03", outcome: "RESOLVED", note: "fixed **now**."}});
+  const cards = [...box.querySelectorAll(".adp-dl")];
   assert.equal(cards.length, 2);
-  assert.match(cards[0], /^rail-ok"/);
-  assert.match(cards[0], /<i>severity<\/i>should/);
-  assert.match(cards[0], /<i>conf<\/i>HIGH/);
-  assert.match(cards[0], /<i>status<\/i>RESOLVED/);
-  assert.doesNotMatch(cards[0], /<i>status<\/i>OPEN/);
-  assert.match(cards[0], new RegExp(`2026-01-03 in <a class="rvl"[^>]*data-rf="pr-review-PR7-20260103-r2\\.md">round 2</a> · ${CONTENTS}fixed <strong>now</strong>\\.`));
-  assert.match(cards[0], /<span class="dl-k revk">Confidence basis<\/span>/);
-  assert.doesNotMatch(cards[0], /dl-k revk">(Severity|Confidence|Status)</);
-  assert.match(cards[1], /^rail-open"/);
-  assert.match(cards[1], /<i>severity<\/i>nit/);
-  assert.match(cards[1], /<i>status<\/i>OPEN/);
-  assert.match(html, /<h4>Findings<\/h4><div class="md adp-prose" style="max-width: none;"><div class="dl-cards">/);
+  // Severity and confidence are neutral Tags, and the ledger's closure is the status.
+  assert.deepEqual(headChips(cards[0]), [["severity", "should", "adp-chip"], ["confidence", "HIGH", "adp-chip"],
+    ["status", "RESOLVED", "adp-chip adp-chip--validated"]]);
+  assert.equal(cards[0].className, "adp-dl adp-dl--settled");
+  const closed = [...cards[0].querySelectorAll("dt")].find(d => d.textContent === "closed")!.nextElementSibling!;
+  assert.match(closed.innerHTML, new RegExp(`^2026-01-03 in <a class="rvl"[^>]*data-rf="pr-review-PR7-20260103-r2\\.md"[^>]*>round 2</a> · ${CONTENTS}fixed <strong>now</strong>\\.`));
+  assert.ok(fieldLabels(cards[0]).includes("Confidence basis"));
+  assert.ok(!fieldLabels(cards[0]).some(l => /^(Severity|Confidence|Status)$/.test(l!)));
+  assert.deepEqual(headChips(cards[1]), [["severity", "nit", "adp-chip"], ["confidence", "HIGH", "adp-chip"], ["status", "OPEN", "adp-chip adp-chip--open"]]);
+  assert.equal(cards[1].className, "adp-dl");
+  // The first finding starts open and the rest start folded.
+  assert.equal(cards[0].querySelector(".adp-dl__head")!.getAttribute("aria-expanded"), "true");
+  assert.equal((cards[1].querySelector(".adp-dl__body") as HTMLElement).style.display, "none");
+  assert.ok([...box.querySelectorAll(".doc > h2.adp-section")].some(h => h.textContent === "Findings"));
 });
 
 test("Review Target, Review Verdict, and Prior Findings render as grids, and a stray line keeps markdown", () => {
   const text = withLedger(review({pr: 7, k: 2, dir: RV1}), [ledgerLine("PR-COR-001", "RESOLVED", "fixed.")]);
-  const html = bodyHtml(text, {});
-  assert.equal(html.split("dl-card revcard").length - 1, 3);
-  assert.match(html, /<span class="dl-k revk">Round<\/span><span class="dl-v revv">2<\/span>/);
-  assert.match(html, new RegExp(`<span class="dl-k revk">PR-COR-001</span><span class="dl-v revv"><span class="pill dl-pill p-ok"><i>closed</i>RESOLVED</span> 2026-01-03 · ${CONTENTS}fixed\\.`));
-  assert.match(html, /<table/);
-  assert.match(html, /Round 2 of PR #7 found nothing\./);
-  assert.deepEqual([...html.matchAll(/<div class="doc"><h4>([^<]*)<\/h4>/g)].map(x => x[1]),
+  const grids = (box: Element) => [...box.querySelectorAll<HTMLElement>("div")].filter(d => d.style.display === "grid").length;
+  const value = (box: Element, label: string) => [...box.querySelectorAll("[data-rev=k]")].find(k => k.textContent === label)!.nextElementSibling!;
+  const box = bodyEl(text, {});
+  assert.equal(grids(box), 3);
+  assert.equal(value(box, "Round").textContent, "2");
+  const pc = value(box, "PR-COR-001");
+  assert.equal(pc.querySelector(".adp-chip")!.className, "adp-chip adp-chip--s adp-chip--validated");
+  assert.equal(pc.textContent, "RESOLVED 2026-01-03 · fixed.");
+  assert.ok(box.querySelector("table.adp-table"));
+  assert.match(box.innerHTML, /Round 2 of PR #7 found nothing\./);
+  assert.deepEqual([...box.querySelectorAll(".doc > h2.adp-section")].map(h => h.textContent),
     ["Review Target", "Inspected", "Findings", "Prior Findings", "Review Verdict"]);
-  assert.doesNotMatch(html, /PR Review — PR #7/);
-  assert.equal(html.split('<div class="doc"><h4>').length - 1, html.split('</h4><div class="md adp-prose" style="max-width: none;">').length - 1);
+  assert.doesNotMatch(box.innerHTML, /PR Review — PR #7/);
+  for (const d of box.querySelectorAll(".doc")) assert.ok(d.querySelector(":scope > .adp-prose"), "a pane lacks its prose body");
   cleanup();
-  const stray = bodyHtml(text.replace("## Prior Findings\n", "## Prior Findings\nA note that is not a ledger line.\n"), {});
-  assert.equal(stray.split("dl-card revcard").length - 1, 2);
-  assert.match(stray, /A note that is not a ledger line\./);
-  assert.match(stray, /PR-COR-001 CLOSED 2026-01-03/);
+  const stray = bodyEl(text.replace("## Prior Findings\n", "## Prior Findings\nA note that is not a ledger line.\n"), {});
+  assert.equal(grids(stray), 2);
+  assert.match(stray.innerHTML, /A note that is not a ledger line\./);
+  assert.match(stray.innerHTML, /PR-COR-001 CLOSED 2026-01-03/);
 });
 
 test("a finding card renders its text inert, and an unknown outcome word picks no class", () => {
   const text = review({pr: 9, k: 1, dir: RV2, findings: card("PR-SEC-001", {title: XSS, claim: XSS, severity: "<b>x</b> later"})});
-  const html = bodyHtml(text, {"PR-SEC-001": {id: "PR-SEC-001", file: "f.md", k: 2, date: "2026-01-03", outcome: "WEIRD", note: XSS}}, "RV2");
-  assert.doesNotMatch(html, /<script|<img|<b>|href="javascript:/i);
-  assert.match(html, /&lt;script&gt;/);
-  assert.match(html, /<span class="pill dl-pill p-low"><i>status<\/i>WEIRD<\/span>/);
-  assert.match(html, /<div class="dl-card ">/);
-  assert.match(html, /dl-k revk">severity note</);
+  const box = bodyEl(text, {"PR-SEC-001": {id: "PR-SEC-001", file: "f.md", k: 2, date: "2026-01-03", outcome: "WEIRD", note: XSS}}, "RV2");
+  assert.doesNotMatch(box.innerHTML, /<script|<img|<b>|href="javascript:/i);
+  assert.match(box.innerHTML, /&lt;script&gt;/);
+  const status = box.querySelector(".adp-dl__head .adp-chip[title=status]")!;
+  assert.deepEqual([status.textContent, status.className], ["WEIRD", "adp-chip"]);
+  assert.ok(fieldLabels(box).includes("severity note"));
 });
 
 test("a later round's closure repaints an earlier round's card on its change event", async () => {
   const c = reviewCorpus();
   c.texts[`${RV1}/pr-review-PR7-20260102-r1.md`] = review({pr: 7, k: 1, dir: RV1, findings: card("PR-COR-001")});
   const {feed} = await bootReviews(c, "#v=reviews&t=RV1&s=pr-review-PR7-20260102-r1.md");
-  assert.match($("#revBody").innerHTML, /dl-pill p-open"><i>status<\/i>OPEN/);
+  const status = () => { const x = $("#revBody .adp-dl__head .adp-chip[title=status]"); return [x.textContent, x.className]; };
+  assert.deepEqual(status(), ["OPEN", "adp-chip adp-chip--open"]);
   c.texts[`${RV1}/pr-review-PR7-20260103-r2.md`] = withLedger(c.texts[`${RV1}/pr-review-PR7-20260103-r2.md`], [ledgerLine("PR-COR-001", "RESOLVED", "fixed.")]);
   await change(feed);
-  assert.match($("#revBody").innerHTML, /dl-pill p-ok"><i>status<\/i>RESOLVED/);
-  assert.doesNotMatch($("#revBody").innerHTML, /dl-pill p-open/);
+  assert.deepEqual(status(), ["RESOLVED", "adp-chip adp-chip--validated"]);
   await click(within("revBody", ".rvl")[0]);
   assert.match($("#revHead").innerHTML, /PR #7 · round 2/);
   assert.equal(location.hash, "#v=reviews&t=RV1&s=pr-review-PR7-20260103-r2.md");
@@ -2859,9 +2868,10 @@ test("a column sort on one screen reaches the other screen's cited table the nex
 });
 
 test("a severity word that names an Object member takes the fallback class", () => {
-  const html = bodyHtml(review({pr: 9, k: 1, dir: RV2, findings: card("PR-COR-001", {severity: "constructor"})}), {}, "RV2");
-  assert.match(html, /<span class="pill dl-pill p-low"><i>severity<\/i>constructor<\/span>/);
-  assert.doesNotMatch(html, /function/);
+  const box = bodyEl(review({pr: 9, k: 1, dir: RV2, findings: card("PR-COR-001", {severity: "constructor"})}), {}, "RV2");
+  const sev = box.querySelector(".adp-dl__head .adp-chip[title=severity]")!;
+  assert.deepEqual([sev.textContent, sev.className], ["constructor", "adp-chip"]);
+  assert.doesNotMatch(box.innerHTML, /function/);
 });
 
 // ---- the panels' markup ----
