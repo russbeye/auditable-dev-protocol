@@ -3535,6 +3535,26 @@ test("on a narrow window the rail starts folded and opens over the page", async 
   }
 });
 
+// The NarrowLedger board lists each entry on three lines, and calibration
+// sets each count line under its bar. No entry, word, or count leaves.
+test("on a narrow window the Ledger lists its entries and calibration drops its count column", async () => {
+  try {
+    await bootNarrow();
+    await tabTo("ledgers");
+    assert.equal($$("#scrLedgers table").length, 0);
+    const items = $$("#scrLedgers li.lgrow");
+    assert.deepEqual(items.map(r => r.getAttribute("data-t") + "/" + r.getAttribute("data-dl")), ["AA1/DL-002", "AA1/DL-001"]);
+    const open = items[0];
+    assert.deepEqual([...open.querySelectorAll("a.wbl")].map(a => a.textContent), ["AA1", "DL-002", "OT-AA1-1"]);
+    assert.match(open.textContent!, /OPEN/);
+    assert.match(open.textContent!, /watch OT-AA1-1/);
+    assert.equal(($("#scrCalib .adp-cal__grid") as HTMLElement).style.gridTemplateColumns, "64px minmax(0, 1fr) 56px");
+    assert.ok($$("#scrCalib .adp-cal__count").every(c => (c as HTMLElement).style.gridColumn === "2 / -1"));
+  } finally {
+    delete (window as {matchMedia?: unknown}).matchMedia;
+  }
+});
+
 test("the closed group starts collapsed, and a click opens it", async () => {
   await bootCorpus();
   const closed = () => $$("#rail [data-sec]").find(s => s.getAttribute("data-sec") === "closed")!;

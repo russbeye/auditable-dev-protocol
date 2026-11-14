@@ -23,6 +23,8 @@ type LedgersProps = {
   status: string;
   conf: string;
   calibration: ReactNode;
+  // Below 808px the Ledger lists its entries, as the NarrowLedger board draws it.
+  narrow: boolean;
   onSort(k: string): void;
   onStatus(f: string): void;
   onConf(f: string): void;
@@ -33,7 +35,7 @@ type LedgersProps = {
    keyboard can reach them, and a click routes in the app. The Entry cell
    holds two links, as the Ledger board draws it. The ticket lands the
    default view, and the id lands the item in its owning section. */
-function Ledgers({corpus, today, sort, status, conf, calibration, onSort, onStatus, onConf, onOpen}: LedgersProps){
+function Ledgers({corpus, today, sort, status, conf, calibration, narrow, onSort, onStatus, onConf, onOpen}: LedgersProps){
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE_ROWS);
   const title = <h1 style={PAGE_TITLE}>Ledger</h1>;
@@ -86,16 +88,36 @@ function Ledgers({corpus, today, sort, status, conf, calibration, onSort, onStat
         ? "nothing under these filters — the pills count what exists."
         : "no decisions on record — no ticket in this corpus has logged an entry."}</div>}
   </td></tr></tbody></table></>;
+  const more = <ShowMore shown={Math.min(limit, rows.length)} total={rows.length} onMore={() => setLimit(n => n + PAGE_ROWS)}/>;
+  const watch = (d: typeof rows[number]) => <WatchCell d={{watch: d.watch, settled: d.settled, statusKind: d.kind}} link={(wid, title) => link(d.tid, wid, title)}/>;
+  /* On a narrow window each entry is a list item of three lines: the entry,
+     its confidence, its status, and its age, then the decision, then its
+     watch. The table's sort order still holds, and the watch line shows
+     only for an entry that has a watch cell to show. */
+  if (narrow) return <>{top}<ul style={{margin: "16px 0 0", padding: 0, listStyle: "none", boxShadow: "inset 0 1px 0 var(--line-bright)"}}>
+    {rows.slice(0, limit).map(d => {
+      const w = watch(d), hasWatch = !!(d.watch || d.settled || d.kind === "open");
+      return <li key={d.dir + "\n" + d.id} className="lgrow" data-t={d.tid} data-dl={d.id} style={{padding: "12px 0", boxShadow: "inset 0 -1px 0 var(--line)"}}>
+        <div style={{display: "flex", alignItems: "center", gap: 12, minHeight: 24, flexWrap: "wrap"}}>
+          <span className="adp-col-id" style={{font: "400 12px/24px var(--font-mono)"}}>{link(d.tid, null)} {link(d.tid, d.id)}</span>
+          <span style={{font: "400 11px/24px var(--font-mono)", letterSpacing: ".08em", color: "var(--ink-2)"}}>{P.dlChipSplit(d.confidence).word}</span>
+          <StatusChip kind={d.kind}/>
+          <span style={{marginLeft: "auto", font: "400 13px/24px var(--font-sans)", color: "var(--dim)"}}>{d.age == null ? "—" : d.age + "d"}</span>
+        </div>
+        <div style={{font: "400 15px/24px var(--font-sans)"}}>{d.title}</div>
+        {hasWatch ? <div style={{font: "400 13px/24px var(--font-sans)", color: "var(--dim)"}}>watch <span style={{font: "400 12px/24px var(--font-mono)"}}>{w}</span></div> : null}
+      </li>;
+    })}</ul>{more}</>;
   return <>{top}<div style={{overflowX: "auto"}}><table className="adp-table" style={{marginTop: 16}}>{thead}<tbody>
     {rows.slice(0, limit).map(d => <tr key={d.dir + "\n" + d.id} className="lgrow" data-t={d.tid} data-dl={d.id}>
       <td className="adp-col-id">{link(d.tid, null)} {link(d.tid, d.id)}</td>
       <td>{d.title}</td>
       <td className="adp-col-conf" style={NW}>{P.dlChipSplit(d.confidence).word}</td>
       <td><StatusChip kind={d.kind}/></td>
-      <td className="adp-col-id"><WatchCell d={{watch: d.watch, settled: d.settled, statusKind: d.kind}} link={(wid, title) => link(d.tid, wid, title)}/></td>
+      <td className="adp-col-id">{watch(d)}</td>
       <td className="adp-col-num">{d.age == null ? "—" : d.age + "d"}</td>
     </tr>)}
-  </tbody></table></div><ShowMore shown={Math.min(limit, rows.length)} total={rows.length} onMore={() => setLimit(n => n + PAGE_ROWS)}/></>;
+  </tbody></table></div>{more}</>;
 }
 
 // ---- calibration ----
@@ -106,13 +128,13 @@ const SEG: Record<string, string> = {validated: "adp-cal__seg--ok", invalidated:
 // A tier this small is flagged in the legend, so its share is not read as a firm rate.
 const SMALL_TIER = 10;
 
-type CalibrationProps = {corpus: Corpus | null; today: string; onCell(conf: string, kind: string): void};
+type CalibrationProps = {corpus: Corpus | null; today: string; narrow: boolean; onCell(conf: string, kind: string): void};
 
 /* Every number in the section is the model's, and this component only
    draws. Each bar is its own tier's total, as the Calibration component
    asks, and its segments split that total by outcome. A segment is a button
    that lands the ledger filtered to its cell. */
-function Calibration({corpus, today, onCell}: CalibrationProps){
+function Calibration({corpus, today, narrow, onCell}: CalibrationProps){
   if (!corpus) return null;
   const {tiles, buckets} = D.calibrationModel(corpus.index.tickets, today);
   const head = <div style={{display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24}}>
@@ -122,7 +144,9 @@ function Calibration({corpus, today, onCell}: CalibrationProps){
     <div role="status" style={{color: "var(--dim)"}}>no decisions on record — no ticket in this corpus has logged an entry.</div></section>;
   const small = buckets.filter(b => b.kind !== "other" && b.total && b.total < SMALL_TIER);
   return <section className="adp-cal" aria-label="Calibration" style={{marginTop: 40}}>{head}
-    <div className="adp-cal__grid">{buckets.map(b => {
+    {/* A narrow window drops the count column and sets each count line
+        under its bar, as the NarrowLedger board draws it. */}
+    <div className="adp-cal__grid" style={narrow ? {gridTemplateColumns: "64px minmax(0, 1fr) 56px"} : undefined}>{buckets.map(b => {
       // The other bucket has no word of its own, so it names the tokens it met.
       const label = b.kind === "other" ? b.tokens.join(", ") : b.kind.toUpperCase();
       const kinds = D.STATUS_KINDS.filter(k => b.counts[k]);
@@ -139,7 +163,7 @@ function Calibration({corpus, today, onCell}: CalibrationProps){
         </div>
         <span className="adp-cal__pct">{b.ruled.ruled ? Math.round(b.ruled.validated / b.ruled.ruled * 100) + "%" : "—"}</span>
         {/* The separator rides inside the span that follows it, so a wrapped count line breaks between whole counts. */}
-        <span className="adp-cal__count">{kinds.length ? kinds.map((k, i) => <Fragment key={k}>{i ? " " : null}<span style={NW}>{(i ? "· " : "") + b.counts[k] + " " + k}</span></Fragment>) : "—"}
+        <span className="adp-cal__count" style={narrow ? {gridColumn: "2 / -1", marginTop: -12} : undefined}>{kinds.length ? kinds.map((k, i) => <Fragment key={k}>{i ? " " : null}<span style={NW}>{(i ? "· " : "") + b.counts[k] + " " + k}</span></Fragment>) : "—"}
           <br/>{b.ruled.ruled ? `${b.ruled.validated} of ${b.ruled.ruled} ruled validated` : "none ruled yet"}</span>
       </div>;
     })}</div>

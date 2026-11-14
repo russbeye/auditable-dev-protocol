@@ -485,7 +485,7 @@ function App({fetchFn, openFeed}: AppProps){
             : s === "watchboard" ? <Watchboard corpus={corpus} today={today} sort={wbSort} show={wbShow}
               onSort={sortBoard} onToggleState={toggleState} onOpen={openWatch}/>
             : s === "ledgers" ? <Ledgers corpus={corpus} today={today} sort={laSort} status={lgFilter} conf={lgConf}
-                calibration={<div id="scrCalib"><Calibration corpus={corpus} today={today} onCell={openLedgerCell}/></div>}
+                narrow={narrow} calibration={<div id="scrCalib"><Calibration corpus={corpus} today={today} narrow={narrow} onCell={openLedgerCell}/></div>}
                 onSort={k => setLaSort(prev => ({k, d: prev.k === k ? -prev.d : 1}))} onStatus={setLgFilter} onConf={setLgConf} onOpen={openWatch}/>
             : s === "new task" ? <NewTask nt={nt} onOpenTicket={k => { pick(k); go("inspector"); }}/>
             : null}
