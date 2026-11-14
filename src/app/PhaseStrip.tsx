@@ -36,7 +36,8 @@ function stripModel(entries: readonly StripEntry[], selKey: string | null): Stri
 }
 
 // The reviews box carries the ticket's round count and opens its latest round.
-type StripReviews = {count: number; onOpen(): void};
+// It is current while the reviews screen shows a round.
+type StripReviews = {count: number; current?: boolean; onOpen(): void};
 type PhaseStripProps = {model: StripModel; reviews: StripReviews | null; onPick(key: string): void};
 
 // A wide box keeps its label on one line and never shrinks below it. The
@@ -58,7 +59,7 @@ function PhaseStrip({model, reviews, onPick}: PhaseStripProps){
       {model.phases.map(b => <Box key={b.label} b={b} onPick={onPick}/>)}
       {reviews || model.extra ? <span className="adp-phases__sep"></span> : null}
       {model.extra ? <Box b={model.extra} onPick={onPick} wide/> : null}
-      {reviews ? <a className="adp-phase adp-phase--wide" href="#" data-op="reviews" style={WIDE}
+      {reviews ? <a className="adp-phase adp-phase--wide" href="#" data-op="reviews" style={WIDE} aria-current={reviews.current ? "step" : undefined}
         title={reviews.count === 1 ? "1 review round" : reviews.count + " review rounds"}
         onClick={e => { e.preventDefault(); reviews.onOpen(); }}>Reviews · {reviews.count}</a> : null}
     </div>

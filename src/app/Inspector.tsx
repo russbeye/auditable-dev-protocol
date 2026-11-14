@@ -300,7 +300,9 @@ const SOURCE: Record<Ticket["state_source"], string> = {declared: "declared in f
    pack on the right. The meta line keeps the directory name, because the
    index carries no author and the old head showed the directory. Review
    rounds open from the phase strip below the head. */
-function Tickhead({t, view, act}: {t: Ticket; view: ViewMode | null; act: InspectorActions}){
+// The reviews screen draws the same head with no view pressed, so either
+// segment returns to the ticket in that view.
+function Tickhead({t, view, act}: {t: Ticket; view: ViewMode | null; act: Pick<InspectorActions, "onView" | "onResume">}){
   const meta = [t.id, t.date, t.dir].filter(Boolean).join(" · ");
   return <div id="tickHead" style={{display: "flex", alignItems: "flex-start", gap: 24, flexWrap: "wrap", marginBottom: 16}}>
     <div style={{flex: "1 1 360px", minWidth: 0}}>
@@ -313,24 +315,24 @@ function Tickhead({t, view, act}: {t: Ticket; view: ViewMode | null; act: Inspec
         {t.pr ? <><span className="adp-meta" aria-hidden="true" style={{color: "var(--faint)"}}>·</span><span className="adp-meta">PR #{t.pr}</span></> : null}
       </div>
     </div>
-    {view ? <div style={{display: "flex", gap: 8, alignItems: "center"}}>
+    <div style={{display: "flex", gap: 8, alignItems: "center"}}>
       <div className="adp-seg" role="group" aria-label="View">
         <button type="button" data-view="section" aria-pressed={view === "section"} onClick={() => act.onView("section")}>Section</button>
         <button type="button" data-view="full" aria-pressed={view === "full"} onClick={() => act.onView("full")}>Full log</button>
       </div>
       <button type="button" className="adp-btn" data-op="resume" onClick={e => act.onResume(e.currentTarget)}>Resume pack</button>
-    </div> : null}
+    </div>
   </div>;
 }
 
 /* The strip's reviews box opens the latest round. prreview numbers its
    rounds across every PR of a ticket, so the latest round is the highest
    number, which is the round the reviews screen calls latest too. */
-function reviewsOf(corpus: Corpus | null, tok: string, dir: string, onRound: (tok: string, file: string) => void): StripReviews | null {
+function reviewsOf(corpus: Corpus | null, tok: string, dir: string, onRound: (tok: string, file: string) => void, current = false): StripReviews | null {
   const rounds = (corpus && corpus.reviews ? S.reviewRounds(corpus.reviews[dir]) : []).flatMap(g => g.rounds);
   if (!rounds.length) return null;
   const latest = rounds.reduce((a, r) => r.k > a.k ? r : a);
-  return {count: rounds.length, onOpen: () => onRound(tok, latest.file)};
+  return {count: rounds.length, current, onOpen: () => onRound(tok, latest.file)};
 }
 
 function SecNav({entries, states, selKey, onPick, onStep}: {entries: Entry[]; states: Record<string, SectionState>;
@@ -652,5 +654,5 @@ function useMemoPrompt(p: FetchedText | undefined): PromptView | null {
   return ref.current.out;
 }
 
-export {FILL, Html, Inspector, Notice, PANE, P_GRID, P_K, P_V, SECTION_HEAD, typing, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
+export {FILL, Html, Inspector, Notice, Tickhead, reviewsOf, PANE, P_GRID, P_K, P_V, SECTION_HEAD, typing, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
 export type {InspectorActions, InspSel, PromptView};

@@ -437,11 +437,20 @@ test("the app's reviews and Ledger screens show what the vanilla reviews, calibr
   cleanup();
   vi.restoreAllMocks();
   await boot({fetch: diskFetch(), now: BASELINE_NOW, hash: "#v=reviews&t=" + encodeURIComponent(last)});
-  // The reviews screen leads with the way back to its ticket, which the
-  // vanilla screen lacked, so the comparison takes that one entry out.
-  const got = snapshot(document), back = got.main!.text[0];
-  assert.match(back, /^‹ Back to \S+$/);
-  assert.deepEqual({...got, main: {...got.main!, text: got.main!.text.slice(1)}}, restyled(BASELINE["reviews"]), "reviews");
+  /* The reviews screen leads with the ticket's head and phase strip (DL-066),
+     where the vanilla screen named itself "reviews" and the directory. So the
+     comparison takes the head's and the strip's own runs out of the app's
+     render, where they open the screen, and the two vanilla runs out of the
+     baseline, and every run after them must match. */
+  const got = snapshot(document), want = restyled(BASELINE["reviews"]);
+  const lead = [record($("#tickHead")), record($("#phaseStrip"))];
+  const text = lead.flatMap(r => r.text), attrs = lead.flatMap(r => r.attrs);
+  assert.deepEqual(got.main!.text.slice(0, text.length), text);
+  assert.deepEqual(got.main!.attrs.slice(0, attrs.length), attrs);
+  const dir = BASE_TICKETS.get([...BASE_TICKETS.values()].find(x => (x.id || x.dir) === last)!.dir)!.dir;
+  assert.deepEqual(want.main!.text.slice(0, 2), ["reviews", dir]);
+  assert.deepEqual({...got, main: {text: got.main!.text.slice(text.length), attrs: got.main!.attrs.slice(attrs.length)}},
+    {...want, main: {...want.main!, text: want.main!.text.slice(2)}}, "reviews");
   await tabTo("ledgers");
   const cal = BASELINE["calibration"], led = restyled(BASELINE["ledgers"]);
   restyled(cal);
@@ -2969,7 +2978,7 @@ test("← and → step through the strip, but not from a field or under the Pack
   assert.equal(secVal(), "prompt", "an arrow under the drawer moves nothing");
 });
 
-test("one reviews box opens the latest round, and the reviews screen leads back to the ticket", async () => {
+test("one reviews box opens the latest round, and the reviews screen's head and strip lead back to the ticket", async () => {
   await bootReviews(reviewCorpus(), "#t=RV1&s=sec-decision-log");
   const was = secVal();
   const box = $('#phaseStrip [data-op="reviews"]');
@@ -2979,19 +2988,21 @@ test("one reviews box opens the latest round, and the reviews screen leads back 
   await click(box);
   assert.equal($(".screen.is-on").getAttribute("data-s"), "reviews");
   assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
-  const back = $('#scrReviews [data-op="toticket"]');
-  assert.equal(back.textContent, "‹ Back to RV1");
-  await click(back);
+  // The reviews screen leads with the ticket's head and strip, the Reviews box current.
+  assert.equal($('#scrReviews #phaseStrip [data-op="reviews"]').getAttribute("aria-current"), "step");
+  assert.ok($("#scrReviews #tickHead h1"), "the reviews screen has no ticket head");
+  await click($('#scrReviews [data-view="section"]'));
   assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector");
   assert.equal(secVal(), was, "the ticket view keeps the section the reader left");
+  await click($('#phaseStrip [data-op="reviews"]'));
+  await click($$("#scrReviews #phaseStrip a[data-step]")[0]);
+  assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector", "a phase box does not lead back");
   // The reviews box is the strip's last stop for → too, and ← steps back.
   for (let i = 0; i < 12 && $(".screen.is-on").getAttribute("data-s") === "inspector"; i++) await key(document.body, "ArrowRight");
   assert.equal($(".screen.is-on").getAttribute("data-s"), "reviews", "→ never reaches the reviews");
   assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
-  const last = $$("#phaseStrip a").length;
   await key(document.body, "ArrowLeft");
   assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector");
-  assert.ok(last === 0, "the reviews screen draws no strip");
   await key($("#secSel"), "ArrowRight");
   assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector", "an arrow in the select moves nothing");
 });

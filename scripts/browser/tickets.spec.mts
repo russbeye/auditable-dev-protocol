@@ -110,7 +110,7 @@ test("no old stylesheet rule reaches the ticket view's system text", async ({pag
         strict(k + " " + o.value, "scrReviews");
         reviewed++;
       }
-      document.querySelector<HTMLElement>('[data-op="toticket"]')!.click(); await wait(150);
+      document.querySelector<HTMLElement>('#scrReviews [data-view="section"]')!.click(); await wait(150);
     }
     f.remove();
     return {out: [...new Set(out)].slice(0, 20), checked, tickets: keys.length, reviewed};

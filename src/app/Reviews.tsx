@@ -7,9 +7,10 @@ import * as P from "../lib/adp-parser-lib.ts";
 import * as S from "../lib/adp-shell-lib.ts";
 import type {Ticket} from "../lib/adp-index-lib.ts";
 import type {DLEntry} from "../lib/adp-parser-lib.ts";
-import type {Corpus, ReviewGroup, ReviewLedger, ReviewVerdictFields, SortState} from "../lib/adp-shell-lib.ts";
-import {FILL, Html, Notice, PANE, P_GRID, P_K, P_V, Permalink, RoundLink, SECTION_HEAD, decisionRows, filterCounts, revTok, typing,
-  watchRows} from "./Inspector.tsx";
+import type {Corpus, ReviewGroup, ReviewLedger, ReviewVerdictFields, SortState, ViewMode} from "../lib/adp-shell-lib.ts";
+import {FILL, Html, Notice, PANE, P_GRID, P_K, P_V, Permalink, RoundLink, SECTION_HEAD, Tickhead, decisionRows, entriesOf, filterCounts,
+  promptOf, revTok, reviewsOf, typing, watchRows} from "./Inspector.tsx";
+import {PhaseStrip, stripModel} from "./PhaseStrip.tsx";
 import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
 
 /* Where the screen's round selection lands: the named round when the ticket
@@ -172,8 +173,8 @@ function ReviewHead({title, date, fields, notices, prior, dir, onRound}: {title:
   fields: ReviewVerdictFields | null; notices: string[]; prior: (S.ReviewRef & {tok: string})[]; dir: string;
   onRound(tok: string, file: string): void}){
   const f = fields || {};
-  return <div style={{margin: "0 0 16px"}}>
-    <div style={{display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8}}>
+  return <div className="doc" style={PANE}>
+    <div style={{display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16}}>
       <h2 className="adp-section" style={SECTION_HEAD}>{title}</h2>
       <span className="adp-meta">{date}</span>
       {fields && f.verdict ? <Chip kind="verdict" word={f.verdict} mod={verdictChip(f.verdict)}/> : null}
@@ -198,6 +199,11 @@ type ReviewsActions = PanelActions & {
   onFilter(f: string): void;
   // Goes back to the ticket view of the ticket on show.
   onTicket(): void;
+  // The ticket head and the phase strip return to the ticket: in a view, at
+  // a section, or with the resume pack open.
+  onView(v: ViewMode): void;
+  onSection(key: string): void;
+  onResume(opener: HTMLElement): void;
 };
 type ReviewsProps = {
   corpus: Corpus | null;
@@ -227,12 +233,15 @@ function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, i
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
   }, [arrows, t, act.onTicket]);
-  // A ticket's reviews open from its phase strip, so the screen leads with
-  // the way back to that ticket.
-  const top = (sub: string | null) => <>
-    {t ? <button type="button" className="adp-btn adp-btn--text" data-op="toticket" style={{marginBottom: 8}}
-      onClick={act.onTicket}>‹ Back to {t.id || t.dir}</button> : null}
-    <h2 className="adp-section" style={{...SECTION_HEAD, marginBottom: 12}}>reviews{sub ? <>{" "}<span className="adp-meta">{sub}</span></> : null}</h2></>;
+  /* A ticket's reviews lead with the ticket's own head and phase strip, as
+     the ticket view does, with the Reviews box current. The strip's boxes and
+     the head's view segments return to the ticket. With no ticket there is no
+     head, so the screen names itself. */
+  const top = (sub: string | null) => t ? <>
+    <Tickhead t={t} view={null} act={act}/>
+    <PhaseStrip model={stripModel(t.sections.length || corpus?.prompts[t.dir] ? entriesOf(t, promptOf(corpus?.prompts[t.dir])) : [], null)}
+      reviews={reviewsOf(corpus, revTok(corpus, tokenOf, t.dir), t.dir, act.onRound, true)} onPick={act.onSection}/></>
+    : <h2 className="adp-section" style={{...SECTION_HEAD, marginBottom: 12}}>reviews{sub ? <>{" "}<span className="adp-meta">{sub}</span></> : null}</h2>;
   // The four regions keep the vanilla page's ids.
   const regions = (topEl: ReactNode, nav: ReactNode, head: ReactNode, body: ReactNode) =>
     <><div id="revTop">{topEl}</div><div id="revNav">{nav}</div><div id="revHead">{head}</div><div id="revBody">{body}</div></>;
@@ -271,7 +280,7 @@ function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, i
   }
   const tok = revTok(corpus, tokenOf, t.dir);
   return regions(top(t.dir),
-    <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 16px"}}>
+    <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "12px 0 16px"}}>
       {groups.length > 1 ? <select id="revPr" className="adp-select" aria-label="pull request" style={{lineHeight: "normal"}} value={g.pr}
         onChange={e => act.onPr(e.target.value)}>{groups.map(x => <option key={x.pr} value={x.pr}>{x.label}</option>)}</select> : null}
       <button type="button" className="adp-btn" data-revstep="-1" disabled={at.ri <= 0} onClick={() => act.onPick(g.rounds[at.ri - 1].file)}>‹ prev</button>
