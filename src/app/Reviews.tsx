@@ -236,10 +236,12 @@ function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, i
   /* A ticket's reviews lead with the ticket's own head and phase strip, as
      the ticket view does, with the Reviews box current. The strip's boxes and
      the head's view segments return to the ticket. With no ticket there is no
-     head, so the screen names itself. */
-  const top = (sub: string | null) => t ? <>
+     head, so the screen names itself. While a round shows, the strip's note
+     names its pull request and how many rounds that request had. */
+  const top = (sub: string | null, note?: string) => t ? <>
     <Tickhead t={t} view={null} act={act}/>
-    <PhaseStrip model={stripModel(t.sections.length || corpus?.prompts[t.dir] ? entriesOf(t, promptOf(corpus?.prompts[t.dir])) : [], null)}
+    <PhaseStrip model={{...stripModel(t.sections.length || corpus?.prompts[t.dir] ? entriesOf(t, promptOf(corpus?.prompts[t.dir])) : [], null),
+      ...(note ? {note} : {})}}
       reviews={reviewsOf(corpus, revTok(corpus, tokenOf, t.dir), t.dir, act.onRound, true)} onPick={act.onSection}/></>
     : <h2 className="adp-section" style={{...SECTION_HEAD, marginBottom: 12}}>reviews{sub ? <>{" "}<span className="adp-meta">{sub}</span></> : null}</h2>;
   // The four regions keep the vanilla page's ids.
@@ -279,7 +281,7 @@ function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, i
     </>;
   }
   const tok = revTok(corpus, tokenOf, t.dir);
-  return regions(top(t.dir),
+  return regions(top(t.dir, g.label + " · " + (g.rounds.length === 1 ? "1 round" : g.rounds.length + " rounds")),
     <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "12px 0 16px"}}>
       {groups.length > 1 ? <select id="revPr" className="adp-select" aria-label="pull request" style={{lineHeight: "normal"}} value={g.pr}
         onChange={e => act.onPr(e.target.value)}>{groups.map(x => <option key={x.pr} value={x.pr}>{x.label}</option>)}</select> : null}

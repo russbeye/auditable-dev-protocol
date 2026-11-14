@@ -83,7 +83,7 @@ function PhaseStrip({model, reviews, onPick}: PhaseStripProps){
         onClick={e => { e.preventDefault(); reviews.onOpen(); }}>Reviews · {reviews.count}</a> : null}
     </div>
     <span className="adp-phases__note">{model.note}</span>
-    <span className="adp-phases__note" style={{color: "var(--faint)"}}>← → to move</span>
+    <span className="adp-phases__note" style={{color: "var(--faint)", marginLeft: "auto"}}>← → to move</span>
   </nav>;
 }
 

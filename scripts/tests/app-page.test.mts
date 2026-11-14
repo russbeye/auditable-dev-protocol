@@ -2971,6 +2971,8 @@ test("the strip opens a phase or the extra sections, and the select still lists 
   assert.equal($("#gapNote").getAttribute("role"), "note");
   assert.deepEqual(boxes(), ["P", "1", "2-", "3-", "4-", "5*", "6-", "7", "8-", "9", "+1"]);
   assert.equal($("#phaseStrip .adp-phases__note").textContent, "Dashed boxes are missing phases");
+  // The arrow hint sits at the strip's right end, as the boards place it.
+  assert.equal($$("#phaseStrip .adp-phases__note")[1].style.marginLeft, "auto");
   await click($('#phaseStrip [data-step="sec-pr-summary"]'));
   assert.equal(secVal(), "sec-pr-summary");
   await click($$("#phaseStrip a").find(b => b.textContent === "+1")!);
@@ -3012,6 +3014,8 @@ test("one reviews box opens the latest round, and the reviews screen's head and 
   assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
   // The reviews screen leads with the ticket's head and strip, the Reviews box current.
   assert.equal($('#scrReviews #phaseStrip [data-op="reviews"]').getAttribute("aria-current"), "step");
+  // While a round shows, the strip's note names its pull request and that request's round count.
+  assert.match($("#scrReviews #phaseStrip .adp-phases__note").textContent!, /^PR #7 · \d+ rounds$/);
   assert.ok($("#scrReviews #tickHead h1"), "the reviews screen has no ticket head");
   await click($('#scrReviews [data-view="section"]'));
   assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector");
