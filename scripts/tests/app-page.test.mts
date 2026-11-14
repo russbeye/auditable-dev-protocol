@@ -4765,6 +4765,11 @@ test("the live region speaks the verdict after an edit or a start that flips it,
   await click($("#newTaskBtn"));
   const live = () => $("#ntLive");
   assert.equal(live().getAttribute("aria-live"), "polite");
+  // The region stays rendered but clipped to one pixel, so a sighted reader
+  // never sees the spoken words. The browser test measures the same box.
+  const st = live().style;
+  assert.deepEqual([st.position, st.width, st.height, st.overflow], ["absolute", "1px", "1px", "hidden"]);
+  assert.match(st.clip, /^rect\(0/);
   await advance(1000);
   assert.equal(live().textContent, "");
   // A start on a blank form loads a valid prompt, and the region says so
@@ -4897,4 +4902,37 @@ test("the app's screens use only adp-bundle.css classes outside rendered documen
   assert.deepEqual(orphans, []);
   // A hook that gains a rule belongs in the sheet's set, not in this list.
   for (const c of HOOK_CLASSES) assert.ok(used.has(c) && !shell.has(c), c);
+});
+
+/* R3. A chip is a Status chip, a Tag, or a Filter chip, and nothing else
+   draws one. A Status chip carries one status modifier and a Tag carries
+   none. The small size is the one modifier that picks 20px over 24px. We
+   walk rendered documents too, because the parser writes chips into them,
+   and we catch any old pill, chit, or badge class that would draw its own. */
+const CHIP_STATUS = ["open", "validated", "invalidated", "unknown", "closed"];
+const CHIP_MODS = new Set(["adp-chip--s", "adp-chip--id", ...CHIP_STATUS.map(s => "adp-chip--" + s)]);
+test("every chip on every screen is one Status, Tag, or Filter chip at one size", async () => {
+  const faults = new Set<string>();
+  let chips = 0;
+  const take = () => {
+    for (const el of $$("[class]")){
+      const cls = el.getAttribute("class")!.split(/\s+/).filter(Boolean);
+      const chipish = cls.some(c => /^(adp-chip|adp-filter)$|pill|chit|badge|^p-|tag$/.test(c));
+      if (!chipish) continue;
+      chips++;
+      const name = el.outerHTML.slice(0, 90);
+      if (cls.includes("adp-filter")){
+        if (cls.length !== 1) faults.add(`${name} adds a class to the Filter chip`);
+        continue;
+      }
+      if (!cls.includes("adp-chip")){ faults.add(`${name} is not a system chip`); continue; }
+      const extra = cls.filter(c => c !== "adp-chip" && !CHIP_MODS.has(c));
+      const status = cls.filter(c => CHIP_STATUS.some(s => c === "adp-chip--" + s));
+      if (extra.length) faults.add(`${name} carries ${extra.join(" ")}`);
+      if (status.length > 1) faults.add(`${name} carries two statuses`);
+    }
+  };
+  await everyScreen(take);
+  assert.ok(chips > 50, `walked ${chips} chips`);
+  assert.deepEqual([...faults], []);
 });

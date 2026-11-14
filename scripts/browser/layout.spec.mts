@@ -91,6 +91,8 @@ test.describe("at 1440px", () => {
           const cs = getComputedStyle(el), name = el.outerHTML.slice(0, 80);
           if (cs.borderTopLeftRadius !== "0px" || cs.borderBottomRightRadius !== "0px") out.push(`${name} has a rounded corner`);
           if (!/^"?(JetBrains Mono|Space Grotesk)"?/.test(cs.fontFamily)) out.push(`${name} is set in ${cs.fontFamily}`);
+          // R3 sets every chip in the machine face.
+          if (el.matches(".adp-chip, .adp-filter") && !/^"?JetBrains Mono"?/.test(cs.fontFamily)) out.push(`${name} is a chip set in ${cs.fontFamily}`);
           // A select with the browser's arrow turned off must draw its own, so it reads as a dropdown.
           if (el.matches(".adp-select") && cs.appearance === "none" && cs.backgroundImage === "none") out.push(`${name} shows no dropdown arrow`);
           const want = HEIGHT.find(([sel]) => el.matches(sel));
@@ -101,5 +103,42 @@ test.describe("at 1440px", () => {
       })).map(f => `${where}: ${f}`));
     });
     expect(faults).toEqual([]);
+  });
+
+  /* R15. A hairline is an inset shadow, so it adds no height, and every box
+     the reader scans stays on the 4px grid. We render a five-row table on
+     the live page to pin the Table's rhythm, then measure every notice,
+     phase strip, full-log section, and three-line textarea on every screen,
+     and the open ⋯ menu. A height may carry a subpixel rounding remainder,
+     so we round it first. */
+  test("a table runs a 32px head over 48px rows, and every strip, notice, section, textarea, and the menu sit on the 4px grid", async ({page, server}) => {
+    await open(page, server.url);
+    const table = await page.evaluate(() => {
+      const box = document.createElement("div");
+      box.innerHTML = '<table class="adp-table"><thead><tr><th>Watch</th><th>Due</th></tr></thead><tbody>'
+        + [1, 2, 3, 4, 5].map(n => `<tr><td>OT-X-${n}</td><td>2026-12-0${n}</td></tr>`).join("") + "</tbody></table>";
+      document.querySelector(".stage")!.prepend(box);
+      const h = (el: Element) => el.getBoundingClientRect().height;
+      const out = {head: h(box.querySelector("thead tr")!), rows: [...box.querySelectorAll("tbody tr")].map(h)};
+      box.remove();
+      return out;
+    });
+    expect(table).toEqual({head: 32, rows: [48, 48, 48, 48, 48]});
+    const off: string[] = [];
+    let seen = 0;
+    const measure = async (where: string) => {
+      const got = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.adp-notice, #phaseStrip, .fsec, textarea.adp-textarea[rows="3"], #hdrMenu')]
+        .filter(el => el.checkVisibility()).map(el => [el.outerHTML.slice(0, 60), el.getBoundingClientRect().height] as [string, number]));
+      for (const [name, h] of got){
+        seen++;
+        if (Math.round(h) % 4 !== 0 || Math.abs(h - Math.round(h)) >= 0.5) off.push(`${where}: ${name} is ${h}px`);
+      }
+    };
+    await everyScreen(page, server.url, measure);
+    await page.click("#menuBtn");
+    await expect(page.locator("#hdrMenu")).toBeVisible();
+    await measure("menu");
+    expect(seen).toBeGreaterThan(20);
+    expect(off).toEqual([]);
   });
 });

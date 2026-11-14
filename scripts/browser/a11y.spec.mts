@@ -135,6 +135,10 @@ test("New task's live region speaks the verdict after a start and after the task
   await page.fill('#scrNew [data-nf="task.id"]', "FX-091");
   await expect(live).not.toHaveText(first!);
   await expect(live).not.toHaveText("");
+  // The region speaks but shows nothing: its box is one pixel or smaller.
+  const box = await live.boundingBox();
+  expect(box!.width).toBeLessThanOrEqual(1);
+  expect(box!.height).toBeLessThanOrEqual(1);
 });
 
 test.describe("under reduced motion", () => {

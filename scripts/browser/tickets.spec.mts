@@ -75,6 +75,42 @@ test("a section heading renders in the system's section type", async ({page, ser
   expect(type).toEqual(["Space Grotesk", "20px", "28px", "600", "none"]);
 });
 
+/* Each markdown block in a log keeps a style of its own now that only the
+   system's two sheets load. BX001's Test Adversary Document holds one of
+   each. A quote draws its 2px rule, a code block sits on its ground, a
+   numbered list shows its numbers, a table head draws its rule, and a task
+   row shows its box with no Prose marker beside it. */
+for (const theme of ["dark", "light"]) test(`a log's quote, code block, numbered list, table, and task row keep their styles in ${theme}`, async ({page, server}) => {
+  await page.addInitScript(t => localStorage.setItem("adp-theme", t), theme);
+  await open(page, server.url + "#t=BX001&s=sec-test-adversary-document");
+  const prose = page.locator("#scrInspector .adp-prose", {hasText: "The blocks below"});
+  await expect(prose).toBeVisible();
+  const got = await prose.evaluate(root => {
+    const one = (sel: string) => root.querySelector<HTMLElement>(sel)!;
+    const quote = getComputedStyle(one("blockquote"));
+    const pre = getComputedStyle(one("pre.adp-pre"));
+    const nums = [...root.querySelectorAll<HTMLElement>("[role=list] [data-num]")];
+    const th = getComputedStyle(one("table.adp-table th"));
+    const task = one(".task");
+    return {
+      quote: quote.boxShadow, quoteText: quote.color,
+      pre: pre.backgroundColor, preEdge: pre.boxShadow,
+      nums: nums.map(n => [n.textContent, n.checkVisibility() && n.getBoundingClientRect().height > 0]),
+      th: th.boxShadow,
+      taskMarker: getComputedStyle(task, "::before").content, taskBox: Math.round((task.firstElementChild as HTMLElement).getBoundingClientRect().height),
+      ground: getComputedStyle(root.closest<HTMLElement>(".doc")!).backgroundColor,
+    };
+  });
+  expect(got.quote).toMatch(/2px 0px 0px 0px inset|inset 2px 0px 0px 0px/);
+  expect(got.pre).not.toBe("rgba(0, 0, 0, 0)");
+  expect(got.pre).not.toBe(got.ground);
+  expect(got.preEdge).toMatch(/inset/);
+  expect(got.nums).toEqual([["1", true], ["2", true]]);
+  expect(got.th).toMatch(/0px -1px 0px 0px inset|inset 0px -1px 0px 0px/);
+  expect(got.taskMarker).toBe("none");
+  expect(got.taskBox).toBe(16);
+});
+
 /* No old rule reaches the system's text (DL-062, DL-065). We copy the ticket
    view, and each review round with its cards open, into a frame that loads
    the system's two sheets alone, and compare every element that belongs to

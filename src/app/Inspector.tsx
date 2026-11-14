@@ -214,8 +214,10 @@ function PromptCards({obj}: {obj: YamlMap}){
   const keys = known.concat(Object.keys(obj).filter(k => !known.includes(k)));
   return <div>{keys.map(k => {
     const v = obj[k];
+    // We center a title on its value. On a shared baseline, the 20px title
+    // and the 16px value make a 30px row, which is off the 4px grid.
     return <section key={k} data-p="card" className="doc" style={PANE}>
-      <div style={{display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: S.isLine(v) ? 0 : 16}}>
+      <div style={{display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: S.isLine(v) ? 0 : 16}}>
         <h2 data-p="title" title={k} className="adp-section" style={SECTION_HEAD}>{S.keyTitle(k)}</h2>
         {S.isLine(v) ? <span data-p="val" style={P_VAL}><Scalar v={v} at={k}/></span> : null}</div>
       {S.isLine(v) ? null : <Value v={v} at={k}/>}

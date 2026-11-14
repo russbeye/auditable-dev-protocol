@@ -507,7 +507,8 @@ function renderProse(md: unknown): EscapedHtml{
    where the system has none, on-grid values from its tokens. A table is the
    Table component and a code block the Pre component. A blockquote, a
    numbered list, a rule, a task box, and a fourth to sixth level heading take
-   inline values.
+   inline values. A rule draws its line as an outer shadow on a box of no
+   height, so the line adds no pixel to the 4px rhythm.
    A plain list item lays its marker and its content out as a flex row, so we
    wrap the content in one span. Bare, each text run and code span would
    become a flex item of its own and break the line apart. A task item
@@ -552,7 +553,7 @@ function proseBlocks(h: string): string{
     .replace(/<div class="tbl-wrap"><table class="md-tbl">/g,'<div style="overflow-x:auto;margin:0 0 16px"><table class="adp-table">')
     .replace(/<blockquote>/g,'<blockquote style="margin:0 0 16px;padding:8px 16px;border:0;box-shadow:inset 2px 0 0 var(--line-bright);background:none;color:var(--ink-2)">')
     .replace(/<pre class="cb"><code>/g,'<pre class="adp-pre" style="margin:0 0 16px"><code style="font:inherit;color:inherit;background:none;padding:0">')
-    .replace(/<hr>/g,'<hr style="margin:24px 0;height:1px;border:0;background:none;box-shadow:inset 0 1px 0 var(--line)">')
+    .replace(/<hr>/g,'<hr style="margin:24px 0;height:0;border:0;background:none;box-shadow:0 1px 0 var(--line)">')
     .replace(/<span class="cbx( on)? ?">/g,()=>`<span style="${CBX}">`)
     .replace(/<h([3-6]) class="sub">/g,(_,n)=>`<h${n} style="${SUB_HEAD}">`);
 }

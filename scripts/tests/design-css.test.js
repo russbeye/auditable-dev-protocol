@@ -117,7 +117,8 @@ const px = v => /^-?[\d.]+(px)?$/.test(v) ? parseFloat(v) : null;
 function verticals({prop, value}){
   const parts = value.split(/\s+/);
   if (/^(height|min-height|max-height)$/.test(prop)) return [[px(value), true]];
-  if (prop === "line-height") return [[px(value), true]];
+  // A unitless line height is a multiple of the font size, not a length.
+  if (prop === "line-height") return /px$/.test(value) ? [[px(value), true]] : [];
   if (prop === "font"){ const m = value.match(/\/([\d.]+)px/); return m ? [[parseFloat(m[1]), true]] : []; }
   if (/^(margin|padding)-(top|bottom)$/.test(prop) || /^(top|bottom|row-gap)$/.test(prop)) return [[px(value), false]];
   if (prop === "margin" || prop === "padding") return [[px(parts[0]), false], [px(parts[2] ?? parts[0]), false]];
@@ -193,7 +194,19 @@ test("card labels and prose eyebrows take blue-bright, and card fields keep the 
   assert.equal(at(".adp-prose h3").color, "var(--blue-bright)");
   // The header is the comment that names the source version.
   const head = bundleCss.match(/\/\*[^*]*Copied from[\s\S]*?\*\//)[0].replace(/\s+/g, " ");
-  assert.match(head, /Two rules depart from the source\. A decision card's field labels take blue-bright, not dim\./);
+  assert.match(head, /Four changes depart from the source\. A decision card's field labels take blue-bright, not dim\./);
   assert.match(head, /A prose eyebrow heading takes blue-bright, not dim\./);
   assert.doesNotMatch(head, /24px/);
+});
+
+// The two grid departures (DL-094). A mono run in a sans line, and Firefox's
+// bullet font on a disclosure marker, each grow a line box past its 24px
+// unless the run sets line-height 1. The header comment names both.
+test("inline code and a summary's marker set line-height 1, so neither grows a line box off the grid", () => {
+  const at = sel => props(rules(bundleCss).find(r => r.sel === sel));
+  for (const sel of [".adp-code", ".adp-prose code", ".adp-dl__body code", ".adp-table code", "summary::marker"])
+    assert.equal(at(sel)["line-height"], "1", sel);
+  const head = bundleCss.match(/\/\*[^*]*Copied from[\s\S]*?\*\//)[0].replace(/\s+/g, " ");
+  assert.match(head, /Inline code sets line-height 1/);
+  assert.match(head, /A summary's marker sets line-height 1 too/);
 });
