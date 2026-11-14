@@ -3104,6 +3104,21 @@ test("a section opens its first decision card, folds the rest, and a head click 
   assert.deepEqual([first.head.getAttribute("aria-expanded"), first.body.style.display], ["false", "none"]);
 });
 
+// The Created field closes a card as its footer line, as the DecisionCard
+// board draws it, and the footer folds with the card.
+test("a decision card ends with its Created line as a footer that folds with the card", async () => {
+  const log = LOG.replace("- **Decision:** pick a", "- **Decision:** pick a\n- **Created:** 2026-01-01, Phase 5");
+  await boot({hash: "#t=AA1&s=sec-decision-log", fetch: liveCorpus(LISTING_I, {...TEXTS_I, "20260101-AA1-alpha/audit-log.md": log}).fetch});
+  const card = $('#scrInspector [data-card="DL-001"]');
+  const foot = card.querySelector<HTMLElement>(".adp-dl__foot")!;
+  assert.ok(foot, "the card has no footer");
+  assert.equal(foot.previousElementSibling!.className, "adp-dl__body");
+  assert.equal(foot.textContent, "Created 2026-01-01, Phase 5");
+  assert.ok(![...card.querySelectorAll("dt")].some(d => /^created$/i.test(d.textContent!)), "Created is still a field row");
+  await click(card.querySelector(".adp-dl__head")!);
+  assert.equal(foot.style.display, "none");
+});
+
 // ---- the Reading rules ----
 
 // R7: in the shell, a run-in label is an eyebrow heading and the metadata

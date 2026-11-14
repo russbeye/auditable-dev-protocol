@@ -434,6 +434,11 @@ function renderDSCard(id: string, title: string, confidence: string, status: str
   if(conf&&conf.tail) body.push({label:'confidence note',value:dlConfKind(confidence)==='other'?confidence.trim():conf.tail});
   if(stat&&stat.tail) body.push({label:'status note',value:kind==='other'?status.trim():stat.tail});
   const settled=kind==='validated'||kind==='invalidated'||kind==='unknown';
+  // The Created field closes the card as its footer line, under a rule, as
+  // the DecisionCard board draws it. The label and value stay as the log
+  // wrote them.
+  const ci=body.findIndex(f=>f.label.toLowerCase()==='created');
+  const created=ci>=0?body.splice(ci,1)[0]:null;
   const rows=body.map(f=>`<div><dt>${esc(f.label)}</dt><dd>${dsTokens(decorate(inline(f.value)))}</dd></div>`).join('');
   const shut=open?'':' style="display:none"';
   const trail=trailing?`<div class="md dl-trail"${shut}>${proseBlocks(renderMarkdown(trailing))}</div>`:'';
@@ -443,7 +448,9 @@ function renderDSCard(id: string, title: string, confidence: string, status: str
     + `<span>${conf?`<span class="adp-chip" title="confidence">${esc(conf.word)}</span>`:''}</span>`
     + `<span>${stat?`<span class="adp-chip${DS_STATUS[kind]}" title="status">${esc(stat.word)}</span>`:''}</span>`
     + `<span class="adp-dl__caret" aria-hidden="true">${open?'▾':'▸'}</span></button>`
-    + (rows?`<dl class="adp-dl__body"${shut}>${rows}</dl>`:'')+trail+`</div>` as EscapedHtml;
+    + (rows?`<dl class="adp-dl__body"${shut}>${rows}</dl>`:'')
+    + (created?`<div class="adp-dl__foot" data-foot=""${shut}><span>${esc(created.label)}</span> ${dsTokens(decorate(inline(created.value)))}</div>`:'')
+    + trail+`</div>` as EscapedHtml;
 }
 
 /* The Reading rules of the design system's Prose component, which
