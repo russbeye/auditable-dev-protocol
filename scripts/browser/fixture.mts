@@ -61,10 +61,10 @@ export {expect};
 
 /* The control that opens each screen. The top bar's views open Tickets,
    Watches, and Ledger, calibration heads the Ledger, and reviews open from
-   the ticket head. The folded bar keeps its views on a second row, so every
+   the phase strip's reviews box. The folded bar keeps its views on a second row, so every
    view stays one click away at any width. */
 const OPENER: Record<string, string> = {"inspector": '.adp-nav a[data-s="inspector"]', "watchboard": '.adp-nav a[data-s="watchboard"]',
-  "ledgers": '.adp-nav a[data-s="ledgers"]', "calibration": '.adp-nav a[data-s="ledgers"]', "reviews": "#reviewsBtn", "new task": "#newTaskBtn"};
+  "ledgers": '.adp-nav a[data-s="ledgers"]', "calibration": '.adp-nav a[data-s="ledgers"]', "reviews": '#phaseStrip [data-op="reviews"]', "new task": "#newTaskBtn"};
 export async function go(page: Page, screen: string){
   await page.click(OPENER[screen]);
   await expect(page.locator(".screen.is-on")).toHaveAttribute("data-s", screen === "calibration" ? "ledgers" : screen);
@@ -98,18 +98,18 @@ export async function everyScreen(page: Page, url: string, look: (where: string)
   await page.keyboard.press("Escape");
   await expect(page.locator("#packDrawer")).toHaveCount(0);
   let reviewed = 0;
-  if (openGroups) for (const g of await page.locator(".railsec", {has: page.locator(".rcv", {hasText: "▸"})}).all()) await g.click();
-  const keys = await page.locator(".rentry").evaluateAll(r => r.map(x => x.getAttribute("data-key")!));
+  if (openGroups) for (const g of await page.locator("#rail [data-sec][aria-expanded=false]").all()) await g.click();
+  const keys = await page.locator("#rail [data-key]").evaluateAll(r => r.map(x => x.getAttribute("data-key")!));
   for (const k of keys){
     await go(page, "inspector");
     // A rail pick keeps the view the last ticket used, so we choose the
     // section view ourselves.
-    await page.click(`.rentry[data-key="${k}"]`);
+    await page.click(`#rail [data-key="${k}"]`);
     await page.click('[data-view="section"]');
     await look(k + " section");
     await page.click('[data-view="full"]');
     await look(k + " full log");
-    if (await page.locator("#reviewsBtn").count()){ await go(page, "reviews"); await look(k + " reviews"); reviewed++; }
+    if (await page.locator('#phaseStrip [data-op="reviews"]').count()){ await go(page, "reviews"); await look(k + " reviews"); reviewed++; }
   }
   await go(page, "new task");
   await look("new task");

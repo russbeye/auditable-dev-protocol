@@ -1,7 +1,7 @@
 /* The inspector: one ticket's log, a section at a time or whole, with the
    decisions and watches the shown section cites. This file holds the app's
    one component that hands React a string of HTML. */
-import {useEffect, useLayoutEffect, useRef, useState, type ReactNode} from "react";
+import {useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode} from "react";
 import * as D from "../lib/adp-derive-lib.ts";
 import * as I from "../lib/adp-index-lib.ts";
 import * as P from "../lib/adp-parser-lib.ts";
@@ -11,20 +11,43 @@ import type {SectionEntry, SectionState} from "../lib/adp-derive-lib.ts";
 import type {Ticket} from "../lib/adp-index-lib.ts";
 import type {DLEntry, EscapedHtml, Section} from "../lib/adp-parser-lib.ts";
 import type {YamlMap, YamlValue} from "../lib/adp-prompt-lib.ts";
-import type {Chit, Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPanelRow} from "../lib/adp-shell-lib.ts";
+import type {Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPanelRow} from "../lib/adp-shell-lib.ts";
 import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
+import {PhaseStrip, gapNote, stripModel, type StripReviews} from "./PhaseStrip.tsx";
 
-type HtmlProps = {html: EscapedHtml; as?: "div" | "span" | "td"; className?: string};
+type HtmlProps = {html: EscapedHtml; as?: "div" | "span" | "td" | "dd"; className?: string; style?: CSSProperties;
+  onClick?(e: ReactMouseEvent<HTMLElement>): void};
 
 /* The one place the app hands React a string of HTML. The prop takes only
    the parser library's escaped render, because the brand is cast nowhere
    else. A bare span takes no box of its own, so markup placed beside text
    sits in its parent's layout as if the parent held it directly. */
-function Html({html, as = "span", className}: HtmlProps){
+function Html({html, as = "span", className, style, onClick}: HtmlProps){
   const Tag = as;
-  return <Tag className={className} style={as === "span" && !className ? {display: "contents"} : undefined}
-    dangerouslySetInnerHTML={{__html: html}}/>;
+  return <Tag className={className} style={as === "span" && !className ? {display: "contents"} : style}
+    onClick={onClick} dangerouslySetInnerHTML={{__html: html}}/>;
 }
+
+/* A decision card's head folds its fields. The cards arrive as rendered
+   HTML, so one listener on the section finds the head that took the click
+   and flips it in place. We fold with an inline display, because the card
+   body's own display rule outranks the hidden attribute. A fold lasts until
+   the section renders new text. */
+function foldCard(e: ReactMouseEvent<HTMLElement>){
+  const head = (e.target as Element).closest(".adp-dl__head");
+  if (!head || !e.currentTarget.contains(head)) return;
+  const open = head.getAttribute("aria-expanded") !== "true";
+  head.setAttribute("aria-expanded", String(open));
+  const caret = head.querySelector(".adp-dl__caret");
+  if (caret) caret.textContent = open ? "▾" : "▸";
+  for (let el = head.nextElementSibling; el; el = el.nextElementSibling) (el as HTMLElement).style.display = open ? "" : "none";
+}
+
+/* A Prose container in the ticket view fills its pane. The Prose component
+   caps its column at 72ch, which left a long card and its prose in a narrow
+   band with the rest of the pane empty, so the reader asked for the full
+   width. The pane's own padding keeps the text off its edges. */
+const FILL: CSSProperties = {maxWidth: "none"};
 
 // ---- the ticket's text, parsed once per text ----
 
@@ -73,6 +96,13 @@ function parseLog(text: string): ParsedLog {
 const PROMPT_KEY = "prompt";
 type Entry = SectionEntry & {prompt?: boolean};
 
+/* A section's title in the select and over its pane. Titles read in
+   sentence case, so the prompt reads "Prompt" and a phase "Phase 5 ·
+   Decision Log". The file name stays beside the prompt's heading. */
+function titleOf(en: Entry): string {
+  return en.prompt ? "Prompt" : en.phase != null ? "Phase " + en.phase + " · " + en.title : en.title;
+}
+
 function entriesOf(t: Ticket, prompt: PromptView | null): Entry[] {
   const entries: Entry[] = D.sectionEntries(t);
   return prompt ? [{key: PROMPT_KEY, title: "prompt.yaml", phase: null, canonical: false, missing: false, prompt: true}, ...entries] : entries;
@@ -118,47 +148,61 @@ function resolveSection(t: Ticket, prompt: PromptView | null, s: string | null, 
 
 // ---- the prompt view ----
 
-/* The prompt view gives each top-level key a card, shaped like a Decision
-   Log card. A multi-line string is prose, so it goes through the markdown
-   renderer the logs use. A one-line string shows escaped and exact. A link
-   item becomes an anchor only for an absolute http, https, or mailto URL,
-   because a relative one would resolve against this page. */
+/* The prompt view reads as a document, as the TicketPrompt board draws it.
+   Each top-level key is its own pane with a section heading, as each section
+   of a review round is, and a one-line value sits beside the heading. A map is a list of label and value rows, kept apart by spacing alone,
+   because a rule under every row drew the eye away from the text. A multi-line
+   string is prose, so it goes through the markdown renderer the logs use,
+   with the design system's blocks and chips. A one-line string shows escaped
+   and exact. A link item becomes an anchor only for an absolute http, https,
+   or mailto URL, because a relative one would resolve against this page.
+   Every value shows, so the board's "Show more" folds are left out. The
+   YAML key name sits in the title's tooltip, not beside it, because a second
+   name for every key read as a second header. The
+   parts carry data-p hooks, not the old pcard classes, which the old sheet
+   still styles for the vanilla builder. */
+const P_NONE: CSSProperties = {color: "var(--faint)", fontStyle: "italic"};
+const P_GRID: CSSProperties = {display: "grid", gridTemplateColumns: "minmax(96px, 160px) minmax(0, 1fr)", columnGap: 16};
+const P_CELL: CSSProperties = {padding: "8px 0", minWidth: 0, overflowWrap: "anywhere"};
+const P_K: CSSProperties = {...P_CELL, font: "400 13px/24px var(--font-sans)", color: "var(--dim)"};
+const P_V: CSSProperties = {...P_CELL, font: "400 15px/24px var(--font-sans)", color: "var(--ink)"};
+const P_VAL: CSSProperties = {font: "400 16px/28px var(--font-sans)", color: "var(--ink)", minWidth: 0, overflowWrap: "anywhere"};
 function Scalar({v, at}: {v: unknown; at: string}){
-  if (v == null || v === "") return <span className="pcard-none">empty</span>;
+  if (v == null || v === "") return <span style={P_NONE}>empty</span>;
   if (typeof v === "string" && at === "context.links[]" && S.LINK_ITEM.test(v) && P.safeLinkUrl(v))
     return <a href={v} target="_blank" rel="noopener noreferrer">{v}</a>;
   return <>{String(v)}</>;
 }
 
-const NONE = <span className="pcard-none">none</span>;
+const NONE = <span style={P_NONE}>none</span>;
 
 function Value({v, at}: {v: YamlValue; at: string}): ReactNode {
-  if (typeof v === "string" && v.includes("\n")) return <Html as="div" className="md" html={P.renderMarkdown(v)}/>;
+  if (typeof v === "string" && v.includes("\n")) return <Html as="div" className="md adp-prose" style={FILL} html={P.renderMarkdownDS(v)}/>;
   if (Array.isArray(v)){
     if (!v.length) return NONE;
     if (v.every(S.isFlat)){
       const cols: string[] = [];
       v.forEach(r => Object.keys(r).forEach(k => { if (!cols.includes(k)) cols.push(k); }));
-      return <div className="md"><div className="tbl-wrap"><table className="md-tbl">
+      return <div className="md adp-prose" style={FILL}><div style={{overflowX: "auto", margin: "0 0 16px"}}><table className="adp-table">
         <thead><tr>{cols.map(c => <th key={c}>{S.keyLabel(c)}</th>)}</tr></thead>
         <tbody>{v.map((r, i) => <tr key={i}>{cols.map(c => S.isLine(r[c])
           ? <td key={c}><Scalar v={r[c]} at={at + "[]." + c}/></td>
-          : <Html key={c} as="td" html={P.renderMarkdown(r[c])}/>)}</tr>)}</tbody>
+          : <Html key={c} as="td" html={P.renderMarkdownDS(r[c])}/>)}</tr>)}</tbody>
       </table></div></div>;
     }
-    return <div className="md"><ul className="md-list">{v.map((x, i) =>
-      <li key={i}>{S.isLine(x) ? <Scalar v={x} at={at + "[]"}/> : <Value v={x} at={at + "[]"}/>}</li>)}</ul></div>;
+    return <div className="md adp-prose" style={FILL}><ul className="md-list">{v.map((x, i) =>
+      <li key={i}><span>{S.isLine(x) ? <Scalar v={x} at={at + "[]"}/> : <Value v={x} at={at + "[]"}/>}</span></li>)}</ul></div>;
   }
   if (S.isMap(v)){
     const ks = Object.keys(v);
     if (!ks.length) return NONE;
-    return <div className="pcard-grid">{ks.map(k => <PromptField key={k} k={k} v={v[k]} at={at + "." + k}/>)}</div>;
+    return <div style={P_GRID}>{ks.map(k => <PromptField key={k} k={k} v={v[k]} at={at + "." + k}/>)}</div>;
   }
   return <Scalar v={v} at={at}/>;
 }
 
 function PromptField({k, v, at}: {k: string; v: YamlValue; at: string}){
-  return <><div className="pcard-k">{S.keyLabel(k)}</div><div className="pcard-v"><Value v={v} at={at}/></div></>;
+  return <><div data-p="k" style={P_K}>{S.keyLabel(k)}</div><div data-p="v" style={P_V}><Value v={v} at={at}/></div></>;
 }
 
 // The builder's keys come first in the order it writes them. A key the
@@ -167,13 +211,13 @@ function PromptField({k, v, at}: {k: string; v: YamlValue; at: string}){
 function PromptCards({obj}: {obj: YamlMap}){
   const known = S.NT_KEYS[""].filter(k => k in obj);
   const keys = known.concat(Object.keys(obj).filter(k => !known.includes(k)));
-  return <div className="pcards">{keys.map(k => {
+  return <div>{keys.map(k => {
     const v = obj[k];
-    return <section key={k} className="pcard">
-      <div className="pcard-head"><span className="pcard-title">{S.keyTitle(k)}</span>
-        {S.isLine(v) ? <span className="pcard-val"><Scalar v={v} at={k}/></span> : null}
-        <span className="pcard-key">{k}</span></div>
-      {S.isLine(v) ? null : S.isMap(v) ? <Value v={v} at={k}/> : <div className="pcard-body"><Value v={v} at={k}/></div>}
+    return <section key={k} data-p="card" className="doc" style={PANE}>
+      <div style={{display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: S.isLine(v) ? 0 : 16}}>
+        <h2 data-p="title" title={k} className="adp-section" style={SECTION_HEAD}>{S.keyTitle(k)}</h2>
+        {S.isLine(v) ? <span data-p="val" style={P_VAL}><Scalar v={v} at={k}/></span> : null}</div>
+      {S.isLine(v) ? null : <Value v={v} at={k}/>}
     </section>;
   })}</div>;
 }
@@ -195,8 +239,11 @@ function PromptBody({pr}: {pr: PromptView}){
 // A section body renders as the decision-log card list when its title is
 // the spine, and as markdown with any decision cards drawn in place
 // otherwise. The pane and the full log both read this rule.
+// Mission control draws the design system's decision card.
+const DS = {ds: true};
 function SectionBody({sec, body}: {sec: Section | null; body: string}){
-  return sec ? <Html as="div" className="md" html={P.metaFor(sec.title).spine ? P.renderDecisionLog(body) : P.renderSectionBody(body)}/> : null;
+  return sec ? <Html as="div" className="md adp-prose" style={FILL} onClick={foldCard}
+    html={P.metaFor(sec.title).spine ? P.renderDecisionLog(body, DS) : P.renderSectionBody(body, DS)}/> : null;
 }
 
 /* The permalink copies the page's address. The label says it copied for a
@@ -212,47 +259,121 @@ function Permalink(){
     try { navigator.clipboard.writeText(location.href); } catch {}
     setCopied(true);
   };
-  return <button type="button" className="lnk" data-permalink="1" title="copy link to this view" onClick={copy}>{copied ? "copied" : "⧉ link"}</button>;
+  return <button type="button" className="adp-btn adp-btn--text" data-permalink="1" title="copy link to this view" onClick={copy}>{copied ? "copied" : "⧉ link"}</button>;
 }
 
-type DocPaneProps = {back?: string; onBack?(): void; heading: string; badge?: string | null; notice?: string | null;
+type DocPaneProps = {back?: string; onBack?(): void; heading: string; meta?: string; badge?: string | null; notice?: string | null;
   action?: ReactNode; children?: ReactNode};
 
-function DocPane({back, onBack, heading, badge, notice, action, children}: DocPaneProps){
-  return <div className="doc">
-    {back ? <div className="backrow"><a className="backlink" onClick={onBack}>← back to {back}</a></div> : null}
-    <h4>{heading}{badge ? <>{" "}<span className="ncbadge">{badge}</span></> : null}{" "}<Permalink/></h4>
-    {notice ? <p className="dnotice">{notice}</p> : null}
+/* A message in the ticket view: a section never written, a link that found
+   nothing, or no ticket yet. It takes the design system's Notice. */
+function Notice({text, label}: {text: string; label?: string}){
+  return <div className="adp-notice" style={{marginBottom: 16}}>
+    {label ? <span className="adp-notice__label">{label}</span> : null}<span className="adp-notice__text">{text}</span></div>;
+}
+
+// A pane takes the DecisionCard's surface, the panel ground under an inset
+// line, on the 4px grid. The design system has no pane of its own, and the
+// old pane class's border and ground no longer reach it.
+const PANE: CSSProperties = {padding: "16px 24px", margin: "0 0 16px", border: 0, background: "var(--panel)",
+  boxShadow: "inset 0 0 0 1px var(--line)"};
+// The old sheet's ".screen h2" outranks the system's section class and sets a
+// mono uppercase face, so the section heading states the system's values.
+const SECTION_HEAD: CSSProperties = {margin: 0, font: "600 20px/28px var(--font-sans)", letterSpacing: "normal", textTransform: "none"};
+const FSEC: CSSProperties = {boxShadow: "inset 0 1px 0 var(--line)"};
+const FSUM: CSSProperties = {padding: "12px 0", cursor: "pointer", font: "600 16px/24px var(--font-sans)", color: "var(--ink)"};
+
+function DocPane({back, onBack, heading, meta, badge, notice, action, children}: DocPaneProps){
+  return <div className="doc" style={PANE}>
+    {back ? <button type="button" className="adp-btn adp-btn--text" data-op="back" style={{marginBottom: 8}} onClick={onBack}>← back to {back}</button> : null}
+    <div style={{display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16}}>
+      <h2 className="adp-section" style={SECTION_HEAD}>{heading}</h2>
+      {meta ? <span className="adp-meta" style={{fontFamily: "var(--font-mono)"}}>{meta}</span> : null}
+      {badge ? <span className="adp-chip adp-chip--s">{badge}</span> : null}
+      <Permalink/>
+    </div>
+    {notice ? <Notice text={notice}/> : null}
     {action}
     {children}
   </div>;
 }
 
-/* The ticket head names the ticket and its state. A ticket with review
-   rounds also offers its reviews here, since the top bar has no Reviews
-   tab. The phase strip takes this entry over when the ticket view moves
-   onto the design system. */
-function Tickhead({title, chits, rounds, onReviews}: {title: string; chits: Chit[]; rounds: number; onReviews(): void}){
-  return <div className="tickhead"><span className="tbig">{title}</span>
-    {chits.map((c, i) => <span key={i} className="chit" title={c.title}>{c.txt}</span>)}
-    {rounds ? <button type="button" className="op" id="reviewsBtn" onClick={onReviews}>reviews · {rounds} {rounds === 1 ? "round" : "rounds"}</button> : null}</div>;
+/* Each ticket state takes the status chip of its meaning. Work still in
+   flight reads as open, a shipped ticket as validated, and a closed one as
+   the neutral closed chip. The word is the index's own state word. */
+const STATE_CHIP: Record<Ticket["state"], string> = {"open": "adp-chip--open", "in-review": "adp-chip--open",
+  "shipped": "adp-chip--validated", "closed": "adp-chip--closed"};
+const SOURCE: Record<Ticket["state_source"], string> = {declared: "declared in front matter", inferred: "inferred from the log"};
+
+/* The ticket head, as the Main board draws it: a meta line, the title, and
+   the state with where it came from, then the view toggle and the resume
+   pack on the right. The meta line keeps the directory name, because the
+   index carries no author and the old head showed the directory. Review
+   rounds open from the phase strip below the head. */
+// The reviews screen draws the same head with no view pressed, so either
+// segment returns to the ticket in that view.
+function Tickhead({t, view, act}: {t: Ticket; view: ViewMode | null; act: Pick<InspectorActions, "onView" | "onResume">}){
+  const meta = [t.id, t.date, t.dir].filter(Boolean).join(" · ");
+  return <div id="tickHead" style={{display: "flex", alignItems: "flex-start", gap: 24, flexWrap: "wrap", marginBottom: 16}}>
+    <div style={{flex: "1 1 360px", minWidth: 0}}>
+      <div style={{font: "400 13px/24px var(--font-mono)", color: "var(--dim)"}}>{meta}</div>
+      <h1 style={{margin: "8px 0 0", font: "600 24px/32px var(--font-sans)", color: "var(--ink)"}}>{t.title || t.slug || t.id || t.dir}</h1>
+      <div style={{display: "flex", alignItems: "center", gap: 8, marginTop: 12, flexWrap: "wrap"}}>
+        <span className={"adp-chip " + STATE_CHIP[t.state]} style={{textTransform: "uppercase"}}
+          title="lifecycle state — declared in front matter, or inferred from section presence on legacy logs">{t.state}</span>
+        <span className="adp-meta">{SOURCE[t.state_source]}</span>
+        {t.pr ? <><span className="adp-meta" aria-hidden="true" style={{color: "var(--faint)"}}>·</span><span className="adp-meta">PR #{t.pr}</span></> : null}
+      </div>
+    </div>
+    <div style={{display: "flex", gap: 8, alignItems: "center"}}>
+      <div className="adp-seg" role="group" aria-label="View">
+        <button type="button" data-view="section" aria-pressed={view === "section"} onClick={() => act.onView("section")}>Section</button>
+        <button type="button" data-view="full" aria-pressed={view === "full"} onClick={() => act.onView("full")}>Full log</button>
+      </div>
+      <button type="button" className="adp-btn" data-op="resume" onClick={e => act.onResume(e.currentTarget)}>Resume pack</button>
+    </div>
+  </div>;
 }
+
+/* The strip's reviews box opens the latest round. prreview numbers its
+   rounds across every PR of a ticket, so the latest round is the highest
+   number, which is the round the reviews screen calls latest too. */
+function reviewsOf(corpus: Corpus | null, tok: string, dir: string, onRound: (tok: string, file: string) => void, current = false): StripReviews | null {
+  const rounds = (corpus && corpus.reviews ? S.reviewRounds(corpus.reviews[dir]) : []).flatMap(g => g.rounds);
+  if (!rounds.length) return null;
+  const latest = rounds.reduce((a, r) => r.k > a.k ? r : a);
+  return {count: rounds.length, current, onOpen: () => onRound(tok, latest.file)};
+}
+
+/* A select draws its own down chevron at its right edge, so it reads as a
+   dropdown in both themes and every browser. The system's select sets its
+   ground with the background shorthand, which leaves no arrow, and the
+   browser's own arrow is turned off by the older sheet. One conic gradient
+   in the dim ink fills a 90 degree wedge up from the box's bottom center,
+   which the 10 by 5 box clips to a solid down triangle. Two half triangles
+   would leave a seam wherever the select's width lands between pixels. */
+const SELECT: CSSProperties = {appearance: "none", paddingRight: 36, backgroundRepeat: "no-repeat",
+  backgroundImage: "conic-gradient(from -45deg at 50% 100%, var(--dim) 90deg, transparent 0)",
+  backgroundPosition: "calc(100% - 13px) center", backgroundSize: "10px 5px"};
+
+// The prev and next buttons stand as tall as the select between them, so the
+// row reads as one control. The system's button is 28px and its select 36px.
+const STEP_BTN: CSSProperties = {height: 36};
 
 function SecNav({entries, states, selKey, onPick, onStep}: {entries: Entry[]; states: Record<string, SectionState>;
   selKey: string | null; onPick(key: string): void; onStep(d: number): void}){
   const i = entries.findIndex(en => en.key === selKey);
-  const cur = i >= 0 ? states[entries[i].key] : {label: "—", tone: "mute"};
-  return <div className="secnav">
-    <button type="button" className="op" data-secstep="-1" disabled={i <= 0} onClick={() => onStep(-1)}>‹ prev</button>
-    <select id="secSel" className="secsel" aria-label="section" value={i >= 0 ? entries[i].key : ""} onChange={e => onPick(e.target.value)}>
+  return <div className="secnav" style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "12px 0 16px"}}>
+    <button type="button" className="adp-btn" data-secstep="-1" style={STEP_BTN} disabled={i <= 0} onClick={() => onStep(-1)}>‹ prev</button>
+    <select id="secSel" className="adp-select" aria-label="section" style={{...SELECT, flex: "0 1 440px", minWidth: 220, lineHeight: "normal"}}
+      value={i >= 0 ? entries[i].key : ""} onChange={e => onPick(e.target.value)}>
       {entries.map(en => {
         const st = states[en.key];
-        const base = en.phase != null ? `phase ${en.phase} · ${en.title}` : en.title;
+        const base = titleOf(en);
         return <option key={en.key} value={en.key}>{st.label === "complete" ? base : `${base} — ${st.label}`}</option>;
       })}
     </select>
-    <button type="button" className="op" data-secstep="1" disabled={i < 0 || i >= entries.length - 1} onClick={() => onStep(1)}>next ›</button>
-    <span className={"secchit t-" + cur.tone}>{cur.label}</span>
+    <button type="button" className="adp-btn" data-secstep="1" style={STEP_BTN} disabled={i < 0 || i >= entries.length - 1} onClick={() => onStep(1)}>next ›</button>
   </div>;
 }
 
@@ -270,7 +391,8 @@ type InspectorActions = PanelActions & {
   onRound(tok: string, file: string): void;
   onSpy(key: string): void;
   onStartFrom(text: string, source: string): void;
-  onReviews(): void;
+  // Opens the Packs drawer on the resume pack for the ticket on show.
+  onResume(opener: HTMLElement): void;
 };
 type InspectorProps = {
   corpus: Corpus | null;
@@ -290,6 +412,8 @@ type InspectorProps = {
   // served, so a screen that mounts again does not replay an old jump.
   jump: {to: string | null; seq: number};
   jumped: {current: number};
+  // False while a modal holds the page, so ← and → leave the ticket alone.
+  arrows: boolean;
   act: InspectorActions;
 };
 
@@ -389,12 +513,53 @@ function useScrollSpy(on: boolean, ticket: string | undefined, selected: string 
   }, [on, ticket]);
 }
 
-function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, missNotice, fullClosed, decSort, iwSort, jump, jumped, act}: InspectorProps){
+/* After the sections, ← and → walk the ticket's review rounds one at a
+   time, oldest first, as the reviews box's own steps. A round's step is its
+   file under a prefix that no section key can carry, because every section
+   key starts with "sec-" or "missing:", or is "prompt". */
+const ROUND_STEP = "round:";
+function roundSteps(corpus: Corpus | null, dir: string): string[] {
+  const rounds = (corpus && corpus.reviews ? S.reviewRounds(corpus.reviews[dir]) : []).flatMap(g => g.rounds);
+  return rounds.slice().sort((a, b) => a.k - b.k).map(r => ROUND_STEP + r.file);
+}
+
+// A key typed into a field belongs to the field, so no shortcut takes it.
+const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName));
+
+/* ← and → step through the phase strip: the prompt, each written phase,
+   each extra section, then each review round. A selection on no step, such
+   as a missing phase, steps from the strip's start. */
+function useArrows(on: boolean, steps: readonly string[], current: string | null, onStep: (key: string) => void){
+  useEffect(() => {
+    if (!on || !steps.length) return;
+    const key = (e: KeyboardEvent) => {
+      if ((e.key !== "ArrowLeft" && e.key !== "ArrowRight") || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || typing(e.target)) return;
+      const i = current == null ? -1 : steps.indexOf(current);
+      const next = e.key === "ArrowRight" ? (i < 0 ? 0 : i + 1) : i - 1;
+      if (next < 0 || next >= steps.length) return;
+      e.preventDefault();
+      onStep(steps[next]);
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [on, steps.join("\n"), current, onStep]);
+}
+
+function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, missNotice, fullClosed, decSort, iwSort, jump, jumped, arrows, act}: InspectorProps){
   const text = t && corpus ? corpus.texts[t.dir] || "" : "";
   const promptSrc = t && corpus ? corpus.prompts[t.dir] : undefined;
   const pd = useMemoText(text);
   const prompt = useMemoPrompt(promptSrc);
   useScrollSpy(view === "full" && !!t, t?.dir, sel.s, act.onSpy);
+  // The strip is built before any early return, because the arrow keys hook
+  // into it on every render.
+  const strip = stripModel(t && (t.sections.length || prompt) ? entriesOf(t, prompt) : [], sel.s);
+  const box = [strip.prompt, ...strip.phases, ...(strip.extra ? [strip.extra] : [])].find(b => b.current);
+  const reviews = t ? reviewsOf(corpus, revTok(corpus, tokenOf, t.dir), t.dir, act.onRound) : null;
+  // An extra section is its own step, so the walk starts from the selection
+  // itself, and from its phase box when it is a phase's later section.
+  useArrows(arrows && !!t, t ? [...strip.steps, ...roundSteps(corpus, t.dir)] : [], sel.s && strip.steps.includes(sel.s) ? sel.s : box ? box.key : null,
+    key => key.startsWith(ROUND_STEP) ? act.onRound(revTok(corpus, tokenOf, t!.dir), key.slice(ROUND_STEP.length)) : act.onStep(key));
   useLayoutEffect(() => {
     if (jump.seq <= jumped.current) return;
     jumped.current = jump.seq;
@@ -403,40 +568,32 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     if (el && el.scrollIntoView) el.scrollIntoView();
   }, [jump.seq]);
 
-  const ops = <div className="mops"><span className="mgap"></span>
-    <button type="button" className={"op tgl" + (view === "section" ? " is-on" : "")} data-view="section" onClick={() => act.onView("section")}>section</button>
-    <button type="button" className={"op tgl" + (view === "full" ? " is-on" : "")} data-view="full" onClick={() => act.onView("full")}>full log</button>
-  </div>;
-
-  // The three regions keep the vanilla page's ids: the top (heading, ops
-  // row, ticket head), the section nav, and the body (pane and panels).
+  // The three regions keep the vanilla page's ids: the top (the ticket
+  // head), the section nav, and the body (pane and panels).
   const regions = (top: ReactNode, nav: ReactNode, body: ReactNode) =>
     <><div id="inspTop">{top}</div><div id="inspNav">{nav}</div><div id="inspBody">{body}</div></>;
-  if (!t) return regions(<><h2>inspector</h2>{ops}</>, null, <div className="ipanel"><p className="dnotice">{notice || (corpus
+  if (!t) return regions(null, null, <div className="ipanel"><Notice text={notice || (corpus
     ? "select a ticket from the rail"
-    : "no corpus behind this page — the inspector reads the served corpus.")}</p></div>);
+    : "no corpus behind this page — the inspector reads the served corpus.")}/></div>);
 
-  const top = <><h2>inspector <span className="isub">{t.dir}</span></h2>{ops}</>;
-  const rounds = corpus && corpus.reviews ? S.reviewRounds(corpus.reviews[t.dir]).reduce((n, g) => n + g.rounds.length, 0) : 0;
+  const top = <Tickhead t={t} view={view} act={act}/>;
   if (!t.sections.length && !prompt)
-    return regions(<>{top}<Tickhead title={t.id || t.dir} chits={[{txt: t.state + " · " + t.state_source}]} rounds={rounds} onReviews={act.onReviews}/></>, null,
-      <div className="ipanel"><p className="dnotice">this ticket has no audit log yet — only its prompt or other files sit in the directory.</p></div>);
+    return regions(top,
+      reviews ? <PhaseStrip model={stripModel([], null)} reviews={reviews} onPick={act.onStep}/> : null,
+      <div className="ipanel"><Notice text="this ticket has no audit log yet — only its prompt or other files sit in the directory."/></div>);
 
   const entries = entriesOf(t, prompt);
   const states = statesOf(t, entries, prompt, today);
-  const chits: Chit[] = [{txt: t.state + " · " + t.state_source,
-    title: "lifecycle state — declared in front matter, or inferred from section presence on legacy logs"}];
-  if (t.pr) chits.push({txt: "pr " + t.pr});
 
   const sectionPane = (en: Entry | undefined) => {
     const sec = en && !en.missing ? pd.byKey[en.key] || null : null;
     const body = sec ? sec.body.join("\n") : "";
     const ref = S.reviewFileRef(body);
     const round = ref && corpus && corpus.reviews && (corpus.reviews[ref.dir] || []).some(f => f.file === ref.file) ? ref : null;
-    return <DocPane heading={en ? (en.phase != null ? "phase " + en.phase + " · " + en.title : en.title) : "—"}
+    return <DocPane heading={en ? titleOf(en) : "—"}
       badge={en && en.missing ? "missing" : en && !en.canonical ? "non-canonical" : null}
       notice={missNotice || (en && en.missing ? "this section was never written. A missing canonical section is an attention reason on the rail." : null)}
-      action={round ? <p className="revopen"><RoundLink tok={revTok(corpus, tokenOf, round.dir)} file={round.file} label="open round in reviews ›" onRound={act.onRound}/></p> : null}>
+      action={round ? <p style={{margin: "0 0 16px"}}><RoundLink tok={revTok(corpus, tokenOf, round.dir)} file={round.file} label="open round in reviews ›" onRound={act.onRound}/></p> : null}>
       <SectionBody sec={sec} body={body}/>
     </DocPane>;
   };
@@ -444,21 +601,22 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
   let pane: ReactNode, panels: ReactNode = null;
   if (view === "full"){
     const list = entries.filter(en => !en.missing);
-    pane = <><div className="mops">
-      <button type="button" className="op" data-exp="open" onClick={() => act.onExpand(true, list.map(en => en.key))}>expand all</button>
-      <button type="button" className="op" data-exp="close" onClick={() => act.onExpand(false, list.map(en => en.key))}>collapse all</button></div>
+    pane = <><div style={{display: "flex", alignItems: "center", gap: 16, margin: "0 0 16px"}}>
+      <button type="button" className="adp-btn adp-btn--text" data-exp="open" onClick={() => act.onExpand(true, list.map(en => en.key))}>expand all</button>
+      <button type="button" className="adp-btn adp-btn--text" data-exp="close" onClick={() => act.onExpand(false, list.map(en => en.key))}>collapse all</button></div>
       {list.map(en => {
         const sec = en.prompt ? null : pd.byKey[en.key] || null;
-        const heading = en.prompt ? "prompt.yaml" : en.phase != null ? "phase " + en.phase + " · " + en.title : en.title;
+        const heading = titleOf(en);
         const badge = en.prompt || en.canonical ? null : "non-canonical";
         const pn = en.prompt ? promptNotice(prompt!) : null;
         // We toggle the details ourselves, so the collapse state lives in
         // the app and survives every render.
-        return <details key={en.key} className="fsec" data-key={en.key} open={!fullClosed.has(en.key)}>
-          <summary className="fsum" onClick={e => { e.preventDefault(); act.onToggle(en.key, fullClosed.has(en.key)); }}>
-            {heading}{badge ? <>{" "}<span className="ncbadge">{badge}</span></> : null}</summary>
-          <div className="fbody">{en.prompt
-            ? <>{pn ? <p className="dnotice">{pn}</p> : null}<PromptBody pr={prompt!}/></>
+        // Each section is a row under a rule, as the TicketFullLog board draws it.
+        return <details key={en.key} className="fsec" data-key={en.key} open={!fullClosed.has(en.key)} style={FSEC}>
+          <summary className="fsum" style={FSUM} onClick={e => { e.preventDefault(); act.onToggle(en.key, fullClosed.has(en.key)); }}>
+            {heading}{badge ? <>{" "}<span className="adp-chip adp-chip--s" style={{marginLeft: 8}}>{badge}</span></> : null}</summary>
+          <div style={{padding: "0 0 24px 24px"}}>{en.prompt
+            ? <>{pn ? <Notice text={pn}/> : null}<PromptBody pr={prompt!}/></>
             : <SectionBody sec={sec} body={sec ? sec.body.join("\n") : ""}/>}</div>
         </details>;
       })}</>;
@@ -467,15 +625,19 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     const card = pd.cards[sel.item];
     pane = <DocPane back={en ? en.title : "sections"} onBack={act.onBack} heading={"[" + sel.item + "]"}
       notice={card ? null : "this entry is cited here but not present in the loaded text."}>
-      {card ? <Html as="div" className="md" html={P.renderDLCard(card)}/> : null}
+      {card ? <Html as="div" className="md adp-prose" style={FILL} onClick={foldCard} html={P.renderDLCard(card, DS)}/> : null}
     </DocPane>;
   } else if (sel.s === PROMPT_KEY){
     // A prompt that did not parse still gets the action, so New task can
     // say why it took nothing.
     const pr = prompt!;
-    const start = pr.state === "unreadable" ? null : <div className="mops">
-      <button type="button" className="op op-acc" data-op="startfrom" onClick={() => act.onStartFrom(pr.text, t.dir + "/prompt.yaml")}>start from this prompt</button></div>;
-    pane = <DocPane heading="prompt.yaml" notice={missNotice || promptNotice(pr)} action={start}><PromptBody pr={pr}/></DocPane>;
+    const start = pr.state === "unreadable" ? null : <div style={{margin: "0 0 16px"}}>
+      <button type="button" className="adp-btn" data-op="startfrom" onClick={() => act.onStartFrom(pr.text, t.dir + "/prompt.yaml")}>start from this prompt</button></div>;
+    // A parsed prompt sets each key in a pane of its own under the prompt's
+    // pane, so the keys read as sections. A raw prompt stays inside.
+    pane = pr.state === "parsed" || pr.state === "issues"
+      ? <><DocPane heading="Prompt" meta="prompt.yaml" notice={missNotice || promptNotice(pr)} action={start}/><PromptBody pr={pr}/></>
+      : <DocPane heading="Prompt" meta="prompt.yaml" notice={missNotice || promptNotice(pr)} action={start}><PromptBody pr={pr}/></DocPane>;
   } else pane = sectionPane(entries.find(x => x.key === sel.s) || entries[0]);
 
   if (view !== "full"){
@@ -493,18 +655,21 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     </>;
   }
 
-  return regions(<>{top}<Tickhead title={t.id || t.dir} chits={chits} rounds={rounds} onReviews={act.onReviews}/></>,
-    <SecNav entries={entries} states={states} selKey={sel.s} onPick={act.onSection} onStep={d => {
-      const i = entries.findIndex(en => en.key === sel.s) + d;
-      if (i >= 0 && i < entries.length) act.onStep(entries[i].key);
-    }}/>,
+  const gap = gapNote(strip, entries.filter(en => !en.prompt && !en.missing && !en.canonical).map(en => en.title));
+  return regions(top,
+    <>{gap ? <div id="gapNote" role="note" style={{marginTop: 16}}><Notice label={gap.label} text={gap.text}/></div> : null}
+      <PhaseStrip model={strip} reviews={reviews} onPick={act.onStep}/>
+      <SecNav entries={entries} states={states} selKey={sel.s} onPick={act.onSection} onStep={d => {
+        const i = entries.findIndex(en => en.key === sel.s) + d;
+        if (i >= 0 && i < entries.length) act.onStep(entries[i].key);
+      }}/></>,
     <>{pane}{panels}</>);
 }
 
 // A round link is an in-page hash, so its href never carries a URL that
 // came out of a review file. A click routes in the app.
 function RoundLink({tok, file, label, onRound}: {tok: string; file: string; label: string; onRound(tok: string, file: string): void}){
-  return <a className="rvl" href={S.hashWrite({v: "reviews", t: tok, s: file})} data-t={tok} data-rf={file}
+  return <a className="rvl" href={S.hashWrite({v: "reviews", t: tok, s: file})} data-t={tok} data-rf={file} style={{overflowWrap: "anywhere"}}
     onClick={e => { e.preventDefault(); onRound(tok, file); }}>{label}</a>;
 }
 
@@ -528,5 +693,5 @@ function useMemoPrompt(p: FetchedText | undefined): PromptView | null {
   return ref.current.out;
 }
 
-export {Html, Inspector, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
+export {FILL, Html, Inspector, Notice, ROUND_STEP, SELECT, STEP_BTN, roundSteps, useArrows, Tickhead, reviewsOf, PANE, P_GRID, P_K, P_V, SECTION_HEAD, typing, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
 export type {InspectorActions, InspSel, PromptView};

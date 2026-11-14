@@ -417,7 +417,162 @@ function dlSplitBody(lines: string[]): DLBodySplit{
   return {fieldLines:lines, trailing:''};
 }
 
-function renderDLCard(entry: DLEntry): EscapedHtml{
+/* The design system's DecisionCard, which mission control draws. The
+   default card stays the markup the render goldens pin, so a caller asks for
+   this one by option. Confidence is a neutral Tag, and the status alone takes
+   a status chip's color. A note that the split word leaves behind becomes a
+   field row, as on the default card, so no text is lost. A settled entry
+   sets its title lighter. The head is a button that folds the fields, which
+   the page wires up. A folded card hides its fields with an inline display,
+   because the body's own display rule would outrank the hidden attribute. */
+const DS_STATUS: Record<DLStatusKind,string>={invalidated:' adp-chip--invalidated',validated:' adp-chip--validated',
+  open:' adp-chip--open',unknown:' adp-chip--unknown',other:''};
+function renderDSCard(id: string, title: string, confidence: string, status: string, body: DLField[], trailing: string, open: boolean): EscapedHtml{
+  const conf=confidence?dlChipSplit(confidence):null;
+  const stat=status?dlChipSplit(status):null;
+  const kind=dlStatusKind(status);
+  if(conf&&conf.tail) body.push({label:'confidence note',value:dlConfKind(confidence)==='other'?confidence.trim():conf.tail});
+  if(stat&&stat.tail) body.push({label:'status note',value:kind==='other'?status.trim():stat.tail});
+  const settled=kind==='validated'||kind==='invalidated'||kind==='unknown';
+  // The Created field closes the card as its footer line, under a rule, as
+  // the DecisionCard board draws it. The label and value stay as the log
+  // wrote them.
+  const ci=body.findIndex(f=>f.label.toLowerCase()==='created');
+  const created=ci>=0?body.splice(ci,1)[0]:null;
+  const rows=body.map(f=>`<div><dt>${esc(f.label)}</dt><dd>${dsTokens(decorate(inline(f.value)))}</dd></div>`).join('');
+  const shut=open?'':' style="display:none"';
+  const trail=trailing?`<div class="md dl-trail"${shut}>${proseBlocks(renderMarkdown(trailing))}</div>`:'';
+  return `<div class="adp-dl${settled?' adp-dl--settled':''}" data-card="${escAttr(id)}">`
+    + `<button type="button" class="adp-dl__head" aria-expanded="${open}">`
+    + `<span class="adp-dl__id">${id?esc(id):'—'}</span><span class="adp-dl__title">${dsTokens(decorate(inline(title)))}</span>`
+    + `<span>${conf?`<span class="adp-chip" title="confidence">${esc(conf.word)}</span>`:''}</span>`
+    + `<span>${stat?`<span class="adp-chip${DS_STATUS[kind]}" title="status">${esc(stat.word)}</span>`:''}</span>`
+    + `<span class="adp-dl__caret" aria-hidden="true">${open?'▾':'▸'}</span></button>`
+    + (rows?`<dl class="adp-dl__body"${shut}>${rows}</dl>`:'')
+    + (created?`<div class="adp-dl__foot" data-foot=""${shut}><span>${esc(created.label)}</span> ${dsTokens(decorate(inline(created.value)))}</div>`:'')
+    + trail+`</div>` as EscapedHtml;
+}
+
+/* The Reading rules of the design system's Prose component, which
+   mission control draws by the same option as its cards. A line that opens
+   with a bold run-in label, such as "**What the problem is:**", becomes an
+   eyebrow heading, and the line's text follows it as a paragraph. The
+   template writes these fields on consecutive lines, so a label starts a new
+   heading even with no blank line above it. The run metadata lines that
+   close a section (confirmed by, date, revision history, and authorized by)
+   collapse into one footer line, each label and value as the log wrote it,
+   joined with " · ". A metadata line anywhere else stays prose. The heading
+   and the footer carry marker attributes, so a test can map them back to
+   the text the log holds. */
+const META_LABELS=['confirmed by','date','revision history','authorized by'];
+const RE_RUNIN=/^\*\*([^*\n]+?):\*\*\s*(.*)$/;
+function metaPairs(line: string): DLField[] | null{
+  const t=line.trim();
+  if(!t.startsWith('**')) return null;
+  const pairs: DLField[]=[]; const re=/\*\*([^*\n]+?):\*\*/g; let m: RegExpExecArray | null; let last=-1; let label='';
+  while((m=re.exec(t))){
+    if(last>=0) pairs.push({label, value:t.slice(last, m.index).trim()});
+    label=m[1].trim(); last=re.lastIndex;
+  }
+  if(last<0) return null;
+  pairs.push({label, value:t.slice(last).trim()});
+  return pairs.every(f=>META_LABELS.includes(f.label.toLowerCase()))?pairs:null;
+}
+function renderProse(md: unknown): EscapedHtml{
+  const lines=String(md).replace(/\r\n/g,'\n').split('\n');
+  let end=lines.length;
+  while(end>0 && !lines[end-1].trim()) end--;
+  let start=end; const meta: DLField[]=[];
+  while(start>0){ const m=metaPairs(lines[start-1]); if(!m) break; meta.unshift(...m); start--; }
+  let html=''; let chunk: string[]=[]; let inFence=false;
+  const flush=()=>{ if(chunk.join('').trim()) html+=proseBlocks(renderMarkdown(chunk.join('\n'))); chunk=[]; };
+  for(let i=0;i<start;i++){
+    const line=lines[i];
+    if(/^\s*```/.test(line)) inFence=!inFence;
+    const m=!inFence ? line.match(RE_RUNIN) : null;
+    if(m && !metaPairs(line)){
+      flush();
+      html+=`<h3 data-runin="">${dsTokens(decorate(inline(m[1].trim())))}</h3>`;
+      if(m[2].trim()) chunk.push(m[2]);
+      continue;
+    }
+    chunk.push(line);
+  }
+  flush();
+  if(meta.length) html+=`<footer data-meta="">`+meta.map((f,i)=>(i?'<span aria-hidden="true"> · </span>':'')
+    +`<span>${esc(f.label)}:</span> ${dsTokens(decorate(inline(f.value)))}`).join('')+`</footer>`;
+  return html as EscapedHtml;
+}
+/* The markdown blocks inside Prose take the design system's own patterns or,
+   where the system has none, on-grid values from its tokens. A table is the
+   Table component and a code block the Pre component. A blockquote, a
+   numbered list, a rule, a task box, and a fourth to sixth level heading take
+   inline values, so the old theme's rules for them no longer reach a ticket.
+   A plain list item lays its marker and its content out as a flex row, so we
+   wrap the content in one span. Bare, each text run and code span would
+   become a flex item of its own and break the line apart. A task item keeps
+   its own row of box and text. A numbered list becomes a list of divs with
+   the number as text in a blue mono column, as the TicketPrompt board draws
+   it, because the Prose rule gives every li a ▸ marker that no inline style
+   can remove. Its numbers carry data-num, so a test can tell them from the
+   log's text. */
+/* A token pill becomes a small chip of the design system. Color means status
+   alone (R4), so a confidence word is a neutral Tag, and a status word takes
+   the StatusChip of its meaning. The word itself never changes. */
+const DS_TOKEN: Record<string, string>={OPEN:' adp-chip--open',PENDING:' adp-chip--open',VALIDATED:' adp-chip--validated',
+  YES:' adp-chip--validated',INVALIDATED:' adp-chip--invalidated',NO:' adp-chip--invalidated',UNKNOWN:' adp-chip--unknown',
+  UNOBSERVABLE:' adp-chip--unknown'};
+function dsTokens(h: string): string{
+  return h.replace(/<span class="pill p-[a-z]+">([^<]*)<\/span>/g,(_,w: string)=>`<span class="adp-chip adp-chip--s${DS_TOKEN[w]||''}">${w}</span>`);
+}
+const SUB_HEAD='margin:32px 0 8px;font:500 11px/24px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--blue-bright)';
+const CBX='display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:16px;height:16px;margin:4px 0 0;padding:0;border:0;'
+  +'box-shadow:inset 0 0 0 1px var(--line-bright);background:var(--inset);font:400 11px/16px var(--font-mono);color:var(--ok)';
+function numbered(h: string): string{
+  return h.replace(/<ol class="md-list"(?: style="counter-reset:li (\d+)")?>([\s\S]*?)<\/ol>/g,(_,skip: string | undefined,body: string)=>{
+    let n=skip?+skip:0;
+    const items=body.replace(/<li>([\s\S]*?)<\/li>/g,(__,c: string)=>`<div role="listitem" style="display:grid;grid-template-columns:24px minmax(0,1fr);gap:8px">`
+      +`<span data-num="" style="font:400 12px/24px var(--font-mono);color:var(--blue-bright)">${++n}</span><span>${c}</span></div>`);
+    return `<div role="list" style="margin:0 0 16px;display:flex;flex-direction:column;gap:12px">${items}</div>`;
+  });
+}
+// A quote's last block sits flush on the quote's own bottom padding.
+function quoteEnds(h: string): string{
+  return h.replace(/<blockquote([^>]*)>([\s\S]*?)<\/blockquote>/g,(_,attrs: string,body: string)=>{
+    const i=body.lastIndexOf('<p>');
+    return `<blockquote${attrs}>${i<0?body:body.slice(0,i)+'<p style="margin:0">'+body.slice(i+3)}</blockquote>`;
+  });
+}
+function proseBlocks(h: string): string{
+  return quoteEnds(numbered(dsTokens(h)))
+    .replace(/<li>/g,'<li><span>').replace(/<li class="task">([\s\S]*?)<\/li>/g,'<li class="task">$1</LI>')
+    .replace(/<\/li>/g,'</span></li>').replace(/<\/LI>/g,'</li>')
+    .replace(/<div class="tbl-wrap"><table class="md-tbl">/g,'<div style="overflow-x:auto;margin:0 0 16px"><table class="adp-table">')
+    .replace(/<blockquote>/g,'<blockquote style="margin:0 0 16px;padding:8px 16px;border:0;box-shadow:inset 2px 0 0 var(--line-bright);background:none;color:var(--ink-2)">')
+    .replace(/<pre class="cb"><code>/g,'<pre class="adp-pre" style="margin:0 0 16px"><code style="font:inherit;color:inherit;background:none;padding:0">')
+    .replace(/<hr>/g,'<hr style="margin:24px 0;height:1px;border:0;background:none;box-shadow:inset 0 1px 0 var(--line)">')
+    .replace(/<span class="cbx( on)? ?">/g,()=>`<span style="${CBX}">`)
+    .replace(/<h([3-6]) class="sub">/g,(_,n)=>`<h${n} style="${SUB_HEAD}">`);
+}
+// Markdown with the design system's blocks and chips, for a value that is not
+// a log section, such as a multi-line prompt field.
+const renderMarkdownDS=(md: unknown): EscapedHtml=>proseBlocks(renderMarkdown(md)) as EscapedHtml;
+// One line of inline text with the design system's chips, for a field value.
+const decorateDS=(v: unknown): EscapedHtml=>dsTokens(decorate(inline(v))) as EscapedHtml;
+const proseHtml=(md: unknown, opts?: DLRenderOpts): EscapedHtml=>opts&&opts.ds?renderProse(md):renderMarkdown(md);
+
+// open sets whether a design system card starts with its fields shown. It
+// defaults to shown, and the section renderers show the first card alone.
+type DLRenderOpts = {ds?: boolean; open?: boolean};
+/* The opening tag of a list of cards. A design system list that follows
+   other content in its section sits one space-4 step below it, the gap the
+   ticket head keeps above the phase strip. The default list stays the markup
+   the goldens pin. */
+function cardList(opts: DLRenderOpts | undefined, after: boolean): string{
+  if(!(opts&&opts.ds)) return '<div class="dl-cards">';
+  return after?'<div class="adp-dl-list" style="margin-top:16px">':'<div class="adp-dl-list">';
+}
+function renderDLCard(entry: DLEntry, opts?: DLRenderOpts): EscapedHtml{
   const hm=entry.head.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
   const id=hm?hm[1].trim():''; const title=hm?hm[2].trim():entry.head;
   const split=dlSplitBody(entry.lines);
@@ -429,6 +584,7 @@ function renderDLCard(entry: DLEntry): EscapedHtml{
     if(k==='status'){ status=f.value; continue; }
     body.push(f);
   }
+  if(opts&&opts.ds) return renderDSCard(id,title,confidence,status,body,split.trailing,opts.open!==false);
   const conf=confidence?dlConfPill(confidence):null;
   const stat=status?dlStatusPill(status):null;
   // We append the note rows after the author's fields so the pill order
@@ -496,14 +652,14 @@ function dlStatusCounts(body: unknown): DLStatusCounts{
    a list of bold labels such as "- **PR-COR-001:** fixed", renders after
    the card. A section with no card renders exactly as renderMarkdown would. */
 const RE_CARD_HEAD=/^###\s+\[DL-\d+\]/;
-function renderSectionBody(body: unknown): EscapedHtml{
+function renderSectionBody(body: unknown, opts?: DLRenderOpts): EscapedHtml{
   const lines=String(body).replace(/\r\n/g,'\n').split('\n');
-  const out: string[]=[]; let prose: string[]=[]; let cards: string[]=[]; let inFence=false; let any=false;
-  const flushCards=()=>{ if(cards.length) out.push(`<div class="dl-cards">${cards.join('')}</div>`); cards=[]; };
+  const out: string[]=[]; let prose: string[]=[]; let cards: string[]=[]; let inFence=false; let any=false; let seen=0;
+  const flushCards=()=>{ if(cards.length) out.push(`${cardList(opts,out.length>0)}${cards.join('')}</div>`); cards=[]; };
   const flushProse=()=>{
     const t=prose.join('\n'); prose=[];
     if(!t.trim()) return;
-    flushCards(); out.push(renderMarkdown(t));
+    flushCards(); out.push(proseHtml(t,opts));
   };
   let i=0;
   while(i<lines.length){
@@ -518,32 +674,33 @@ function renderSectionBody(body: unknown): EscapedHtml{
         if(/^\s*```/.test(l)) fence=true;
         card.push(l); i++;
       }
-      cards.push(renderDLCard({head, lines:card}));
+      cards.push(renderDLCard({head, lines:card}, opts&&{...opts, open:!seen}));
+      seen++;
       continue;
     }
     if(/^\s*```/.test(line)) inFence=!inFence;
     prose.push(line); i++;
   }
-  if(!any) return renderMarkdown(body);
+  if(!any) return proseHtml(body,opts);
   flushProse(); flushCards();
   return out.join('') as EscapedHtml;
 }
-function renderDecisionLog(body: unknown): EscapedHtml{
+function renderDecisionLog(body: unknown, opts?: DLRenderOpts): EscapedHtml{
   const {pre,entries}=parseDLEntries(body);
   // A Decision Log written as prose has no ### entries. Those sections fall
   // back to the generic renderer instead of showing an empty deck of cards.
-  if(!entries.length) return renderMarkdown(body);
-  return ((pre?`<div class="md">${renderMarkdown(pre)}</div>`:'')
-    + `<div class="dl-cards">${entries.map(renderDLCard).join('')}</div>`) as EscapedHtml;
+  if(!entries.length) return proseHtml(body,opts);
+  return ((pre?`<div class="md">${proseHtml(pre,opts)}</div>`:'')
+    + `${cardList(opts,!!pre)}${entries.map((e,i)=>renderDLCard(e,opts&&{...opts, open:i===0})).join('')}</div>`) as EscapedHtml;
 }
 
 export {esc, escAttr, safeLinkUrl, inline, decorate, TOK, renderMarkdown, ART, SECTION_KINDS,
   metaFor, splitFrontMatter, parseSections, slug, sectionKeys, isTableStart, splitRow,
   parseDLFields, dlSplitBody, dlChipSplit, dlConfKind, dlConfPill, dlStatusPill, dlStatusKind,
   dlRail, parseDLEntries, dlEntryStatus, dlStatusCounts, renderDLCard, renderSectionBody,
-  renderDecisionLog};
+  renderDecisionLog, renderProse, renderMarkdownDS, decorateDS};
 export type {EscapedHtml, SectionKind, SectionMeta, ArtEntry, FrontMatterSplit, Section, ParsedSections,
-  DLField, DLChipSplit, DLChip, DLConfKind, DLStatusKind, DLBodySplit, DLEntry, DLEntries, DLStatusCounts};
+  DLField, DLChipSplit, DLChip, DLConfKind, DLStatusKind, DLBodySplit, DLEntry, DLEntries, DLStatusCounts, DLRenderOpts};
 
 /* HTML this library built from document text, with every document character
    escaped. React renders a string of HTML only when it carries this brand,

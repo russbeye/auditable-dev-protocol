@@ -49,10 +49,10 @@ test("the built bundle boots app.html and renders the top bar, the rail, and the
     w.eval(fs.readFileSync(BUNDLE, "utf8"));
     const doc = dom.window.document;
     const deadline = Date.now() + 5000;
-    while (!errors.length && !doc.querySelector(".rentry") && Date.now() < deadline)
+    while (!errors.length && !doc.querySelector("#rail [data-key]") && Date.now() < deadline)
       await new Promise(r => setTimeout(r, 20));
     assert.deepEqual(errors, [], "the page reported an error");
-    assert.ok(doc.querySelector(".rentry"), "the rail rendered no entry within 5 s");
+    assert.ok(doc.querySelector("#rail [data-key]"), "the rail rendered no entry within 5 s");
     assert.equal(doc.querySelector(".adp-topbar__product")?.textContent, "ADP · Mission Control");
     assert.equal(doc.getElementById("liveTxt")?.textContent, "WATCHING");
     assert.deepEqual(feeds.map(f => f.url), ["events"]);

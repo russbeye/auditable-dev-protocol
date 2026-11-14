@@ -167,11 +167,20 @@ test("railGroups puts actionable attention first and sorts newest dir first insi
   // Unanchored-only debt sits in its lifecycle group, ribbon intact.
   const done = ticket({id: "F", dir: "20260818-F-u", state: "closed", watches: [watch()]});
   const g = D.railGroups([attn, open, rev, ship, done, attn2], TODAY);
-  assert.deepEqual(g.map(x => x[0]), ["needs attention", "in progress", "shipped", "closed"]);
+  // R14: one group per index state in lifecycle order, after needs attention.
+  assert.deepEqual(g.map(x => x[0]), ["needs attention", "open", "in review", "shipped", "closed"]);
   assert.deepEqual(g[0][1].map(t => t.id), ["B", "A"]);
-  assert.deepEqual(g[1][1].map(t => t.id), ["D", "C"]);
-  assert.deepEqual(g[2][1].map(t => t.id), ["E"]);
-  assert.deepEqual(g[3][1].map(t => t.id), ["F"]);
+  assert.deepEqual(g[1][1].map(t => t.id), ["C"]);
+  assert.deepEqual(g[2][1].map(t => t.id), ["D"]);
+  assert.deepEqual(g[3][1].map(t => t.id), ["E"]);
+  assert.deepEqual(g[4][1].map(t => t.id), ["F"]);
+});
+
+// R14: an empty group is left out, and closed shows even with no tickets.
+test("railGroups leaves out an empty group but always keeps closed", () => {
+  const ship = ticket({id: "E", dir: "20260817-E-v", state: "shipped"});
+  assert.deepEqual(D.railGroups([ship], TODAY).map(x => [x[0], x[1].length]), [["shipped", 1], ["closed", 0]]);
+  assert.deepEqual(D.railGroups([], TODAY).map(x => [x[0], x[1].length]), [["closed", 0]]);
 });
 
 // ---- section entries ----
