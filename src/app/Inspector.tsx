@@ -502,16 +502,22 @@ function useScrollSpy(on: boolean, ticket: string | undefined, selected: string 
   }, [on, ticket]);
 }
 
-// The step that stands for the reviews box. No section key can match it,
-// because every section key starts with "sec-", "missing:", or is "prompt".
-const REVIEWS_STEP = "reviews";
+/* After the sections, ← and → walk the ticket's review rounds one at a
+   time, oldest first, as the reviews box's own steps. A round's step is its
+   file under a prefix that no section key can carry, because every section
+   key starts with "sec-" or "missing:", or is "prompt". */
+const ROUND_STEP = "round:";
+function roundSteps(corpus: Corpus | null, dir: string): string[] {
+  const rounds = (corpus && corpus.reviews ? S.reviewRounds(corpus.reviews[dir]) : []).flatMap(g => g.rounds);
+  return rounds.slice().sort((a, b) => a.k - b.k).map(r => ROUND_STEP + r.file);
+}
 
 // A key typed into a field belongs to the field, so no shortcut takes it.
 const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName));
 
-/* ← and → step through the boxes of the phase strip: the prompt, each
-   written phase, the extra sections, then the reviews. A selection on no
-   box, such as a missing phase, steps from the strip's start. */
+/* ← and → step through the phase strip: the prompt, each written phase,
+   each extra section, then each review round. A selection on no step, such
+   as a missing phase, steps from the strip's start. */
 function useArrows(on: boolean, steps: readonly string[], current: string | null, onStep: (key: string) => void){
   useEffect(() => {
     if (!on || !steps.length) return;
@@ -539,8 +545,10 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
   const strip = stripModel(t && (t.sections.length || prompt) ? entriesOf(t, prompt) : [], sel.s);
   const box = [strip.prompt, ...strip.phases, ...(strip.extra ? [strip.extra] : [])].find(b => b.current);
   const reviews = t ? reviewsOf(corpus, revTok(corpus, tokenOf, t.dir), t.dir, act.onRound) : null;
-  useArrows(arrows && !!t, reviews ? [...strip.steps, REVIEWS_STEP] : strip.steps, box ? box.key : null,
-    key => key === REVIEWS_STEP ? reviews!.onOpen() : act.onStep(key));
+  // An extra section is its own step, so the walk starts from the selection
+  // itself, and from its phase box when it is a phase's later section.
+  useArrows(arrows && !!t, t ? [...strip.steps, ...roundSteps(corpus, t.dir)] : [], sel.s && strip.steps.includes(sel.s) ? sel.s : box ? box.key : null,
+    key => key.startsWith(ROUND_STEP) ? act.onRound(revTok(corpus, tokenOf, t!.dir), key.slice(ROUND_STEP.length)) : act.onStep(key));
   useLayoutEffect(() => {
     if (jump.seq <= jumped.current) return;
     jumped.current = jump.seq;
@@ -674,5 +682,5 @@ function useMemoPrompt(p: FetchedText | undefined): PromptView | null {
   return ref.current.out;
 }
 
-export {FILL, Html, Inspector, Notice, STEP_BTN, Tickhead, reviewsOf, PANE, P_GRID, P_K, P_V, SECTION_HEAD, typing, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
+export {FILL, Html, Inspector, Notice, ROUND_STEP, STEP_BTN, roundSteps, useArrows, Tickhead, reviewsOf, PANE, P_GRID, P_K, P_V, SECTION_HEAD, typing, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
 export type {InspectorActions, InspSel, PromptView};

@@ -12,7 +12,8 @@ type StripModel = {prompt: StripBox; phases: StripBox[]; extra: StripBox | null;
    log never wrote is a dashed box and not a link. Every section the phases do
    not hold, such as a ledger, a review response, or a repeated chain, counts
    as extra, and the extra box opens the first of them. The steps are the
-   keys that ← and → walk, in the strip's order. */
+   keys that ← and → walk, in the strip's order. They walk every extra
+   section one at a time, where the box opens only the first. */
 function stripModel(entries: readonly StripEntry[], selKey: string | null): StripModel {
   const sel = entries.find(en => en.key === selKey) || null;
   const hasPrompt = entries.some(en => en.prompt);
@@ -31,7 +32,7 @@ function stripModel(entries: readonly StripEntry[], selKey: string | null): Stri
   const written = phases.filter(b => !b.missing).length;
   const note = !written && hasPrompt ? "Prompt only · no phase written yet"
     : written === 9 ? "All nine phases written" : "Dashed boxes are missing phases";
-  const steps = [prompt, ...phases, ...(extra ? [extra] : [])].filter(b => !b.missing).map(b => b.key!);
+  const steps = [...[prompt, ...phases].filter(b => !b.missing).map(b => b.key!), ...extras.map(en => en.key)];
   return {prompt, phases, extra, note, steps};
 }
 

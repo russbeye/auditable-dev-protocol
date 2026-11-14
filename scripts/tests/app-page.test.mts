@@ -2954,6 +2954,10 @@ test("the strip model marks written, missing, current, and extra boxes, and says
   assert.equal(inc.note, "Dashed boxes are missing phases");
   assert.deepEqual(inc.phases.filter(b => b.missing).map(b => b.label), ["2", "3", "4", "6", "7", "8", "9"]);
   assert.equal(inc.extra!.current, true);
+  // The arrows walk every extra section in turn, where the box opens the first.
+  const two = stripModel([sec("p1", 1), sec("closure", null, false), sec("ledger", null, false)], "ledger");
+  assert.deepEqual(two.steps, ["p1", "closure", "ledger"]);
+  assert.equal(two.extra!.key, "closure");
   const only = stripModel([{key: "prompt", phase: null, canonical: false, missing: false, prompt: true}], "prompt");
   assert.equal(only.note, "Prompt only · no phase written yet");
   assert.equal(only.prompt.current, true);
@@ -3037,12 +3041,23 @@ test("one reviews box opens the latest round, and the reviews screen's head and 
   await click($('#phaseStrip [data-op="reviews"]'));
   await click($$("#scrReviews #phaseStrip a[data-step]")[0]);
   assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector", "a phase box does not lead back");
-  // The reviews box is the strip's last stop for → too, and ← steps back.
+  // After the sections, → walks the rounds one at a time, oldest first,
+  // across both PRs, and stops at the last. ← walks back the same way and
+  // leaves the oldest round for the strip's last section.
+  const last = [...($("#secSel") as HTMLSelectElement).options].filter(o => !/^(Phase \d|Prompt)/.test(o.textContent!)).at(-1)!.value;
   for (let i = 0; i < 12 && $(".screen.is-on").getAttribute("data-s") === "inspector"; i++) await key(document.body, "ArrowRight");
   assert.equal($(".screen.is-on").getAttribute("data-s"), "reviews", "→ never reaches the reviews");
-  assert.match($("#revHead").innerHTML, /PR #7 · Round 10/);
+  const heads: string[] = [];
+  for (let i = 0; i < 5; i++){
+    heads.push($("#revHead h2").textContent!);
+    await key(document.body, "ArrowRight");
+  }
+  assert.deepEqual(heads, ["PR #7 · Round 1", "PR #7 · Round 2", "PR #8 · Round 3", "PR #7 · Round 10", "PR #7 · Round 10"]);
+  for (let i = 0; i < 3; i++) await key(document.body, "ArrowLeft");
+  assert.equal($("#revHead h2").textContent, "PR #7 · Round 1");
   await key(document.body, "ArrowLeft");
   assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector");
+  assert.equal(secVal(), last, "← from the oldest round lands on the strip's last section");
   await key($("#secSel"), "ArrowRight");
   assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector", "an arrow in the select moves nothing");
 });

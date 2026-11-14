@@ -384,7 +384,6 @@ function App({fetchFn, openFeed}: AppProps){
   };
   const reviewsActions: ReviewsActions = {...panelActions,
     onRound: openRound,
-    onTicket: () => setScreen("inspector"),
     onView: v => { setView(v); setScreen("inspector"); },
     onSection: key => { setScreen("inspector"); toSection(key); },
     onResume: opener => openPacks(opener, "resume-ticket"),

@@ -1,15 +1,15 @@
 /* The reviews screen: a ticket's prreview rounds, read from the served
    corpus, one round at a time with its head, its body, and the decisions
    and watches it cites. */
-import {Fragment, useEffect, useState, type CSSProperties, type ReactNode} from "react";
+import {Fragment, useState, type CSSProperties, type ReactNode} from "react";
 import * as D from "../lib/adp-derive-lib.ts";
 import * as P from "../lib/adp-parser-lib.ts";
 import * as S from "../lib/adp-shell-lib.ts";
 import type {Ticket} from "../lib/adp-index-lib.ts";
 import type {DLEntry} from "../lib/adp-parser-lib.ts";
 import type {Corpus, ReviewGroup, ReviewLedger, ReviewVerdictFields, SortState, ViewMode} from "../lib/adp-shell-lib.ts";
-import {FILL, Html, Notice, PANE, STEP_BTN, P_GRID, P_K, P_V, Permalink, RoundLink, SECTION_HEAD, Tickhead, decisionRows, entriesOf, filterCounts,
-  promptOf, revTok, reviewsOf, typing, watchRows} from "./Inspector.tsx";
+import {FILL, Html, Notice, PANE, ROUND_STEP, STEP_BTN, roundSteps, useArrows, P_GRID, P_K, P_V, Permalink, RoundLink, SECTION_HEAD, Tickhead, decisionRows, entriesOf, filterCounts,
+  promptOf, revTok, reviewsOf, watchRows} from "./Inspector.tsx";
 import {PhaseStrip, stripModel} from "./PhaseStrip.tsx";
 import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
 
@@ -197,8 +197,6 @@ type ReviewsActions = PanelActions & {
   onPick(file: string): void;
   onPr(pr: string): void;
   onFilter(f: string): void;
-  // Goes back to the ticket view of the ticket on show.
-  onTicket(): void;
   // The ticket head and the phase strip return to the ticket: in a view, at
   // a section, or with the resume pack open.
   onView(v: ViewMode): void;
@@ -221,18 +219,14 @@ type ReviewsProps = {
 };
 
 function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, iwSort, arrows, act}: ReviewsProps){
-  // The reviews box is the last stop of the ticket's phase strip, so ←
-  // steps back from it into the ticket view.
-  useEffect(() => {
-    if (!arrows || !t) return;
-    const key = (e: KeyboardEvent) => {
-      if (e.key !== "ArrowLeft" || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || typing(e.target)) return;
-      e.preventDefault();
-      act.onTicket();
-    };
-    document.addEventListener("keydown", key);
-    return () => document.removeEventListener("keydown", key);
-  }, [arrows, t, act.onTicket]);
+  /* The rounds are the last steps of the ticket's phase strip. ← and →
+     walk them one at a time, oldest first, and ← from the oldest round
+     steps back into the ticket view at the strip's last section. */
+  const tickSteps = t ? stripModel(t.sections.length || corpus?.prompts[t.dir] ? entriesOf(t, promptOf(corpus?.prompts[t.dir])) : [], null).steps : [];
+  const shown = t ? resolveRound(groupsOf(corpus, t), round) : null;
+  const shownFile = t && shown ? groupsOf(corpus, t)[shown.gi].rounds[shown.ri].file : null;
+  useArrows(arrows && !!t, t ? [...tickSteps, ...roundSteps(corpus, t.dir)] : [], shownFile ? ROUND_STEP + shownFile : null,
+    key => key.startsWith(ROUND_STEP) ? act.onPick(key.slice(ROUND_STEP.length)) : act.onSection(key));
   /* A ticket's reviews lead with the ticket's own head and phase strip, as
      the ticket view does, with the Reviews box current. The strip's boxes and
      the head's view segments return to the ticket. With no ticket there is no
