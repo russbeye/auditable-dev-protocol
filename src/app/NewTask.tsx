@@ -210,8 +210,15 @@ function useNewTask(){
     timers.current.draft = setTimeout(() => { timers.current.draft = undefined; saveDraft(latest.current); }, NT_DRAFT_MS);
   };
   // The first edit after a start from a prompt takes the banner and its
-  // Start blank away, so a single click can never discard typed work.
-  const edit = (next: PromptDocument) => { setDoc(next); setOrigin(null); draftSoon(); };
+  // Start blank away, so a single click can never discard typed work. A
+  // clean import's quiet line leaves with the banner it sat under. A report
+  // that names skipped keys stays, because the reader may still need it.
+  const leaveStart = () => {
+    if (!origin) return;
+    setOrigin(null);
+    setReport(r => r && r.tone === "ok" ? null : r);
+  };
+  const edit = (next: PromptDocument) => { setDoc(next); leaveStart(); draftSoon(); };
 
   /* A form in progress is not replaced without a word. The question waits
      in the ops row with a replace and a keep button, and the old draft
@@ -307,7 +314,7 @@ function useNewTask(){
   };
   return {doc, slug, issues, yaml, dir, showYaml, report, pending, copyLabel, clearLabel, origin, checklist, spoken, focusTo, served,
     setField: (path: string, v: unknown) => edit(setPath(doc, path, v)),
-    setSlug: (v: string) => { setSlug(v); setSlugEdited(!!v); setOrigin(null); draftSoon(); },
+    setSlug: (v: string) => { setSlug(v); setSlugEdited(!!v); leaveStart(); draftSoon(); },
     startFrom, keep, clear, startBlank: blank, copy, download, toggleYaml, closeYaml: () => setShowYaml(false),
     toggleChecklist: () => setChecklist(v => !v), addRow, delRow, tickArtifact};
 }

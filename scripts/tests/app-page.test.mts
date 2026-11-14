@@ -3742,6 +3742,7 @@ async function bootPrompt(text = GOLDEN, opts: BootOpts = {}){
   return {...b, live};
 }
 type PromptBoot = Awaited<ReturnType<typeof bootPrompt>>;
+let startOps = "";
 async function startFrom(ctx: PromptBoot, text?: string, answer: "replace" | "keep" | null = "replace", keepIdentity = true){
   if (text != null){
     ctx.live.texts[PFILE] = text;
@@ -3756,6 +3757,9 @@ async function startFrom(ctx: PromptBoot, text?: string, answer: "replace" | "ke
      "a start from a prompt blanks the ID and the slug and takes today's
      date" pins. The fidelity tests check every other field against the
      source, so we type the source's ID and date back through the form. */
+  // The report as the start left it. Typing the ID back is an edit, and an
+  // edit takes a clean import's report away with the banner (DL-089).
+  startOps = isOn("scrNew") ? ntOps() : "";
   if (!keepIdentity || answer === "keep" || document.getElementById("ntReplace") || !isOn("scrNew")) return;
   let src: unknown = null;
   try { src = PL.parseYAML(ctx.live.texts[PFILE] ?? GOLDEN, []); } catch { src = null; }
@@ -3887,6 +3891,8 @@ test("start from this prompt loads the ticket's prompt.yaml into a new draft equ
   await ntSet("task.title", "my own title");
   assert.equal($$('[data-op="ntblank"]').length, 0);
   assert.ok(!/Started from/.test(ntOps()));
+  // The clean import's quiet line leaves with the banner, and never grows into a Notice.
+  assert.ok(!/all recognized fields/.test(ntOps()));
   fireEvent(window, new Event("pagehide"));
   assert.equal(draft().doc.task.title, "my own title");
   // Typing the source's ID and date back gives the source's bytes.
@@ -4453,7 +4459,7 @@ test("a number or a boolean in a field reads as its text, and a block scalar tak
     .replace("  background: |\n    Signup currently trusts the client to validate. Bad addresses reach the users table.", "  background: 5");
   const ctx = await bootPrompt(text);
   await startFrom(ctx);
-  assert.match(ntOps(), /— all recognized fields/);
+  assert.match(startOps, /— all recognized fields/);
   assert.equal(ntField("task.title").value, "true");
   assert.equal(ntField("context.background").value, "5");
   assert.match(ntSide().textContent!, /Valid · schema 1\.0/);
@@ -4634,7 +4640,7 @@ test("an artifacts key with no value imports as the untouched chip row on both b
   const text = 'task:\n  id: "A-1"\nprotocol:\n  apply: true\n  artifacts:\n';
   const ctx = await bootPrompt(text);
   await startFrom(ctx);
-  assert.match(ntOps(), /— all recognized fields/);
+  assert.match(startOps, /— all recognized fields/);
   assert.equal(ntField("task.id").value, "A-1");
   assert.deepEqual(ticked(), PL.DEFAULT_ARTIFACTS);
   await sameOnBoth(text);
