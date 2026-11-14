@@ -1348,8 +1348,8 @@ test("a decision row opens its card and the back link returns", async () => {
   // The link scrolls the reader back to the nav and the content it changed.
   assert.equal(scrolls.filter(e => e.classList.contains("secnav")).length, 1);
   assert.equal(last(hashes), "#t=AA1&s=sec-decision-log&item=DL-002");
-  await click($(".backlink"));
-  assert.ok(!insp().includes("backlink"));
+  await click($('#scrInspector [data-op="back"]'));
+  assert.ok(!$('#scrInspector [data-op="back"]'), "the back link stays after it went back");
   assert.equal(last(hashes), "#t=AA1&s=sec-decision-log");
 });
 
@@ -1428,10 +1428,10 @@ test("the permalink control copies the current address", async () => {
   const got = stubClipboard();
   await bootCorpus();
   await click(entry("AA1"));
-  await click($(".lnk"));
+  await click($("[data-permalink]"));
   assert.equal(got.length, 1);
   assert.match(got[0], /#t=AA1&s=sec-decision-log$/);
-  assert.equal($(".lnk").textContent, "copied");
+  assert.equal($("[data-permalink]").textContent, "copied");
 });
 
 test("a hash set before boot lands the named view with the item highlighted", async () => {
@@ -1473,7 +1473,7 @@ test("every section hash lands where it landed before the prompt entry", async (
   for (const [key, heading] of PINNED_LANDINGS){
     await bootCorpus({hash: "#t=AA1&s=" + encodeURIComponent(key)});
     assert.equal(secVal(), key);
-    assert.match(insp(), new RegExp("<h4>" + heading + "[ <]"));
+    assert.match(insp(), new RegExp('<h2 class="adp-section">' + heading + "<"));
     assert.doesNotMatch(insp(), /was not found in this log/);
     cleanup();
     vi.restoreAllMocks();
@@ -2388,7 +2388,7 @@ test("a ticket with a prompt lists it ahead of phase 1 and steps to it", async (
   await click(op("data-secstep", "-1"));
   assert.equal(secVal(), "prompt");
   const scr = insp();
-  assert.match(scr, /<h4>prompt\.yaml /);
+  assert.match(scr, /<h2 class="adp-section">prompt\.yaml</);
   assert.match(scr, /Make the <strong>alpha<\/strong> path work/);
   assert.equal($("#phaseStrip [aria-current=step]").textContent, "P");
   assert.match(scr, /data-secstep="-1" disabled/);
@@ -2403,7 +2403,7 @@ test("the prompt view has a deep link", async () => {
   vi.restoreAllMocks();
   await bootCorpus({hash: "#t=AA1&s=prompt"});
   assert.equal(secVal(), "prompt");
-  assert.match(insp(), /<h4>prompt\.yaml /);
+  assert.match(insp(), /<h2 class="adp-section">prompt\.yaml</);
   assert.doesNotMatch(insp(), /was not found in this log/);
 });
 
@@ -2787,7 +2787,7 @@ test("the reviews filter is its own, and a cited row opens its entry in the insp
   assert.equal(isOn("scrInspector"), true);
   assert.match(insp(), /\[DL-002\]/);
   // The inspector's own filter never saw the reviews click.
-  await click(within("scrInspector", ".backlink")[0]);
+  await click(within("scrInspector", '[data-op="back"]')[0]);
   await pickSection("sec-decision-log");
   const ipill = (f: string) => within("scrInspector", ".fpill").find(p => p.getAttribute("data-dlf") === f)!;
   assert.equal(ipill("all").classList.contains("is-on"), true);
@@ -4362,7 +4362,7 @@ test("no screen offers a file input, a paste field, or a drop target", async () 
    style at all, because the handlers and the tests select by them. The
    shell's grid sits in its own style attribute. */
 const THEME_CLASSES = new Set(["md", "sr-live"]);
-const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow"]);
+const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow", "fsec", "fsum"]);
 test("the app's screens use only adp-bundle.css and adp-shell.css classes outside rendered documents", async () => {
   const shell = new Set<string>();
   for (const sheet of ["adp-bundle.css", "adp-shell.css"]){

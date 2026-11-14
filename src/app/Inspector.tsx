@@ -238,17 +238,33 @@ function Permalink(){
     try { navigator.clipboard.writeText(location.href); } catch {}
     setCopied(true);
   };
-  return <button type="button" className="lnk" data-permalink="1" title="copy link to this view" onClick={copy}>{copied ? "copied" : "⧉ link"}</button>;
+  return <button type="button" className="adp-btn adp-btn--text" data-permalink="1" title="copy link to this view" onClick={copy}>{copied ? "copied" : "⧉ link"}</button>;
 }
 
 type DocPaneProps = {back?: string; onBack?(): void; heading: string; badge?: string | null; notice?: string | null;
   action?: ReactNode; children?: ReactNode};
 
+/* A message in the ticket view: a section never written, a link that found
+   nothing, or no ticket yet. It takes the design system's Notice. */
+function Notice({text}: {text: string}){
+  return <div className="adp-notice" style={{marginBottom: 16}}><span className="adp-notice__text">{text}</span></div>;
+}
+
+// The section pane sits on the 4px grid. The old pane class keeps its panel
+// ground and border, and we set its padding and spacing here.
+const PANE: CSSProperties = {padding: "16px 24px", margin: "0 0 16px"};
+const FSEC: CSSProperties = {boxShadow: "inset 0 1px 0 var(--line)"};
+const FSUM: CSSProperties = {padding: "12px 0", cursor: "pointer", font: "600 16px/24px var(--font-sans)", color: "var(--ink)"};
+
 function DocPane({back, onBack, heading, badge, notice, action, children}: DocPaneProps){
-  return <div className="doc">
-    {back ? <div className="backrow"><a className="backlink" onClick={onBack}>← back to {back}</a></div> : null}
-    <h4>{heading}{badge ? <>{" "}<span className="ncbadge">{badge}</span></> : null}{" "}<Permalink/></h4>
-    {notice ? <p className="dnotice">{notice}</p> : null}
+  return <div className="doc" style={PANE}>
+    {back ? <button type="button" className="adp-btn adp-btn--text" data-op="back" style={{marginBottom: 8}} onClick={onBack}>← back to {back}</button> : null}
+    <div style={{display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16}}>
+      <h2 className="adp-section">{heading}</h2>
+      {badge ? <span className="adp-chip adp-chip--s">{badge}</span> : null}
+      <Permalink/>
+    </div>
+    {notice ? <Notice text={notice}/> : null}
     {action}
     {children}
   </div>;
@@ -302,16 +318,17 @@ function reviewsOf(corpus: Corpus | null, tok: string, dir: string, onRound: (to
 function SecNav({entries, states, selKey, onPick, onStep}: {entries: Entry[]; states: Record<string, SectionState>;
   selKey: string | null; onPick(key: string): void; onStep(d: number): void}){
   const i = entries.findIndex(en => en.key === selKey);
-  return <div className="secnav" style={{marginTop: 12}}>
-    <button type="button" className="op" data-secstep="-1" disabled={i <= 0} onClick={() => onStep(-1)}>‹ prev</button>
-    <select id="secSel" className="secsel" aria-label="section" value={i >= 0 ? entries[i].key : ""} onChange={e => onPick(e.target.value)}>
+  return <div className="secnav" style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "12px 0 16px"}}>
+    <button type="button" className="adp-btn" data-secstep="-1" disabled={i <= 0} onClick={() => onStep(-1)}>‹ prev</button>
+    <select id="secSel" className="adp-select" aria-label="section" style={{flex: "0 1 440px", minWidth: 220}}
+      value={i >= 0 ? entries[i].key : ""} onChange={e => onPick(e.target.value)}>
       {entries.map(en => {
         const st = states[en.key];
         const base = en.phase != null ? `phase ${en.phase} · ${en.title}` : en.title;
         return <option key={en.key} value={en.key}>{st.label === "complete" ? base : `${base} — ${st.label}`}</option>;
       })}
     </select>
-    <button type="button" className="op" data-secstep="1" disabled={i < 0 || i >= entries.length - 1} onClick={() => onStep(1)}>next ›</button>
+    <button type="button" className="adp-btn" data-secstep="1" disabled={i < 0 || i >= entries.length - 1} onClick={() => onStep(1)}>next ›</button>
   </div>;
 }
 
@@ -502,15 +519,15 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
   // head), the section nav, and the body (pane and panels).
   const regions = (top: ReactNode, nav: ReactNode, body: ReactNode) =>
     <><div id="inspTop">{top}</div><div id="inspNav">{nav}</div><div id="inspBody">{body}</div></>;
-  if (!t) return regions(null, null, <div className="ipanel"><p className="dnotice">{notice || (corpus
+  if (!t) return regions(null, null, <div className="ipanel"><Notice text={notice || (corpus
     ? "select a ticket from the rail"
-    : "no corpus behind this page — the inspector reads the served corpus.")}</p></div>);
+    : "no corpus behind this page — the inspector reads the served corpus.")}/></div>);
 
   const top = <Tickhead t={t} view={view} act={act}/>;
   if (!t.sections.length && !prompt)
     return regions(top,
       reviews ? <PhaseStrip model={stripModel([], null)} reviews={reviews} onPick={act.onStep}/> : null,
-      <div className="ipanel"><p className="dnotice">this ticket has no audit log yet — only its prompt or other files sit in the directory.</p></div>);
+      <div className="ipanel"><Notice text="this ticket has no audit log yet — only its prompt or other files sit in the directory."/></div>);
 
   const entries = entriesOf(t, prompt);
   const states = statesOf(t, entries, prompt, today);
@@ -523,7 +540,7 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     return <DocPane heading={en ? (en.phase != null ? "phase " + en.phase + " · " + en.title : en.title) : "—"}
       badge={en && en.missing ? "missing" : en && !en.canonical ? "non-canonical" : null}
       notice={missNotice || (en && en.missing ? "this section was never written. A missing canonical section is an attention reason on the rail." : null)}
-      action={round ? <p className="revopen"><RoundLink tok={revTok(corpus, tokenOf, round.dir)} file={round.file} label="open round in reviews ›" onRound={act.onRound}/></p> : null}>
+      action={round ? <p style={{margin: "0 0 16px"}}><RoundLink tok={revTok(corpus, tokenOf, round.dir)} file={round.file} label="open round in reviews ›" onRound={act.onRound}/></p> : null}>
       <SectionBody sec={sec} body={body}/>
     </DocPane>;
   };
@@ -531,9 +548,9 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
   let pane: ReactNode, panels: ReactNode = null;
   if (view === "full"){
     const list = entries.filter(en => !en.missing);
-    pane = <><div className="mops">
-      <button type="button" className="op" data-exp="open" onClick={() => act.onExpand(true, list.map(en => en.key))}>expand all</button>
-      <button type="button" className="op" data-exp="close" onClick={() => act.onExpand(false, list.map(en => en.key))}>collapse all</button></div>
+    pane = <><div style={{display: "flex", alignItems: "center", gap: 16, margin: "0 0 16px"}}>
+      <button type="button" className="adp-btn adp-btn--text" data-exp="open" onClick={() => act.onExpand(true, list.map(en => en.key))}>expand all</button>
+      <button type="button" className="adp-btn adp-btn--text" data-exp="close" onClick={() => act.onExpand(false, list.map(en => en.key))}>collapse all</button></div>
       {list.map(en => {
         const sec = en.prompt ? null : pd.byKey[en.key] || null;
         const heading = en.prompt ? "prompt.yaml" : en.phase != null ? "phase " + en.phase + " · " + en.title : en.title;
@@ -541,11 +558,12 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
         const pn = en.prompt ? promptNotice(prompt!) : null;
         // We toggle the details ourselves, so the collapse state lives in
         // the app and survives every render.
-        return <details key={en.key} className="fsec" data-key={en.key} open={!fullClosed.has(en.key)}>
-          <summary className="fsum" onClick={e => { e.preventDefault(); act.onToggle(en.key, fullClosed.has(en.key)); }}>
-            {heading}{badge ? <>{" "}<span className="ncbadge">{badge}</span></> : null}</summary>
-          <div className="fbody">{en.prompt
-            ? <>{pn ? <p className="dnotice">{pn}</p> : null}<PromptBody pr={prompt!}/></>
+        // Each section is a row under a rule, as the TicketFullLog board draws it.
+        return <details key={en.key} className="fsec" data-key={en.key} open={!fullClosed.has(en.key)} style={FSEC}>
+          <summary className="fsum" style={FSUM} onClick={e => { e.preventDefault(); act.onToggle(en.key, fullClosed.has(en.key)); }}>
+            {heading}{badge ? <>{" "}<span className="adp-chip adp-chip--s" style={{marginLeft: 8}}>{badge}</span></> : null}</summary>
+          <div style={{padding: "0 0 24px 24px"}}>{en.prompt
+            ? <>{pn ? <Notice text={pn}/> : null}<PromptBody pr={prompt!}/></>
             : <SectionBody sec={sec} body={sec ? sec.body.join("\n") : ""}/>}</div>
         </details>;
       })}</>;
