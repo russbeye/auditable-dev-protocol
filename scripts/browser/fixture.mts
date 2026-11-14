@@ -61,10 +61,10 @@ export {expect};
 
 /* The control that opens each screen. The top bar's views open Tickets,
    Watches, and Ledger, calibration heads the Ledger, and reviews open from
-   the latest round box on the phase strip. The folded bar keeps its views on a second row, so every
+   the phase strip's reviews box. The folded bar keeps its views on a second row, so every
    view stays one click away at any width. */
 const OPENER: Record<string, string> = {"inspector": '.adp-nav a[data-s="inspector"]', "watchboard": '.adp-nav a[data-s="watchboard"]',
-  "ledgers": '.adp-nav a[data-s="ledgers"]', "calibration": '.adp-nav a[data-s="ledgers"]', "reviews": "#phaseStrip [data-round] >> nth=-1", "new task": "#newTaskBtn"};
+  "ledgers": '.adp-nav a[data-s="ledgers"]', "calibration": '.adp-nav a[data-s="ledgers"]', "reviews": '#phaseStrip [data-op="reviews"]', "new task": "#newTaskBtn"};
 export async function go(page: Page, screen: string){
   await page.click(OPENER[screen]);
   await expect(page.locator(".screen.is-on")).toHaveAttribute("data-s", screen === "calibration" ? "ledgers" : screen);
@@ -109,7 +109,7 @@ export async function everyScreen(page: Page, url: string, look: (where: string)
     await look(k + " section");
     await page.click('[data-view="full"]');
     await look(k + " full log");
-    if (await page.locator("#phaseStrip [data-round]").count()){ await go(page, "reviews"); await look(k + " reviews"); reviewed++; }
+    if (await page.locator('#phaseStrip [data-op="reviews"]').count()){ await go(page, "reviews"); await look(k + " reviews"); reviewed++; }
   }
   await go(page, "new task");
   await look("new task");

@@ -68,8 +68,12 @@ test("Tab reaches every control in document order and shows a ring on each", asy
       const at = await page.evaluate(() => {
         const a = document.activeElement as HTMLElement | null;
         if (!a || a === document.body) return {pos: null, scroller: false, html: "body"};
-        return {pos: a.getAttribute("data-tabpos"), scroller: a.scrollHeight > a.clientHeight || a.scrollWidth > a.clientWidth,
-          html: a.outerHTML.slice(0, 120)};
+        // Firefox stops on a box that overflows by a fraction of a pixel,
+        // which the rounded scroll sizes hide, so we also read its own
+        // scroll limits where the engine has them.
+        const max = a as HTMLElement & {scrollTopMax?: number; scrollLeftMax?: number};
+        return {pos: a.getAttribute("data-tabpos"), scroller: a.scrollHeight > a.clientHeight || a.scrollWidth > a.clientWidth
+          || (max.scrollTopMax || 0) > 0 || (max.scrollLeftMax || 0) > 0, html: a.outerHTML.slice(0, 120)};
       });
       if (at.pos == null && !at.scroller){ faults.push(`${where}: Tab landed on ${at.html}`); break; }
       if (at.pos != null) seen.push(Number(at.pos));

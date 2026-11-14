@@ -116,10 +116,9 @@ const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 const $$ = (sel: string) => [...document.querySelectorAll(sel)] as HTMLElement[];
 /* The control that opens a screen. The top bar's views open Tickets,
    Watches, and Ledger. Calibration heads the Ledger, the resume pack opens
-   as the Packs drawer, and reviews open from the latest round box on the
-   phase strip. */
+   as the Packs drawer, and reviews open from the phase strip's reviews box. */
 const tabFor = (name: string) => name === "new task" ? $("#newTaskBtn") : name === "resume pack" ? $("#packsBtn")
-  : name === "reviews" ? $$("#phaseStrip [data-round]").at(-1)!
+  : name === "reviews" ? $('#phaseStrip [data-op="reviews"]')
   : $$(".adp-nav a").find(t => t.getAttribute("data-s") === (name === "calibration" ? "ledgers" : name))!;
 const entry = (key: string) => $$("#rail [data-key]").find(r => r.getAttribute("data-key") === key)!;
 const click = async (el: Element) => { fireEvent.click(el); await settle(1); };
@@ -350,12 +349,16 @@ test("the app's reviews and Ledger screens show what the vanilla reviews, calibr
   await click(entry(rentries().at(-1)!));
   // The last ticket has no rounds, so no control opens its reviews screen.
   // Its old link still does.
+  assert.ok(!$('#phaseStrip [data-op="reviews"]'), "a ticket with no rounds offers a reviews box");
   const last = rentries().at(-1)!;
   cleanup();
   vi.restoreAllMocks();
   await boot({fetch: diskFetch(), now: BASELINE_NOW, hash: "#v=reviews&t=" + encodeURIComponent(last)});
-  assert.equal($("#reviewsBtn"), null);
-  assert.deepEqual(snapshot(document), restyled(BASELINE["reviews"]), "reviews");
+  // The reviews screen leads with the way back to its ticket, which the
+  // vanilla screen lacked, so the comparison takes that one entry out.
+  const got = snapshot(document), back = got.main!.text[0];
+  assert.match(back, /^‹ Back to \S+$/);
+  assert.deepEqual({...got, main: {...got.main!, text: got.main!.text.slice(1)}}, restyled(BASELINE["reviews"]), "reviews");
   await tabTo("ledgers");
   const cal = BASELINE["calibration"], led = restyled(BASELINE["ledgers"]);
   restyled(cal);
@@ -2813,7 +2816,7 @@ test("the strip model marks written, missing, current, and extra boxes, and says
   assert.deepEqual(m.phases.map(b => b.key), all.map(e => e.key));
   // A second canonical section of a phase lights that phase's box.
   assert.deepEqual(m.phases.filter(b => b.current).map(b => b.label), ["7"]);
-  assert.deepEqual([m.extra!.label, m.extra!.key, m.extra!.current], ["+1 extra", "ledger", false]);
+  assert.deepEqual([m.extra!.label, m.extra!.title, m.extra!.key, m.extra!.current], ["+1", "1 extra section", "ledger", false]);
   assert.equal(m.prompt.missing, true);
   assert.deepEqual(m.steps, [...all.map(e => e.key), "ledger"]);
   const inc = stripModel([sec("p1", 1), sec("missing:Knowledge Gap Document", 2, true, true), sec("p5", 5), sec("closure", null, false)], "closure");
@@ -2828,13 +2831,13 @@ test("the strip model marks written, missing, current, and extra boxes, and says
 
 test("the strip opens a phase or the extra sections, and the select still lists every section", async () => {
   await bootCorpus({hash: "#t=AA1&s=sec-decision-log"});
-  assert.deepEqual(boxes(), ["P", "1", "2-", "3-", "4-", "5*", "6-", "7", "8-", "9", "+1 extra"]);
+  assert.deepEqual(boxes(), ["P", "1", "2-", "3-", "4-", "5*", "6-", "7", "8-", "9", "+1"]);
   assert.equal($("#phaseStrip .adp-phases__note").textContent, "Dashed boxes are missing phases");
   await click($('#phaseStrip [data-step="sec-pr-summary"]'));
   assert.equal(secVal(), "sec-pr-summary");
-  await click($$("#phaseStrip a").find(b => b.textContent === "+1 extra")!);
+  await click($$("#phaseStrip a").find(b => b.textContent === "+1")!);
   assert.equal(secVal(), "sec-aside-notes");
-  assert.deepEqual(boxes().filter(b => b.endsWith("*")), ["+1 extra*"]);
+  assert.deepEqual(boxes().filter(b => b.endsWith("*")), ["+1*"]);
   assert.ok(options().includes("sec-aside-notes"), "the select keeps the extra section");
   assert.ok(!$("#reviewsBtn"), "the ticket head offers no reviews entry");
 });
@@ -2859,12 +2862,21 @@ test("← and → step through the strip, but not from a field or under the Pack
   assert.equal(secVal(), "prompt", "an arrow under the drawer moves nothing");
 });
 
-test("a review box opens its round, and the last box is the latest round", async () => {
+test("one reviews box opens the latest round, and the reviews screen leads back to the ticket", async () => {
   await bootReviews(reviewCorpus(), "#t=RV1&s=sec-decision-log");
-  assert.deepEqual($$("#phaseStrip [data-round]").map(b => b.textContent), ["PR #7 · 1", "PR #7 · 2", "PR #8 · 3", "PR #7 · 10"]);
-  await click($$("#phaseStrip [data-round]")[1]);
+  const was = secVal();
+  const box = $('#phaseStrip [data-op="reviews"]');
+  assert.equal(box.textContent, "Reviews · 4");
+  assert.equal(box.getAttribute("title"), "4 review rounds");
+  assert.equal(box.style.whiteSpace, "nowrap");
+  await click(box);
   assert.equal($(".screen.is-on").getAttribute("data-s"), "reviews");
-  assert.match($("#revHead").innerHTML, /PR #7 · round 2/);
+  assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
+  const back = $('#scrReviews [data-op="toticket"]');
+  assert.equal(back.textContent, "‹ Back to RV1");
+  await click(back);
+  assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector");
+  assert.equal(secVal(), was, "the ticket view keeps the section the reader left");
 });
 
 // ---- the ticket head ----
@@ -4157,7 +4169,7 @@ async function everyScreen(look: () => void){
     look();
     await click($('[data-view="full"]'));
     look();
-    if ($("#phaseStrip [data-round]")){ await tabTo("reviews"); look(); reviewed++; }
+    if ($('#phaseStrip [data-op="reviews"]')){ await tabTo("reviews"); look(); reviewed++; }
   }
   await click($("#newTaskBtn"));
   look();

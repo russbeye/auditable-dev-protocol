@@ -1,10 +1,9 @@
 /* The phase strip under a ticket's head, drawn with the design system's
-   PhaseStrip classes: a P box for the prompt, the nine phase boxes, then a
-   box per review round and one box for the extra sections. */
+   PhaseStrip classes: a P box for the prompt, the nine phase boxes, then one
+   box for the extra sections and one that opens the ticket's reviews. */
 // The fields of a section entry the strip reads. The inspector's entries
 // carry more, and they fit this shape.
 type StripEntry = {key: string; phase: number | null; canonical: boolean; missing: boolean; prompt?: boolean};
-type StripRound = {tok: string; file: string; label: string; title: string};
 type StripBox = {label: string; key: string | null; title: string; missing: boolean; current: boolean};
 type StripModel = {prompt: StripBox; phases: StripBox[]; extra: StripBox | null; note: string; steps: string[]};
 
@@ -26,7 +25,7 @@ function stripModel(entries: readonly StripEntry[], selKey: string | null): Stri
       missing: !first, current: !!sel && !sel.missing && sel.canonical && sel.phase === n});
   }
   const extras = entries.filter(en => !en.prompt && !en.missing && !en.canonical);
-  const extra: StripBox | null = extras.length ? {label: "+" + extras.length + " extra", key: extras[0].key,
+  const extra: StripBox | null = extras.length ? {label: "+" + extras.length, key: extras[0].key,
     title: extras.length === 1 ? "1 extra section" : extras.length + " extra sections", missing: false,
     current: !!sel && extras.includes(sel)} : null;
   const written = phases.filter(b => !b.missing).length;
@@ -36,25 +35,32 @@ function stripModel(entries: readonly StripEntry[], selKey: string | null): Stri
   return {prompt, phases, extra, note, steps};
 }
 
-type PhaseStripProps = {model: StripModel; rounds: StripRound[]; onPick(key: string): void; onRound(tok: string, file: string): void};
+// The reviews box carries the ticket's round count and opens its latest round.
+type StripReviews = {count: number; onOpen(): void};
+type PhaseStripProps = {model: StripModel; reviews: StripReviews | null; onPick(key: string): void};
+
+// A wide box keeps its label on one line and never shrinks below it. The
+// boxes wrap as a row instead, so a narrow stage never splits a label.
+const WIDE = {whiteSpace: "nowrap", flexShrink: 0} as const;
 
 function Box({b, onPick, wide}: {b: StripBox; onPick(key: string): void; wide?: boolean}){
   const cls = "adp-phase" + (wide ? " adp-phase--wide" : "") + (b.missing ? " adp-phase--missing" : "");
   return b.missing || !b.key ? <span className={cls} title={b.title}>{b.label}</span>
-    : <a className={cls} href="#" data-step={b.key} title={b.title} aria-current={b.current ? "step" : undefined}
-      onClick={e => { e.preventDefault(); onPick(b.key!); }}>{b.label}</a>;
+    : <a className={cls} href="#" data-step={b.key} title={b.title} aria-label={wide ? b.title : undefined} style={wide ? WIDE : undefined}
+      aria-current={b.current ? "step" : undefined} onClick={e => { e.preventDefault(); onPick(b.key!); }}>{b.label}</a>;
 }
 
-function PhaseStrip({model, rounds, onPick, onRound}: PhaseStripProps){
+function PhaseStrip({model, reviews, onPick}: PhaseStripProps){
   return <nav className="adp-phases" id="phaseStrip" aria-label="Phases">
-    <div className="adp-phases__boxes">
+    <div className="adp-phases__boxes" style={{flexWrap: "wrap", rowGap: 4}}>
       <Box b={model.prompt} onPick={onPick}/>
       <span className="adp-phases__sep"></span>
       {model.phases.map(b => <Box key={b.label} b={b} onPick={onPick}/>)}
-      {rounds.length || model.extra ? <span className="adp-phases__sep"></span> : null}
-      {rounds.map(r => <a key={r.file} className="adp-phase adp-phase--wide" href="#" data-round={r.file} title={r.title}
-        onClick={e => { e.preventDefault(); onRound(r.tok, r.file); }}>{r.label}</a>)}
+      {reviews || model.extra ? <span className="adp-phases__sep"></span> : null}
       {model.extra ? <Box b={model.extra} onPick={onPick} wide/> : null}
+      {reviews ? <a className="adp-phase adp-phase--wide" href="#" data-op="reviews" style={WIDE}
+        title={reviews.count === 1 ? "1 review round" : reviews.count + " review rounds"}
+        onClick={e => { e.preventDefault(); reviews.onOpen(); }}>Reviews · {reviews.count}</a> : null}
     </div>
     <span className="adp-phases__note">{model.note}</span>
     <span className="adp-phases__note" style={{color: "var(--faint)"}}>← → to move</span>
@@ -62,4 +68,4 @@ function PhaseStrip({model, rounds, onPick, onRound}: PhaseStripProps){
 }
 
 export {PhaseStrip, stripModel};
-export type {StripEntry, StripModel, StripRound};
+export type {StripEntry, StripModel, StripReviews};

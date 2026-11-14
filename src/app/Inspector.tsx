@@ -13,7 +13,7 @@ import type {DLEntry, EscapedHtml, Section} from "../lib/adp-parser-lib.ts";
 import type {YamlMap, YamlValue} from "../lib/adp-prompt-lib.ts";
 import type {Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPanelRow} from "../lib/adp-shell-lib.ts";
 import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
-import {PhaseStrip, stripModel, type StripRound} from "./PhaseStrip.tsx";
+import {PhaseStrip, stripModel, type StripReviews} from "./PhaseStrip.tsx";
 
 type HtmlProps = {html: EscapedHtml; as?: "div" | "span" | "td"; className?: string};
 
@@ -264,20 +264,20 @@ function Tickhead({t, view, act}: {t: Ticket; view: ViewMode | null; act: Inspec
   </div>;
 }
 
-/* One strip box per review round, in round order. prreview numbers its
-   rounds across every PR of a ticket, so the last box is the latest round.
-   Under several PRs each box names its PR too. */
-function roundsOf(corpus: Corpus | null, tok: string, dir: string): StripRound[] {
-  const groups = corpus && corpus.reviews ? S.reviewRounds(corpus.reviews[dir]) : [];
-  return groups.flatMap(g => g.rounds.map(r => ({k: r.k, tok, file: r.file, title: g.label + " · round " + r.k,
-    label: groups.length > 1 ? g.label + " · " + r.k : "Review " + r.k})))
-    .sort((a, b) => a.k - b.k).map(({k: _k, ...r}) => r);
+/* The strip's reviews box opens the latest round. prreview numbers its
+   rounds across every PR of a ticket, so the latest round is the highest
+   number, which is the round the reviews screen calls latest too. */
+function reviewsOf(corpus: Corpus | null, tok: string, dir: string, onRound: (tok: string, file: string) => void): StripReviews | null {
+  const rounds = (corpus && corpus.reviews ? S.reviewRounds(corpus.reviews[dir]) : []).flatMap(g => g.rounds);
+  if (!rounds.length) return null;
+  const latest = rounds.reduce((a, r) => r.k > a.k ? r : a);
+  return {count: rounds.length, onOpen: () => onRound(tok, latest.file)};
 }
 
 function SecNav({entries, states, selKey, onPick, onStep}: {entries: Entry[]; states: Record<string, SectionState>;
   selKey: string | null; onPick(key: string): void; onStep(d: number): void}){
   const i = entries.findIndex(en => en.key === selKey);
-  return <div className="secnav">
+  return <div className="secnav" style={{marginTop: 12}}>
     <button type="button" className="op" data-secstep="-1" disabled={i <= 0} onClick={() => onStep(-1)}>‹ prev</button>
     <select id="secSel" className="secsel" aria-label="section" value={i >= 0 ? entries[i].key : ""} onChange={e => onPick(e.target.value)}>
       {entries.map(en => {
@@ -476,10 +476,10 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     : "no corpus behind this page — the inspector reads the served corpus.")}</p></div>);
 
   const top = <Tickhead t={t} view={view} act={act}/>;
-  const rounds = roundsOf(corpus, revTok(corpus, tokenOf, t.dir), t.dir);
+  const reviews = reviewsOf(corpus, revTok(corpus, tokenOf, t.dir), t.dir, act.onRound);
   if (!t.sections.length && !prompt)
     return regions(top,
-      rounds.length ? <PhaseStrip model={stripModel([], null)} rounds={rounds} onPick={act.onStep} onRound={act.onRound}/> : null,
+      reviews ? <PhaseStrip model={stripModel([], null)} reviews={reviews} onPick={act.onStep}/> : null,
       <div className="ipanel"><p className="dnotice">this ticket has no audit log yet — only its prompt or other files sit in the directory.</p></div>);
 
   const entries = entriesOf(t, prompt);
@@ -551,7 +551,7 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
   }
 
   return regions(top,
-    <><PhaseStrip model={strip} rounds={rounds} onPick={act.onStep} onRound={act.onRound}/>
+    <><PhaseStrip model={strip} reviews={reviews} onPick={act.onStep}/>
       <SecNav entries={entries} states={states} selKey={sel.s} onPick={act.onSection} onStep={d => {
         const i = entries.findIndex(en => en.key === sel.s) + d;
         if (i >= 0 && i < entries.length) act.onStep(entries[i].key);

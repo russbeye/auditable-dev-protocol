@@ -174,6 +174,8 @@ type ReviewsActions = PanelActions & {
   onPick(file: string): void;
   onPr(pr: string): void;
   onFilter(f: string): void;
+  // Goes back to the ticket view of the ticket on show.
+  onTicket(): void;
 };
 type ReviewsProps = {
   corpus: Corpus | null;
@@ -189,7 +191,12 @@ type ReviewsProps = {
 };
 
 function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, iwSort, act}: ReviewsProps){
-  const top = (sub: string | null) => <h2>reviews{sub ? <>{" "}<span className="isub">{sub}</span></> : null}</h2>;
+  // A ticket's reviews open from its phase strip, so the screen leads with
+  // the way back to that ticket.
+  const top = (sub: string | null) => <>
+    {t ? <button type="button" className="adp-btn adp-btn--text" data-op="toticket" style={{marginBottom: 8}}
+      onClick={act.onTicket}>‹ Back to {t.id || t.dir}</button> : null}
+    <h2>reviews{sub ? <>{" "}<span className="isub">{sub}</span></> : null}</h2></>;
   // The four regions keep the vanilla page's ids.
   const regions = (topEl: ReactNode, nav: ReactNode, head: ReactNode, body: ReactNode) =>
     <><div id="revTop">{topEl}</div><div id="revNav">{nav}</div><div id="revHead">{head}</div><div id="revBody">{body}</div></>;

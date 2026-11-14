@@ -377,6 +377,7 @@ function App({fetchFn, openFeed}: AppProps){
   };
   const reviewsActions: ReviewsActions = {...panelActions,
     onRound: openRound,
+    onTicket: () => setScreen("inspector"),
     onPick: file => { setRevSel(file); setRevNotice(null); },
     // A PR switch lands on that PR's latest round.
     onPr: pr => {
