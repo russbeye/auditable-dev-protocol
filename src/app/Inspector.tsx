@@ -141,47 +141,61 @@ function resolveSection(t: Ticket, prompt: PromptView | null, s: string | null, 
 
 // ---- the prompt view ----
 
-/* The prompt view gives each top-level key a card, shaped like a Decision
-   Log card. A multi-line string is prose, so it goes through the markdown
-   renderer the logs use. A one-line string shows escaped and exact. A link
-   item becomes an anchor only for an absolute http, https, or mailto URL,
-   because a relative one would resolve against this page. */
+/* The prompt view reads as a document, as the TicketPrompt board draws it.
+   Each top-level key is an eyebrow heading, and a one-line value sits beside
+   it. A map is a list of label and value rows under rules. A multi-line
+   string is prose, so it goes through the markdown renderer the logs use,
+   with the design system's blocks and chips. A one-line string shows escaped
+   and exact. A link item becomes an anchor only for an absolute http, https,
+   or mailto URL, because a relative one would resolve against this page.
+   Every value shows, so the board's "Show more" folds are left out. The
+   parts carry data-p hooks, not the old pcard classes, which the old sheet
+   still styles for the vanilla builder. */
+const P_NONE: CSSProperties = {color: "var(--faint)", fontStyle: "italic"};
+const P_GRID: CSSProperties = {display: "grid", gridTemplateColumns: "minmax(96px, 160px) minmax(0, 1fr)", columnGap: 16,
+  boxShadow: "inset 0 1px 0 var(--line)"};
+const P_CELL: CSSProperties = {padding: "12px 0", boxShadow: "inset 0 -1px 0 var(--line)", minWidth: 0, overflowWrap: "anywhere"};
+const P_K: CSSProperties = {...P_CELL, font: "400 13px/24px var(--font-sans)", color: "var(--dim)"};
+const P_V: CSSProperties = {...P_CELL, font: "400 15px/24px var(--font-sans)", color: "var(--ink)"};
+const P_TITLE: CSSProperties = {font: "500 11px/24px var(--font-mono)", letterSpacing: ".14em", textTransform: "uppercase", color: "var(--blue-bright)"};
+const P_VAL: CSSProperties = {font: "400 16px/28px var(--font-sans)", color: "var(--ink)", minWidth: 0, overflowWrap: "anywhere"};
+const P_KEY: CSSProperties = {marginLeft: "auto", font: "400 12px/24px var(--font-mono)", color: "var(--faint)"};
 function Scalar({v, at}: {v: unknown; at: string}){
-  if (v == null || v === "") return <span className="pcard-none">empty</span>;
+  if (v == null || v === "") return <span style={P_NONE}>empty</span>;
   if (typeof v === "string" && at === "context.links[]" && S.LINK_ITEM.test(v) && P.safeLinkUrl(v))
     return <a href={v} target="_blank" rel="noopener noreferrer">{v}</a>;
   return <>{String(v)}</>;
 }
 
-const NONE = <span className="pcard-none">none</span>;
+const NONE = <span style={P_NONE}>none</span>;
 
 function Value({v, at}: {v: YamlValue; at: string}): ReactNode {
-  if (typeof v === "string" && v.includes("\n")) return <Html as="div" className="md adp-prose" style={FILL} html={P.renderMarkdown(v)}/>;
+  if (typeof v === "string" && v.includes("\n")) return <Html as="div" className="md adp-prose" style={FILL} html={P.renderMarkdownDS(v)}/>;
   if (Array.isArray(v)){
     if (!v.length) return NONE;
     if (v.every(S.isFlat)){
       const cols: string[] = [];
       v.forEach(r => Object.keys(r).forEach(k => { if (!cols.includes(k)) cols.push(k); }));
-      return <div className="md adp-prose" style={FILL}><div className="tbl-wrap"><table className="md-tbl">
+      return <div className="md adp-prose" style={FILL}><div style={{overflowX: "auto", margin: "0 0 16px"}}><table className="adp-table">
         <thead><tr>{cols.map(c => <th key={c}>{S.keyLabel(c)}</th>)}</tr></thead>
         <tbody>{v.map((r, i) => <tr key={i}>{cols.map(c => S.isLine(r[c])
           ? <td key={c}><Scalar v={r[c]} at={at + "[]." + c}/></td>
-          : <Html key={c} as="td" html={P.renderMarkdown(r[c])}/>)}</tr>)}</tbody>
+          : <Html key={c} as="td" html={P.renderMarkdownDS(r[c])}/>)}</tr>)}</tbody>
       </table></div></div>;
     }
     return <div className="md adp-prose" style={FILL}><ul className="md-list">{v.map((x, i) =>
-      <li key={i}>{S.isLine(x) ? <Scalar v={x} at={at + "[]"}/> : <Value v={x} at={at + "[]"}/>}</li>)}</ul></div>;
+      <li key={i}><span>{S.isLine(x) ? <Scalar v={x} at={at + "[]"}/> : <Value v={x} at={at + "[]"}/>}</span></li>)}</ul></div>;
   }
   if (S.isMap(v)){
     const ks = Object.keys(v);
     if (!ks.length) return NONE;
-    return <div className="pcard-grid">{ks.map(k => <PromptField key={k} k={k} v={v[k]} at={at + "." + k}/>)}</div>;
+    return <div style={P_GRID}>{ks.map(k => <PromptField key={k} k={k} v={v[k]} at={at + "." + k}/>)}</div>;
   }
   return <Scalar v={v} at={at}/>;
 }
 
 function PromptField({k, v, at}: {k: string; v: YamlValue; at: string}){
-  return <><div className="pcard-k">{S.keyLabel(k)}</div><div className="pcard-v"><Value v={v} at={at}/></div></>;
+  return <><div data-p="k" style={P_K}>{S.keyLabel(k)}</div><div data-p="v" style={P_V}><Value v={v} at={at}/></div></>;
 }
 
 // The builder's keys come first in the order it writes them. A key the
@@ -190,13 +204,14 @@ function PromptField({k, v, at}: {k: string; v: YamlValue; at: string}){
 function PromptCards({obj}: {obj: YamlMap}){
   const known = S.NT_KEYS[""].filter(k => k in obj);
   const keys = known.concat(Object.keys(obj).filter(k => !known.includes(k)));
-  return <div className="pcards">{keys.map(k => {
+  return <div>{keys.map((k, n) => {
     const v = obj[k];
-    return <section key={k} className="pcard">
-      <div className="pcard-head"><span className="pcard-title">{S.keyTitle(k)}</span>
-        {S.isLine(v) ? <span className="pcard-val"><Scalar v={v} at={k}/></span> : null}
-        <span className="pcard-key">{k}</span></div>
-      {S.isLine(v) ? null : S.isMap(v) ? <Value v={v} at={k}/> : <div className="pcard-body"><Value v={v} at={k}/></div>}
+    return <section key={k} data-p="card" style={{marginTop: n ? 32 : 0}}>
+      <div style={{display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 8}}>
+        <span data-p="title" style={P_TITLE}>{S.keyTitle(k)}</span>
+        {S.isLine(v) ? <span data-p="val" style={P_VAL}><Scalar v={v} at={k}/></span> : null}
+        <span data-p="key" style={P_KEY}>{k}</span></div>
+      {S.isLine(v) ? null : <Value v={v} at={k}/>}
     </section>;
   })}</div>;
 }
@@ -253,6 +268,9 @@ function Notice({text}: {text: string}){
 // The section pane sits on the 4px grid. The old pane class keeps its panel
 // ground and border, and we set its padding and spacing here.
 const PANE: CSSProperties = {padding: "16px 24px", margin: "0 0 16px"};
+// The old sheet's ".screen h2" outranks the system's section class and sets a
+// mono uppercase face, so the section heading states the system's values.
+const SECTION_HEAD: CSSProperties = {margin: 0, font: "600 20px/28px var(--font-sans)", letterSpacing: "normal", textTransform: "none"};
 const FSEC: CSSProperties = {boxShadow: "inset 0 1px 0 var(--line)"};
 const FSUM: CSSProperties = {padding: "12px 0", cursor: "pointer", font: "600 16px/24px var(--font-sans)", color: "var(--ink)"};
 
@@ -260,7 +278,7 @@ function DocPane({back, onBack, heading, badge, notice, action, children}: DocPa
   return <div className="doc" style={PANE}>
     {back ? <button type="button" className="adp-btn adp-btn--text" data-op="back" style={{marginBottom: 8}} onClick={onBack}>← back to {back}</button> : null}
     <div style={{display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16}}>
-      <h2 className="adp-section">{heading}</h2>
+      <h2 className="adp-section" style={SECTION_HEAD}>{heading}</h2>
       {badge ? <span className="adp-chip adp-chip--s">{badge}</span> : null}
       <Permalink/>
     </div>

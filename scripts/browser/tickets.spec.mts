@@ -38,6 +38,17 @@ test("a section's decision cards span the pane's content width", async ({page, s
   expect(Math.abs(widths.card - widths.inner)).toBeLessThan(1);
 });
 
+// The old sheet's ".screen h2" outranks the system's section class, so a
+// section heading must compute the system's own type in a real engine.
+test("a section heading renders in the system's section type", async ({page, server}) => {
+  await open(page, server.url + "#t=FX001&s=sec-decision-log");
+  const type = await page.locator("#scrInspector h2.adp-section").evaluate(h => {
+    const cs = getComputedStyle(h);
+    return [cs.fontFamily.split(",")[0].replace(/"/g, ""), cs.fontSize, cs.lineHeight, cs.fontWeight, cs.textTransform];
+  });
+  expect(type).toEqual(["Space Grotesk", "20px", "28px", "600", "none"]);
+});
+
 // OT-MC012-10. The launcher's server always binds a free port, so only a
 // test can bring one back on the port an open page still watches.
 test("the live word returns from CACHED to WATCHING when the server restarts on its port", async ({page}) => {

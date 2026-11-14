@@ -527,6 +527,9 @@ function proseBlocks(h: string): string{
     .replace(/<span class="cbx( on)? ?">/g,(_,on)=>`<span class="cbx${on||''}" style="width:16px;height:16px;margin:4px 0 0">`)
     .replace(/<h([3-6]) class="sub">/g,(_,n)=>`<h${n} style="${SUB_HEAD}">`);
 }
+// Markdown with the design system's blocks and chips, for a value that is not
+// a log section, such as a multi-line prompt field.
+const renderMarkdownDS=(md: unknown): EscapedHtml=>proseBlocks(renderMarkdown(md)) as EscapedHtml;
 const proseHtml=(md: unknown, opts?: DLRenderOpts): EscapedHtml=>opts&&opts.ds?renderProse(md):renderMarkdown(md);
 
 // open sets whether a design system card starts with its fields shown. It
@@ -666,7 +669,7 @@ export {esc, escAttr, safeLinkUrl, inline, decorate, TOK, renderMarkdown, ART, S
   metaFor, splitFrontMatter, parseSections, slug, sectionKeys, isTableStart, splitRow,
   parseDLFields, dlSplitBody, dlChipSplit, dlConfKind, dlConfPill, dlStatusPill, dlStatusKind,
   dlRail, parseDLEntries, dlEntryStatus, dlStatusCounts, renderDLCard, renderSectionBody,
-  renderDecisionLog, renderProse};
+  renderDecisionLog, renderProse, renderMarkdownDS};
 export type {EscapedHtml, SectionKind, SectionMeta, ArtEntry, FrontMatterSplit, Section, ParsedSections,
   DLField, DLChipSplit, DLChip, DLConfKind, DLStatusKind, DLBodySplit, DLEntry, DLEntries, DLStatusCounts, DLRenderOpts};
 

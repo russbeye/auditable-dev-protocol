@@ -1475,7 +1475,7 @@ test("every section hash lands where it landed before the prompt entry", async (
   for (const [key, heading] of PINNED_LANDINGS){
     await bootCorpus({hash: "#t=AA1&s=" + encodeURIComponent(key)});
     assert.equal(secVal(), key);
-    assert.match(insp(), new RegExp('<h2 class="adp-section">' + heading + "<"));
+    assert.match(insp(), new RegExp('<h2 class="adp-section"[^>]*>' + heading + "<"));
     assert.doesNotMatch(insp(), /was not found in this log/);
     cleanup();
     vi.restoreAllMocks();
@@ -2337,12 +2337,12 @@ test("the prompt view renders every top-level key, the unknown one included", ()
   PL.parseYAML(FULL_PROMPT, issues);
   assert.deepEqual(issues, []);
   const html = promptHtml(FULL_PROMPT);
-  const heads = [...html.matchAll(/<span class="pcard-title">([^<]+)<\/span>/g)].map(m => m[1]);
+  const heads = [...html.matchAll(/<span data-p="title"[^>]*>([^<]+)<\/span>/g)].map(m => m[1]);
   assert.deepEqual(heads, ["Schema Version", "Task", "Preamble", "Role", "Prompt", "Constraints",
     "Context", "Lessons Learned", "Output", "Requirements", "Protocol", "Reviewer Notes"]);
-  assert.match(html, /<span class="pcard-key">lessons_learned<\/span>/);
-  assert.match(html, /<span class="pcard-title">Schema Version<\/span><span class="pcard-val">1\.0<\/span>/);
-  assert.match(html, /<div class="pcard-k">title<\/div><div class="pcard-v">Full prompt<\/div>/);
+  assert.match(html, /<span data-p="key"[^>]*>lessons_learned<\/span>/);
+  assert.match(html, /<span data-p="title"[^>]*>Schema Version<\/span><span data-p="val"[^>]*>1\.0<\/span>/);
+  assert.match(html, /<div data-p="k"[^>]*>title<\/div><div data-p="v"[^>]*>Full prompt<\/div>/);
   assert.match(html, /<th>path<\/th><th>lines<\/th><th>note<\/th>/);
   assert.match(html, /<th>id<\/th><th>statement<\/th><th>verify<\/th>/);
   assert.match(html, /Add the <strong>view<\/strong>/);
@@ -2364,6 +2364,17 @@ test("block text inside a table cell renders as markdown", () => {
   assert.match(html, /<td>Keep \*\*this\*\* exact<\/td>/);
 });
 
+// The prompt view reads as a document on the design system (DL-061): blue
+// eyebrow titles, label rows on the grid, and none of the old card classes.
+test("the prompt view draws eyebrow titles and grid rows with no old card class", () => {
+  const html = promptHtml(FULL_PROMPT);
+  assert.doesNotMatch(html, /class="[^"]*pcard/);
+  assert.match(html, /<span data-p="title" style="font: 500 11px\/24px var\(--font-mono\);[^"]*color: var\(--blue-bright\);">Task<\/span>/);
+  assert.match(html, /<div data-p="k" style="padding: 12px 0px;[^"]*font: 400 13px\/24px var\(--font-sans\);/);
+  assert.match(html, /<div data-p="v" style="padding: 12px 0px;[^"]*font: 400 15px\/24px var\(--font-sans\);/);
+  assert.doesNotMatch(html, /class="pill /);
+});
+
 test("prompt text renders inert", () => {
   const html = promptHtml(["prompt: |", "  <script>alert(1)</script>", '  <img src=x onerror="alert(2)">',
     "  [click](javascript:alert(3))", "context:", "  background: |", "    [go](javascript:alert(4)) and <b onmouseover=x>hi</b>",
@@ -2379,9 +2390,9 @@ test("prompt text renders inert", () => {
   }
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /<a href="mailto:a@b\.c"/);
-  assert.match(html, /<li>relative\/path<\/li>/);
-  assert.match(html, /<li>javascript:alert\(5\)<\/li>/);
-  assert.match(html, /<div class="pcard-v">\[go\]\(https:\/\/example\.com\/x\)<\/div>/);
+  assert.match(html, /<li><span>relative\/path<\/span><\/li>/);
+  assert.match(html, /<li><span>javascript:alert\(5\)<\/span><\/li>/);
+  assert.match(html, /<div data-p="v"[^>]*>\[go\]\(https:\/\/example\.com\/x\)<\/div>/);
 });
 
 test("a ticket with a prompt lists it ahead of phase 1 and steps to it", async () => {
@@ -2390,7 +2401,7 @@ test("a ticket with a prompt lists it ahead of phase 1 and steps to it", async (
   await click(op("data-secstep", "-1"));
   assert.equal(secVal(), "prompt");
   const scr = insp();
-  assert.match(scr, /<h2 class="adp-section">prompt\.yaml</);
+  assert.match(scr, /<h2 class="adp-section"[^>]*>prompt\.yaml</);
   assert.match(scr, /Make the <strong>alpha<\/strong> path work/);
   assert.equal($("#phaseStrip [aria-current=step]").textContent, "P");
   assert.match(scr, /data-secstep="-1" disabled/);
@@ -2405,7 +2416,7 @@ test("the prompt view has a deep link", async () => {
   vi.restoreAllMocks();
   await bootCorpus({hash: "#t=AA1&s=prompt"});
   assert.equal(secVal(), "prompt");
-  assert.match(insp(), /<h2 class="adp-section">prompt\.yaml</);
+  assert.match(insp(), /<h2 class="adp-section"[^>]*>prompt\.yaml</);
   assert.doesNotMatch(insp(), /was not found in this log/);
 });
 
