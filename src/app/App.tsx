@@ -34,7 +34,14 @@ const SHOWN: Screen[] = ["inspector", "reviews", "watchboard", "ledgers", "new t
    until their stage converts them. */
 const SYSTEM_TYPE: Partial<Record<Screen, CSSProperties>> = {
   "inspector": {font: "400 16px/24px var(--font-sans)", color: "var(--ink)"},
-  "reviews": {font: "400 16px/24px var(--font-sans)", color: "var(--ink)"}};
+  "reviews": {font: "400 16px/24px var(--font-sans)", color: "var(--ink)"},
+  "watchboard": {font: "400 15px/24px var(--font-sans)", color: "var(--ink)", maxWidth: "var(--page-max)", margin: "0 auto"},
+  "ledgers": {font: "400 15px/24px var(--font-sans)", color: "var(--ink)", maxWidth: "var(--page-max)", margin: "0 auto"}};
+/* The Watches, Ledger, and New task boards draw no rail. Their page fills
+   the window under the top bar, padded as the boards pad it, and a narrow
+   window pads it as the NarrowLedger board does. */
+const RAIL_SCREENS: ReadonlySet<Screen> = new Set(["inspector", "reviews"]);
+const PAGE_PAD = "40px 48px 80px", NARROW_PAD = "32px 24px 80px";
 const SCREEN_IDS: Record<Screen, string> = {"inspector": "scrInspector", "reviews": "scrReviews", "watchboard": "scrWatch",
   "ledgers": "scrLedgers", "calibration": "scrLedgers", "resume pack": "scrInspector", "new task": "scrNew"};
 const SHORTCUTS: [string, string][] = [["[", "Show or hide tickets"], ["← →", "Previous or next phase"], ["/", "Filter tickets"],
@@ -234,7 +241,7 @@ function App({fetchFn, openFeed}: AppProps){
   useEffect(() => {
     if (!lgFocus.current || screen !== "ledgers") return;
     lgFocus.current = false;
-    const pill = [...document.querySelectorAll<HTMLElement>(".fpill")].find(p => p.getAttribute("data-lgf") === lgFilter);
+    const pill = [...document.querySelectorAll<HTMLElement>(".adp-filter[data-lgf]")].find(p => p.getAttribute("data-lgf") === lgFilter);
     pill?.focus();
   });
 
@@ -423,7 +430,7 @@ function App({fetchFn, openFeed}: AppProps){
   // no logs yet, so it shows the empty page and not the failed one.
   const status = booting && !corpus ? "loading" : !corpus ? (absent ? "empty" : "failed") : !tickets.length ? "empty" : null;
 
-  const railOn = !(screen === "inspector" && status);
+  const railOn = RAIL_SCREENS.has(screen) && !(screen === "inspector" && status);
   // f flips the ticket between its section and its full log, [ folds or opens
   // the rail, and / opens the rail if it is folded and moves into its filter.
   useEffect(() => {
@@ -451,15 +458,15 @@ function App({fetchFn, openFeed}: AppProps){
       inert={packsOpen}/>
     {/* The drawer is modal, so the page behind it takes no focus or clicks while it is open. */}
     <div className="main" inert={packsOpen} style={screen === "inspector" && status ? {display: "flex", flexDirection: "column", overflowY: "auto"}
-      : {position: "relative", gridTemplateColumns: (railFolded || narrow ? "var(--rail-collapsed)" : "var(--rail-width)") + " minmax(0, 1fr)"}}>
+      : {position: "relative", gridTemplateColumns: railOn ? (railFolded || narrow ? "var(--rail-collapsed)" : "var(--rail-width)") + " minmax(0, 1fr)" : "minmax(0, 1fr)"}}>
       {screen === "inspector" && status
         ? <StatusPage kind={status} root={root} host={location.host} onRetry={retry} onNewTask={() => go("new task")}
           onBootstrap={o => openPacks(o, "bootstrap-project")}/>
         : <>
-      <Rail groups={railShown} total={tickets.length} selKey={selKey} collapsed={railCollapsed} filter={railFilter} folded={railFolded}
+      {railOn ? <Rail groups={railShown} total={tickets.length} selKey={selKey} collapsed={railCollapsed} filter={railFilter} folded={railFolded}
         narrow={narrow} attention={attention} selId={selTicket ? selTicket.id || selTicket.dir : null} focusFilter={railFocus}
-        onPick={k => { pick(k); if (narrow) setRailOver(false); }} onToggle={toggleRail} onFilter={setRailFilter} onFold={foldRail}/>
-      <main className="stage">
+        onPick={k => { pick(k); if (narrow) setRailOver(false); }} onToggle={toggleRail} onFilter={setRailFilter} onFold={foldRail}/> : null}
+      <main className="stage" style={railOn ? undefined : {padding: narrow ? NARROW_PAD : PAGE_PAD}}>
         {SHOWN.map(s => <section key={s} className={"screen" + (s === "new task" ? " nt-wide" : "") + (s === screen ? " is-on" : "")}
           data-s={s} id={SCREEN_IDS[s]} style={SYSTEM_TYPE[s]}>
           {s !== screen ? null
@@ -470,10 +477,9 @@ function App({fetchFn, openFeed}: AppProps){
               dlFilter={revDlFilter} decSort={decSort} iwSort={iwSort} arrows={!packsOpen} act={reviewsActions}/>
             : s === "watchboard" ? <Watchboard corpus={corpus} today={today} sort={wbSort} show={wbShow}
               onSort={sortBoard} onToggleState={toggleState} onOpen={openWatch}/>
-            : s === "ledgers" ? <>
-              <div id="scrCalib"><Calibration corpus={corpus} today={today} onCell={openLedgerCell}/></div>
-              <Ledgers corpus={corpus} today={today} sort={laSort} status={lgFilter} conf={lgConf}
-                onSort={k => setLaSort(prev => ({k, d: prev.k === k ? -prev.d : 1}))} onStatus={setLgFilter} onConf={setLgConf} onOpen={openWatch}/></>
+            : s === "ledgers" ? <Ledgers corpus={corpus} today={today} sort={laSort} status={lgFilter} conf={lgConf}
+                calibration={<div id="scrCalib"><Calibration corpus={corpus} today={today} onCell={openLedgerCell}/></div>}
+                onSort={k => setLaSort(prev => ({k, d: prev.k === k ? -prev.d : 1}))} onStatus={setLgFilter} onConf={setLgConf} onOpen={openWatch}/>
             : s === "new task" ? <NewTask nt={nt}/>
             : null}
         </section>)}

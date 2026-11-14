@@ -123,21 +123,8 @@ test("the prompt view uses shell card classes and only the theme's document clas
                    "pcard-k", "pcard-v", "pcard-body", "pcard-none"]) assert.ok(used.has(c), c);
 });
 
-test("the ledger panel contains its floated pill row and every child after the heading clears it", () => {
-  const css = read("adp-shell.css");
-  // flow-root keeps a wide pill row inside the panel's border; the sibling
-  // clear puts the table or the empty-state notice below it, never beside.
-  assert.equal(declarationsOf(css, ".ipanel").display, "flow-root");
-  assert.equal(declarationsOf(css, ".ipanel h2 ~ *").clear, "both");
-  // A one-entry segment keeps a visible floor beside a forty-entry one.
-  assert.equal(declarationsOf(css, ".calseg")["min-width"], "8px");
-});
-
 test("the rule reader returns the top-level rule, not its media override", () => {
-  const css = read("adp-shell.css");
-  // The tile grid is four columns on the desktop and two under the phone
-  // media query; a reader that folded nested rules in would return two.
-  assert.equal(declarationsOf(css, ".caltiles")["grid-template-columns"], "repeat(4,1fr)");
+  // A reader that folded nested rules in would return the media override.
   assert.deepEqual(declarationsOf("@media(max-width:1px){.x{a:1}} .x{a:2}", ".x"), {a: "2"});
   assert.deepEqual(declarationsOf("@supports(a:b){@media(c){.x{a:1}}}", ".x"), {});
 });

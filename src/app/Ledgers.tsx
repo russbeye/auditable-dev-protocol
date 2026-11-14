@@ -1,17 +1,18 @@
-/* The corpus-wide record: the assumption ledger and the calibration
-   screen. Both read the corpus index only, and every number is the derive
-   library's, so the two screens cannot disagree about an entry. */
-import {Fragment, type MouseEvent} from "react";
+/* The corpus-wide record: the assumption ledger and the calibration that
+   heads it. Both read the corpus index only, and every number is the derive
+   library's, so the two cannot disagree about an entry. */
+import {Fragment, useState, type MouseEvent, type ReactNode} from "react";
 import * as D from "../lib/adp-derive-lib.ts";
 import * as P from "../lib/adp-parser-lib.ts";
 import * as S from "../lib/adp-shell-lib.ts";
-import type {CalibrationTiles} from "../lib/adp-derive-lib.ts";
 import type {Corpus, SortState} from "../lib/adp-shell-lib.ts";
-import {PillGroup, Pills, WatchCell} from "./panels.tsx";
-import {Th} from "./Watchboard.tsx";
+import {Filters, NW, PAGE_HEAD, PAGE_ROWS, PAGE_SUB, PAGE_TITLE, SEARCH, ShowMore, StatusChip, Th, WatchCell, liveFilter, matches} from "./panels.tsx";
+import {Empty, NoMatch} from "./Watchboard.tsx";
+import {SELECT} from "./Inspector.tsx";
 
-// Every kind either classifier can return, so no entry is unreachable by pill.
-const LG_STATUS_KEYS = ["all", ...D.STATUS_KINDS];
+// Every kind either classifier can return, so no entry is unreachable by a
+// filter. The status filters read in the Ledger board's order.
+const LG_STATUS_KEYS = ["all", "open", "validated", "invalidated", "unknown", "other"];
 const LG_CONF_KEYS = ["all", ...D.CONF_KINDS];
 const CONF_RANK: Record<string, number> = {high: 3, medium: 2, low: 1};
 
@@ -21,6 +22,7 @@ type LedgersProps = {
   sort: SortState;
   status: string;
   conf: string;
+  calibration: ReactNode;
   onSort(k: string): void;
   onStatus(f: string): void;
   onConf(f: string): void;
@@ -28,26 +30,30 @@ type LedgersProps = {
 };
 
 /* Ledger rows link the way board rows do: real deep-link hrefs, so the
-   keyboard can reach them, and a click routes in the app. The ticket cell
-   lands the default view and the id cell lands the item in its owning
-   section. */
-function Ledgers({corpus, today, sort, status, conf, onSort, onStatus, onConf, onOpen}: LedgersProps){
-  const head = <h2>ledgers <span className="isub">the corpus's decision record · settled rulings included · watches live on the board</span></h2>;
-  if (!corpus) return <>{head}<div className="ipanel"><p className="dnotice">no corpus behind this page — the ledgers read the served corpus index.</p></div></>;
+   keyboard can reach them, and a click routes in the app. The Entry cell
+   holds two links, as the Ledger board draws it. The ticket lands the
+   default view, and the id lands the item in its owning section. */
+function Ledgers({corpus, today, sort, status, conf, calibration, onSort, onStatus, onConf, onOpen}: LedgersProps){
+  const [query, setQuery] = useState("");
+  const [limit, setLimit] = useState(PAGE_ROWS);
+  const title = <h1 style={PAGE_TITLE}>Ledger</h1>;
+  if (!corpus) return <>{title}<Empty text="no corpus behind this page — the ledgers read the served corpus index."/></>;
   const lg = D.ledgerRows(corpus.index.tickets, today);
-  // The pills count the whole record, and the filters cut rows, never
-  // counts. Both axes read the classifications the calibration screen
-  // counts by, so a segment click lands exactly the entries its cell counted.
+  const found = lg.decisions.filter(r => matches(query, r.tid, r.id, r.title, r.watch));
+  // The filters count what the search found, and they cut rows, never
+  // counts. Both axes read the classifications the calibration counts by,
+  // so a segment click lands exactly the entries its cell counted.
   const tally = (keys: readonly string[], of: (r: typeof lg.decisions[number]) => string) => {
-    const c: Record<string, number> = {all: lg.decisions.length};
-    keys.forEach(k => { c[k] = lg.decisions.filter(r => of(r) === k).length; });
+    const c: Record<string, number> = {all: found.length};
+    keys.forEach(k => { c[k] = found.filter(r => of(r) === k).length; });
     return c;
   };
   const counts = tally(LG_STATUS_KEYS.slice(1), r => r.kind);
   const confCounts = tally(LG_CONF_KEYS.slice(1), r => P.dlConfKind(r.confidence));
-  const shown = lg.decisions.filter(r => (status === "all" || r.kind === status) && (conf === "all" || P.dlConfKind(r.confidence) === conf));
+  const st = liveFilter(status, counts), cf = liveFilter(conf, confCounts);
+  const shown = found.filter(r => (st === "all" || r.kind === st) && (cf === "all" || P.dlConfKind(r.confidence) === cf));
   const rows = D.sortRows(shown, sort.k, sort.d, {
-    tid: r => r.tid, id: r => r.id, title: r => r.title,
+    tid: r => r.tid, id: r => r.tid + " " + r.id, title: r => r.title,
     conf: r => CONF_RANK[P.dlConfKind(r.confidence)] || 0,
     status: r => r.rank,
     watch: r => r.watch || (r.settled ? r.settled.wid : ""),
@@ -58,75 +64,88 @@ function Ledgers({corpus, today, sort, status, conf, onSort, onStatus, onConf, o
   const link = (tid: string, item: string | null, title?: string) => <a className="wbl" href={S.hashWrite(item ? {t: tid, item} : {t: tid})}
     data-t={tid} data-item={item || undefined} title={title}
     onClick={(e: MouseEvent) => { e.preventDefault(); onOpen(tid, item); }}>{item || tid}</a>;
-  const panelHead = <h2>assumptions <span className="hsub">
-    <PillGroup label="status"><Pills counts={counts} active={status} mark="data-lgf" keys={LG_STATUS_KEYS} onPick={onStatus}/></PillGroup>
-    <PillGroup label="confidence"><Pills counts={confCounts} active={conf} mark="data-lgc" keys={LG_CONF_KEYS} onPick={onConf}/></PillGroup>
-  </span></h2>;
-  if (!rows.length) return <>{head}<div className="ipanel">{panelHead}<p className="dnotice">{counts.all
-    ? "nothing under these filters — the pills count what exists."
-    : "no decisions on record — no ticket in this corpus has logged an entry."}</p></div></>;
-  const th = (k: string, label: string) => <Th sort={sort} t="la" k={k} label={label} onSort={onSort}/>;
-  return <>{head}<div className="ipanel">{panelHead}<div className="tblwrap"><table><tbody>
-    <tr>{th("tid", "ticket")}{th("id", "entry")}{th("title", "decision")}{th("conf", "conf")}{th("status", "status")}{th("watch", "watch")}{th("age", "age")}</tr>
-    {rows.map(d => <tr key={d.dir + "\n" + d.id} className="lgrow" data-t={d.tid} data-dl={d.id}>
-      <td>{link(d.tid, null)}</td>
-      <td className="mono nw">{link(d.tid, d.id)}</td>
+  const tickets = corpus.index.tickets.length;
+  const head = <div style={PAGE_HEAD}>{title}<p style={PAGE_SUB}>{lg.decisions.length} decisions across {tickets} tickets, settled rulings included</p></div>;
+  const bar = <div style={{marginTop: 40, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap"}}>
+    <input className="adp-input adp-input--sm" type="text" aria-label="Search decisions" placeholder="Search decisions" value={query}
+      style={SEARCH} onChange={e => { setQuery(e.target.value); setLimit(PAGE_ROWS); }}
+      onKeyDown={e => { if (e.key === "Escape" && query) { e.preventDefault(); setQuery(""); } }}/>
+    <Filters label="Status" counts={counts} active={st} mark="data-lgf" keys={LG_STATUS_KEYS} onPick={onStatus}/>
+    <label style={{display: "flex", alignItems: "center", gap: 8, font: "400 13px/24px var(--font-sans)", color: "var(--dim)"}}>Confidence
+      <select className="adp-select" data-lgc-sel="" value={cf} style={SELECT} onChange={e => onConf(e.target.value)}>
+        {LG_CONF_KEYS.filter(k => k === "all" || confCounts[k] || k === cf).map(k => <option key={k} value={k} data-lgc={k}>
+          {k === "all" ? "All" : k[0].toUpperCase() + k.slice(1) + " · " + confCounts[k]}</option>)}</select></label>
+  </div>;
+  const th = (k: string, label: string, num?: boolean) => <Th sort={sort} t="la" k={k} label={label} num={num} onSort={onSort}/>;
+  const thead = <thead><tr>{th("id", "Entry")}{th("title", "Decision")}{th("conf", "Conf")}{th("status", "Status")}{th("watch", "Watch")}{th("age", "Age", true)}</tr></thead>;
+  const top = <>{head}{calibration}{bar}</>;
+  if (!rows.length) return <>{top}<table className="adp-table" style={{marginTop: 16}}>{thead}<tbody><tr><td colSpan={6}>
+    {query && !found.length
+      ? <NoMatch what="decisions" query={query} scope="entry IDs, tickets, watches and the decision text, across every status" onClear={() => setQuery("")}/>
+      : <div role="status">{lg.decisions.length
+        ? "nothing under these filters — the pills count what exists."
+        : "no decisions on record — no ticket in this corpus has logged an entry."}</div>}
+  </td></tr></tbody></table></>;
+  return <>{top}<div style={{overflowX: "auto"}}><table className="adp-table" style={{marginTop: 16}}>{thead}<tbody>
+    {rows.slice(0, limit).map(d => <tr key={d.dir + "\n" + d.id} className="lgrow" data-t={d.tid} data-dl={d.id}>
+      <td className="adp-col-id">{link(d.tid, null)} {link(d.tid, d.id)}</td>
       <td>{d.title}</td>
-      <td><span className={"cf-" + P.dlConfKind(d.confidence) + " nw"}>{P.dlChipSplit(d.confidence).word}</span></td>
-      <td><span className={"st-" + d.kind + " nw"}>{d.kind}</span></td>
-      <td><WatchCell d={{watch: d.watch, settled: d.settled, statusKind: d.kind}} link={(wid, title) => link(d.tid, wid, title)}/></td>
-      <td className="mono nw">{d.age == null ? "—" : d.age + "d"}</td>
+      <td className="adp-col-conf" style={NW}>{P.dlChipSplit(d.confidence).word}</td>
+      <td><StatusChip kind={d.kind}/></td>
+      <td className="adp-col-id"><WatchCell d={{watch: d.watch, settled: d.settled, statusKind: d.kind}} link={(wid, title) => link(d.tid, wid, title)}/></td>
+      <td className="adp-col-num">{d.age == null ? "—" : d.age + "d"}</td>
     </tr>)}
-  </tbody></table></div></div></>;
+  </tbody></table></div><ShowMore shown={Math.min(limit, rows.length)} total={rows.length} onMore={() => setLimit(n => n + PAGE_ROWS)}/></>;
 }
 
 // ---- calibration ----
 
-const CAL_TILES: [keyof CalibrationTiles | "watches", string][] = [["tickets", "tickets indexed"], ["shipped", "shipped or closed"],
-  ["decisions", "decisions logged"], ["watches", "watches overdue + unanchored"]];
+// Each outcome takes the Calibration component's segment of its meaning.
+// The other kind has no segment of its own, so it takes the neutral rule color.
+const SEG: Record<string, string> = {validated: "adp-cal__seg--ok", invalidated: "adp-cal__seg--bad", open: "adp-cal__seg--open", unknown: "adp-cal__seg--unk"};
+// A tier this small is flagged in the legend, so its share is not read as a firm rate.
+const SMALL_TIER = 10;
 
 type CalibrationProps = {corpus: Corpus | null; today: string; onCell(conf: string, kind: string): void};
 
-/* Every number on the screen is the model's, and this component only
-   draws. A bar's length is its bucket's share of the largest bucket, and
-   its segments split that length by outcome, so a bar reads against the
-   corpus and not against its own row. */
+/* Every number in the section is the model's, and this component only
+   draws. Each bar is its own tier's total, as the Calibration component
+   asks, and its segments split that total by outcome. A segment is a button
+   that lands the ledger filtered to its cell. */
 function Calibration({corpus, today, onCell}: CalibrationProps){
-  const head = <h2>calibration <span className="isub">does stated confidence predict outcomes</span></h2>;
-  if (!corpus) return <>{head}<div className="ipanel"><p className="dnotice">no corpus behind this page — calibration reads the served corpus index.</p></div></>;
-  const notice = "no decisions on record — no ticket in this corpus has logged an entry.";
+  if (!corpus) return null;
   const {tiles, buckets} = D.calibrationModel(corpus.index.tickets, today);
-  const tileText = (k: keyof CalibrationTiles | "watches") => k === "watches" ? `${tiles.overdue}+${tiles.unanchored}` : String(tiles[k]);
-  const tilesEl = <div className="caltiles">{CAL_TILES.map(([k, label]) => <div key={k} className="caltile" data-tile={k}>
-    <div className="caltile-n">{tileText(k)}</div><div className="caltile-l">{label}</div></div>)}</div>;
-  const panelHead = <h2>decision outcomes by stated confidence</h2>;
-  if (!tiles.decisions) return <>{head}{tilesEl}<div className="ipanel">{panelHead}<p className="dnotice">{notice}</p></div></>;
-  const maxN = Math.max(...buckets.map(b => b.total), 1);
-  return <>{head}{tilesEl}<div className="ipanel">{panelHead}
-    {buckets.map(b => {
+  const head = <div style={{display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24}}>
+    <h2 style={{margin: 0, font: "600 20px/28px var(--font-sans)", letterSpacing: "normal", textTransform: "none", color: "var(--ink)"}}>Does stated confidence predict outcomes?</h2>
+    <span style={{font: "400 13px/24px var(--font-sans)", color: "var(--dim)"}}>Share of ruled decisions that held</span></div>;
+  if (!tiles.decisions) return <section className="adp-cal" aria-label="Calibration" style={{marginTop: 40}}>{head}
+    <div role="status" style={{color: "var(--dim)"}}>no decisions on record — no ticket in this corpus has logged an entry.</div></section>;
+  const small = buckets.filter(b => b.kind !== "other" && b.total && b.total < SMALL_TIER);
+  return <section className="adp-cal" aria-label="Calibration" style={{marginTop: 40}}>{head}
+    <div className="adp-cal__grid">{buckets.map(b => {
       // The other bucket has no word of its own, so it names the tokens it met.
       const label = b.kind === "other" ? b.tokens.join(", ") : b.kind.toUpperCase();
       const kinds = D.STATUS_KINDS.filter(k => b.counts[k]);
-      return <div key={b.kind} className="calrow" data-conf={b.kind}>
-        <span className="callab"><span className={"cf-" + b.kind}>{label}</span></span>
-        <div className="calbar" style={{width: Math.round(b.total / maxN * 1000) / 10 + "%"}}>
-          {/* A segment is a button that lands the ledger filtered to its
-              cell. The name carries the count, so a screen reader hears what
-              a sighted reader infers from the bar's length. */}
+      return <div key={b.kind} data-conf={b.kind} style={{display: "contents"}}>
+        <span className="adp-cal__tier">{label}</span>
+        <div className="adp-cal__bar">
+          {/* The name carries the count, so a screen reader hears what a sighted reader infers from the segment's length. */}
           {kinds.map(k => {
             const name = `${b.counts[k]} ${k} at ${label} — open in the ledger`;
-            return <button key={k} type="button" className={"calseg calseg-" + k} style={{flex: b.counts[k]}}
+            return <button key={k} type="button" className={SEG[k] || ""} style={{flex: b.counts[k], minWidth: 4, height: 12, border: 0, padding: 0,
+              cursor: "pointer", ...(SEG[k] ? null : {background: "var(--line-bright)"})}}
               data-calc={b.kind} data-calk={k} title={name} aria-label={name} onClick={() => onCell(b.kind, k)}></button>;
           })}
         </div>
-        {/* The separator rides inside the span that follows it, so a wrapped
-            count string breaks between whole counts and never ends in a dot. */}
-        <span className="calcnt">{kinds.length ? kinds.map((k, i) => <Fragment key={k}>{i ? " " : null}<span className="calnw">{(i ? "· " : "") + b.counts[k] + " " + k}</span></Fragment>) : "—"}
-          <br/><span className="calshare">{b.ruled.ruled ? `${b.ruled.validated} of ${b.ruled.ruled} ruled validated` : "none ruled yet"}</span></span>
+        <span className="adp-cal__pct">{b.ruled.ruled ? Math.round(b.ruled.validated / b.ruled.ruled * 100) + "%" : "—"}</span>
+        {/* The separator rides inside the span that follows it, so a wrapped count line breaks between whole counts. */}
+        <span className="adp-cal__count">{kinds.length ? kinds.map((k, i) => <Fragment key={k}>{i ? " " : null}<span style={NW}>{(i ? "· " : "") + b.counts[k] + " " + k}</span></Fragment>) : "—"}
+          <br/>{b.ruled.ruled ? `${b.ruled.validated} of ${b.ruled.ruled} ruled validated` : "none ruled yet"}</span>
       </div>;
-    })}
-    <div className="callegend">{D.STATUS_KINDS.map(k => <span key={k}><i className={"calseg-" + k}></i>{k}</span>)}</div>
-  </div></>;
+    })}</div>
+    <div className="adp-cal__legend">{D.STATUS_KINDS.map(k => <span key={k}><i className={SEG[k]} style={SEG[k] ? undefined : {background: "var(--line-bright)"}}></i>{k[0].toUpperCase() + k.slice(1)}</span>)}
+      <span>Bars are each tier’s own total{small.map(b => ` · ${b.kind.toUpperCase()} has only ${b.total} decisions`).join("")}</span></div>
+  </section>;
 }
 
 export {Ledgers, Calibration};

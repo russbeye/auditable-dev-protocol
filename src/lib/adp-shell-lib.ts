@@ -51,12 +51,12 @@ type CitationChip = {key: string; label: string; title: string};
 type WatchLink = (wid: string, title?: string) => string;
 type CoverageRow = {watch: string | null; settled: SettledWatch | null; statusKind: DLStatusKind};
 type DecisionPanelRow = CoverageRow & {
-  id: string; title: string; conf: string; confKind: DLConfKind; chips: CitationChip[]; hl: boolean;
+  id: string; title: string; conf: string; confKind: DLConfKind; chips: CitationChip[]; hl: boolean; age: number | null;
 };
 type DecisionsPanelModel = {label: string; sort: SortState; pills: string; rows: DecisionPanelRow[]};
 type WatchPanelRow = {
   wid: string; what: string; dls: string[]; dueText: string | null; dueDated: boolean;
-  state: DueState; stateLabel: string; chips: CitationChip[]; hl: boolean;
+  state: DueState; stateLabel: string; chips: CitationChip[]; hl: boolean; left: number | null;
 };
 type WatchesPanelModel = {label: string; sort: SortState; rows: WatchPanelRow[]};
 type BoardRow = {

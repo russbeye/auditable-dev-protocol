@@ -98,6 +98,8 @@ export async function everyScreen(page: Page, url: string, look: (where: string)
   await page.keyboard.press("Escape");
   await expect(page.locator("#packDrawer")).toHaveCount(0);
   let reviewed = 0;
+  // The rail shows with the Tickets view alone, so we list its tickets there.
+  await go(page, "inspector");
   if (openGroups) for (const g of await page.locator("#rail [data-sec][aria-expanded=false]").all()) await g.click();
   const keys = await page.locator("#rail [data-key]").evaluateAll(r => r.map(x => x.getAttribute("data-key")!));
   for (const k of keys){

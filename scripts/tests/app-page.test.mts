@@ -20,7 +20,7 @@ import {gapNote, stripModel} from "../../src/app/PhaseStrip.tsx";
 import {Rail} from "../../src/app/Rail.tsx";
 import {ReviewBody} from "../../src/app/Reviews.tsx";
 import * as PL from "../../src/lib/adp-prompt-lib.ts";
-import {DecisionsPanel, Pills, WatchesPanel} from "../../src/app/panels.tsx";
+import {DecisionsPanel, Filters, WatchesPanel} from "../../src/app/panels.tsx";
 import type {EventFeed} from "../../src/app/live.ts";
 import type {FetchFn, FetchResponse} from "../../src/lib/adp-shell-lib.ts";
 
@@ -143,10 +143,53 @@ test("the app's rail shows what the vanilla page showed at boot, under the new t
   assert.deepEqual(got.footer, want.footer);
 });
 
+/* The Watches board draws no rail, and the page follows its board (G1, G2,
+   G3). The comparison rebuilds the page from the baseline's own runs by
+   these rules, which name every change:
+   - The title reads "Watches", and the old guide line and panel heading go.
+   - The subtitle keeps the live and settled counts and gains the overdue and
+     unanchored counts the filters carry.
+   - A filter splits into its state word in capitals and its count.
+   - The columns follow the Table component: Watch, What to check, Ticket,
+     Due, Status, and Left. The sort arrow turns from ▲ ▼ to ↑ ↓.
+   - A due label splits into the state word and the days left, which run
+     below zero when the watch is overdue. A live row's empty outcome dash
+     goes, because the closed filter is off and the row has no outcome. */
+function rewatched(main: Region): Region {
+  const t = main.text;
+  assert.deepEqual(t.slice(0, 3), ["watchboard", "overdue first · unanchored flagged, never dated · settled behind its chip", "every watch, corpus-wide"]);
+  let i = 4;
+  const filters: string[] = [], counts: Record<string, string> = {};
+  while (/^(overdue|soon|upcoming|unanchored|closed) \d+$/.test(t[i])){
+    const [k, n] = t[i++].split(" ");
+    counts[k] = n;
+    filters.push(k.toUpperCase(), n);
+  }
+  const heads: string[] = [];
+  const HEAD: Record<string, string> = {ticket: "Ticket", watch: "Watch", "what to check": "What to check", due: "Due", status: "Status"};
+  for (; t[i] !== "outcome"; i++) heads.push(ARROWS[t[i]] || HEAD[t[i]]);
+  i++;
+  // The old order was ticket, watch, what to check, due, status. The new
+  // order puts the watch first and the ticket third.
+  const [tk, w, what, ...rest] = heads;
+  const order = [w, what, tk, ...rest, "Left"];
+  const rows: string[] = [];
+  for (; i < t.length; i += 6){
+    const [tid, wid, wht, due, label, outcome] = t.slice(i, i + 6);
+    assert.equal(outcome, "—", "a settled row in the default view: " + wid);
+    const m = label.match(DUE_LABEL)!;
+    const st = m[1] ? ["OVERDUE", "-" + m[1] + "d"] : m[2] ? [Number(m[2]) <= 14 ? "SOON" : "UPCOMING", m[2] + "d"] : [label, "—"];
+    rows.push(wid, wht, tid, due, ...st);
+  }
+  const none = (k: string) => (counts[k] || "none") + " " + k;
+  return {text: ["Watches", t[3] + " " + none("overdue") + " · " + none("unanchored"), ...filters, ...order, ...rows],
+    attrs: ["aria-label=Search watches", "placeholder=Search watches", "aria-label=Filter watches", ...main.attrs]};
+}
 test("the app's watchboard state shows what the vanilla page showed, region for region", async () => {
   await boot({fetch: diskFetch(), now: BASELINE_NOW});
   await click(tabFor("watchboard"));
-  assert.deepEqual(snapshot(document), restyled(BASELINE["watchboard"]));
+  const want = restyled(BASELINE["watchboard"]);
+  assert.deepEqual(snapshot(document), {...want, rail: null, main: rewatched(BASELINE["watchboard"].main!)});
 });
 
 /* The vanilla inspector's ops row held four controls that loaded a file
@@ -381,6 +424,98 @@ function unread(snap: Snapshot): Snapshot {
   }
   return {...got, main: {...got.main!, text}};
 }
+/* The decisions and watches panels take the Table component, in its column
+   order, and keep every fact the vanilla panels showed (G1). So the
+   comparison takes the panels out of the app's render whole, and rebuilds
+   them from the baseline's own runs by these rules, which name every change:
+   - The heading reads "Decisions cited here" or "Watches cited here", then
+     its row count.
+   - A head is capitalized, the sort arrow turns from ▲ ▼ to ↑ ↓, Age joins
+     the decisions and Left joins the watches, before "Cited in".
+   - A status or due-state word is a chip in capitals, and a filter splits
+     into its word in capitals and its count.
+   - A watch's "25D LEFT" or "OVERDUE 24D" splits into its due state and the
+     days left, which run below zero when the watch is overdue.
+   - A decision gains its age after its watch cell, which the app reads
+     from the card's Created date.
+   - On a Decision Log section the filter sits above the cards and counts
+     the cards, so its old run leaves the panel and its own tests pin it. */
+const HEADS: Record<string, string> = {entry: "Entry", decision: "Decision", conf: "Conf", status: "Status", watch: "Watch",
+  "cited in": "Cited in", id: "Watch", "what to check": "What to check", decisions: "Entry", due: "Due"};
+const ARROWS: Record<string, string> = {"▲": "↑", "▼": "↓"};
+const DUE_LABEL = /^(?:OVERDUE (\d+)D|(\d+)D LEFT|UNANCHORED|CLOSED)$/;
+function retabled(old: string[], spine: boolean, ages: string[]): string[] {
+  const out: string[] = [];
+  let i = 0, a = 0;
+  const heads = (extra: string) => {
+    for (;;){
+      const h = old[i++];
+      if (h === "cited in") { out.push(extra, "Cited in"); return; }
+      out.push(ARROWS[h] || HEADS[h] || assert.fail("an unknown head " + h));
+    }
+  };
+  while (i < old.length){
+    const dec = old[i].startsWith("decisions cited by ");
+    assert.ok(dec || old[i].startsWith("watches cited by "), "the baseline panel starts with " + old[i]);
+    i++;
+    const rows: string[][] = [], filters: string[] = [];
+    while (/^(all|open|validated|invalidated) \d+$/.test(old[i])) filters.push(...old[i++].split(" ").map((x, j) => j ? x : x.toUpperCase()));
+    const head = out.length;
+    heads(dec ? "Age" : "Left");
+    const headRuns = out.splice(head);
+    const start = dec ? /^DL-\d+$/ : /^OT-/;
+    while (i < old.length && !/^(decisions|watches) cited by /.test(old[i])){
+      if (start.test(old[i]) && (!rows.length || rows.at(-1)!.length >= 4)) rows.push([]);
+      rows.at(-1)!.push(old[i++]);
+    }
+    out.push(dec ? "Decisions cited here" : "Watches cited here", String(rows.length), ...(dec && !spine ? filters : []), ...headRuns);
+    for (const r of rows){
+      if (dec){
+        let j = 4;
+        while (j < r.length && /^(no watch|OT-.+)$/.test(r[j])) j++;
+        out.push(r[0], r[1], r[2], r[3].toUpperCase(), ...r.slice(4, j), ages[a++], ...r.slice(j));
+      } else {
+        const j = r.findIndex((x, k) => k > 1 && DUE_LABEL.test(x));
+        assert.ok(j > 0, "the baseline watch row has no due label: " + r.join(" | "));
+        const m = r[j].match(DUE_LABEL)!;
+        const due = m[1] ? ["OVERDUE", "-" + m[1] + "d"] : m[2] ? [Number(m[2]) <= 14 ? "SOON" : "UPCOMING", m[2] + "d"] : [r[j], "—"];
+        out.push(...r.slice(0, j), ...due, ...r.slice(j + 1));
+      }
+    }
+  }
+  return out;
+}
+/* We take each panel's own record out of the app's render, and the spine's
+   filter bar from above the cards. The baseline's panels run from their
+   first heading to the end of the screen, so we split them off there. The
+   panels' attributes follow the same split, less the new group labels. */
+// How many panels and filter bars above cards the walk compared, so the test can show it met both.
+const panelSeen = {panels: 0, bars: 0, watches: 0};
+function withoutPanels(got: Snapshot, want: Region): [Snapshot, Region] {
+  const bar = $("#scrInspector .doc .adp-filters");
+  const panels = $$('#scrInspector section[aria-label="Decisions cited"], #scrInspector section[aria-label="Watches cited"]');
+  let main = got.main!;
+  const cut = (r: Region) => {
+    const at = (list: string[], run: string[]) => list.findIndex((_, j) => run.every((x, k) => list[j + k] === x));
+    const i = at(main.text, r.text), j = at(main.attrs, r.attrs);
+    assert.ok(i >= 0 && j >= 0, "the render lacks the run " + r.text.slice(0, 3).join(" | "));
+    main = {text: [...main.text.slice(0, i), ...main.text.slice(i + r.text.length)], attrs: [...main.attrs.slice(0, j), ...main.attrs.slice(j + r.attrs.length)]};
+  };
+  if (bar) { cut(record(bar)); panelSeen.bars++; }
+  const recs = panels.map(record);
+  panelSeen.panels += recs.length;
+  panelSeen.watches += panels.filter(p => p.getAttribute("aria-label") === "Watches cited").length;
+  recs.forEach(cut);
+  const from = want.text.findIndex(x => /^(decisions|watches) cited by /.test(x));
+  const oldRuns = from < 0 ? [] : want.text.slice(from);
+  const ages = $$("#scrInspector tr.dlrow td.adp-col-num").map(td => td.textContent!);
+  assert.deepEqual(recs.flatMap(r => r.text), retabled(oldRuns, !!bar, ages), "the panels");
+  const GROUPS = ["aria-label=Decisions cited", "aria-label=Watches cited", "aria-label=Filter by status"];
+  const newAttrs = recs.flatMap(r => r.attrs).filter(x => !GROUPS.includes(x));
+  const keep = want.attrs.length - newAttrs.length;
+  assert.deepEqual(want.attrs.slice(keep), newAttrs, "the panels' attributes");
+  return [{...got, main}, {text: from < 0 ? want.text : want.text.slice(0, from), attrs: want.attrs.slice(0, keep)}];
+}
 const rentries = () => $$("#rail [data-key]").map(r => r.getAttribute("data-key")!);
 const options = () => [...($("#secSel") as HTMLSelectElement).options].map(o => o.value);
 async function pickSection(key: string){ fireEvent.change($("#secSel"), {target: {value: key}}); await settle(1); }
@@ -400,8 +535,8 @@ test("the app's inspector shows what the vanilla page showed, for every section 
       await pickSection(s);
       const k = "inspector|" + t + "|section|" + s, want = BASELINE[k];
       assert.ok(want, "the baseline has no state " + k);
-      const [got, main] = decarded(unread(withoutStrip(s === "prompt" ? withoutStart(snapshot(document)) : snapshot(document))),
-        cased(reheaded(withoutOps(withoutChip(want).main!))));
+      const [snap, base] = withoutPanels(s === "prompt" ? withoutStart(snapshot(document)) : snapshot(document), cased(reheaded(withoutOps(withoutChip(want).main!))));
+      const [got, main] = decarded(unread(withoutStrip(snap)), base);
       assert.deepEqual(got, {...restyled(want), main}, k);
       seen.push(k);
     }
@@ -413,6 +548,7 @@ test("the app's inspector shows what the vanilla page showed, for every section 
   }
   assert.deepEqual(seen, keys);
   assert.ok(readSeen.runin > 0 && readSeen.meta > 0, "the walk met no run-in heading or no footer");
+  assert.ok(panelSeen.bars > 0 && panelSeen.watches > 0 && panelSeen.panels > panelSeen.watches, "the walk met no spine filter or no panel of a kind");
 }, 120000);
 
 test("the Packs drawer shows what the vanilla resume pack screen showed, for every pack and ticket", async () => {
@@ -467,8 +603,66 @@ test("the app's reviews and Ledger screens show what the vanilla reviews, calibr
   await tabTo("ledgers");
   const cal = BASELINE["calibration"], led = restyled(BASELINE["ledgers"]);
   restyled(cal);
-  assert.deepEqual(snapshot(document), {...led, main: {text: [...cal.main!.text, ...led.main!.text], attrs: [...cal.main!.attrs, ...led.main!.attrs]}});
+  assert.deepEqual(snapshot(document), {...led, rail: null, main: reledgered(cal.main!, led.main!)});
 });
+
+/* The Ledger follows its board, with calibration under its title (G1, G3,
+   G4). The comparison rebuilds the page from the two vanilla screens' runs by
+   these rules, which name every change:
+   - The title reads "Ledger", and the subtitle names the decisions and the
+     tickets that the calibration tiles counted. The tiles go. Their shipped
+     or closed count matches the index, which the rail's groups show.
+   - Calibration takes the Calibration component: a question for a title, a
+     percentage of ruled decisions that held, and a legend in sentence case
+     that flags each tier under ten decisions. Every count line stays.
+   - The status filters split into word and count, in the Ledger board's
+     order. Confidence is a select whose options read "High · 4".
+   - The Entry column holds the ticket and the entry, so the old ticket
+     column goes, and the status word is a chip in capitals. */
+function reledgered(cal: Region, led: Region): Region {
+  const c = cal.text, l = led.text;
+  assert.deepEqual(c.slice(0, 2), ["calibration", "does stated confidence predict outcomes"]);
+  assert.deepEqual([c[3], c[5], c[7], c[9]], ["tickets indexed", "shipped or closed", "decisions logged", "watches overdue + unanchored"]);
+  assert.equal(String([...BASE_STATES.values()].filter(s => s === "shipped" || s === "closed").length), c[4], "the shipped or closed tile");
+  assert.equal(c[10], "decision outcomes by stated confidence");
+  const tiers: string[] = [], small: string[] = [];
+  let i = 11;
+  for (; !/^validated$/.test(c[i]); ){
+    const tier = c[i++], runs: string[] = [];
+    while (!/ruled validated$|^none ruled yet$/.test(c[i])) runs.push(c[i++]);
+    const share = c[i++], m = share.match(/^(\d+) of (\d+) ruled validated$/);
+    tiers.push(tier, m ? Math.round(Number(m[1]) / Number(m[2]) * 100) + "%" : "—", ...runs, share);
+    const total = runs.reduce((n, r) => n + parseInt(r.replace(/^· /, ""), 10), 0);
+    if (total < 10) small.push(` · ${tier} has only ${total} decisions`);
+  }
+  const legend = c.slice(i).map(k => k[0].toUpperCase() + k.slice(1));
+  assert.deepEqual(l.slice(0, 4), ["ledgers", "the corpus's decision record · settled rulings included · watches live on the board", "assumptions", "status"]);
+  i = 4;
+  const status: Record<string, string> = {}, conf: Record<string, string> = {};
+  while (l[i] !== "confidence"){ const [k, n] = l[i++].split(" "); status[k] = n; }
+  i++;
+  while (/^(all|high|medium|low|other) \d+$/.test(l[i])){ const [k, n] = l[i++].split(" "); conf[k] = n; }
+  const filters = ["all", "open", "validated", "invalidated", "unknown", "other"].filter(k => status[k]).flatMap(k => [k.toUpperCase(), status[k]]);
+  const options = ["All", ...["high", "medium", "low", "other"].filter(k => conf[k] && k !== "all").map(k => k[0].toUpperCase() + k.slice(1) + " · " + conf[k])];
+  const HEAD: Record<string, string> = {entry: "Entry", decision: "Decision", conf: "Conf", status: "Status", watch: "Watch", age: "Age"};
+  assert.equal(l[i++], "ticket");
+  const heads: string[] = [];
+  for (; l[i] !== "age"; i++) heads.push(ARROWS[l[i]] || HEAD[l[i]]);
+  heads.push("Age");
+  i++;
+  const rows: string[] = [];
+  while (i < l.length){
+    const [tid, id, title, cf, st] = l.slice(i, i + 5);
+    i += 5;
+    const watch: string[] = [];
+    while (!/^(\d+d|—)$/.test(l[i])) watch.push(l[i++]);
+    rows.push(tid, id, title, cf, st.toUpperCase(), ...watch, l[i++]);
+  }
+  return {text: ["Ledger", `${c[6]} decisions across ${c[2]} tickets, settled rulings included`,
+    "Does stated confidence predict outcomes?", "Share of ruled decisions that held", ...tiers, ...legend,
+    "Bars are each tier’s own total" + small.join(""), ...filters, "Confidence", ...options, ...heads, ...rows],
+    attrs: ["aria-label=Calibration", ...cal.attrs, "aria-label=Search decisions", "placeholder=Search decisions", "aria-label=Status", ...led.attrs]};
+}
 
 // ---- the fixture the vanilla page tests use ----
 
@@ -649,11 +843,12 @@ test("the rail collapses a group and a ticket click selects it", async () => {
   assert.equal($$("#rail [data-key]").length, n - inGroup);
   await click(sec());
   assert.equal($$("#rail [data-key]").length, n);
-  await click(tabFor("watchboard"));
   await click(entry("AA1"));
   assert.equal(entry("AA1").getAttribute("aria-current") === "true", true);
-  // A rail pick from the board opens the ticket in the inspector.
   assert.equal(isOn("scrInspector"), true);
+  // The Watches board draws no rail, so the rail leaves with the Tickets view.
+  await click(tabFor("watchboard"));
+  assert.equal($("#rail"), null);
 });
 
 test("a rail selection keeps the keyboard on its entry", async () => {
@@ -675,15 +870,17 @@ test("the board rows live watches by default, overdue first, unanchored flagged"
   // unanchored row shows its window prose where the dated rows show a date.
   assert.ok(!scr.includes("OT-BB2-3"));
   assert.match(scr, /60 days after merge/);
+  // The due state is a chip of its own word, and Left counts the overdue days below zero.
   assert.match(scr, /UNANCHORED/);
-  assert.match(scr, /OVERDUE \d+D/);
+  assert.match(scr, /OVERDUE/);
+  assert.match(scr, /-\d+d/);
 });
 
 test("the status chips reveal settled rows with their ruling and hide a live state", async () => {
   const {hashes} = await bootBoard();
   await click(tabFor("watchboard"));
-  const chip = (s: string) => $$(".fpill").find(p => p.getAttribute("data-ws") === s)!;
-  assert.equal(chip("closed").textContent, "closed 1");
+  const chip = (s: string) => $$("#scrWatch .adp-filter").find(p => p.getAttribute("data-ws") === s)!;
+  assert.equal(chip("closed").textContent, "CLOSED 1");
   await click(chip("closed"));
   assert.deepEqual(wids(), ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2", "OT-BB2-3"]);
   assert.match($("#scrWatch").textContent!, /VALIDATED 2026-08-10/);
@@ -756,7 +953,8 @@ test("the sorted header carries aria-sort and the arrow hides from the tree", as
   assert.equal(th("due").getAttribute("aria-sort"), null);
   await click(th("tid"));
   assert.equal(th("tid").getAttribute("aria-sort"), "descending");
-  assert.equal($$(".arr")[0].getAttribute("aria-hidden"), "true");
+  assert.equal(th("tid").querySelector("span")!.getAttribute("aria-hidden"), "true");
+  assert.equal(th("tid").textContent, "Ticket ↓");
 });
 
 test("the status header orders the default board and a flip really reverses it", async () => {
@@ -800,7 +998,7 @@ test("an all-settled corpus says the filters hide it, and the closed chip shows 
     {"20260104-DD4-delta/audit-log.md": LOG_D}).fetch});
   await click(tabFor("watchboard"));
   assert.match($("#scrWatch").textContent!, /every watch here is hidden by the status filters/);
-  await click($$(".fpill").find(p => p.getAttribute("data-ws") === "closed")!);
+  await click($$("#scrWatch .adp-filter").find(p => p.getAttribute("data-ws") === "closed")!);
   assert.deepEqual(wids(), ["OT-DD4-1"]);
 });
 
@@ -808,8 +1006,9 @@ test("the board marks an anchored watch's due text as dated and an unanchored on
   await bootBoard();
   await click(tabFor("watchboard"));
   const cell = (text: string) => $$("#scrWatch td").find(td => td.textContent === text)!;
-  assert.equal(cell("2099-01-01").className, "mono nw");
-  assert.equal(cell("60 days after merge").className, "mono");
+  assert.equal(cell("2099-01-01").style.whiteSpace, "nowrap");
+  assert.equal(cell("60 days after merge").style.whiteSpace, "");
+  assert.equal(cell("60 days after merge").style.fontFamily, "var(--font-mono)");
 });
 
 test("board links carry real hash hrefs, so the keyboard can reach them", async () => {
@@ -873,8 +1072,10 @@ test("a served page waiting for its corpus carries the ticket link through its h
   await act(async () => { feed.onopen!(); });
   await settle();
   // The link's ticket lands, and the screen the reader chose meanwhile stays.
-  assert.equal(entry("AA1").getAttribute("aria-current") === "true", true);
+  // The rail shows with the Tickets view, so we read the selection there.
   assert.equal(isOn("scrWatch"), true);
+  await click(tabFor("inspector"));
+  assert.equal(entry("AA1").getAttribute("aria-current") === "true", true);
 });
 
 test("a dead ticket link takes no default selection", async () => {
@@ -987,6 +1188,7 @@ test("a boot that failed honors the screen token at once and the ticket token wh
   await act(async () => { feed.onopen!(); });
   await settle();
   assert.equal($("#scrWatch").classList.contains("is-on"), true);
+  await click(tabFor("inspector"));
   assert.deepEqual(marked(), ["AA1"]);
 });
 
@@ -1371,9 +1573,10 @@ test("the corpus boot selects the first rail entry; a full ticket renders its sp
   assert.equal(secVal(), "sec-decision-log");
   assert.equal($("#tickHead .adp-chip").textContent, "shipped");
   assert.equal($("#tickHead .adp-chip + .adp-meta").textContent, "inferred from the log");
-  assert.match(scr, /decisions cited by Decision Log/);
-  assert.match(scr, /open 1/);
-  assert.match(scr, /validated 1/);
+  // The status filter sits above the cards and counts the cards it rules.
+  assert.match(scr, /Decisions cited here/);
+  assert.match(scr, /OPEN <span>1<\/span>/);
+  assert.match(scr, /VALIDATED <span>1<\/span>/);
   assert.equal(last(hashes), "#t=AA1&s=sec-decision-log");
 });
 
@@ -1397,13 +1600,13 @@ test("a phase-scoped section shows only what it cites, with backlink chips", asy
   await click(entry("AA1"));
   await pickSection("sec-pr-summary");
   const scr = insp();
-  assert.match(scr, /decisions cited by PR Summary/);
+  assert.match(scr, /Decisions cited here/);
   assert.ok(scr.includes("DL-001"));
   assert.ok(!scr.includes(`data-dl="DL-002"`));
-  assert.match(scr, /watches cited by PR Summary/);
+  assert.match(scr, /Watches cited here/);
   assert.ok(scr.includes("OT-AA1-2"));
   assert.ok(!scr.includes(`data-item="OT-AA1-1"`));
-  assert.match(scr, /class="pc"/);
+  assert.match(scr, /class="adp-chip adp-chip--s" data-key="/);
 });
 
 test("a backlink chip names an ad hoc section by its kind instead of §", async () => {
@@ -1445,7 +1648,7 @@ test("a watch link jumps to the obligation section with the row highlighted", as
 test("the status pills filter the decisions table", async () => {
   await bootCorpus();
   await click(entry("AA1"));
-  await click($$(".fpill").find(p => p.getAttribute("data-dlf") === "open")!);
+  await click($$(".adp-filter").find(p => p.getAttribute("data-dlf") === "open")!);
   assert.ok(insp().includes(`data-dl="DL-002"`));
   assert.ok(!insp().includes(`data-dl="DL-001"`));
 });
@@ -1455,11 +1658,11 @@ test("the status pills filter the decisions table", async () => {
 test("a filter pill keeps the keyboard through its own re-render", async () => {
   await bootCorpus();
   await click(entry("AA1"));
-  const pill = $$(".fpill").find(p => p.getAttribute("data-dlf") === "open")!;
+  const pill = $$(".adp-filter").find(p => p.getAttribute("data-dlf") === "open")!;
   pill.focus();
   await click(pill);
   same(document.activeElement, pill, "focus left the pill it pressed");
-  assert.ok($$(".fpill").includes(pill));
+  assert.ok($$(".adp-filter").includes(pill));
 });
 
 test("the section dropdown keeps focus across its change re-render", async () => {
@@ -1586,10 +1789,10 @@ test("a hostile served log never lands markup in the page", async () => {
     assert.ok(!insp().includes("<img"), s);
     assert.ok(!insp().includes("<script"), s);
   }
-  // The quote-bearing confidence lands in the decisions panel as the
-  // cf-high class and inert cell text, and no tag carries the handler.
+  // The quote-bearing confidence lands in the decisions panel as inert
+  // cell text, and no tag carries the handler.
   await pickSection("sec-decision-log");
-  assert.match(insp(), /class="cf-high nw"/);
+  assert.match(insp(), /class="adp-col-conf"[^>]*>HIGH/);
   assert.ok(!/<[^>]*onmouseover/.test(insp()));
   assert.ok(!/<[^>]*onmouseover/.test($("#rail").innerHTML));
   await click(op("data-view", "full"));
@@ -1804,19 +2007,19 @@ test("a pick or a step onto a section that cannot reach the stage's top survives
 // The two builder checks of the vanilla page, held against the component
 // that replaced the builder.
 const panelRow = (statusKind: "validated" | "open") => ({id: "DL-001", title: "t", conf: "HIGH", confKind: "high" as const, statusKind,
-  watch: null, settled: {wid: "OT-1", outcome: "VALIDATED", closed: "2026-09-01"}, chips: [], hl: false});
-const panelProps = {label: "x", pills: null, sort: {k: "id", d: 1}, onSort(){}, onRow(){}, onWatch(){}, onChip(){}};
+  watch: null, settled: {wid: "OT-1", outcome: "VALIDATED", closed: "2026-09-01"}, chips: [], hl: false, age: null});
+const panelProps = {count: 1, filters: null, sort: {k: "id", d: 1}, onSort(){}, onRow(){}, onWatch(){}, onChip(){}};
 
 test("a settled decision's watch cell keeps the id and puts the ruling on hover", () => {
   const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [panelRow("validated")]}));
-  assert.ok(container.innerHTML.includes(`title="closed VALIDATED 2026-09-01">OT-1</a>`));
+  assert.match(container.innerHTML, /title="closed VALIDATED 2026-09-01"[^>]*>OT-1<\/a>/);
   // The ruled state lives in the status column, and the cell never repeats it.
-  assert.ok(!container.innerHTML.includes(`st-closed`));
+  assert.ok(!container.innerHTML.includes(`adp-chip--closed`));
 });
 
 test("an open decision with only a settled watch leads with the marker", () => {
   const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [panelRow("open")]}));
-  assert.ok(container.innerHTML.includes(`<span class="st-unanchored nw">no watch</span> <a class="wl"`));
+  assert.ok(container.innerHTML.includes(`<span class="adp-chip adp-chip--s adp-chip--open">no watch</span> <a class="wl"`));
   assert.ok(container.innerHTML.includes(`title="closed VALIDATED 2026-09-01"`));
 });
 
@@ -1965,25 +2168,25 @@ test("the ledger rows every decision, open debt first, settled outcomes last", a
   // Calibration heads the Ledger and names every outcome in its legend, so
   // we read the ledger's own part alone.
   const scr = $("#scrLedgers").innerHTML.replace($("#scrCalib").outerHTML, "");
-  assert.match(scr, /open 2/);
-  assert.match(scr, /validated 1/);
-  assert.ok(!scr.includes("invalidated"));
+  assert.match(scr, /OPEN <span>2<\/span>/);
+  assert.match(scr, /VALIDATED <span>1<\/span>/);
+  assert.ok(!scr.includes("INVALIDATED"));
 });
 
 test("the ledger pills filter corpus-wide and leave the inspector's filter alone", async () => {
   await bootBoard();
   await click(entry("AA1"));
-  await click($$(".fpill").find(p => p.getAttribute("data-dlf") === "validated")!);
+  await click($$(".adp-filter").find(p => p.getAttribute("data-dlf") === "validated")!);
   assert.deepEqual($$(".dlrow").map(r => r.getAttribute("data-dl")), ["DL-001"]);
   await click(tabFor("ledgers"));
-  await click($$(".fpill").find(p => p.getAttribute("data-lgf") === "open")!);
+  await click($$(".adp-filter").find(p => p.getAttribute("data-lgf") === "open")!);
   assert.deepEqual(lgRows().map(r => r.getAttribute("data-dl")), ["DL-002", "DL-001"]);
   await click(tabFor("inspector"));
   assert.deepEqual($$(".dlrow").map(r => r.getAttribute("data-dl")), ["DL-001"]);
-  assert.match($$(".fpill").find(p => p.getAttribute("data-dlf") && p.classList.contains("is-on"))!.textContent!, /validated/);
+  assert.match($$(".adp-filter").find(p => p.getAttribute("data-dlf") && p.getAttribute("aria-pressed") === "true")!.textContent!, /VALIDATED/);
   // The ledger's own filter held through the round trip too.
   await click(tabFor("ledgers"));
-  assert.match($$(".fpill").find(p => p.getAttribute("data-lgf") && p.classList.contains("is-on"))!.textContent!, /open/);
+  assert.match($$(".adp-filter").find(p => p.getAttribute("data-lgf") && p.getAttribute("aria-pressed") === "true")!.textContent!, /OPEN/);
 });
 
 test("a ledger entry link lands the inspector on the item in its owning section", async () => {
@@ -2037,7 +2240,8 @@ test("the ledger's sorted header carries aria-sort and the arrow hides from the 
   assert.equal(th("status").getAttribute("aria-sort"), null);
   await click(th("id"));
   assert.equal(th("id").getAttribute("aria-sort"), "descending");
-  assert.equal($$(".arr")[0].getAttribute("aria-hidden"), "true");
+  assert.equal(th("id").querySelector("span")!.getAttribute("aria-hidden"), "true");
+  assert.equal(th("id").textContent, "Entry ↓");
 });
 
 test("the ledger renders hostile harvested fields as text, and a pill carries the mark it was given", async () => {
@@ -2050,7 +2254,7 @@ test("the ledger renders hostile harvested fields as text, and a pill carries th
   assert.ok(!$("#scrLedgers").innerHTML.includes("<img"));
   assert.ok($("#scrLedgers").textContent!.includes(hostile));
   cleanup();
-  const {container} = render(createElement(Pills, {counts: {all: 1, open: 1}, active: "all", mark: "data-lgf", onPick(){}}));
+  const {container} = render(createElement(Filters, {label: "Status", counts: {all: 1, open: 1}, active: "all", mark: "data-lgf", onPick(){}}));
   assert.match(container.innerHTML, /data-lgf="open"/);
 });
 
@@ -2278,104 +2482,111 @@ test("a corpus-wide pack fills with no ticket selected, and a ticket pack still 
 
 const calTab = () => click(tabFor("calibration"));
 
-test("the calibration screen tiles the corpus and rows every confidence with the ledger's counts", async () => {
+/* The calibration tiles left with the Ledger board (G4). Each number they
+   held still shows elsewhere: tickets and decisions in the Ledger subtitle,
+   overdue and unanchored in the Watches subtitle. */
+test("calibration rows every confidence with the ledger's counts, and the tiles' numbers live in the subtitles", async () => {
   await bootBoard();
-  // The overdue count moves with the date, so the board's chip states it.
   await click(tabFor("watchboard"));
-  const overdue = $$(".fpill").find(p => p.getAttribute("data-ws") === "overdue")!.textContent!.match(/overdue (\d+)/)![1];
+  const overdue = $$("#scrWatch .adp-filter").find(p => p.getAttribute("data-ws") === "overdue")!.textContent!.match(/OVERDUE (\d+)/)![1];
+  assert.match($("#scrWatch").textContent!, new RegExp(`· ${overdue} overdue · 1 unanchored`));
   await calTab();
+  assert.match($("#scrLedgers").textContent!, /3 decisions across 2 tickets, settled rulings included/);
+  assert.equal($$("[data-tile]").length, 0);
   const scr = $("#scrCalib").innerHTML;
-  assert.deepEqual($$(".caltile-n").map(t => t.textContent), ["2", "2", "3", overdue + "+1"]);
-  assert.deepEqual($$(".caltile").map(t => t.getAttribute("data-tile")), ["tickets", "shipped", "decisions", "watches"]);
-  assert.deepEqual($$(".calrow").map(r => r.getAttribute("data-conf")), ["high", "medium", "low"]);
+  assert.deepEqual($$("#scrCalib [data-conf]").map(r => r.getAttribute("data-conf")), ["high", "medium", "low"]);
   assert.match(scr, /1 validated/);
   assert.match(scr, /1 of 1 ruled validated/);
   assert.match(scr, /none ruled yet/);
+  // The ruled share reads as a percentage, and a tier with nothing ruled reads a dash.
+  assert.deepEqual($$("#scrCalib .adp-cal__pct").map(p => p.textContent), ["100%", "—", "—"]);
   // The separator leads the count it belongs to, so no line can end on one.
-  assert.match(scr, /<span class="calnw">· 1 open<\/span>/);
+  assert.match(scr, /<span style="white-space: nowrap;">· 1 open<\/span>/);
   assert.ok(!/·\s*<\/span>/.test(scr));
-  const segs = (k: string) => (scr.match(new RegExp(`class="calseg calseg-${k}"`, "g")) || []).length;
+  const segs = (k: string) => $$("#scrCalib [data-calk]").filter(b => b.getAttribute("data-calk") === k).length;
   assert.equal(segs("open"), 2);
   assert.equal(segs("validated"), 1);
   assert.equal(segs("invalidated"), 0);
-  for (const k of ["validated", "invalidated", "open", "unknown", "other"])
-    assert.match(scr, new RegExp(`<i class="calseg-${k}"></i>${k}`));
-  // The open count agrees with the ledger's pill on the same corpus.
-  const open = (scr.match(/(\d+) open</g) || []).reduce((n, s) => n + parseInt(s, 10), 0);
-  await click(tabFor("ledgers"));
-  assert.match($("#scrLedgers").innerHTML, new RegExp(`open ${open}`));
+  for (const k of ["Validated", "Invalidated", "Open", "Unknown", "Other"]) assert.match(scr, new RegExp(`</i>${k}</span>`));
+  assert.match(scr, /Bars are each tier’s own total · HIGH has only 2 decisions/);
+  // The open count agrees with the ledger's filter on the same corpus.
+  const open = (scr.match(/(\d+) open</g) || []).reduce((n, s) => n + parseInt(s.replace(/^· /, ""), 10), 0);
+  assert.match($("#scrLedgers").innerHTML, new RegExp(`OPEN <span>${open}</span>`));
 });
 
 const oneLog = (log: string) => liveCorpus({root: "demo", files: ["20260103-CC3-gamma/audit-log.md"]}, {"20260103-CC3-gamma/audit-log.md": log}).fetch;
 
-test("the calibration screen counts a ruled entry by its ruling, never its card", async () => {
+test("calibration counts a ruled entry by its ruling, never its card", async () => {
   await boot({fetch: oneLog(["# Audit Log — CC3 gamma", "", "## Decision Log", "", "### [DL-001] Ruled off the card",
     "- **Decision:** pick d", "- **Confidence:** MEDIUM", "- **Status:** OPEN", "", "- **DL-001 CLOSED 2026-08-10 → VALIDATED.** The ruling.", ""].join("\n"))});
   await calTab();
   const scr = $("#scrCalib").innerHTML;
   assert.match(scr, /1 validated/);
   assert.match(scr, /1 of 1 ruled validated/);
-  assert.ok(!scr.includes('class="calseg calseg-open"'));
+  assert.equal($$('#scrCalib [data-calk="open"]').length, 0);
 });
 
 // DL-007: calibration heads the Ledger, so its old link lands there.
-test("a calibration deep link boots to the Ledger with calibration at its top, and the Ledger writes its own token", async () => {
+test("a calibration deep link boots to the Ledger with calibration under its title, and the Ledger writes its own token", async () => {
   const {hashes} = await bootBoard({hash: "#v=calibration"});
   assert.equal(isOn("scrLedgers"), true);
-  same($("#scrLedgers").firstElementChild, $("#scrCalib"), "calibration does not head the Ledger");
-  assert.equal($$(".caltile").length, 4);
+  same($("#scrCalib").previousElementSibling, $("#scrLedgers h1")!.parentElement, "calibration does not follow the Ledger's title");
+  assert.equal($$("#scrCalib [data-conf]").length, 3);
   assert.match(last(hashes), /^#v=ledgers/);
 });
 
-test("with no corpus the calibration screen says so instead of tiling zeros", async () => {
+test("with no corpus the Ledger says so and draws no calibration", async () => {
   await boot();
   await calTab();
-  assert.match($("#scrCalib").innerHTML, /no corpus behind this page/);
-  assert.equal($$(".caltile").length, 0);
-  assert.equal($$(".calrow").length, 0);
+  assert.match($("#scrLedgers").innerHTML, /no corpus behind this page/);
+  assert.equal($$("#scrCalib [data-conf]").length, 0);
 });
 
-test("a corpus with no decisions tiles its zeros and names the empty record", async () => {
+test("a corpus with no decisions names the empty record in the calibration section", async () => {
   await boot({fetch: oneLog("# Audit Log — CC3 gamma\n\n## Problem Statement\n\n**What the problem is:** empty.\n")});
   await calTab();
-  assert.deepEqual($$(".caltile-n").map(t => t.textContent), ["1", "0", "0", "0+0"]);
+  assert.match($("#scrLedgers").textContent!, /0 decisions across 1 tickets/);
   assert.match($("#scrCalib").innerHTML, /no decisions on record/);
-  assert.equal($$(".calrow").length, 0);
+  assert.equal($$("#scrCalib [data-conf]").length, 0);
 });
 
-test("a bar segment lands the ledger filtered to its cell, with focus on the status pill", async () => {
+const confSel = () => $("[data-lgc-sel]") as HTMLSelectElement;
+const pickConf = async (v: string) => { fireEvent.change(confSel(), {target: {value: v}}); await settle(1); };
+
+test("a bar segment lands the ledger filtered to its cell, with focus on the status filter", async () => {
   const {hashes} = await bootBoard();
   await calTab();
-  const seg = $$(".calseg").find(s => s.getAttribute("data-calc") === "high" && s.getAttribute("data-calk") === "open")!;
+  const seg = $$("#scrCalib [data-calc]").find(s => s.getAttribute("data-calc") === "high" && s.getAttribute("data-calk") === "open")!;
   assert.match(seg.getAttribute("aria-label")!, /^1 open at HIGH/);
   await click(seg);
   assert.equal(isOn("scrLedgers"), true);
   assert.match(last(hashes), /^#v=ledgers/);
   assert.deepEqual(lgRows().map(r => r.getAttribute("data-t") + "/" + r.getAttribute("data-dl")), ["BB2/DL-001"]);
-  const on = (attr: string) => $$(".fpill").find(p => p.getAttribute(attr) && p.classList.contains("is-on"))!;
-  assert.match(on("data-lgf").textContent!, /^open 2/);
-  assert.match(on("data-lgc").textContent!, /^high 2/);
-  assert.equal($("#scrLedgers").innerHTML.includes("pilllab"), true);
-  same(document.activeElement, on("data-lgf"), "focus is not on the status pill");
+  const on = $$(".adp-filter").find(p => p.getAttribute("data-lgf") && p.getAttribute("aria-pressed") === "true")!;
+  assert.equal(on.textContent, "OPEN 2");
+  assert.equal(confSel().value, "high");
+  assert.equal(confSel().selectedOptions[0].textContent, "High · 2");
+  same(document.activeElement, on, "focus is not on the status filter");
   // Widening the confidence back to all keeps the status cut.
-  await click($$(".fpill").find(p => p.getAttribute("data-lgc") === "all")!);
+  await pickConf("all");
   assert.deepEqual(lgRows().map(r => r.getAttribute("data-dl")), ["DL-002", "DL-001"]);
   // The confidence filter is ledger state, so it holds across a tab round trip.
-  await click($$(".fpill").find(p => p.getAttribute("data-lgc") === "low")!);
+  await pickConf("low");
   await click(tabFor("inspector"));
   await click(tabFor("ledgers"));
-  assert.match(on("data-lgc").textContent!, /^low 1/);
+  assert.equal(confSel().value, "low");
+  assert.equal(confSel().selectedOptions[0].textContent, "Low · 1");
   assert.deepEqual(lgRows().map(r => r.getAttribute("data-dl")), ["DL-002"]);
 });
 
-test("the ledger pills row every kind the record holds, so no segment lands on an empty pill", async () => {
+test("the ledger filters row every kind the record holds, so no segment lands on an empty filter", async () => {
   await boot({fetch: oneLog(["# Audit Log — CC3 gamma", "", "## Decision Log", "",
     "### [DL-001] Parked", "- **Decision:** a", "- **Confidence:** CERTAIN", "- **Status:** PARKED", "",
     "### [DL-002] Unjudged", "- **Decision:** b", "- **Confidence:** LOW", "- **Status:** UNKNOWN", ""].join("\n"))});
   await calTab();
-  await click($$(".calseg").find(s => s.getAttribute("data-calc") === "other")!);
-  const pills = $$(".fpill").map(p => p.textContent);
-  assert.ok(pills.includes("other 1") && pills.includes("unknown 1"));
+  await click($$("#scrCalib [data-calc]").find(s => s.getAttribute("data-calc") === "other")!);
+  const pills = $$(".adp-filter").map(p => p.textContent);
+  assert.ok(pills.includes("OTHER 1") && pills.includes("UNKNOWN 1"));
   assert.deepEqual(lgRows().map(r => r.getAttribute("data-dl")), ["DL-001"]);
 });
 
@@ -2383,7 +2594,7 @@ test("a change event keeps focus on the calibration segment it held", async () =
   const live = liveCorpus(LISTING, {...TEXTS});
   const {feed} = await boot({fetch: live.fetch});
   await calTab();
-  const seg = $$(".calseg").find(s => s.getAttribute("data-calc") === "low")!;
+  const seg = $$("#scrCalib [data-calc]").find(s => s.getAttribute("data-calc") === "low")!;
   seg.focus();
   live.texts["20260102-BB2-beta/audit-log.md"] = LOG_B + "\n## Amendment Notes\n\nlate news.\n";
   await change(feed);
@@ -2667,7 +2878,7 @@ test("a rail pick resets the decisions filter, the collapsed sections, and the r
   const c = reviewCorpus();
   c.texts[`${RV1}/audit-log.md`] = LOG.replace("AA1 alpha", "RV1 rounds").replace(/OT-AA1-/g, "OT-RV1-");
   await bootReviews(c, "#t=RV1&s=sec-decision-log");
-  await click($$(".fpill").find(p => p.getAttribute("data-dlf") === "open")!);
+  await click($$(".adp-filter").find(p => p.getAttribute("data-dlf") === "open")!);
   await click(op("data-view", "full"));
   await click(($$(".fsec") as HTMLDetailsElement[]).find(d => d.getAttribute("data-key") === "sec-problem-statement")!.querySelector(".fsum")!);
   await click(entry("RV2"));
@@ -2676,7 +2887,7 @@ test("a rail pick resets the decisions filter, the collapsed sections, and the r
   assert.equal(ps.open, true);
   await click(op("data-view", "section"));
   await pickSection("sec-decision-log");
-  assert.equal($$(".fpill").find(p => p.getAttribute("data-dlf") === "all")!.classList.contains("is-on"), true);
+  assert.equal($$(".adp-filter").find(p => p.getAttribute("data-dlf") === "all")!.getAttribute("aria-pressed"), "true");
   await click(tabFor("reviews"));
   assert.match($("#revHead").innerHTML, /PR #7 · Round 10/);
   await click(entry("RV2"));
@@ -2869,21 +3080,21 @@ const citedCorpus = () => {
 test("a round shows the decisions and watches it cites, and a round that cites none shows no panel", async () => {
   await bootReviews(citedCorpus(), "#v=reviews&t=AA1&s=pr-review-PR3-20260102-r1.md");
   const body = $("#revBody").innerHTML;
-  assert.match(body, /decisions cited by PR #3 · Round 1/);
-  assert.match(body, /watches cited by PR #3 · Round 1/);
+  assert.match(body, /Decisions cited here/);
+  assert.match(body, /Watches cited here/);
   assert.deepEqual(within("revBody", ".dlrow").map(r => r.getAttribute("data-dl")), ["DL-002"]);
   assert.deepEqual(within("revBody", ".wrow").map(r => r.getAttribute("data-item")), ["OT-AA1-1"]);
-  assert.ok(within("revBody", ".pc").length > 0);
+  assert.ok(within("revBody", "a.adp-chip[data-key]").length > 0);
   await revStep(1);
-  assert.doesNotMatch($("#revBody").innerHTML, /cited by/);
+  assert.doesNotMatch($("#revBody").innerHTML, /cited here/);
 });
 
 test("the reviews filter is its own, and a cited row opens its entry in the inspector", async () => {
   await bootReviews(citedCorpus(), "#v=reviews&t=AA1&s=pr-review-PR3-20260102-r1.md");
-  const rpill = (f: string) => within("revBody", ".fpill").find(p => p.getAttribute("data-rdf") === f)!;
-  assert.deepEqual(within("revBody", ".fpill").map(p => p.getAttribute("data-rdf")), ["all", "open"]);
+  const rpill = (f: string) => within("revBody", ".adp-filter").find(p => p.getAttribute("data-rdf") === f)!;
+  assert.deepEqual(within("revBody", ".adp-filter").map(p => p.getAttribute("data-rdf")), ["all", "open"]);
   await click(rpill("open"));
-  assert.equal(rpill("open").classList.contains("is-on"), true);
+  assert.equal(rpill("open").getAttribute("aria-pressed"), "true");
   assert.equal(isOn("scrReviews"), true);
   await click(within("revBody", ".dlrow")[0]);
   assert.equal(isOn("scrInspector"), true);
@@ -2891,9 +3102,9 @@ test("the reviews filter is its own, and a cited row opens its entry in the insp
   // The inspector's own filter never saw the reviews click.
   await click(within("scrInspector", '[data-op="back"]')[0]);
   await pickSection("sec-decision-log");
-  const ipill = (f: string) => within("scrInspector", ".fpill").find(p => p.getAttribute("data-dlf") === f)!;
-  assert.equal(ipill("all").classList.contains("is-on"), true);
-  assert.equal(ipill("open").classList.contains("is-on"), false);
+  const ipill = (f: string) => within("scrInspector", ".adp-filter").find(p => p.getAttribute("data-dlf") === f)!;
+  assert.equal(ipill("all").getAttribute("aria-pressed"), "true");
+  assert.equal(ipill("open").getAttribute("aria-pressed"), "false");
 });
 
 test("a column sort on one screen reaches the other screen's cited table the next time it shows", async () => {
@@ -3347,8 +3558,8 @@ test("the rail renders hostile harvested fields as text", () => {
 
 test("the decisions panel renders hostile harvested fields as text", () => {
   const hostile = "<img src=x onerror=alert(1)>";
-  const {container} = render(createElement(DecisionsPanel, {...panelProps, label: hostile, rows: [{id: hostile, title: hostile, conf: hostile,
-    confKind: "other", statusKind: "open", watch: hostile, settled: null, chips: [{key: hostile, label: hostile, title: hostile}], hl: false}]}));
+  const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [{id: hostile, title: hostile, conf: hostile,
+    confKind: "other", statusKind: "open", watch: hostile, settled: null, chips: [{key: hostile, label: hostile, title: hostile}], hl: false, age: null}]}));
   assert.ok(!container.innerHTML.includes("<img"));
   assert.ok(container.textContent!.includes(hostile));
 });
@@ -3379,40 +3590,44 @@ test("a card list keeps a space-4 gap below content above it, and none at the to
 test("a due cell in the watches panel holds a date on one line and lets window prose wrap", () => {
   const prose = "until the developer's next live session with the testbed, no later than the start of ZUP-B3";
   const row = (o: {dueText: string; dueDated: boolean}) => ({wid: "OT-A1-1", what: "w", dls: [], state: "upcoming" as const,
-    stateLabel: "upcoming 30d", chips: [], hl: false, ...o});
-  const {container} = render(createElement(WatchesPanel, {label: "x", sort: {k: "wid", d: 1}, onSort(){}, onWatch(){}, onChip(){},
+    stateLabel: "upcoming 30d", chips: [], hl: false, left: 30, ...o});
+  const {container} = render(createElement(WatchesPanel, {sort: {k: "wid", d: 1}, onSort(){}, onWatch(){}, onChip(){},
     rows: [row({dueText: "2026-12-24", dueDated: true}), {...row({dueText: prose, dueDated: false}), wid: "OT-A1-2"}]}));
   const html = container.innerHTML;
-  assert.ok(html.includes('<td class="mono nw">2026-12-24</td>'));
-  assert.ok(html.includes('<td class="mono">until the developer'));
-  assert.ok(html.includes('<td class="mono nw">OT-A1-1</td>'));
-  assert.ok(html.includes('<span class="st-upcoming nw">upcoming 30d</span>'));
+  // The Table component's id and number columns hold one line by their classes.
+  assert.ok(html.includes('<td style="font-family: var(--font-mono); font-size: 12px; white-space: nowrap;">2026-12-24</td>'));
+  assert.ok(html.includes('<td style="font-family: var(--font-mono); font-size: 12px;">until the developer'));
+  assert.ok(html.includes('<td class="adp-col-id">OT-A1-1</td>'));
+  assert.ok(html.includes('<span class="adp-chip adp-chip--s adp-chip--validated">UPCOMING</span>'));
+  assert.ok(html.includes('<td class="adp-col-num">30d</td>'));
 });
 
 test("the inspector marks an anchored watch's due text as dated and an unanchored one as prose", async () => {
   await bootCorpus();
   await pickSection("sec-obligation-ticket-list");
-  assert.ok(insp().includes('<td class="mono nw">2099-01-01</td>'));
-  assert.ok(insp().includes('<td class="mono">60 days after merge</td>'));
+  assert.ok(insp().includes('<td style="font-family: var(--font-mono); font-size: 12px; white-space: nowrap;">2099-01-01</td>'));
+  assert.ok(insp().includes('<td style="font-family: var(--font-mono); font-size: 12px;">60 days after merge</td>'));
 });
 
 test("the decisions panel and the ledger hold every id, label, and age on one line", async () => {
   const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [{id: "DL-104", title: "t", conf: "MEDIUM",
-    confKind: "medium", statusKind: "open", watch: null, settled: null, chips: [], hl: false}]}));
+    confKind: "medium", statusKind: "open", watch: null, settled: null, chips: [], hl: false, age: 12}]}));
   const panel = container.innerHTML;
-  assert.ok(panel.includes('<td class="mono nw">DL-104</td>'));
-  assert.ok(panel.includes('<span class="cf-medium nw">MEDIUM</span>'));
-  assert.ok(panel.includes('<span class="st-open nw">open</span>'));
-  assert.ok(panel.includes('<td><span class="st-unanchored nw">no watch</span></td>'));
+  // The id, conf, and age columns hold one line, and a chip holds its word on one line by the bundle's rule.
+  assert.ok(panel.includes('<td class="adp-col-id">DL-104</td>'));
+  assert.ok(panel.includes('<td class="adp-col-conf" style="white-space: nowrap;">MEDIUM</td>'));
+  assert.ok(panel.includes('<span class="adp-chip adp-chip--s adp-chip--open">OPEN</span>'));
+  assert.ok(panel.includes('<td class="adp-col-id"><span class="adp-chip adp-chip--s adp-chip--open">no watch</span></td>'));
+  assert.ok(panel.includes('<td class="adp-col-num">12d</td>'));
   cleanup();
   const log = ["## Decision Log", "", "### [DL-104] t", "- **Confidence:** MEDIUM", "- **Created:** 2026-08-13", "- **Status:** OPEN", ""].join("\n");
   await boot({fetch: liveCorpus({root: "demo", files: ["20260101-A1-one/audit-log.md"]}, {"20260101-A1-one/audit-log.md": log}).fetch});
   await click(tabFor("ledgers"));
   const ledger = $("#scrLedgers").innerHTML;
-  assert.match(ledger, /<td class="mono nw"><a class="wbl"[^>]*data-item="DL-104">DL-104<\/a><\/td>/);
-  assert.ok(ledger.includes('<span class="cf-medium nw">MEDIUM</span>'));
-  assert.ok(ledger.includes('<span class="st-open nw">open</span>'));
-  assert.ok(ledger.includes('<td class="mono nw">12d</td>'));
+  assert.match(ledger, /<td class="adp-col-id"><a class="wbl"[^>]*>A1<\/a> <a class="wbl"[^>]*data-item="DL-104">DL-104<\/a><\/td>/);
+  assert.ok(ledger.includes('<td class="adp-col-conf" style="white-space: nowrap;">MEDIUM</td>'));
+  assert.ok(ledger.includes('<span class="adp-chip adp-chip--s adp-chip--open">OPEN</span>'));
+  assert.ok(ledger.includes('<td class="adp-col-num">12d</td>'));
 });
 
 // ---- what the app leaves out ----
@@ -3514,7 +3729,8 @@ test("the app's new task screen shows what the vanilla page showed, less the fou
   await baselineBoot();
   await click($("#newTaskBtn"));
   const want = BASELINE["new task"];
-  assert.deepEqual(snapshot(document), {...restyled(want), main: withoutOps(want.main!, REMOVED_NT_OPS)});
+  // The New task board draws no rail, so the rail leaves this screen.
+  assert.deepEqual(snapshot(document), {...restyled(want), rail: null, main: withoutOps(want.main!, REMOVED_NT_OPS)});
 });
 
 test("the new task screen carries the standalone's field set and boots with today's date", async () => {
@@ -4506,6 +4722,8 @@ async function everyScreen(look: () => void){
   look();
   await click($('[aria-label="Close packs"]'));
   let reviewed = 0;
+  // The rail shows with the Tickets view alone, so we list its tickets there.
+  await tabTo("inspector");
   for (const t of rentries()){
     await tabTo("inspector");
     // A rail pick keeps the view the last ticket used, so we choose the
@@ -4543,7 +4761,9 @@ test("no screen offers a file input, a paste field, or a drop target", async () 
       }
   });
   // The boot, each view, the drawer, two views of each ticket, each ticket's
-  // reviews, and New task.
+  // reviews, and New task. The walk ends on New task, which draws no rail,
+  // so we count the rail's tickets from the Tickets view.
+  await tabTo("inspector");
   const tickets = rentries().length;
   assert.ok(tickets > 1, "the fixture corpus holds more than one ticket");
   assert.equal(screens, 1 + S.VIEWS.length + 1 + 2 * tickets + reviewed + 1, "the walk reached every ticket");
@@ -4555,11 +4775,11 @@ test("no screen offers a file input, a paste field, or a drop target", async () 
    from adp-bundle.css, or from adp-shell.css on a screen not yet moved onto
    the design system. Rendered documents sit in .md, where the theme's
    document styles apply. Two theme classes are deliberate: .md itself, and
-   .sr-live, which hides New task's spoken verdict. Five classes carry no
+   .sr-live, which hides New task's spoken verdict. The hook classes carry no
    style at all, because the handlers and the tests select by them. The
    shell's grid sits in its own style attribute. */
 const THEME_CLASSES = new Set(["md", "sr-live"]);
-const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow", "fsec", "fsum"]);
+const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow", "dlrow", "wbl", "wl", "fsec", "fsum"]);
 test("the app's screens use only adp-bundle.css and adp-shell.css classes outside rendered documents", async () => {
   const shell = new Set<string>();
   for (const sheet of ["adp-bundle.css", "adp-shell.css"]){

@@ -80,8 +80,7 @@ test("a section heading renders in the system's section type", async ({page, ser
    the system's two sheets alone, and compare every element that belongs to
    the system with its copy: anything with an adp- class, anything inside
    Prose, a decision card, the prompt view, a review grid, or a numbered
-   list. A difference means a rule from an old sheet reached it. The
-   decisions and watches panels convert in stage 3, so the walk skips them. */
+   list. A difference means a rule from an old sheet reached it. */
 test("no old stylesheet rule reaches the ticket view's system text", async ({page, server}) => {
   test.setTimeout(120_000);
   await open(page, server.url);
@@ -105,8 +104,8 @@ test("no old stylesheet rule reaches the ticket view's system text", async ({pag
       box.replaceChildren(root.cloneNode(true));
       const a = [...root.querySelectorAll<HTMLElement>("*")], b = [...(box.firstChild as HTMLElement).querySelectorAll<HTMLElement>("*")];
       a.forEach((el, i) => {
-        if (!el.checkVisibility() || el.closest(".ipanel")) return;
-        if (!([...el.classList].some(c => c.startsWith("adp-")) || el.closest(".adp-prose, .adp-dl, [data-p], [data-rev], [role=list]"))) return;
+        if (!el.checkVisibility()) return;
+        if (!([...el.classList].some(c => c.startsWith("adp-")) || el.closest(".adp-prose, .adp-dl, .adp-table, [data-p], [data-rev], [role=list]"))) return;
         checked++;
         const ca = getComputedStyle(el), cb = f.contentWindow!.getComputedStyle(b[i]);
         for (const p of PROPS){
@@ -246,7 +245,7 @@ test("the scroll spy names the full-log section at the stage's top", async ({pag
    the corpus at ADP_LIVE_ROOT when it is set, so a developer can run it on
    a real repo. CI has no live corpus, so there it walks the fixture. */
 const THEME_CLASSES = new Set(["md", "sr-live"]);
-const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow", "fsec", "fsum", "rvl"]);
+const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow", "dlrow", "wbl", "wl", "is-hl", "fsec", "fsum", "rvl"]);
 test("every class painted outside a rendered document comes from adp-bundle.css or adp-shell.css", async ({page}) => {
   test.setTimeout(300_000);
   const shell = new Set<string>();

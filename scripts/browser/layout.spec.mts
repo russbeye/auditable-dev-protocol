@@ -59,9 +59,10 @@ test.describe("at 1290px", () => {
       r.selectNodeContents(el);
       return new Set([...r.getClientRects()].map(x => Math.round(x.top))).size;
     });
-    expect(await lines("td.mono")).toBeGreaterThan(1);
+    // The fourth column is Due, where an unanchored watch shows its window prose.
+    expect(await lines("td:nth-child(4)")).toBeGreaterThan(1);
     expect(await lines('a.wbl[data-item="OT-BX001-1"]')).toBe(1);
-    expect(await lines(".nw")).toBe(1);
+    expect(await lines(".adp-chip")).toBe(1);
     const over = await page.evaluate(() => {
       const d = document.documentElement, st = document.querySelector(".stage")!;
       return Math.max(d.scrollWidth - d.clientWidth, st.scrollWidth - st.clientWidth);
