@@ -2379,8 +2379,10 @@ test("the prompt view draws eyebrow titles and grid rows with no old card class"
   const html = promptHtml(FULL_PROMPT);
   assert.doesNotMatch(html, /class="[^"]*pcard/);
   assert.match(html, /<span data-p="title" style="font: 500 11px\/24px var\(--font-mono\);[^"]*color: var\(--blue-bright\);">Task<\/span>/);
-  assert.match(html, /<div data-p="k" style="padding: 12px 0px;[^"]*font: 400 13px\/24px var\(--font-sans\);/);
-  assert.match(html, /<div data-p="v" style="padding: 12px 0px;[^"]*font: 400 15px\/24px var\(--font-sans\);/);
+  assert.match(html, /<div data-p="k" style="padding: 8px 0px;[^"]*font: 400 13px\/24px var\(--font-sans\);/);
+  assert.match(html, /<div data-p="v" style="padding: 8px 0px;[^"]*font: 400 15px\/24px var\(--font-sans\);/);
+  // Spacing alone keeps the rows apart (DL-063), so no row draws a rule.
+  assert.doesNotMatch(html, /data-p="[kv]" style="[^"]*box-shadow/);
   assert.doesNotMatch(html, /class="pill /);
 });
 

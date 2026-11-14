@@ -143,7 +143,8 @@ function resolveSection(t: Ticket, prompt: PromptView | null, s: string | null, 
 
 /* The prompt view reads as a document, as the TicketPrompt board draws it.
    Each top-level key is an eyebrow heading, and a one-line value sits beside
-   it. A map is a list of label and value rows under rules. A multi-line
+   it. A map is a list of label and value rows, kept apart by spacing alone,
+   because a rule under every row drew the eye away from the text. A multi-line
    string is prose, so it goes through the markdown renderer the logs use,
    with the design system's blocks and chips. A one-line string shows escaped
    and exact. A link item becomes an anchor only for an absolute http, https,
@@ -152,9 +153,8 @@ function resolveSection(t: Ticket, prompt: PromptView | null, s: string | null, 
    parts carry data-p hooks, not the old pcard classes, which the old sheet
    still styles for the vanilla builder. */
 const P_NONE: CSSProperties = {color: "var(--faint)", fontStyle: "italic"};
-const P_GRID: CSSProperties = {display: "grid", gridTemplateColumns: "minmax(96px, 160px) minmax(0, 1fr)", columnGap: 16,
-  boxShadow: "inset 0 1px 0 var(--line)"};
-const P_CELL: CSSProperties = {padding: "12px 0", boxShadow: "inset 0 -1px 0 var(--line)", minWidth: 0, overflowWrap: "anywhere"};
+const P_GRID: CSSProperties = {display: "grid", gridTemplateColumns: "minmax(96px, 160px) minmax(0, 1fr)", columnGap: 16};
+const P_CELL: CSSProperties = {padding: "8px 0", minWidth: 0, overflowWrap: "anywhere"};
 const P_K: CSSProperties = {...P_CELL, font: "400 13px/24px var(--font-sans)", color: "var(--dim)"};
 const P_V: CSSProperties = {...P_CELL, font: "400 15px/24px var(--font-sans)", color: "var(--ink)"};
 const P_TITLE: CSSProperties = {font: "500 11px/24px var(--font-mono)", letterSpacing: ".14em", textTransform: "uppercase", color: "var(--blue-bright)"};
