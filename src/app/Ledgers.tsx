@@ -86,7 +86,7 @@ function Ledgers({corpus, today, sort, status, conf, calibration, narrow, onSort
     {query && !found.length
       ? <NoMatch what="decisions" query={query} scope="entry IDs, tickets, watches and the decision text, across every status" onClear={() => setQuery("")}/>
       : <div role="status">{lg.decisions.length
-        ? "nothing under these filters — the pills count what exists."
+        ? "nothing under these filters — the filter counts cover what the search found."
         : "no decisions on record — no ticket in this corpus has logged an entry."}</div>}
   </td></tr></tbody></table></>;
   const more = <ShowMore shown={Math.min(limit, rows.length)} total={rows.length} onMore={() => setLimit(n => n + PAGE_ROWS)}/>;

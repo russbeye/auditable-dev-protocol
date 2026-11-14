@@ -209,7 +209,9 @@ function useNewTask(){
     clearTimeout(timers.current.draft);
     timers.current.draft = setTimeout(() => { timers.current.draft = undefined; saveDraft(latest.current); }, NT_DRAFT_MS);
   };
-  const edit = (next: PromptDocument) => { setDoc(next); draftSoon(); };
+  // The first edit after a start from a prompt takes the banner and its
+  // Start blank away, so a single click can never discard typed work.
+  const edit = (next: PromptDocument) => { setDoc(next); setOrigin(null); draftSoon(); };
 
   /* A form in progress is not replaced without a word. The question waits
      in the ops row with a replace and a keep button, and the old draft
@@ -305,7 +307,7 @@ function useNewTask(){
   };
   return {doc, slug, issues, yaml, dir, showYaml, report, pending, copyLabel, clearLabel, origin, checklist, spoken, focusTo, served,
     setField: (path: string, v: unknown) => edit(setPath(doc, path, v)),
-    setSlug: (v: string) => { setSlug(v); setSlugEdited(!!v); draftSoon(); },
+    setSlug: (v: string) => { setSlug(v); setSlugEdited(!!v); setOrigin(null); draftSoon(); },
     startFrom, keep, clear, startBlank: blank, copy, download, toggleYaml, closeYaml: () => setShowYaml(false),
     toggleChecklist: () => setChecklist(v => !v), addRow, delRow, tickArtifact};
 }

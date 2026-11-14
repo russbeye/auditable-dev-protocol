@@ -3880,6 +3880,15 @@ test("start from this prompt loads the ticket's prompt.yaml into a new draft equ
   assert.equal(ntField("task.title").value, "");
   assert.ok(!/Started from/.test(ntOps()));
   assert.equal(localStorage.getItem("adp-mc-draft"), null);
+  // Once the reader edits the started copy, Start blank leaves with the
+  // banner, so one click can never discard typed work. Discard draft, with
+  // its second click, stays the way to drop it.
+  await startFrom(ctx, undefined, null, false);
+  await ntSet("task.title", "my own title");
+  assert.equal($$('[data-op="ntblank"]').length, 0);
+  assert.ok(!/Started from/.test(ntOps()));
+  fireEvent(window, new Event("pagehide"));
+  assert.equal(draft().doc.task.title, "my own title");
   // Typing the source's ID and date back gives the source's bytes.
   await startFrom(ctx);
   assert.equal(await preview(), GOLDEN);
