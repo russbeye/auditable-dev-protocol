@@ -449,6 +449,14 @@ function renderDSCard(id: string, title: string, confidence: string, status: str
 // open sets whether a design system card starts with its fields shown. It
 // defaults to shown, and the section renderers show the first card alone.
 type DLRenderOpts = {ds?: boolean; open?: boolean};
+/* The opening tag of a list of cards. A design system list that follows
+   other content in its section sits one space-4 step below it, the gap the
+   ticket head keeps above the phase strip. The default list stays the markup
+   the goldens pin. */
+function cardList(opts: DLRenderOpts | undefined, after: boolean): string{
+  if(!(opts&&opts.ds)) return '<div class="dl-cards">';
+  return after?'<div class="adp-dl-list" style="margin-top:16px">':'<div class="adp-dl-list">';
+}
 function renderDLCard(entry: DLEntry, opts?: DLRenderOpts): EscapedHtml{
   const hm=entry.head.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
   const id=hm?hm[1].trim():''; const title=hm?hm[2].trim():entry.head;
@@ -532,8 +540,7 @@ const RE_CARD_HEAD=/^###\s+\[DL-\d+\]/;
 function renderSectionBody(body: unknown, opts?: DLRenderOpts): EscapedHtml{
   const lines=String(body).replace(/\r\n/g,'\n').split('\n');
   const out: string[]=[]; let prose: string[]=[]; let cards: string[]=[]; let inFence=false; let any=false; let seen=0;
-  const list=opts&&opts.ds?'adp-dl-list':'dl-cards';
-  const flushCards=()=>{ if(cards.length) out.push(`<div class="${list}">${cards.join('')}</div>`); cards=[]; };
+  const flushCards=()=>{ if(cards.length) out.push(`${cardList(opts,out.length>0)}${cards.join('')}</div>`); cards=[]; };
   const flushProse=()=>{
     const t=prose.join('\n'); prose=[];
     if(!t.trim()) return;
@@ -569,7 +576,7 @@ function renderDecisionLog(body: unknown, opts?: DLRenderOpts): EscapedHtml{
   // back to the generic renderer instead of showing an empty deck of cards.
   if(!entries.length) return renderMarkdown(body);
   return ((pre?`<div class="md">${renderMarkdown(pre)}</div>`:'')
-    + `<div class="${opts&&opts.ds?'adp-dl-list':'dl-cards'}">${entries.map((e,i)=>renderDLCard(e,opts&&{...opts, open:i===0})).join('')}</div>`) as EscapedHtml;
+    + `${cardList(opts,!!pre)}${entries.map((e,i)=>renderDLCard(e,opts&&{...opts, open:i===0})).join('')}</div>`) as EscapedHtml;
 }
 
 export {esc, escAttr, safeLinkUrl, inline, decorate, TOK, renderMarkdown, ART, SECTION_KINDS,

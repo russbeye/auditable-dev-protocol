@@ -3108,6 +3108,17 @@ test("a decision card in a companion section renders as a card in the inspector"
   assert.match(pane, /<\/div><\/div><p>After the card\.<\/p>/);
 });
 
+// DL-051: a card list that follows other content sits 16px below it, and a
+// list that opens its section takes no gap.
+test("a card list keeps a space-4 gap below content above it, and none at the top of a section", async () => {
+  const log = LOG.replace("Some **prose** citing DL-002.",
+    "Some **prose** citing DL-002.\n\n### [DL-009] An aside decision\n- **Decision:** x\n- **Confidence:** HIGH\n- **Status:** OPEN");
+  await boot({hash: "#t=AA1&s=sec-decision-log", fetch: liveCorpus(LISTING_I, {...TEXTS_I, "20260101-AA1-alpha/audit-log.md": log}).fetch});
+  assert.equal(($("#scrInspector .adp-dl-list") as HTMLElement).style.marginTop, "");
+  await pickSection("sec-aside-notes");
+  assert.equal(($("#scrInspector .adp-dl-list") as HTMLElement).style.marginTop, "16px");
+});
+
 test("a due cell in the watches panel holds a date on one line and lets window prose wrap", () => {
   const prose = "until the developer's next live session with the testbed, no later than the start of ZUP-B3";
   const row = (o: {dueText: string; dueDated: boolean}) => ({wid: "OT-A1-1", what: "w", dls: [], state: "upcoming" as const,
