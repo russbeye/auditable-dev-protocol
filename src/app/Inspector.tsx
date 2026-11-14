@@ -11,7 +11,7 @@ import type {SectionEntry, SectionState} from "../lib/adp-derive-lib.ts";
 import type {Ticket} from "../lib/adp-index-lib.ts";
 import type {DLEntry, EscapedHtml, Section} from "../lib/adp-parser-lib.ts";
 import type {YamlMap, YamlValue} from "../lib/adp-prompt-lib.ts";
-import type {Chit, Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPanelRow} from "../lib/adp-shell-lib.ts";
+import type {Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPanelRow} from "../lib/adp-shell-lib.ts";
 import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
 import {PhaseStrip, stripModel, type StripRound} from "./PhaseStrip.tsx";
 
@@ -229,11 +229,39 @@ function DocPane({back, onBack, heading, badge, notice, action, children}: DocPa
   </div>;
 }
 
-// The ticket head names the ticket and its state. Its review rounds open
-// from the phase strip below it.
-function Tickhead({title, chits}: {title: string; chits: Chit[]}){
-  return <div className="tickhead"><span className="tbig">{title}</span>
-    {chits.map((c, i) => <span key={i} className="chit" title={c.title}>{c.txt}</span>)}</div>;
+/* Each ticket state takes the status chip of its meaning. Work still in
+   flight reads as open, a shipped ticket as validated, and a closed one as
+   the neutral closed chip. The word is the index's own state word. */
+const STATE_CHIP: Record<Ticket["state"], string> = {"open": "adp-chip--open", "in-review": "adp-chip--open",
+  "shipped": "adp-chip--validated", "closed": "adp-chip--closed"};
+const SOURCE: Record<Ticket["state_source"], string> = {declared: "declared in front matter", inferred: "inferred from the log"};
+
+/* The ticket head, as the Main board draws it: a meta line, the title, and
+   the state with where it came from, then the view toggle and the resume
+   pack on the right. The meta line keeps the directory name, because the
+   index carries no author and the old head showed the directory. Review
+   rounds open from the phase strip below the head. */
+function Tickhead({t, view, act}: {t: Ticket; view: ViewMode | null; act: InspectorActions}){
+  const meta = [t.id, t.date, t.dir].filter(Boolean).join(" · ");
+  return <div id="tickHead" style={{display: "flex", alignItems: "flex-start", gap: 24, flexWrap: "wrap", marginBottom: 16}}>
+    <div style={{flex: "1 1 360px", minWidth: 0}}>
+      <div style={{font: "400 13px/24px var(--font-mono)", color: "var(--dim)"}}>{meta}</div>
+      <h1 style={{margin: "8px 0 0", font: "600 24px/32px var(--font-sans)", color: "var(--ink)"}}>{t.title || t.slug || t.id || t.dir}</h1>
+      <div style={{display: "flex", alignItems: "center", gap: 8, marginTop: 12, flexWrap: "wrap"}}>
+        <span className={"adp-chip " + STATE_CHIP[t.state]} style={{textTransform: "uppercase"}}
+          title="lifecycle state — declared in front matter, or inferred from section presence on legacy logs">{t.state}</span>
+        <span className="adp-meta">{SOURCE[t.state_source]}</span>
+        {t.pr ? <><span aria-hidden="true" style={{color: "var(--faint)"}}>·</span><span className="adp-meta">PR #{t.pr}</span></> : null}
+      </div>
+    </div>
+    {view ? <div style={{display: "flex", gap: 8, alignItems: "center"}}>
+      <div className="adp-seg" role="group" aria-label="View">
+        <button type="button" data-view="section" aria-pressed={view === "section"} onClick={() => act.onView("section")}>Section</button>
+        <button type="button" data-view="full" aria-pressed={view === "full"} onClick={() => act.onView("full")}>Full log</button>
+      </div>
+      <button type="button" className="adp-btn" data-op="resume" onClick={e => act.onResume(e.currentTarget)}>Resume pack</button>
+    </div> : null}
+  </div>;
 }
 
 /* One strip box per review round, in round order. prreview numbers its
@@ -276,6 +304,8 @@ type InspectorActions = PanelActions & {
   onRound(tok: string, file: string): void;
   onSpy(key: string): void;
   onStartFrom(text: string, source: string): void;
+  // Opens the Packs drawer on the resume pack for the ticket on show.
+  onResume(opener: HTMLElement): void;
 };
 type InspectorProps = {
   corpus: Corpus | null;
@@ -437,32 +467,23 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     if (el && el.scrollIntoView) el.scrollIntoView();
   }, [jump.seq]);
 
-  const ops = <div className="mops"><span className="mgap"></span>
-    <button type="button" className={"op tgl" + (view === "section" ? " is-on" : "")} data-view="section" onClick={() => act.onView("section")}>section</button>
-    <button type="button" className={"op tgl" + (view === "full" ? " is-on" : "")} data-view="full" onClick={() => act.onView("full")}>full log</button>
-  </div>;
-
-  // The three regions keep the vanilla page's ids: the top (heading, ops
-  // row, ticket head), the section nav, and the body (pane and panels).
+  // The three regions keep the vanilla page's ids: the top (the ticket
+  // head), the section nav, and the body (pane and panels).
   const regions = (top: ReactNode, nav: ReactNode, body: ReactNode) =>
     <><div id="inspTop">{top}</div><div id="inspNav">{nav}</div><div id="inspBody">{body}</div></>;
-  if (!t) return regions(<><h2>inspector</h2>{ops}</>, null, <div className="ipanel"><p className="dnotice">{notice || (corpus
+  if (!t) return regions(null, null, <div className="ipanel"><p className="dnotice">{notice || (corpus
     ? "select a ticket from the rail"
     : "no corpus behind this page — the inspector reads the served corpus.")}</p></div>);
 
-  const top = <><h2>inspector <span className="isub">{t.dir}</span></h2>{ops}</>;
+  const top = <Tickhead t={t} view={view} act={act}/>;
   const rounds = roundsOf(corpus, revTok(corpus, tokenOf, t.dir), t.dir);
   if (!t.sections.length && !prompt)
-    return regions(<>{top}<Tickhead title={t.id || t.dir} chits={[{txt: t.state + " · " + t.state_source}]}/></>,
+    return regions(top,
       rounds.length ? <PhaseStrip model={stripModel([], null)} rounds={rounds} onPick={act.onStep} onRound={act.onRound}/> : null,
       <div className="ipanel"><p className="dnotice">this ticket has no audit log yet — only its prompt or other files sit in the directory.</p></div>);
 
   const entries = entriesOf(t, prompt);
   const states = statesOf(t, entries, prompt, today);
-
-  const chits: Chit[] = [{txt: t.state + " · " + t.state_source,
-    title: "lifecycle state — declared in front matter, or inferred from section presence on legacy logs"}];
-  if (t.pr) chits.push({txt: "pr " + t.pr});
 
   const sectionPane = (en: Entry | undefined) => {
     const sec = en && !en.missing ? pd.byKey[en.key] || null : null;
@@ -529,7 +550,7 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     </>;
   }
 
-  return regions(<>{top}<Tickhead title={t.id || t.dir} chits={chits}/></>,
+  return regions(top,
     <><PhaseStrip model={strip} rounds={rounds} onPick={act.onStep} onRound={act.onRound}/>
       <SecNav entries={entries} states={states} selKey={sel.s} onPick={act.onSection} onStep={d => {
         const i = entries.findIndex(en => en.key === sel.s) + d;

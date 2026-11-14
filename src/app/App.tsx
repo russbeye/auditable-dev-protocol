@@ -373,6 +373,7 @@ function App({fetchFn, openFeed}: AppProps){
     // A ticket's prompt is the one way a written prompt reaches the form.
     // New task comes forward with its report or its question.
     onStartFrom: (text, source) => { nt.startFrom(text, source); setScreen("new task"); },
+    onResume: opener => openPacks(opener, "resume-ticket"),
   };
   const reviewsActions: ReviewsActions = {...panelActions,
     onRound: openRound,

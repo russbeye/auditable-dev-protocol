@@ -203,6 +203,28 @@ function restyled(want: Snapshot, screen = want.screen): Snapshot {
    field, ahead of the groups. */
 const BASE_STATES = new Map((await S.loadCorpus(diskFetch()))!.index.tickets.map(t => [t.id || t.dir, t.state]));
 const OLD_GROUPS = ["needs attention", "in progress", "shipped", "closed"];
+/* The ticket head follows the Main board (DL-043). The vanilla head read
+   "inspector", the directory, the two view toggles, the id, "state · source",
+   and the PR. The new head reads a meta line of id, date, and directory, the
+   title, the state word, where the state came from, the PR, the two view
+   segments, and Resume pack. We check the old run against the ticket's own
+   index fields, then put the new run, built from the same fields, in its
+   place. The view group's label joins the attributes after the state's. */
+const BASE_TICKETS = new Map((await S.loadCorpus(diskFetch()))!.index.tickets.map(t => [t.dir, t]));
+const SOURCE_WORDS: Record<string, string> = {declared: "declared in front matter", inferred: "inferred from the log"};
+function reheaded(main: Region): Region {
+  const t = BASE_TICKETS.get(main.text[1]);
+  assert.ok(t, "the baseline head names no ticket directory");
+  const pr = t.pr ? ["pr " + t.pr] : [];
+  const old = ["inspector", t.dir, "section", "full log", t.id || t.dir, t.state + " · " + t.state_source, ...pr];
+  assert.deepEqual(main.text.slice(0, old.length), old, "the baseline head is not the vanilla head");
+  const head = [[t.id, t.date, t.dir].filter(Boolean).join(" · "), t.title || t.slug || t.id || t.dir, t.state, SOURCE_WORDS[t.state_source],
+    ...(t.pr ? ["·", "PR #" + t.pr] : []), "Section", "Full log", "Resume pack"];
+  const lifecycle = "title=lifecycle state — declared in front matter, or inferred from section presence on legacy logs";
+  const i = main.attrs.indexOf(lifecycle);
+  assert.ok(i >= 0, "the baseline head has no lifecycle title");
+  return {text: [...head, ...main.text.slice(old.length)], attrs: [...main.attrs.slice(0, i + 1), "aria-label=View", ...main.attrs.slice(i + 1)]};
+}
 function regrouped(rail: Region): Region {
   const text = rail.text.slice(), heads: number[] = [];
   for (let i = 1; i < text.length; i++) if (OLD_GROUPS.includes(text[i]) && /^[▾▸]$/.test(text[i - 1])) heads.push(i - 1);
@@ -287,12 +309,12 @@ test("the app's inspector shows what the vanilla page showed, for every section 
       const k = "inspector|" + t + "|section|" + s, want = BASELINE[k];
       assert.ok(want, "the baseline has no state " + k);
       const got = withoutStrip(s === "prompt" ? withoutStart(snapshot(document)) : snapshot(document));
-      assert.deepEqual(got, {...restyled(want), main: withoutOps(withoutChip(want).main!)}, k);
+      assert.deepEqual(got, {...restyled(want), main: reheaded(withoutOps(withoutChip(want).main!))}, k);
       seen.push(k);
     }
     await click($('[data-view="full"]'));
     const k = "inspector|" + t + "|full", want = BASELINE[k];
-    assert.deepEqual(withoutStrip(snapshot(document)), {...restyled(want), main: withoutOps(withoutChip(want).main!)}, k);
+    assert.deepEqual(withoutStrip(snapshot(document)), {...restyled(want), main: reheaded(withoutOps(withoutChip(want).main!))}, k);
     seen.push(k);
   }
   assert.deepEqual(seen, keys);
@@ -1127,11 +1149,11 @@ test("the menu lists the shortcuts that work, and f flips the ticket between sec
   assert.deepEqual([...$("#hdrMenu").querySelectorAll(".adp-keys dt, .adp-keys dd")].map(e => e.textContent),
     ["[", "Show or hide tickets", "← →", "Previous or next phase", "/", "Filter tickets", "f", "Section or full log"]);
   await key(document.body, "Escape");
-  assert.equal(op("data-view", "section").classList.contains("is-on"), true);
+  assert.equal(op("data-view", "section").getAttribute("aria-pressed") === "true", true);
   await key(document.body, "f");
-  assert.equal(op("data-view", "full").classList.contains("is-on"), true);
+  assert.equal(op("data-view", "full").getAttribute("aria-pressed") === "true", true);
   await key(document.body, "f");
-  assert.equal(op("data-view", "section").classList.contains("is-on"), true);
+  assert.equal(op("data-view", "section").getAttribute("aria-pressed") === "true", true);
 });
 
 test("f does nothing while the reader types in a field or another view shows", async () => {
@@ -1139,12 +1161,12 @@ test("f does nothing while the reader types in a field or another view shows", a
   const field = document.createElement("input");
   document.body.append(field);
   await key(field, "f");
-  assert.equal(op("data-view", "section").classList.contains("is-on"), true);
+  assert.equal(op("data-view", "section").getAttribute("aria-pressed") === "true", true);
   field.remove();
   await click(tabFor("watchboard"));
   await key(document.body, "f");
   await click(tabFor("inspector"));
-  assert.equal(op("data-view", "section").classList.contains("is-on"), true);
+  assert.equal(op("data-view", "section").getAttribute("aria-pressed") === "true", true);
 });
 
 test("Escape closes the open menu and hands focus to the ⋯ button", async () => {
@@ -1177,7 +1199,8 @@ const LISTING_I = {root: "demo", files: ["20260101-AA1-alpha/audit-log.md", "202
 const TEXTS_I: Record<string, string> = {"20260101-AA1-alpha/audit-log.md": LOG,
   "20260101-AA1-alpha/prompt.yaml": PROMPT_AA1, "AV-002-beta/prompt.yaml": PROMPT_AV2};
 const bootCorpus = (opts: BootOpts = {}) => boot({fetch: liveCorpus(LISTING_I, TEXTS_I).fetch, ...opts});
-const op = (attr: string, v: string) => $$(".op").find(o => o.getAttribute(attr) === v)!;
+// The control that carries one data attribute value, an op button or a view segment.
+const op = (attr: string, v: string) => $$(`[${attr}]`).find(o => o.getAttribute(attr) === v)!;
 const secVal = () => ($("#secSel") as HTMLSelectElement).value;
 const insp = () => $("#scrInspector").innerHTML;
 const last = (hashes: string[]) => hashes[hashes.length - 1];
@@ -1213,7 +1236,8 @@ test("the corpus boot selects the first rail entry; a full ticket renders its sp
   // The nav lists the prompt, 5 real sections, and 5 missing canonicals.
   assert.equal($$("#secSel option").length, 11);
   assert.equal(secVal(), "sec-decision-log");
-  assert.match(scr, /shipped · inferred/);
+  assert.equal($("#tickHead .adp-chip").textContent, "shipped");
+  assert.equal($("#tickHead .adp-chip + .adp-meta").textContent, "inferred from the log");
   assert.match(scr, /decisions cited by Decision Log/);
   assert.match(scr, /open 1/);
   assert.match(scr, /validated 1/);
@@ -2843,6 +2867,25 @@ test("a review box opens its round, and the last box is the latest round", async
   assert.match($("#revHead").innerHTML, /PR #7 · round 2/);
 });
 
+// ---- the ticket head ----
+
+test("the ticket head reads the meta line, the title, the state and its source, and opens the resume pack", async () => {
+  await boot({fetch: diskFetch(), now: BASELINE_NOW, hash: "#t=FX001"});
+  const head = $("#tickHead");
+  assert.equal(head.querySelector("div")!.firstElementChild!.textContent, "FX001 · 2026-08-15 · 20260815-FX001-declared-lifecycle");
+  assert.ok(head.querySelector("h1"), "the head has no title");
+  const chip = head.querySelector(".adp-chip")!;
+  assert.equal(chip.textContent, "shipped");
+  assert.equal(chip.className, "adp-chip adp-chip--validated");
+  assert.deepEqual($$("#tickHead [aria-label=View] button").map(b => [b.textContent, b.getAttribute("aria-pressed")]),
+    [["Section", "true"], ["Full log", "false"]]);
+  await click($('#tickHead [data-op="resume"]'));
+  assert.ok($("#packDrawer"), "Resume pack opens no drawer");
+  assert.equal(($("#packSel") as HTMLSelectElement).value, "resume-ticket");
+  await click($('[aria-label="Close packs"]'));
+  assert.ok(document.activeElement === $('#tickHead [data-op="resume"]'), "focus does not return to Resume pack");
+});
+
 // ---- the rail's fold, filter, and narrow overlay ----
 
 const railCols = () => ($(".main") as HTMLElement).style.gridTemplateColumns;
@@ -3032,7 +3075,7 @@ test("the inspector offers no open, reload, or paste control and no paste drawer
   assert.equal(document.getElementById("pasteArea"), null);
   assert.equal(document.getElementById("pasteImport"), null);
   assert.ok(!$("#scrInspector").textContent!.includes("drag & drop"));
-  assert.deepEqual($$("#scrInspector .op.tgl").map(b => b.getAttribute("data-view")), ["section", "full"]);
+  assert.deepEqual($$("#scrInspector [role=group][aria-label=View] button").map(b => b.getAttribute("data-view")), ["section", "full"]);
 });
 
 test("the app closes its event stream when it unmounts", async () => {
