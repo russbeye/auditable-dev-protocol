@@ -144,8 +144,9 @@ test("the app's rail shows what the vanilla page showed at boot, under the new t
 });
 
 /* The Watches page follows its board, keeps the five due-state filters and
-   every fact the old table showed, and adds search and Show more. The comparison rebuilds the page from the baseline's own runs by
-   these rules, which name every change:
+   every fact the old table showed, and adds search and Show more. The
+   comparison rebuilds the page from the baseline's own runs by these rules,
+   which name every change:
    - The title reads "Watches", and the old guide line and panel heading go.
    - The subtitle keeps the live and settled counts and gains the overdue and
      unanchored counts the filters carry.
@@ -610,8 +611,9 @@ test("the app's reviews and Ledger screens show what the vanilla reviews, calibr
 });
 
 /* The Ledger follows its board, with calibration under its title, every
-   fact the old screens showed, and search and Show more. The comparison rebuilds the page from the two vanilla screens' runs by
-   these rules, which name every change:
+   fact the old screens showed, and search and Show more. The comparison
+   rebuilds the page from the two vanilla screens' runs by these rules,
+   which name every change:
    - The title reads "Ledger", and the subtitle names the decisions and the
      tickets that the calibration tiles counted. The tiles go. Their shipped
      or closed count matches the index, which the rail's groups show.
@@ -3755,8 +3757,9 @@ async function startFrom(ctx: PromptBoot, text?: string, answer: "replace" | "ke
   if (answer === "keep" && document.getElementById("ntKeep")) await click($("#ntKeep"));
   /* A start blanks the ID and takes today's date, which the test "start
      from this prompt loads the ticket's prompt.yaml into a new draft equal
-     to its parsed fields, less the ID and the date" pins. The fidelity tests check every other field against the
-     source, so we type the source's ID and date back through the form. */
+     to its parsed fields, less the ID and the date" pins. The fidelity
+     tests check every other field against the source, so we type the
+     source's ID and date back through the form. */
   // The report as the start left it. Typing the ID back is an edit, and an
   // edit takes a clean import's report away with the banner.
   startOps = isOn("scrNew") ? ntOps() : "";
