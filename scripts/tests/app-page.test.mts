@@ -2707,7 +2707,7 @@ test("a finding renders as a card, and its status pill reads the ledger, not the
   assert.match(cards[1], /^rail-open"/);
   assert.match(cards[1], /<i>severity<\/i>nit/);
   assert.match(cards[1], /<i>status<\/i>OPEN/);
-  assert.match(html, /<h4>Findings<\/h4><div class="md adp-prose"><div class="dl-cards">/);
+  assert.match(html, /<h4>Findings<\/h4><div class="md adp-prose" style="max-width: none;"><div class="dl-cards">/);
 });
 
 test("Review Target, Review Verdict, and Prior Findings render as grids, and a stray line keeps markdown", () => {
@@ -2721,7 +2721,7 @@ test("Review Target, Review Verdict, and Prior Findings render as grids, and a s
   assert.deepEqual([...html.matchAll(/<div class="doc"><h4>([^<]*)<\/h4>/g)].map(x => x[1]),
     ["Review Target", "Inspected", "Findings", "Prior Findings", "Review Verdict"]);
   assert.doesNotMatch(html, /PR Review — PR #7/);
-  assert.equal(html.split('<div class="doc"><h4>').length - 1, html.split('</h4><div class="md adp-prose">').length - 1);
+  assert.equal(html.split('<div class="doc"><h4>').length - 1, html.split('</h4><div class="md adp-prose" style="max-width: none;">').length - 1);
   cleanup();
   const stray = bodyHtml(text.replace("## Prior Findings\n", "## Prior Findings\nA note that is not a ledger line.\n"), {});
   assert.equal(stray.split("dl-card revcard").length - 1, 2);

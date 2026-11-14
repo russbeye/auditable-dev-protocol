@@ -8,7 +8,7 @@ import * as S from "../lib/adp-shell-lib.ts";
 import type {Ticket} from "../lib/adp-index-lib.ts";
 import type {DLEntry} from "../lib/adp-parser-lib.ts";
 import type {Corpus, ReviewGroup, ReviewLedger, ReviewVerdictFields, SortState} from "../lib/adp-shell-lib.ts";
-import {Html, Permalink, RoundLink, decisionRows, filterCounts, revTok, typing, watchRows} from "./Inspector.tsx";
+import {FILL, Html, Permalink, RoundLink, decisionRows, filterCounts, revTok, typing, watchRows} from "./Inspector.tsx";
 import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
 
 /* Where the screen's round selection lands: the named round when the ticket
@@ -94,7 +94,7 @@ function FindingCard({entry, ctx}: {entry: DLEntry; ctx: BodyCtx}){
   return <div className={"dl-card " + rail}><div className="dl-head"><span className="dl-id">{id || "—"}</span>
     <Html as="span" className="dl-title" html={revText(title)}/><span className="dl-pills">{pills}</span></div>
     {rows.length ? <div className="dl-grid revgrid">{rows}</div> : null}
-    {split.trailing ? <Html as="div" className="md adp-prose dl-trail" html={P.renderMarkdown(split.trailing)}/> : null}
+    {split.trailing ? <Html as="div" className="md adp-prose dl-trail" style={FILL} html={P.renderMarkdown(split.trailing)}/> : null}
   </div>;
 }
 
@@ -120,7 +120,7 @@ function ledgerGrid(lines: string[]): ReactNode | null {
 // a card takes the same style as one in prose.
 const Panel = ({title, md, children}: {title: string; md?: string; children?: ReactNode}) =>
   <div className="doc">{title ? <h4>{title}</h4> : null}
-    {md != null ? <Html as="div" className="md adp-prose" html={P.renderMarkdown(md)}/> : <div className="md adp-prose">{children}</div>}</div>;
+    {md != null ? <Html as="div" className="md adp-prose" style={FILL} html={P.renderMarkdown(md)}/> : <div className="md adp-prose" style={FILL}>{children}</div>}</div>;
 const Md = ({text}: {text: string}) => <Html html={P.renderMarkdown(text)}/>;
 
 /* The round body renders section by section, one doc panel each, the way

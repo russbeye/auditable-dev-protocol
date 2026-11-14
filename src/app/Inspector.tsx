@@ -1,7 +1,7 @@
 /* The inspector: one ticket's log, a section at a time or whole, with the
    decisions and watches the shown section cites. This file holds the app's
    one component that hands React a string of HTML. */
-import {useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode} from "react";
+import {useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode} from "react";
 import * as D from "../lib/adp-derive-lib.ts";
 import * as I from "../lib/adp-index-lib.ts";
 import * as P from "../lib/adp-parser-lib.ts";
@@ -15,15 +15,16 @@ import type {Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPa
 import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
 import {PhaseStrip, stripModel, type StripReviews} from "./PhaseStrip.tsx";
 
-type HtmlProps = {html: EscapedHtml; as?: "div" | "span" | "td"; className?: string; onClick?(e: ReactMouseEvent<HTMLElement>): void};
+type HtmlProps = {html: EscapedHtml; as?: "div" | "span" | "td"; className?: string; style?: CSSProperties;
+  onClick?(e: ReactMouseEvent<HTMLElement>): void};
 
 /* The one place the app hands React a string of HTML. The prop takes only
    the parser library's escaped render, because the brand is cast nowhere
    else. A bare span takes no box of its own, so markup placed beside text
    sits in its parent's layout as if the parent held it directly. */
-function Html({html, as = "span", className, onClick}: HtmlProps){
+function Html({html, as = "span", className, style, onClick}: HtmlProps){
   const Tag = as;
-  return <Tag className={className} style={as === "span" && !className ? {display: "contents"} : undefined}
+  return <Tag className={className} style={as === "span" && !className ? {display: "contents"} : style}
     onClick={onClick} dangerouslySetInnerHTML={{__html: html}}/>;
 }
 
@@ -41,6 +42,12 @@ function foldCard(e: ReactMouseEvent<HTMLElement>){
   if (caret) caret.textContent = open ? "▾" : "▸";
   for (let el = head.nextElementSibling; el; el = el.nextElementSibling) (el as HTMLElement).style.display = open ? "" : "none";
 }
+
+/* A Prose container in the ticket view fills its pane. The Prose component
+   caps its column at 72ch, which left a long card and its prose in a narrow
+   band with the rest of the pane empty, so the reader asked for the full
+   width. The pane's own padding keeps the text off its edges. */
+const FILL: CSSProperties = {maxWidth: "none"};
 
 // ---- the ticket's text, parsed once per text ----
 
@@ -149,20 +156,20 @@ function Scalar({v, at}: {v: unknown; at: string}){
 const NONE = <span className="pcard-none">none</span>;
 
 function Value({v, at}: {v: YamlValue; at: string}): ReactNode {
-  if (typeof v === "string" && v.includes("\n")) return <Html as="div" className="md adp-prose" html={P.renderMarkdown(v)}/>;
+  if (typeof v === "string" && v.includes("\n")) return <Html as="div" className="md adp-prose" style={FILL} html={P.renderMarkdown(v)}/>;
   if (Array.isArray(v)){
     if (!v.length) return NONE;
     if (v.every(S.isFlat)){
       const cols: string[] = [];
       v.forEach(r => Object.keys(r).forEach(k => { if (!cols.includes(k)) cols.push(k); }));
-      return <div className="md adp-prose"><div className="tbl-wrap"><table className="md-tbl">
+      return <div className="md adp-prose" style={FILL}><div className="tbl-wrap"><table className="md-tbl">
         <thead><tr>{cols.map(c => <th key={c}>{S.keyLabel(c)}</th>)}</tr></thead>
         <tbody>{v.map((r, i) => <tr key={i}>{cols.map(c => S.isLine(r[c])
           ? <td key={c}><Scalar v={r[c]} at={at + "[]." + c}/></td>
           : <Html key={c} as="td" html={P.renderMarkdown(r[c])}/>)}</tr>)}</tbody>
       </table></div></div>;
     }
-    return <div className="md adp-prose"><ul className="md-list">{v.map((x, i) =>
+    return <div className="md adp-prose" style={FILL}><ul className="md-list">{v.map((x, i) =>
       <li key={i}>{S.isLine(x) ? <Scalar v={x} at={at + "[]"}/> : <Value v={x} at={at + "[]"}/>}</li>)}</ul></div>;
   }
   if (S.isMap(v)){
@@ -214,7 +221,7 @@ function PromptBody({pr}: {pr: PromptView}){
 // Mission control draws the design system's decision card.
 const DS = {ds: true};
 function SectionBody({sec, body}: {sec: Section | null; body: string}){
-  return sec ? <Html as="div" className="md adp-prose" onClick={foldCard}
+  return sec ? <Html as="div" className="md adp-prose" style={FILL} onClick={foldCard}
     html={P.metaFor(sec.title).spine ? P.renderDecisionLog(body, DS) : P.renderSectionBody(body, DS)}/> : null;
 }
 
@@ -547,7 +554,7 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     const card = pd.cards[sel.item];
     pane = <DocPane back={en ? en.title : "sections"} onBack={act.onBack} heading={"[" + sel.item + "]"}
       notice={card ? null : "this entry is cited here but not present in the loaded text."}>
-      {card ? <Html as="div" className="md adp-prose" onClick={foldCard} html={P.renderDLCard(card, DS)}/> : null}
+      {card ? <Html as="div" className="md adp-prose" style={FILL} onClick={foldCard} html={P.renderDLCard(card, DS)}/> : null}
     </DocPane>;
   } else if (sel.s === PROMPT_KEY){
     // A prompt that did not parse still gets the action, so New task can
@@ -609,5 +616,5 @@ function useMemoPrompt(p: FetchedText | undefined): PromptView | null {
   return ref.current.out;
 }
 
-export {Html, Inspector, typing, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
+export {FILL, Html, Inspector, typing, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
 export type {InspectorActions, InspSel, PromptView};

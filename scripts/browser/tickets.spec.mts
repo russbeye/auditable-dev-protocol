@@ -24,6 +24,20 @@ test("a decision card's head folds and unfolds its fields in the browser", async
   await expect(cards.nth(0).locator(".adp-dl__body")).toBeHidden();
 });
 
+// A section's cards and prose fill the pane inside its padding, because the
+// Prose column cap left a long card in a narrow band (DL-056).
+test("a section's decision cards span the pane's content width", async ({page, server}) => {
+  await open(page, server.url + "#t=FX001&s=sec-decision-log");
+  const widths = await page.evaluate(() => {
+    const card = document.querySelector("#scrInspector .adp-dl") as HTMLElement;
+    const pane = card.closest(".doc") as HTMLElement;
+    const cs = getComputedStyle(pane);
+    return {card: card.getBoundingClientRect().width,
+      inner: pane.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)};
+  });
+  expect(Math.abs(widths.card - widths.inner)).toBeLessThan(1);
+});
+
 // OT-MC012-10. The launcher's server always binds a free port, so only a
 // test can bring one back on the port an open page still watches.
 test("the live word returns from CACHED to WATCHING when the server restarts on its port", async ({page}) => {
