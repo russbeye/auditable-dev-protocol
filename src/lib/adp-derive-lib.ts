@@ -129,20 +129,24 @@ function needsAttention(t: Ticket, today: string): boolean{
   return false;
 }
 
-// Needs-attention first, then the live states, then the settled ones.
-// Within a group the newest directory sorts first, because dir names lead
-// with the date under the naming convention.
-const GROUPS: RailGroupName[] = ["needs attention", "in progress", "shipped", "closed"];
+/* Needs attention comes first, then one group per index state in lifecycle
+   order. The state groups take the index's own state words, so a reader
+   never meets a group the index has no state for. A group with no tickets
+   is left out, except closed, which always shows so its count stays in
+   view. Within a group the newest directory sorts first, because dir names
+   lead with the date under the naming convention. */
+const GROUPS: RailGroupName[] = ["needs attention", "open", "in review", "shipped", "closed"];
 function railGroups(tickets: Ticket[], today: string): RailGroup[]{
-  const g: Record<RailGroupName, Ticket[]> = {"needs attention": [], "in progress": [], "shipped": [], "closed": []};
+  const g: Record<RailGroupName, Ticket[]> = {"needs attention": [], "open": [], "in review": [], "shipped": [], "closed": []};
   for (const t of tickets){
     if (needsAttention(t, today)) g["needs attention"].push(t);
+    else if (t.state === "in-review") g["in review"].push(t);
     else if (t.state === "shipped") g["shipped"].push(t);
     else if (t.state === "closed") g["closed"].push(t);
-    else g["in progress"].push(t);
+    else g["open"].push(t);
   }
   const byDir = (a: Ticket, b: Ticket) => b.dir.localeCompare(a.dir);
-  return GROUPS.map(name => [name, g[name].sort(byDir)]);
+  return GROUPS.filter(name => name === "closed" || g[name].length).map(name => [name, g[name].sort(byDir)]);
 }
 
 /* The nav walks the real sections in audit-log order, then the missing
@@ -378,7 +382,7 @@ type DueState = "overdue" | "soon" | "upcoming" | "unanchored" | "closed";
 type Tone = "ok" | "warn" | "bad" | "mute" | "accent";
 type Reason = {txt: string, tone: "ok" | "warn" | "bad"};
 type RibbonModel = {reasons: Reason[], more: number};
-type RailGroupName = "needs attention" | "in progress" | "shipped" | "closed";
+type RailGroupName = "needs attention" | "open" | "in review" | "shipped" | "closed";
 type RailGroup = [RailGroupName, Ticket[]];
 type SectionEntry = {key: string, title: string, phase: number | null, canonical: boolean, missing: boolean};
 type SectionState = {label: string, tone: Tone};

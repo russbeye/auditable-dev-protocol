@@ -1,14 +1,16 @@
 /* The reviews screen: a ticket's prreview rounds, read from the served
    corpus, one round at a time with its head, its body, and the decisions
    and watches it cites. */
-import {Fragment, type ReactNode} from "react";
+import {Fragment, useState, type CSSProperties, type ReactNode} from "react";
 import * as D from "../lib/adp-derive-lib.ts";
 import * as P from "../lib/adp-parser-lib.ts";
 import * as S from "../lib/adp-shell-lib.ts";
 import type {Ticket} from "../lib/adp-index-lib.ts";
 import type {DLEntry} from "../lib/adp-parser-lib.ts";
-import type {Corpus, ReviewGroup, ReviewLedger, ReviewVerdictFields, SortState} from "../lib/adp-shell-lib.ts";
-import {Html, Permalink, RoundLink, decisionRows, filterCounts, revTok, watchRows} from "./Inspector.tsx";
+import type {Corpus, ReviewGroup, ReviewLedger, ReviewVerdictFields, SortState, ViewMode} from "../lib/adp-shell-lib.ts";
+import {FILL, Html, Notice, PANE, ROUND_STEP, SELECT, STEP_BTN, roundSteps, useArrows, P_GRID, P_K, P_V, Permalink, RoundLink, SECTION_HEAD, Tickhead, decisionRows, entriesOf, filterCounts,
+  promptOf, revTok, reviewsOf, watchRows} from "./Inspector.tsx";
+import {PhaseStrip, stripModel} from "./PhaseStrip.tsx";
 import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
 
 /* Where the screen's round selection lands: the named round when the ticket
@@ -32,26 +34,36 @@ function groupsOf(corpus: Corpus | null, t: Ticket | undefined): ReviewGroup[] {
 
 // ---- the round body ----
 
-const {SEVERITY_PILL, OUTCOME_PILL} = S;
-
-const RevPill = ({kind, cls, word}: {kind: string; cls: string; word: string}) =>
-  <span className={"pill dl-pill " + cls}><i>{kind}</i>{word}</span>;
-const revText = (v: string) => P.decorate(P.inline(v));
-// A field whose whole value is author text renders the parser's markup as
-// the value cell itself. A value that mixes our links or pills with author
-// text holds the text in a contents span.
+/* A round reads on the design system, the way a ticket's log does. A
+   severity and a confidence are attributes, so each is a neutral Tag. A
+   status is a StatusChip of its meaning, and a ledger closure shows its
+   outcome: RESOLVED as validated, ACCEPTED as unknown, and REFUTED as the
+   neutral closed chip. */
+const {SEVERITY_PILL} = S;
+const OUTCOME_CHIP: Record<string, string> = {RESOLVED: " adp-chip--validated", ACCEPTED: " adp-chip--unknown", REFUTED: " adp-chip--closed"};
+const STATUS_CHIP: Record<string, string> = {invalidated: " adp-chip--invalidated", validated: " adp-chip--validated",
+  open: " adp-chip--open", unknown: " adp-chip--unknown", other: ""};
+const Chip = ({kind, word, mod = "", small}: {kind: string; word: string; mod?: string; small?: boolean}) =>
+  <span className={"adp-chip" + (small ? " adp-chip--s" : "") + mod} title={kind}>{word}</span>;
+const revText = (v: string) => P.decorateDS(v);
+// A field row in a card's body: the label above its value.
 const RevRow = ({label, text, children}: {label: string; text?: string; children?: ReactNode}) =>
-  <div className="dl-row"><span className="dl-k revk">{label}</span>
-    {text != null ? <Html as="span" className="dl-v revv" html={revText(text)}/> : <span className="dl-v revv">{children}</span>}</div>;
+  <div><dt>{label}</dt>{text != null ? <Html as="dd" html={revText(text)}/> : <dd>{children}</dd>}</div>;
 const RevText = ({v}: {v: string}) => <Html html={revText(v)}/>;
+// A row in a label and value grid, as the prompt view draws one.
+const GridRow = ({label, text, children}: {label: string; text?: string; children?: ReactNode}) =>
+  <><div data-rev="k" style={P_K}>{label}</div>
+    {text != null ? <Html as="div" style={P_V} html={revText(text)}/> : <div style={P_V}>{children}</div>}</>;
 
 type BodyCtx = {ledger: ReviewLedger; tok: string; onRound(tok: string, file: string): void};
 
-/* A finding card follows the Decision Log card. The severity, confidence,
-   and status move into the head as pills, and every other field keeps its
-   row. The status pill shows the ledger's closure when one exists, and the
-   card's written Status only when no later round closed the finding. */
-function FindingCard({entry, ctx}: {entry: DLEntry; ctx: BodyCtx}){
+/* A finding card is the design system's DecisionCard. The severity, the
+   confidence, and the status move into the head, and every other field keeps
+   its row. The status shows the ledger's closure when one exists, and the
+   card's written Status only when no later round closed the finding. The
+   first card of a round starts open and the rest start folded, as in a log. */
+function FindingCard({entry, ctx, first}: {entry: DLEntry; ctx: BodyCtx; first: boolean}){
+  const [open, setOpen] = useState(first);
   const hm = entry.head.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
   const id = hm ? hm[1].trim() : "", title = hm ? hm[2].trim() : entry.head;
   const split = P.dlSplitBody(entry.lines);
@@ -65,70 +77,71 @@ function FindingCard({entry, ctx}: {entry: DLEntry; ctx: BodyCtx}){
     else if (k === "status") status = f.value;
     else row(f.label, f.value);
   }
-  const pills: ReactNode[] = [];
-  let rail = "";
+  const tags: ReactNode[] = [];
   if (sev){
-    const s = P.dlChipSplit(sev), cls = Object.hasOwn(SEVERITY_PILL, s.word.toLowerCase()) ? SEVERITY_PILL[s.word.toLowerCase()] : "";
-    const note = cls ? s.tail : s.tail ? sev.trim() : "";
-    pills.push(<RevPill key="sev" kind="severity" cls={cls || "p-low"} word={s.word}/>);
+    const s = P.dlChipSplit(sev);
+    const note = Object.hasOwn(SEVERITY_PILL, s.word.toLowerCase()) ? s.tail : s.tail ? sev.trim() : "";
+    tags.push(<Chip key="sev" kind="severity" word={s.word}/>);
     if (note) row("severity note", note);
   }
   if (conf){
     const c = P.dlConfPill(conf);
-    pills.push(<Html key="conf" html={c.html}/>);
+    tags.push(<Chip key="conf" kind="confidence" word={P.dlChipSplit(conf).word}/>);
     if (c.note) row("confidence note", c.note);
   }
+  let chip: ReactNode = null, settled = false;
   const closed = id && ctx.ledger[id];
   if (closed){
-    const [cls, r] = OUTCOME_PILL[closed.outcome] || ["p-low", ""];
-    pills.push(<RevPill key="st" kind="status" cls={cls} word={closed.outcome}/>);
-    rail = r;
+    chip = <Chip kind="status" word={closed.outcome} mod={OUTCOME_CHIP[closed.outcome] ?? ""}/>;
+    settled = true;
     rows.push(<RevRow key={rows.length} label="closed">{closed.date} in <RoundLink tok={ctx.tok} file={closed.file}
       label={"round " + closed.k} onRound={ctx.onRound}/>{closed.note ? <>{" · "}<RevText v={closed.note}/></> : null}</RevRow>);
   } else if (status){
-    const st = P.dlStatusPill(status);
-    pills.push(<Html key="st" html={st.html}/>);
-    rail = P.dlRail(status);
+    const kind = P.dlStatusKind(status), st = P.dlStatusPill(status);
+    chip = <Chip kind="status" word={P.dlChipSplit(status).word} mod={STATUS_CHIP[kind]}/>;
+    settled = kind === "validated" || kind === "invalidated" || kind === "unknown";
     if (st.note) row("status note", st.note);
   }
-  return <div className={"dl-card " + rail}><div className="dl-head"><span className="dl-id">{id || "—"}</span>
-    <Html as="span" className="dl-title" html={revText(title)}/><span className="dl-pills">{pills}</span></div>
-    {rows.length ? <div className="dl-grid revgrid">{rows}</div> : null}
-    {split.trailing ? <Html as="div" className="md dl-trail" html={P.renderMarkdown(split.trailing)}/> : null}
+  const shut: CSSProperties | undefined = open ? undefined : {display: "none"};
+  return <div className={"adp-dl" + (settled ? " adp-dl--settled" : "")} data-card={id}>
+    <button type="button" className="adp-dl__head" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+      <span className="adp-dl__id">{id || "—"}</span><Html as="span" className="adp-dl__title" html={revText(title)}/>
+      <span style={{display: "flex", gap: 8}}>{tags}</span><span style={{display: "flex"}}>{chip}</span>
+      <span className="adp-dl__caret" aria-hidden="true">{open ? "▾" : "▸"}</span></button>
+    {rows.length ? <dl className="adp-dl__body" style={shut}>{rows}</dl> : null}
+    {split.trailing ? <Html as="div" className="md adp-prose dl-trail" style={{...FILL, ...shut}} html={P.renderMarkdownDS(split.trailing)}/> : null}
   </div>;
 }
 
-// A labelled field list becomes a ruled grid. Any line that is not a field
-// sends the section back to markdown, so nothing in it goes missing.
+// A labelled field list becomes a label and value grid. Any line that is not
+// a field sends the section back to markdown, so nothing in it goes missing.
 function fieldGrid(lines: string[]): ReactNode | null {
   const split = P.dlSplitBody(lines);
   const fields = P.parseDLFields(split.fieldLines);
   if (!fields.length || split.trailing || fields.some(f => !f.label)) return null;
-  return <div className="dl-card revcard"><div className="dl-grid revgrid">{fields.map((f, i) =>
-    <RevRow key={i} label={f.label} text={f.value}/>)}</div></div>;
+  return <div style={P_GRID}>{fields.map((f, i) => <GridRow key={i} label={f.label} text={f.value}/>)}</div>;
 }
 
 function ledgerGrid(lines: string[]): ReactNode | null {
   const {rows, clean} = S.ledgerRows(lines);
   if (!rows.length || !clean) return null;
-  return <div className="dl-card revcard"><div className="dl-grid revgrid">{rows.map((r, i) =>
-    <RevRow key={i} label={r.id}><RevPill kind="closed" cls={(OUTCOME_PILL[r.outcome] || ["p-low"])[0]} word={r.outcome}/>
-      {" " + r.date}{r.note ? <>{" · "}<RevText v={r.note}/></> : null}</RevRow>)}</div></div>;
+  return <div style={P_GRID}>{rows.map((r, i) =>
+    <GridRow key={i} label={r.id}><Chip kind="closed" word={r.outcome} mod={OUTCOME_CHIP[r.outcome] ?? ""} small/>
+      {" " + r.date}{r.note ? <>{" · "}<RevText v={r.note}/></> : null}</GridRow>)}</div>;
 }
 
-// Every panel body sits inside the md block, so a code span or a link inside
-// a card takes the same style as one in prose.
+// Each section of a round is a pane, as a log section is in the ticket view.
 const Panel = ({title, md, children}: {title: string; md?: string; children?: ReactNode}) =>
-  <div className="doc">{title ? <h4>{title}</h4> : null}
-    {md != null ? <Html as="div" className="md" html={P.renderMarkdown(md)}/> : <div className="md">{children}</div>}</div>;
-const Md = ({text}: {text: string}) => <Html html={P.renderMarkdown(text)}/>;
+  <div className="doc" style={PANE}>{title ? <h2 className="adp-section" style={{...SECTION_HEAD, marginBottom: 16}}>{title}</h2> : null}
+    {md != null ? <Html as="div" className="md adp-prose" style={FILL} html={P.renderMarkdownDS(md)}/> : <div className="md adp-prose" style={FILL}>{children}</div>}</div>;
+const Md = ({text}: {text: string}) => <Html html={P.renderMarkdownDS(text)}/>;
 
-/* The round body renders section by section, one doc panel each, the way
-   the inspector shows a log section. Review Target, Review Verdict,
-   Findings, and Prior Findings carry prreview's field grammar, so they
-   become cards. Every other section, and any section that breaks the
-   grammar, renders as markdown exactly as the file reads. The file's H1
-   repeats what the round head already says, so we drop it. */
+/* The round body renders section by section, one pane each, the way the
+   inspector shows a log section. Review Target, Review Verdict, Findings,
+   and Prior Findings carry prreview's field grammar, so they become grids
+   and cards. Every other section, and any section that breaks the grammar,
+   renders as markdown exactly as the file reads. The file's H1 repeats what
+   the round head already says, so we drop it. */
 function ReviewBody({text, ctx}: {text: string; ctx: BodyCtx}){
   const doc = P.parseSections(text);
   if (doc.front != null) return <div><Panel title="" md={text}/></div>;
@@ -142,8 +155,8 @@ function ReviewBody({text, ctx}: {text: string; ctx: BodyCtx}){
       else if (t === "Prior Findings") part = ledgerGrid(sec.body);
       else if (t === "Findings"){
         const {pre, entries} = P.parseDLEntries(body);
-        if (entries.length) part = <>{pre ? <Md text={pre}/> : null}<div className="dl-cards">{entries.map((e, j) =>
-          <FindingCard key={j} entry={e} ctx={ctx}/>)}</div></>;
+        if (entries.length) part = <>{pre ? <Md text={pre}/> : null}<div className="adp-dl-list" style={pre ? {marginTop: 16} : undefined}>
+          {entries.map((e, j) => <FindingCard key={j} entry={e} ctx={ctx} first={j === 0}/>)}</div></>;
       }
       return part != null ? <Panel key={i} title={t}>{part}</Panel> : <Panel key={i} title={t} md={body}/>;
     })}
@@ -152,17 +165,27 @@ function ReviewBody({text, ctx}: {text: string; ctx: BodyCtx}){
 
 // ---- the head ----
 
+// A verdict takes the StatusChip of its meaning, as the StatusChip README
+// says: APPROVE as validated and REQUEST CHANGES as invalidated.
+const verdictChip = (v: string) => /^APPROVE/i.test(v) ? " adp-chip--validated" : /^REQUEST/i.test(v) ? " adp-chip--invalidated" : "";
+
 function ReviewHead({title, date, fields, notices, prior, dir, onRound}: {title: string; date: string;
   fields: ReviewVerdictFields | null; notices: string[]; prior: (S.ReviewRef & {tok: string})[]; dir: string;
   onRound(tok: string, file: string): void}){
   const f = fields || {};
-  const chits = [date, ...(fields ? [f.verdict, f.confidence] : [])].filter(Boolean) as string[];
-  const dd = (k: string, v: string | undefined) => <Fragment key={k}><dt>{k}</dt><dd>{v || "—"}</dd></Fragment>;
-  return <div className="revhead"><div className="tickhead"><span className="tbig">{title}</span>
-    {chits.map((c, i) => <span key={i} className="chit">{c}</span>)}{" "}<Permalink/></div>
-    {notices.map((n, i) => <p key={i} className="dnotice">{n}</p>)}
-    {fields ? <dl className="revfields">{dd("counts", f.counts)}{dd("opened", f.opened)}{dd("closed", f.closed)}{dd("carried open", f.carried)}</dl> : null}
-    {prior.length ? <p className="revprior">earlier rounds: {prior.map((p, i) => <Fragment key={i}>{i ? ", " : null}<RoundLink tok={p.tok}
+  return <div className="doc" style={PANE}>
+    <div style={{display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16}}>
+      <h2 className="adp-section" style={SECTION_HEAD}>{title}</h2>
+      <span className="adp-meta">{date}</span>
+      {fields && f.verdict ? <Chip kind="verdict" word={f.verdict} mod={verdictChip(f.verdict)}/> : null}
+      {fields && f.confidence ? <Chip kind="confidence" word={f.confidence}/> : null}
+      <Permalink/>
+    </div>
+    {notices.map((n, i) => <Notice key={i} text={n}/>)}
+    {fields ? <div style={P_GRID}>
+      <GridRow label="counts">{f.counts || "—"}</GridRow><GridRow label="opened">{f.opened || "—"}</GridRow>
+      <GridRow label="closed">{f.closed || "—"}</GridRow><GridRow label="carried open">{f.carried || "—"}</GridRow></div> : null}
+    {prior.length ? <p className="adp-meta" style={{margin: "8px 0 0"}}>earlier rounds: {prior.map((p, i) => <Fragment key={i}>{i ? ", " : null}<RoundLink tok={p.tok}
       file={p.file} label={p.file + (p.dir === dir ? "" : " · " + p.dir)} onRound={onRound}/></Fragment>)}</p> : null}
   </div>;
 }
@@ -174,6 +197,11 @@ type ReviewsActions = PanelActions & {
   onPick(file: string): void;
   onPr(pr: string): void;
   onFilter(f: string): void;
+  // The ticket head and the phase strip return to the ticket: in a view, at
+  // a section, or with the resume pack open.
+  onView(v: ViewMode): void;
+  onSection(key: string): void;
+  onResume(opener: HTMLElement): void;
 };
 type ReviewsProps = {
   corpus: Corpus | null;
@@ -185,16 +213,36 @@ type ReviewsProps = {
   dlFilter: string;
   decSort: SortState;
   iwSort: SortState;
+  // False while a modal holds the page, so ← leaves the screen alone.
+  arrows: boolean;
   act: ReviewsActions;
 };
 
-function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, iwSort, act}: ReviewsProps){
-  const top = (sub: string | null) => <h2>reviews{sub ? <>{" "}<span className="isub">{sub}</span></> : null}</h2>;
+function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, iwSort, arrows, act}: ReviewsProps){
+  /* The rounds are the last steps of the ticket's phase strip. ← and →
+     walk them one at a time, oldest first, and ← from the oldest round
+     steps back into the ticket view at the strip's last section. */
+  const tickSteps = t ? stripModel(t.sections.length || corpus?.prompts[t.dir] ? entriesOf(t, promptOf(corpus?.prompts[t.dir])) : [], null).steps : [];
+  const shown = t ? resolveRound(groupsOf(corpus, t), round) : null;
+  const shownFile = t && shown ? groupsOf(corpus, t)[shown.gi].rounds[shown.ri].file : null;
+  useArrows(arrows && !!t, t ? [...tickSteps, ...roundSteps(corpus, t.dir)] : [], shownFile ? ROUND_STEP + shownFile : null,
+    key => key.startsWith(ROUND_STEP) ? act.onPick(key.slice(ROUND_STEP.length)) : act.onSection(key));
+  /* A ticket's reviews lead with the ticket's own head and phase strip, as
+     the ticket view does, with the Reviews box current. The strip's boxes and
+     the head's view segments return to the ticket. With no ticket there is no
+     head, so the screen names itself. While a round shows, the strip's note
+     names its pull request and how many rounds that request had. */
+  const top = (sub: string | null, note?: string) => t ? <>
+    <Tickhead t={t} view={null} act={act}/>
+    <PhaseStrip model={{...stripModel(t.sections.length || corpus?.prompts[t.dir] ? entriesOf(t, promptOf(corpus?.prompts[t.dir])) : [], null),
+      ...(note ? {note} : {})}}
+      reviews={reviewsOf(corpus, revTok(corpus, tokenOf, t.dir), t.dir, act.onRound, true)} onPick={act.onSection}/></>
+    : <h2 className="adp-section" style={{...SECTION_HEAD, marginBottom: 12}}>Reviews{sub ? <>{" "}<span className="adp-meta">{sub}</span></> : null}</h2>;
   // The four regions keep the vanilla page's ids.
   const regions = (topEl: ReactNode, nav: ReactNode, head: ReactNode, body: ReactNode) =>
     <><div id="revTop">{topEl}</div><div id="revNav">{nav}</div><div id="revHead">{head}</div><div id="revBody">{body}</div></>;
   const empty = (sub: string | null, text: string) => regions(top(sub), null, null, <div className="ipanel">
-    {notice ? <p className="dnotice">{notice}</p> : null}<p className="dnotice">{text}</p></div>);
+    {notice ? <Notice text={notice}/> : null}<Notice text={text}/></div>);
   if (!t) return empty(null, corpus ? "select a ticket from the rail to read its review rounds."
     : "no corpus behind this page. The reviews screen reads review files from the served corpus.");
   const groups = groupsOf(corpus, t);
@@ -213,7 +261,7 @@ function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, i
   }
   // The round cites decisions and watches the way a log section does, so
   // it gets the inspector's two panels under the body.
-  const title = g.label + " · round " + r.k;
+  const title = g.label + " · Round " + r.k;
   let panels: ReactNode = null;
   if (r.error == null){
     const items = S.reviewItems(t, r.text);
@@ -227,14 +275,15 @@ function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, i
     </>;
   }
   const tok = revTok(corpus, tokenOf, t.dir);
-  return regions(top(t.dir),
-    <div className="secnav">
-      {groups.length > 1 ? <select id="revPr" className="secsel" aria-label="pull request" value={g.pr} onChange={e => act.onPr(e.target.value)}>
-        {groups.map(x => <option key={x.pr} value={x.pr}>{x.label}</option>)}</select> : null}
-      <button type="button" className="op" data-revstep="-1" disabled={at.ri <= 0} onClick={() => act.onPick(g.rounds[at.ri - 1].file)}>‹ prev</button>
-      <select id="revSel" className="secsel" aria-label="round" value={r.file} onChange={e => act.onPick(e.target.value)}>
-        {g.rounds.map(x => <option key={x.file} value={x.file}>{"round " + x.k + " · " + x.date}</option>)}</select>
-      <button type="button" className="op" data-revstep="1" disabled={at.ri >= g.rounds.length - 1} onClick={() => act.onPick(g.rounds[at.ri + 1].file)}>next ›</button>
+  return regions(top(t.dir, g.label + " · " + (g.rounds.length === 1 ? "1 round" : g.rounds.length + " rounds")),
+    <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "12px 0 16px"}}>
+      {groups.length > 1 ? <select id="revPr" className="adp-select" aria-label="pull request" style={{...SELECT, lineHeight: "normal"}} value={g.pr}
+        onChange={e => act.onPr(e.target.value)}>{groups.map(x => <option key={x.pr} value={x.pr}>{x.label}</option>)}</select> : null}
+      <button type="button" className="adp-btn" data-revstep="-1" style={STEP_BTN} disabled={at.ri <= 0} onClick={() => act.onPick(g.rounds[at.ri - 1].file)}>‹ prev</button>
+      <select id="revSel" className="adp-select" aria-label="round" style={{...SELECT, flex: "0 1 440px", minWidth: 220, lineHeight: "normal"}} value={r.file}
+        onChange={e => act.onPick(e.target.value)}>
+        {g.rounds.map(x => <option key={x.file} value={x.file}>{"Round " + x.k + " · " + x.date}</option>)}</select>
+      <button type="button" className="adp-btn" data-revstep="1" style={STEP_BTN} disabled={at.ri >= g.rounds.length - 1} onClick={() => act.onPick(g.rounds[at.ri + 1].file)}>next ›</button>
     </div>,
     <ReviewHead title={title} date={r.date} fields={fields} notices={notices} prior={prior} dir={t.dir} onRound={act.onRound}/>,
     r.error != null ? null : <><ReviewBody text={String(r.text || "")} ctx={{ledger: S.reviewLedger(g.rounds), tok, onRound: act.onRound}}/>{panels}</>);

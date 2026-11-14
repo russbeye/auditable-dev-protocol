@@ -12,8 +12,11 @@ import {createElement} from "react";
 import {act, cleanup, fireEvent, render} from "@testing-library/react";
 import * as Bld from "../../src/lib/adp-index-builder-lib.ts";
 import * as S from "../../src/lib/adp-shell-lib.ts";
+import * as D from "../../src/lib/adp-derive-lib.ts";
+import * as P from "../../src/lib/adp-parser-lib.ts";
 import {App} from "../../src/app/App.tsx";
 import {PromptCards, SPY_SLACK} from "../../src/app/Inspector.tsx";
+import {gapNote, stripModel} from "../../src/app/PhaseStrip.tsx";
 import {Rail} from "../../src/app/Rail.tsx";
 import {ReviewBody} from "../../src/app/Reviews.tsx";
 import * as PL from "../../src/lib/adp-prompt-lib.ts";
@@ -34,8 +37,8 @@ globalThis.ResizeObserver ??= class { observe(){} unobserve(){} disconnect(){} }
 const require = createRequire(import.meta.url);
 type Region = {text: string[]; attrs: string[]};
 type Snapshot = {screen: string | null; header: Region | null; rail: Region | null; main: Region | null; footer: Region | null; drawer?: Region};
-const {diskFetch, snapshot, NOW: BASELINE_NOW} = require("./screen-text.js") as
-  {diskFetch(): FetchFn; snapshot(d: Document): Snapshot; NOW: number};
+const {diskFetch, record, snapshot, NOW: BASELINE_NOW} = require("./screen-text.js") as
+  {diskFetch(): FetchFn; record(el: Element): Region; snapshot(d: Document): Snapshot; NOW: number};
 const {readFixture} = require("./helpers.js") as {readFixture(name: string): string};
 const BASELINE = JSON.parse(readFixture("screen-baseline.json")) as Record<string, Snapshot>;
 
@@ -89,15 +92,17 @@ const settle = async (turns = 8) => {
     await act(async () => { await (fakeTimeouts ? Promise.resolve() : new Promise(r => setTimeout(r, 0))); });
 };
 
-// A draft is the text New task finds under its storage key at boot.
-type BootOpts = {fetch?: FetchFn; hash?: string; now?: number; draft?: string};
-async function boot({fetch = () => new Promise<FetchResponse>(() => {}), hash = "", now = NOW, draft}: BootOpts = {}){
+// A draft is the text New task finds under its storage key at boot, and
+// stored holds any other keys the page finds there.
+type BootOpts = {fetch?: FetchFn; hash?: string; now?: number; draft?: string; stored?: Record<string, string>};
+async function boot({fetch = () => new Promise<FetchResponse>(() => {}), hash = "", now = NOW, draft, stored = {}}: BootOpts = {}){
   vi.useFakeTimers({toFake: ["Date"]});
   vi.setSystemTime(now);
   history.replaceState(null, "", "/" + hash);
   document.documentElement.setAttribute("data-theme", "dark");
   localStorage.clear();
   if (draft != null) localStorage.setItem("adp-mc-draft", draft);
+  for (const [k, v] of Object.entries(stored)) localStorage.setItem(k, v);
   const hashes: string[] = [];
   const real = history.replaceState.bind(history);
   vi.spyOn(history, "replaceState").mockImplementation((d, u, url) => { hashes.push(String(url)); real(d, u, url); });
@@ -112,16 +117,16 @@ const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 const $$ = (sel: string) => [...document.querySelectorAll(sel)] as HTMLElement[];
 /* The control that opens a screen. The top bar's views open Tickets,
    Watches, and Ledger. Calibration heads the Ledger, the resume pack opens
-   as the Packs drawer, and reviews open from the ticket head. */
+   as the Packs drawer, and reviews open from the phase strip's reviews box. */
 const tabFor = (name: string) => name === "new task" ? $("#newTaskBtn") : name === "resume pack" ? $("#packsBtn")
-  : name === "reviews" ? $("#reviewsBtn")
+  : name === "reviews" ? $('#phaseStrip [data-op="reviews"]')
   : $$(".adp-nav a").find(t => t.getAttribute("data-s") === (name === "calibration" ? "ledgers" : name))!;
-const entry = (key: string) => $$(".rentry").find(r => r.getAttribute("data-key") === key)!;
+const entry = (key: string) => $$("#rail [data-key]").find(r => r.getAttribute("data-key") === key)!;
 const click = async (el: Element) => { fireEvent.click(el); await settle(1); };
 const key = async (el: Element, k: string) => { fireEvent.keyDown(el, {key: k}); await settle(1); };
 const wids = () => $$(".wbrow").map(r => r.getAttribute("data-wid"));
 const isOn = (id: string) => $("#" + id).classList.contains("is-on");
-const marked = () => $$(".rentry").filter(r => r.classList.contains("is-sel")).map(r => r.getAttribute("data-key"));
+const marked = () => $$("#rail [data-key]").filter(r => r.getAttribute("aria-current") === "true").map(r => r.getAttribute("data-key"));
 // React keeps its fiber on every element it renders. A failed equal on two
 // elements makes Node compare those fiber graphs in depth before it writes
 // its message, which never ends, so we compare identity and name the miss.
@@ -188,13 +193,90 @@ function restyled(want: Snapshot, screen = want.screen): Snapshot {
   assert.deepEqual(want.header, {text: ["ADP ·", "MISSION CONTROL", "WATCHING", "☾", "theme", "≡", want.screen!, "project: corpus",
     ...OLD_TABS, "+ new task"], attrs: ["title=Toggle light / dark"]}, "the baseline header is not the vanilla header");
   assert.match(want.footer!.text.join(" "), /^schema adp-index\/1 · \d+ tickets · read-only · rebuilt in-memory from the working tree$/);
-  return {...want, screen, header: NEW_HEADER, footer: null};
+  return {...want, screen, header: NEW_HEADER, footer: null, rail: want.rail && regrouped(want.rail), main: want.main && cased(want.main)};
 }
-// A ticket with review rounds offers them in its head (DL-013). The vanilla
-// page had no such entry, so the comparison takes it out of the app's render.
-function withoutReviews(snap: Snapshot): Snapshot {
-  const text = snap.main!.text.filter(x => !/^reviews · \d+ rounds?$/.test(x));
-  return {...snap, main: {...snap.main!, text}};
+/* Section and round titles read in sentence case (DL-070), where the vanilla
+   page lowercased the phase and round words and titled the prompt by its file
+   name. The comparison raises those words in the baseline. The prompt's pane
+   heading reads "Prompt" with the file name beside it, ahead of its link, and
+   the select and the full log's summary read "Prompt" alone. Every other
+   run stays as it was. */
+function cased(main: Region): Region {
+  const text = main.text.flatMap((x, i) => x !== "prompt.yaml" ? [x] : main.text[i + 1] === "⧉ link" ? ["Prompt", x] : ["Prompt"]);
+  return {...main, text: text.map(x => x.replace(/^phase (\d) · /, "Phase $1 · ").replace(/^round (\d+) · /, "Round $1 · ")
+    .replace(/ · round (\d+)$/, " · Round $1"))};
+}
+/* The rail's groups follow the index states (DL-037). Every ticket in the
+   baseline's "in progress" group is open, so that group becomes the open
+   group whole. A group with no tickets leaves the rail, except closed. The
+   rows themselves stay exactly as the baseline recorded them (DL-038). The
+   rail gains a head with the ticket count and its fold button, and a filter
+   field, ahead of the groups. */
+const BASE_STATES = new Map((await S.loadCorpus(diskFetch()))!.index.tickets.map(t => [t.id || t.dir, t.state]));
+const OLD_GROUPS = ["needs attention", "in progress", "shipped", "closed"];
+/* The ticket head follows the Main board (DL-043). The vanilla head read
+   "inspector", the directory, the two view toggles, the id, "state · source",
+   and the PR. The new head reads a meta line of id, date, and directory, the
+   title, the state word, where the state came from, the PR, the two view
+   segments, and Resume pack. We check the old run against the ticket's own
+   index fields, then put the new run, built from the same fields, in its
+   place. The view group's label joins the attributes after the state's. */
+const BASE_TICKETS = new Map((await S.loadCorpus(diskFetch()))!.index.tickets.map(t => [t.dir, t]));
+const SOURCE_WORDS: Record<string, string> = {declared: "declared in front matter", inferred: "inferred from the log"};
+function reheaded(main: Region): Region {
+  const t = BASE_TICKETS.get(main.text[1]);
+  assert.ok(t, "the baseline head names no ticket directory");
+  const pr = t.pr ? ["pr " + t.pr] : [];
+  const old = ["inspector", t.dir, "section", "full log", t.id || t.dir, t.state + " · " + t.state_source, ...pr];
+  assert.deepEqual(main.text.slice(0, old.length), old, "the baseline head is not the vanilla head");
+  const head = [[t.id, t.date, t.dir].filter(Boolean).join(" · "), t.title || t.slug || t.id || t.dir, t.state, SOURCE_WORDS[t.state_source],
+    ...(t.pr ? ["·", "PR #" + t.pr] : []), "Section", "Full log", "Resume pack"];
+  const lifecycle = "title=lifecycle state — declared in front matter, or inferred from section presence on legacy logs";
+  const i = main.attrs.indexOf(lifecycle);
+  assert.ok(i >= 0, "the baseline head has no lifecycle title");
+  return {text: [...head, ...main.text.slice(old.length)], attrs: [...main.attrs.slice(0, i + 1), "aria-label=View", ...main.attrs.slice(i + 1)]};
+}
+function regrouped(rail: Region): Region {
+  const text = rail.text.slice(), heads: number[] = [];
+  for (let i = 1; i < text.length; i++) if (OLD_GROUPS.includes(text[i]) && /^[▾▸]$/.test(text[i - 1])) heads.push(i - 1);
+  assert.deepEqual(heads.map(i => text[i + 1]), OLD_GROUPS, "the baseline rail does not hold the four vanilla groups");
+  const block = (g: number) => text.slice(heads[g] + 3, g + 1 < heads.length ? heads[g + 1] : text.length);
+  for (const id of block(1).filter(x => BASE_STATES.has(x))) assert.equal(BASE_STATES.get(id), "open", id + " is not open");
+  const out: string[] = [];
+  for (const [g, name] of OLD_GROUPS.entries()){
+    const [glyph, , count] = text.slice(heads[g], heads[g] + 3);
+    if (count === "0" && name !== "closed") continue;
+    out.push(glyph, name === "in progress" ? "open" : name, count, ...block(g));
+  }
+  return {text: [BASE_STATES.size + " tickets", "«", ...out], attrs: ["aria-label=Tickets", "title=Hide tickets [",
+    "aria-label=Hide tickets sidebar", "aria-label=Filter tickets", "placeholder=Filter tickets", ...rail.attrs]};
+}
+/* The phase strip and the missing-phases note above it are new, so the
+   comparison takes each one's own record out of the app's render, as one
+   unbroken run in place. Their own tests pin what they show. */
+function withoutStrip(snap: Snapshot): Snapshot {
+  const cut = (list: string[], run: string[]) => {
+    const i = list.findIndex((_, j) => run.every((x, k) => list[j + k] === x));
+    assert.ok(i >= 0, "the render lacks the run " + run.join(" | "));
+    return [...list.slice(0, i), ...list.slice(i + run.length)];
+  };
+  for (const el of [$("#gapNote"), $("#phaseStrip")]){
+    if (!el) continue;
+    const r = record(el);
+    snap = {...snap, main: {...snap.main!, text: cut(snap.main!.text, r.text), attrs: cut(snap.main!.attrs, r.attrs)}};
+  }
+  return snap;
+}
+/* The section select no longer carries a chip with the shown section's
+   state (CD5). The option text still names every state but "complete", so
+   the comparison takes the chip's word out of the baseline. */
+const SECTION_STATES = ["complete", "current", "invalidated entries", "missing", "non-canonical", "open items", "overdue watches",
+  "unanchored watches", "parse issues", "shown raw", "unreadable", "—"];
+function withoutChip(want: Snapshot): Snapshot {
+  const text = want.main!.text.slice(), i = text.indexOf("next ›");
+  assert.ok(i >= 0 && SECTION_STATES.includes(text[i + 1]), "the baseline has no section chip after next ›");
+  text.splice(i + 1, 1);
+  return {...want, main: {...want.main!, text}};
 }
 /* The Packs drawer holds what the resume pack screen held, under new chrome
    (DL-014). We drop the old screen's chrome and the drawer's chrome by exact
@@ -220,7 +302,86 @@ function packChrome(old: Region, drawer: Region){
   assert.deepEqual(newRest, oldRest);
   assert.deepEqual(drawer.attrs, [...old.attrs, "aria-label=Close packs"]);
 }
-const rentries = () => $$(".rentry").map(r => r.getAttribute("data-key")!);
+/* The decision cards follow the DecisionCard component (DL-047). The
+   vanilla pills led each word with its kind, "conf" or "status", as a run
+   of its own. The new chips carry the kind as a title, and each head gains
+   a fold caret. So the comparison takes out of the baseline, chip by chip
+   in page order, the kind run that sits right before that chip's word. It
+   takes the titles and carets out of the app's render, and each count must
+   equal the chips and cards on show, so nothing else can leave. */
+function decarded(got: Snapshot, want: Region): [Snapshot, Region] {
+  // The head carries the two chips with a title. A token chip in a title or a
+  // field is the log's own word, which the baseline holds as it is.
+  const chips = $$("#scrInspector .adp-dl__head > span > .adp-chip[title]"), carets = $$("#scrInspector .adp-dl__caret").length;
+  const cut = (list: string[], gone: string[], n: number, what: string) => {
+    const out = list.filter(x => !gone.includes(x));
+    assert.equal(list.length - out.length, n, what);
+    return out;
+  };
+  const text = want.text.slice();
+  let from = 0;
+  for (const c of chips){
+    const kind = c.getAttribute("title") === "confidence" ? "conf" : "status";
+    const i = text.findIndex((x, j) => j >= from && x === kind && text[j + 1] === c.textContent);
+    assert.ok(i >= 0, "the baseline has no " + kind + " pill for " + c.textContent);
+    text.splice(i, 1);
+    from = i;
+  }
+  const main = got.main!;
+  return [{...got, main: {text: cut(main.text, ["▾", "▸"], carets, "carets"), attrs: cut(main.attrs, ["title=confidence", "title=status"], chips.length, "chip titles")}},
+    {text, attrs: want.attrs}];
+}
+/* The Reading rules turn a bold run-in label into an eyebrow heading and the
+   closing metadata lines into one footer (DL-052). The heading drops the
+   label's colon, and the footer joins its pairs with " · ". So for each
+   marked heading and footer, in page order, we find its own runs in the
+   app's render and map them back: the heading's last run takes its colon
+   again, and the footer loses its separators. */
+// How many headings and footers the walk mapped back, so a test can show it met both.
+const readSeen = {runin: 0, meta: 0};
+function unread(snap: Snapshot): Snapshot {
+  let got = snap;
+  const text = got.main!.text.slice();
+  let from = 0;
+  for (const el of $$("#scrInspector h3[data-runin], #scrInspector footer[data-meta]")){
+    const run = record(el).text;
+    const i = text.findIndex((_, j) => j >= from && run.every((x, k) => text[j + k] === x));
+    assert.ok(i >= 0, "the render lacks the run of " + el.outerHTML.slice(0, 60));
+    const back = el.tagName === "H3" ? [...run.slice(0, -1), run.at(-1) + ":"] : run.filter(x => x !== "·");
+    readSeen[el.tagName === "H3" ? "runin" : "meta"]++;
+    text.splice(i, run.length, ...back);
+    from = i + back.length;
+  }
+  // A prompt key's YAML name moved from beside its title into the title's
+  // tooltip (DL-064). For each title in page order we put the name back as a
+  // run after the title and its one-line value, and take the tooltip out of
+  // the attributes.
+  from = 0;
+  const attrs = got.main!.attrs.slice();
+  for (const el of $$("#scrInspector [data-p=title]")){
+    const i = text.indexOf(el.textContent!, from);
+    assert.ok(i >= 0, "the render lacks prompt title " + el.textContent);
+    const val = el.nextElementSibling;
+    const at = i + 1 + (val && val.getAttribute("data-p") === "val" ? record(val).text.length : 0);
+    text.splice(at, 0, el.getAttribute("title")!);
+    from = at + 1;
+    const j = attrs.indexOf("title=" + el.getAttribute("title"));
+    assert.ok(j >= 0, "the render lacks the tooltip of " + el.textContent);
+    attrs.splice(j, 1);
+  }
+  got = {...got, main: {...got.main!, attrs}};
+  // A numbered list shows its numbers as text (DL-062), where the vanilla
+  // page drew them with a counter. We take each number run out in page order.
+  from = 0;
+  for (const el of $$("#scrInspector [data-num]")){
+    const i = text.indexOf(el.textContent!, from);
+    assert.ok(i >= 0, "the render lacks list number " + el.textContent);
+    text.splice(i, 1);
+    from = i;
+  }
+  return {...got, main: {...got.main!, text}};
+}
+const rentries = () => $$("#rail [data-key]").map(r => r.getAttribute("data-key")!);
 const options = () => [...($("#secSel") as HTMLSelectElement).options].map(o => o.value);
 async function pickSection(key: string){ fireEvent.change($("#secSel"), {target: {value: key}}); await settle(1); }
 const baselineBoot = () => boot({fetch: diskFetch(), now: BASELINE_NOW});
@@ -239,16 +400,19 @@ test("the app's inspector shows what the vanilla page showed, for every section 
       await pickSection(s);
       const k = "inspector|" + t + "|section|" + s, want = BASELINE[k];
       assert.ok(want, "the baseline has no state " + k);
-      const got = withoutReviews(s === "prompt" ? withoutStart(snapshot(document)) : snapshot(document));
-      assert.deepEqual(got, {...restyled(want), main: withoutOps(want.main!)}, k);
+      const [got, main] = decarded(unread(withoutStrip(s === "prompt" ? withoutStart(snapshot(document)) : snapshot(document))),
+        cased(reheaded(withoutOps(withoutChip(want).main!))));
+      assert.deepEqual(got, {...restyled(want), main}, k);
       seen.push(k);
     }
     await click($('[data-view="full"]'));
     const k = "inspector|" + t + "|full", want = BASELINE[k];
-    assert.deepEqual(withoutReviews(snapshot(document)), {...restyled(want), main: withoutOps(want.main!)}, k);
+    const [got, main] = decarded(unread(withoutStrip(snapshot(document))), cased(reheaded(withoutOps(withoutChip(want).main!))));
+    assert.deepEqual(got, {...restyled(want), main}, k);
     seen.push(k);
   }
   assert.deepEqual(seen, keys);
+  assert.ok(readSeen.runin > 0 && readSeen.meta > 0, "the walk met no run-in heading or no footer");
 }, 120000);
 
 test("the Packs drawer shows what the vanilla resume pack screen showed, for every pack and ticket", async () => {
@@ -264,7 +428,7 @@ test("the Packs drawer shows what the vanilla resume pack screen showed, for eve
       await pickPack(pk);
       const k = "resume pack|" + t + "|" + pk, want = BASELINE[k], got = snapshot(document);
       assert.deepEqual(got.header, restyled(want).header, k);
-      assert.deepEqual(got.rail, want.rail, k);
+      assert.deepEqual(got.rail, restyled(want).rail, k);
       packChrome(want.main!, got.drawer!);
       seen.push(k);
     }
@@ -281,12 +445,25 @@ test("the app's reviews and Ledger screens show what the vanilla reviews, calibr
   await click(entry(rentries().at(-1)!));
   // The last ticket has no rounds, so no control opens its reviews screen.
   // Its old link still does.
+  assert.ok(!$('#phaseStrip [data-op="reviews"]'), "a ticket with no rounds offers a reviews box");
   const last = rentries().at(-1)!;
   cleanup();
   vi.restoreAllMocks();
   await boot({fetch: diskFetch(), now: BASELINE_NOW, hash: "#v=reviews&t=" + encodeURIComponent(last)});
-  assert.equal($("#reviewsBtn"), null);
-  assert.deepEqual(snapshot(document), restyled(BASELINE["reviews"]), "reviews");
+  /* The reviews screen leads with the ticket's head and phase strip (DL-066),
+     where the vanilla screen named itself "reviews" and the directory. So the
+     comparison takes the head's and the strip's own runs out of the app's
+     render, where they open the screen, and the two vanilla runs out of the
+     baseline, and every run after them must match. */
+  const got = snapshot(document), want = restyled(BASELINE["reviews"]);
+  const lead = [record($("#tickHead")), record($("#phaseStrip"))];
+  const text = lead.flatMap(r => r.text), attrs = lead.flatMap(r => r.attrs);
+  assert.deepEqual(got.main!.text.slice(0, text.length), text);
+  assert.deepEqual(got.main!.attrs.slice(0, attrs.length), attrs);
+  const dir = BASE_TICKETS.get([...BASE_TICKETS.values()].find(x => (x.id || x.dir) === last)!.dir)!.dir;
+  assert.deepEqual(want.main!.text.slice(0, 2), ["reviews", dir]);
+  assert.deepEqual({...got, main: {text: got.main!.text.slice(text.length), attrs: got.main!.attrs.slice(attrs.length)}},
+    {...want, main: {...want.main!, text: want.main!.text.slice(2)}}, "reviews");
   await tabTo("ledgers");
   const cal = BASELINE["calibration"], led = restyled(BASELINE["ledgers"]);
   restyled(cal);
@@ -457,24 +634,24 @@ test("with no corpus the bar names no repo, the live word idles, and About says 
 
 test("the corpus boot selects the first rail entry", async () => {
   const {hashes} = await bootBoard();
-  const sel = $$(".rentry").filter(r => r.classList.contains("is-sel")).map(r => r.getAttribute("data-key"));
+  const sel = $$("#rail [data-key]").filter(r => r.getAttribute("aria-current") === "true").map(r => r.getAttribute("data-key"));
   assert.equal(sel.length, 1);
-  assert.equal(sel[0], $$(".rentry")[0].getAttribute("data-key"));
+  assert.equal(sel[0], $$("#rail [data-key]")[0].getAttribute("data-key"));
   assert.equal(hashes[hashes.length - 1], "#t=" + sel[0] + "&s=sec-decision-log");
 });
 
 test("the rail collapses a group and a ticket click selects it", async () => {
   await bootBoard();
-  const sec = () => $$(".railsec").find(s => s.getAttribute("data-sec") === "needs attention")!;
-  const n = $$(".rentry").length;
-  const inGroup = Number(sec().querySelector(".rcount")!.textContent);
+  const sec = () => $$("#rail [data-sec]").find(s => s.getAttribute("data-sec") === "needs attention")!;
+  const n = $$("#rail [data-key]").length;
+  const inGroup = Number(sec().querySelector("[data-part=count]")!.textContent);
   await click(sec());
-  assert.equal($$(".rentry").length, n - inGroup);
+  assert.equal($$("#rail [data-key]").length, n - inGroup);
   await click(sec());
-  assert.equal($$(".rentry").length, n);
+  assert.equal($$("#rail [data-key]").length, n);
   await click(tabFor("watchboard"));
   await click(entry("AA1"));
-  assert.equal(entry("AA1").classList.contains("is-sel"), true);
+  assert.equal(entry("AA1").getAttribute("aria-current") === "true", true);
   // A rail pick from the board opens the ticket in the inspector.
   assert.equal(isOn("scrInspector"), true);
 });
@@ -538,7 +715,7 @@ test("a board ticket link selects the ticket and opens the inspector", async () 
   await click($$(".wbl").find(a => a.getAttribute("data-t") === "BB2" && !a.getAttribute("data-item"))!);
   assert.equal(isOn("scrInspector"), true);
   assert.equal(($("#secSel") as HTMLSelectElement).value, "sec-decision-log");
-  assert.equal($$(".rentry").find(r => r.classList.contains("is-sel"))!.getAttribute("data-key"), "BB2");
+  assert.equal($$("#rail [data-key]").find(r => r.getAttribute("aria-current") === "true")!.getAttribute("data-key"), "BB2");
   assert.equal(hashes[hashes.length - 1], "#t=BB2&s=sec-decision-log");
 });
 
@@ -655,7 +832,7 @@ test("a view token in the hash lands the named screen on boot", async () => {
 test("a token naming no real screen is ignored", async () => {
   await bootBoard({hash: "#v=bogus&t=AA1"});
   assert.equal(isOn("scrInspector"), true);
-  assert.equal(entry("AA1").classList.contains("is-sel"), true);
+  assert.equal(entry("AA1").getAttribute("aria-current") === "true", true);
 });
 
 test("a tab switch writes its view token; the inspector clears it", async () => {
@@ -682,7 +859,7 @@ test("the boot never writes over a pending deep link", async () => {
   assert.equal(hashes.length, 0);
   release();
   await settle();
-  assert.equal(entry("BB2").classList.contains("is-sel"), true);
+  assert.equal(entry("BB2").getAttribute("aria-current") === "true", true);
   assert.equal(hashes[hashes.length - 1], "#t=BB2&s=sec-obligation-ticket-list&item=OT-BB2-1");
 });
 
@@ -696,13 +873,13 @@ test("a served page waiting for its corpus carries the ticket link through its h
   await act(async () => { feed.onopen!(); });
   await settle();
   // The link's ticket lands, and the screen the reader chose meanwhile stays.
-  assert.equal(entry("AA1").classList.contains("is-sel"), true);
+  assert.equal(entry("AA1").getAttribute("aria-current") === "true", true);
   assert.equal(isOn("scrWatch"), true);
 });
 
 test("a dead ticket link takes no default selection", async () => {
   await bootBoard({hash: "#t=ZZ9"});
-  assert.equal($$(".rentry").some(r => r.classList.contains("is-sel")), false);
+  assert.equal($$("#rail [data-key]").some(r => r.getAttribute("aria-current") === "true"), false);
 });
 
 // ---- R5, the client half: live updates ----
@@ -734,7 +911,7 @@ test("an event during a load queues one more load, so the last change always lan
   release();
   await settle();
   assert.equal(live.listings, 3);
-  assert.equal($$(".rentry").length, 1);
+  assert.equal($$("#rail [data-key]").length, 1);
   assert.match((await about())[0]!, /1 tickets/);
 });
 
@@ -784,7 +961,7 @@ test("a boot that failed honors its deep link when the corpus first answers", as
   live.down = false;
   await act(async () => { feed.onopen!(); });
   await settle();
-  assert.equal(entry("AA1").classList.contains("is-sel"), true);
+  assert.equal(entry("AA1").getAttribute("aria-current") === "true", true);
   assert.equal(hashes[hashes.length - 1], "#t=AA1&s=sec-decision-log&item=DL-002");
 });
 
@@ -792,11 +969,11 @@ test("a boot that failed takes the default selection when the corpus first answe
   const live = liveCorpus(LISTING, TEXTS);
   live.down = true;
   const {feed, hashes} = await boot({fetch: live.fetch});
-  assert.equal($$(".rentry").length, 0);
+  assert.equal($$("#rail [data-key]").length, 0);
   live.down = false;
   await act(async () => { feed.onopen!(); });
   await settle();
-  const first = $$(".rentry")[0].getAttribute("data-key");
+  const first = $$("#rail [data-key]")[0].getAttribute("data-key");
   assert.deepEqual(marked(), [first]);
   assert.equal(hashes[hashes.length - 1], "#t=" + first + "&s=sec-decision-log");
 });
@@ -867,9 +1044,9 @@ test("the open ticket keeps its rail mark when its id stops or starts being shar
   const listing = {root: "demo", files: ["A-001-one/audit-log.md", "A-001-two/audit-log.md"]};
   const live = liveCorpus(listing, {"A-001-one/audit-log.md": shared("one"), "A-001-two/audit-log.md": shared("two")});
   const {feed} = await boot({fetch: live.fetch});
-  assert.deepEqual($$(".rentry").map(r => r.getAttribute("data-key")).sort(), ["A-001-one", "A-001-two"]);
+  assert.deepEqual($$("#rail [data-key]").map(r => r.getAttribute("data-key")).sort(), ["A-001-one", "A-001-two"]);
   await click(entry("A-001-two"));
-  const marked = () => $$(".rentry").filter(r => r.classList.contains("is-sel")).map(r => r.getAttribute("data-key"));
+  const marked = () => $$("#rail [data-key]").filter(r => r.getAttribute("aria-current") === "true").map(r => r.getAttribute("data-key"));
   live.listing = {root: "demo", files: ["A-001-two/audit-log.md"]};
   await act(async () => { feed.onmessage!(); });
   await settle();
@@ -884,7 +1061,7 @@ test("a bare shared id selects neither ticket", async () => {
   const shared = (w: string) => LOG.replace("# Audit Log — AA1 alpha", "# Audit Log — " + w).replace(/OT-AA1-/g, "OT-A001-");
   await boot({hash: "#t=A001", fetch: liveCorpus({root: "demo", files: ["A-001-one/audit-log.md", "A-001-two/audit-log.md"]},
     {"A-001-one/audit-log.md": shared("one"), "A-001-two/audit-log.md": shared("two")}).fetch});
-  assert.equal($$(".rentry").some(r => r.classList.contains("is-sel")), false);
+  assert.equal($$("#rail [data-key]").some(r => r.getAttribute("aria-current") === "true"), false);
 });
 
 // Each log names its own decision, so a test can tell which one the
@@ -969,7 +1146,7 @@ test("a first load that fails says the server stopped answering, and Retry runs 
   await click($("#retryBtn"));
   await settle();
   assert.equal(statusOf(), null);
-  assert.ok($$(".rentry").length > 0);
+  assert.ok($$("#rail [data-key]").length > 0);
 });
 
 test("a repo with no logs offers New task and the bootstrap pack, and names the folder it watches", async () => {
@@ -1077,13 +1254,14 @@ test("the ⋯ button opens the menu and says so", async () => {
 test("the menu lists the shortcuts that work, and f flips the ticket between section and full log", async () => {
   await bootBoard();
   await click($("#menuBtn"));
-  assert.deepEqual([...$("#hdrMenu").querySelectorAll(".adp-keys dt, .adp-keys dd")].map(e => e.textContent), ["f", "Section or full log"]);
+  assert.deepEqual([...$("#hdrMenu").querySelectorAll(".adp-keys dt, .adp-keys dd")].map(e => e.textContent),
+    ["[", "Show or hide tickets", "← →", "Previous or next phase", "/", "Filter tickets", "f", "Section or full log"]);
   await key(document.body, "Escape");
-  assert.equal(op("data-view", "section").classList.contains("is-on"), true);
+  assert.equal(op("data-view", "section").getAttribute("aria-pressed") === "true", true);
   await key(document.body, "f");
-  assert.equal(op("data-view", "full").classList.contains("is-on"), true);
+  assert.equal(op("data-view", "full").getAttribute("aria-pressed") === "true", true);
   await key(document.body, "f");
-  assert.equal(op("data-view", "section").classList.contains("is-on"), true);
+  assert.equal(op("data-view", "section").getAttribute("aria-pressed") === "true", true);
 });
 
 test("f does nothing while the reader types in a field or another view shows", async () => {
@@ -1091,12 +1269,12 @@ test("f does nothing while the reader types in a field or another view shows", a
   const field = document.createElement("input");
   document.body.append(field);
   await key(field, "f");
-  assert.equal(op("data-view", "section").classList.contains("is-on"), true);
+  assert.equal(op("data-view", "section").getAttribute("aria-pressed") === "true", true);
   field.remove();
   await click(tabFor("watchboard"));
   await key(document.body, "f");
   await click(tabFor("inspector"));
-  assert.equal(op("data-view", "section").classList.contains("is-on"), true);
+  assert.equal(op("data-view", "section").getAttribute("aria-pressed") === "true", true);
 });
 
 test("Escape closes the open menu and hands focus to the ⋯ button", async () => {
@@ -1129,7 +1307,8 @@ const LISTING_I = {root: "demo", files: ["20260101-AA1-alpha/audit-log.md", "202
 const TEXTS_I: Record<string, string> = {"20260101-AA1-alpha/audit-log.md": LOG,
   "20260101-AA1-alpha/prompt.yaml": PROMPT_AA1, "AV-002-beta/prompt.yaml": PROMPT_AV2};
 const bootCorpus = (opts: BootOpts = {}) => boot({fetch: liveCorpus(LISTING_I, TEXTS_I).fetch, ...opts});
-const op = (attr: string, v: string) => $$(".op").find(o => o.getAttribute(attr) === v)!;
+// The control that carries one data attribute value, an op button or a view segment.
+const op = (attr: string, v: string) => $$(`[${attr}]`).find(o => o.getAttribute(attr) === v)!;
 const secVal = () => ($("#secSel") as HTMLSelectElement).value;
 const insp = () => $("#scrInspector").innerHTML;
 const last = (hashes: string[]) => hashes[hashes.length - 1];
@@ -1155,17 +1334,18 @@ afterEach(() => {
 test("the corpus boot selects the first rail entry; a full ticket renders its spine", async () => {
   const {hashes} = await bootCorpus();
   // AA1 is actionable attention, and AV002 is a prompt-only ticket still in
-  // flight, so it sits in progress with its missing-sections ribbon intact.
-  assert.match($("#rail").innerHTML, /in progress[\s\S]*AV002/);
+  // flight, so it sits in the open group with its missing-sections ribbon intact.
+  assert.match($("#rail").innerHTML, /data-sec="open"[\s\S]*AV002/);
   assert.match($("#rail").innerHTML, /9 SECTIONS MISSING/);
   const scr = insp();
   // The section body went through the parser library's Decision Log renderer.
-  assert.match(scr, /dl-card/);
+  assert.match(scr, /class="adp-dl-list"/);
   assert.match(scr, /DL-001/);
   // The nav lists the prompt, 5 real sections, and 5 missing canonicals.
   assert.equal($$("#secSel option").length, 11);
   assert.equal(secVal(), "sec-decision-log");
-  assert.match(scr, /shipped · inferred/);
+  assert.equal($("#tickHead .adp-chip").textContent, "shipped");
+  assert.equal($("#tickHead .adp-chip + .adp-meta").textContent, "inferred from the log");
   assert.match(scr, /decisions cited by Decision Log/);
   assert.match(scr, /open 1/);
   assert.match(scr, /validated 1/);
@@ -1220,8 +1400,8 @@ test("a decision row opens its card and the back link returns", async () => {
   // The link scrolls the reader back to the nav and the content it changed.
   assert.equal(scrolls.filter(e => e.classList.contains("secnav")).length, 1);
   assert.equal(last(hashes), "#t=AA1&s=sec-decision-log&item=DL-002");
-  await click($(".backlink"));
-  assert.ok(!insp().includes("backlink"));
+  await click($('#scrInspector [data-op="back"]'));
+  assert.ok(!$('#scrInspector [data-op="back"]'), "the back link stays after it went back");
   assert.equal(last(hashes), "#t=AA1&s=sec-decision-log");
 });
 
@@ -1300,10 +1480,10 @@ test("the permalink control copies the current address", async () => {
   const got = stubClipboard();
   await bootCorpus();
   await click(entry("AA1"));
-  await click($(".lnk"));
+  await click($("[data-permalink]"));
   assert.equal(got.length, 1);
   assert.match(got[0], /#t=AA1&s=sec-decision-log$/);
-  assert.equal($(".lnk").textContent, "copied");
+  assert.equal($("[data-permalink]").textContent, "copied");
 });
 
 test("a hash set before boot lands the named view with the item highlighted", async () => {
@@ -1329,23 +1509,23 @@ test("a link to a vanished section falls back with a visible notice", async () =
    existed, with the section and heading each one opened then. The vanilla
    test captured the pairs from the page at 8cb020a. */
 const PINNED_LANDINGS = [
-  ["sec-problem-statement", "phase 1 · Problem Statement"],
-  ["sec-decision-log", "phase 5 · Decision Log"],
+  ["sec-problem-statement", "Phase 1 · Problem Statement"],
+  ["sec-decision-log", "Phase 5 · Decision Log"],
   ["sec-aside-notes", "Aside Notes"],
-  ["sec-pr-summary", "phase 7 · PR Summary"],
-  ["sec-obligation-ticket-list", "phase 9 · Obligation Ticket List"],
-  ["missing:Knowledge Gap", "phase 2 · Knowledge Gap"],
-  ["missing:Recommendation Brief", "phase 3 · Recommendation Brief"],
-  ["missing:Pre-Mortem Report", "phase 4 · Pre-Mortem Report"],
-  ["missing:Test Adversary", "phase 6 · Test Adversary"],
-  ["missing:Deployment Risk", "phase 8 · Deployment Risk"]
+  ["sec-pr-summary", "Phase 7 · PR Summary"],
+  ["sec-obligation-ticket-list", "Phase 9 · Obligation Ticket List"],
+  ["missing:Knowledge Gap", "Phase 2 · Knowledge Gap"],
+  ["missing:Recommendation Brief", "Phase 3 · Recommendation Brief"],
+  ["missing:Pre-Mortem Report", "Phase 4 · Pre-Mortem Report"],
+  ["missing:Test Adversary", "Phase 6 · Test Adversary"],
+  ["missing:Deployment Risk", "Phase 8 · Deployment Risk"]
 ];
 
 test("every section hash lands where it landed before the prompt entry", async () => {
   for (const [key, heading] of PINNED_LANDINGS){
     await bootCorpus({hash: "#t=AA1&s=" + encodeURIComponent(key)});
     assert.equal(secVal(), key);
-    assert.match(insp(), new RegExp("<h4>" + heading + "[ <]"));
+    assert.match(insp(), new RegExp('<h2 class="adp-section"[^>]*>' + heading + "<"));
     assert.doesNotMatch(insp(), /was not found in this log/);
     cleanup();
     vi.restoreAllMocks();
@@ -1399,7 +1579,7 @@ test("an entry housed outside the spine still opens as a card", async () => {
   await click(entry("LT1"));
   await click($$(".dlrow").find(r => r.getAttribute("data-dl") === "DL-009")!);
   assert.match(insp(), /\[DL-009\]/);
-  assert.match(insp(), /dl-card|dl-grid/);
+  assert.match(insp(), /class="adp-dl[ "]/);
   assert.ok(!insp().includes("not present in the loaded text"));
 });
 
@@ -1885,7 +2065,7 @@ function expectedPack(name: string, key: string | null, texts = TEXTS){
   const t = index.tickets.find(x => (x.id || x.dir) === key) || null;
   return S.fillPack(packText(name + ".pack.md"), S.packContext(index, t, index.generated, Bld.lintCorpus(files)));
 }
-const marking = () => $$(".rentry").find(r => r.classList.contains("is-sel"))!.getAttribute("data-key")!;
+const marking = () => $$("#rail [data-key]").find(r => r.getAttribute("aria-current") === "true")!.getAttribute("data-key")!;
 
 test("the pack screen rows every pack in listing order with resume-ticket selected by default", async () => {
   await bootPacks();
@@ -2207,12 +2387,13 @@ test("the prompt view renders every top-level key, the unknown one included", ()
   PL.parseYAML(FULL_PROMPT, issues);
   assert.deepEqual(issues, []);
   const html = promptHtml(FULL_PROMPT);
-  const heads = [...html.matchAll(/<span class="pcard-title">([^<]+)<\/span>/g)].map(m => m[1]);
+  const heads = [...html.matchAll(/<h2 data-p="title"[^>]*>([^<]+)<\/h2>/g)].map(m => m[1]);
   assert.deepEqual(heads, ["Schema Version", "Task", "Preamble", "Role", "Prompt", "Constraints",
     "Context", "Lessons Learned", "Output", "Requirements", "Protocol", "Reviewer Notes"]);
-  assert.match(html, /<span class="pcard-key">lessons_learned<\/span>/);
-  assert.match(html, /<span class="pcard-title">Schema Version<\/span><span class="pcard-val">1\.0<\/span>/);
-  assert.match(html, /<div class="pcard-k">title<\/div><div class="pcard-v">Full prompt<\/div>/);
+  assert.match(html, /<h2 data-p="title" title="lessons_learned"[^>]*>Lessons Learned<\/h2>/);
+  assert.doesNotMatch(html, /data-p="key"/);
+  assert.match(html, /<h2 data-p="title"[^>]*>Schema Version<\/h2><span data-p="val"[^>]*>1\.0<\/span>/);
+  assert.match(html, /<div data-p="k"[^>]*>title<\/div><div data-p="v"[^>]*>Full prompt<\/div>/);
   assert.match(html, /<th>path<\/th><th>lines<\/th><th>note<\/th>/);
   assert.match(html, /<th>id<\/th><th>statement<\/th><th>verify<\/th>/);
   assert.match(html, /Add the <strong>view<\/strong>/);
@@ -2234,6 +2415,21 @@ test("block text inside a table cell renders as markdown", () => {
   assert.match(html, /<td>Keep \*\*this\*\* exact<\/td>/);
 });
 
+// The prompt view reads on the design system (DL-061, DL-067): each key in a
+// pane of its own under a section heading, label rows on the grid, and none
+// of the old card classes.
+test("the prompt view sets each key in its own pane with grid rows and no old card class", () => {
+  const html = promptHtml(FULL_PROMPT);
+  assert.doesNotMatch(html, /class="[^"]*pcard/);
+  assert.match(html, /<section data-p="card" class="doc" style="padding: 16px 24px; margin: 0px 0px 16px; border: 0px; background: var\(--panel\); box-shadow: inset 0 0 0 1px var\(--line\);"><div[^>]*><h2 data-p="title" title="task" class="adp-section" style="margin: 0px; font: 600 20px\/28px var\(--font-sans\);[^"]*">Task<\/h2>/);
+  assert.equal(html.split('<section data-p="card" class="doc"').length - 1, 12);
+  assert.match(html, /<div data-p="k" style="padding: 8px 0px;[^"]*font: 400 13px\/24px var\(--font-sans\);/);
+  assert.match(html, /<div data-p="v" style="padding: 8px 0px;[^"]*font: 400 15px\/24px var\(--font-sans\);/);
+  // Spacing alone keeps the rows apart (DL-063), so no row draws a rule.
+  assert.doesNotMatch(html, /data-p="[kv]" style="[^"]*box-shadow/);
+  assert.doesNotMatch(html, /class="pill /);
+});
+
 test("prompt text renders inert", () => {
   const html = promptHtml(["prompt: |", "  <script>alert(1)</script>", '  <img src=x onerror="alert(2)">',
     "  [click](javascript:alert(3))", "context:", "  background: |", "    [go](javascript:alert(4)) and <b onmouseover=x>hi</b>",
@@ -2249,9 +2445,9 @@ test("prompt text renders inert", () => {
   }
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /<a href="mailto:a@b\.c"/);
-  assert.match(html, /<li>relative\/path<\/li>/);
-  assert.match(html, /<li>javascript:alert\(5\)<\/li>/);
-  assert.match(html, /<div class="pcard-v">\[go\]\(https:\/\/example\.com\/x\)<\/div>/);
+  assert.match(html, /<li><span>relative\/path<\/span><\/li>/);
+  assert.match(html, /<li><span>javascript:alert\(5\)<\/span><\/li>/);
+  assert.match(html, /<div data-p="v"[^>]*>\[go\]\(https:\/\/example\.com\/x\)<\/div>/);
 });
 
 test("a ticket with a prompt lists it ahead of phase 1 and steps to it", async () => {
@@ -2260,10 +2456,10 @@ test("a ticket with a prompt lists it ahead of phase 1 and steps to it", async (
   await click(op("data-secstep", "-1"));
   assert.equal(secVal(), "prompt");
   const scr = insp();
-  assert.match(scr, /<h4>prompt\.yaml /);
+  assert.match(scr, /<h2 class="adp-section"[^>]*>Prompt</);
   assert.match(scr, /Make the <strong>alpha<\/strong> path work/);
-  assert.match(scr, /secchit t-ok">complete/);
-  assert.match(scr, /data-secstep="-1" disabled/);
+  assert.equal($("#phaseStrip [aria-current=step]").textContent, "P");
+  assert.match(scr, /data-secstep="-1" style="height: 36px;" disabled/);
 });
 
 test("the prompt view has a deep link", async () => {
@@ -2275,7 +2471,7 @@ test("the prompt view has a deep link", async () => {
   vi.restoreAllMocks();
   await bootCorpus({hash: "#t=AA1&s=prompt"});
   assert.equal(secVal(), "prompt");
-  assert.match(insp(), /<h4>prompt\.yaml /);
+  assert.match(insp(), /<h2 class="adp-section"[^>]*>Prompt</);
   assert.doesNotMatch(insp(), /was not found in this log/);
 });
 
@@ -2291,9 +2487,9 @@ test("a prompt-only ticket shows its prompt instead of the no-audit-log notice",
 test("a missing or unparseable prompt.yaml affects only its own ticket", async () => {
   const texts = {"20260101-AA1-alpha/audit-log.md": LOG, "AV-002-beta/prompt.yaml": "[1, 2, 3]\n"};
   await boot({hash: "#t=AA1&s=prompt", fetch: liveCorpus(LISTING_I, texts).fetch});
-  assert.equal($$(".rentry").length, 2);
+  assert.equal($$("#rail [data-key]").length, 2);
   assert.match(insp(), /prompt\.yaml is listed in the corpus but could not be read\./);
-  assert.match(insp(), /secchit t-bad">unreadable/);
+  assert.equal([...($("#secSel") as HTMLSelectElement).options].find(o => o.value === "prompt")!.textContent, "Prompt — unreadable");
   await click(entry("AV002"));
   assert.match(insp(), /did not parse as YAML/);
   assert.match(insp(), /<pre class="rawpre">\[1, 2, 3\]/);
@@ -2387,7 +2583,7 @@ test("a reviews deep link opens the ticket's latest round with its head", async 
   await bootReviews(reviewCorpus(), "#v=reviews&t=RV1");
   assert.equal(isOn("scrReviews"), true);
   const head = $("#revHead").innerHTML;
-  assert.match(head, /PR #7 · round 10/);
+  assert.match(head, /PR #7 · Round 10/);
   assert.match(head, /2026-01-05/);
   assert.match(head, /APPROVE/);
   assert.match(head, /must 0 \/ should 1 \/ question 0 \/ nit 0/);
@@ -2408,7 +2604,7 @@ test("the step controls walk one PR's rounds in number order and stop at both en
   assert.equal(op("data-revstep", "1").hasAttribute("disabled"), false);
   await revStep(1); await revStep(1);
   assert.equal(op("data-revstep", "1").hasAttribute("disabled"), true);
-  assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
+  assert.match($("#revHead").innerHTML, /PR #7 · Round 10/);
 });
 
 test("a ticket with two PRs offers a PR select, and a switch lands on that PR's latest round", async () => {
@@ -2416,7 +2612,7 @@ test("a ticket with two PRs offers a PR select, and a switch lands on that PR's 
   await bootReviews(c, "#v=reviews&t=RV1");
   assert.deepEqual([...$("#revPr").children].map(o => o.textContent), ["PR #7", "PR #8"]);
   await pickSelect($("#revPr"), "PR8");
-  assert.match($("#revHead").innerHTML, /PR #8 · round 3/);
+  assert.match($("#revHead").innerHTML, /PR #8 · Round 3/);
   assert.deepEqual([...$("#revSel").children].map(o => o.getAttribute("value")), ["pr-review-PR8-20260104-r3.md"]);
   assert.equal(location.hash, "#v=reviews&t=RV1&s=pr-review-PR8-20260104-r3.md");
   // The hash reopens the same round in a fresh page.
@@ -2424,7 +2620,7 @@ test("a ticket with two PRs offers a PR select, and a switch lands on that PR's 
   cleanup();
   vi.restoreAllMocks();
   await bootReviews(c, hash);
-  assert.match($("#revHead").innerHTML, /PR #8 · round 3/);
+  assert.match($("#revHead").innerHTML, /PR #8 · Round 3/);
   await click(entry("RV2"));
   assert.equal(document.getElementById("revPr"), null);
 });
@@ -2433,11 +2629,11 @@ test("the reviews screen follows the rail, and a ticket with no rounds shows an 
   await bootReviews(reviewCorpus(), "#v=reviews&t=RV1");
   await click(entry("RV2"));
   assert.equal(isOn("scrReviews"), true);
-  assert.match($("#revHead").innerHTML, /PR #9 · round/);
+  assert.match($("#revHead").innerHTML, /PR #9 · Round/);
   await click(entry("AV002"));
   assert.equal(isOn("scrReviews"), true);
   assert.match(revHtml(), /this ticket has no review files/);
-  assert.equal(entry("AV002").classList.contains("is-sel"), true);
+  assert.equal(entry("AV002").getAttribute("aria-current") === "true", true);
 });
 
 // The filter, the collapsed sections, and the round each belong to the
@@ -2457,9 +2653,9 @@ test("a rail pick resets the decisions filter, the collapsed sections, and the r
   await pickSection("sec-decision-log");
   assert.equal($$(".fpill").find(p => p.getAttribute("data-dlf") === "all")!.classList.contains("is-on"), true);
   await click(tabFor("reviews"));
-  assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
+  assert.match($("#revHead").innerHTML, /PR #7 · Round 10/);
   await click(entry("RV2"));
-  assert.match($("#revHead").innerHTML, /PR #9 · round 3/);
+  assert.match($("#revHead").innerHTML, /PR #9 · Round 3/);
   assert.doesNotMatch($("#revHead").innerHTML, /was not found in this ticket/);
 });
 
@@ -2490,10 +2686,10 @@ test("prior rounds in another ticket link to that ticket's reviews tab", async (
   assert.equal(links[0].getAttribute("href"), "#v=reviews&t=RV1&s=pr-review-PR7-20260103-r2.md");
   await click(links[1]);
   assert.match($("#revHead").innerHTML, /ticket "NOPE-gone" is not in this corpus\./);
-  assert.match($("#revHead").innerHTML, /PR #9 · round 1/);
+  assert.match($("#revHead").innerHTML, /PR #9 · Round 1/);
   await click(within("revHead", ".rvl")[0]);
-  assert.match($("#revHead").innerHTML, /PR #7 · round 2/);
-  assert.equal(entry("RV1").classList.contains("is-sel"), true);
+  assert.match($("#revHead").innerHTML, /PR #7 · Round 2/);
+  assert.equal(entry("RV1").getAttribute("aria-current") === "true", true);
   assert.equal(location.hash, "#v=reviews&t=RV1&s=pr-review-PR7-20260103-r2.md");
 });
 
@@ -2509,7 +2705,7 @@ test("an unreadable round, a round with no verdict, and a stale round link each 
   vi.restoreAllMocks();
   await bootReviews(c, "#v=reviews&t=RV1&s=pr-review-PR7-20990101-r99.md");
   assert.match($("#revHead").innerHTML, /was not found in this ticket/);
-  assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
+  assert.match($("#revHead").innerHTML, /PR #7 · Round 10/);
 });
 
 test("an inspector pointer section links to its round, and the inspector keeps its section", async () => {
@@ -2523,7 +2719,7 @@ test("an inspector pointer section links to its round, and the inspector keeps i
   assert.equal(link.textContent, "open round in reviews ›");
   await click(link);
   assert.equal(isOn("scrReviews"), true);
-  assert.match($("#revHead").innerHTML, /PR #7 · round 2/);
+  assert.match($("#revHead").innerHTML, /PR #7 · Round 2/);
   await click(tabFor("inspector"));
   assert.equal(secVal(), key);
   assert.equal(location.hash, "#t=RV1&s=" + encodeURIComponent(key));
@@ -2558,70 +2754,79 @@ const card = (id: string, o: {title?: string; severity?: string; claim?: string;
   "- **Confidence basis:** DIRECT EVIDENCE — a repro.", `- **Status:** ${o.status || "OPEN"}`].join("\n");
 const ledgerLine = (id: string, outcome: string, note: string) => `- **${id} CLOSED 2026-01-03 → ${outcome}.** ${note}`;
 const withLedger = (text: string, lines: string[]) => text.replace("## Review Verdict", "## Prior Findings\n" + lines.join("\n") + "\n\n## Review Verdict");
-const bodyHtml = (text: string, ledger: S.ReviewLedger, tok = "RV1") =>
-  render(createElement(ReviewBody, {text, ctx: {ledger, tok, onRound(){}}})).container.innerHTML;
+const bodyEl = (text: string, ledger: S.ReviewLedger, tok = "RV1") =>
+  render(createElement(ReviewBody, {text, ctx: {ledger, tok, onRound(){}}})).container;
+// Each head chip as its kind, its word, and its class.
+const headChips = (c: Element) => [...c.querySelectorAll(".adp-dl__head .adp-chip")].map(x => [x.getAttribute("title"), x.textContent, x.className]);
+const fieldLabels = (c: Element) => [...c.querySelectorAll("dt")].map(d => d.textContent);
 // A note that mixes author text with our link sits in a contents span (DL-069).
 const CONTENTS = '(?:<span style="display: contents;">)?';
 
 test("a finding renders as a card, and its status pill reads the ledger, not the stale card", () => {
   const text = review({pr: 7, k: 1, dir: RV1, findings: card("PR-COR-001") + "\n\n" + card("PR-TST-002", {severity: "nit"})});
-  const html = bodyHtml(text, {"PR-COR-001": {id: "PR-COR-001", file: "pr-review-PR7-20260103-r2.md", k: 2, date: "2026-01-03", outcome: "RESOLVED", note: "fixed **now**."}});
-  const cards = html.split('<div class="dl-cards">')[1].split("Review Verdict")[0].split('<div class="dl-card ').slice(1);
+  const box = bodyEl(text, {"PR-COR-001": {id: "PR-COR-001", file: "pr-review-PR7-20260103-r2.md", k: 2, date: "2026-01-03", outcome: "RESOLVED", note: "fixed **now**."}});
+  const cards = [...box.querySelectorAll(".adp-dl")];
   assert.equal(cards.length, 2);
-  assert.match(cards[0], /^rail-ok"/);
-  assert.match(cards[0], /<i>severity<\/i>should/);
-  assert.match(cards[0], /<i>conf<\/i>HIGH/);
-  assert.match(cards[0], /<i>status<\/i>RESOLVED/);
-  assert.doesNotMatch(cards[0], /<i>status<\/i>OPEN/);
-  assert.match(cards[0], new RegExp(`2026-01-03 in <a class="rvl"[^>]*data-rf="pr-review-PR7-20260103-r2\\.md">round 2</a> · ${CONTENTS}fixed <strong>now</strong>\\.`));
-  assert.match(cards[0], /<span class="dl-k revk">Confidence basis<\/span>/);
-  assert.doesNotMatch(cards[0], /dl-k revk">(Severity|Confidence|Status)</);
-  assert.match(cards[1], /^rail-open"/);
-  assert.match(cards[1], /<i>severity<\/i>nit/);
-  assert.match(cards[1], /<i>status<\/i>OPEN/);
-  assert.match(html, /<h4>Findings<\/h4><div class="md"><div class="dl-cards">/);
+  // Severity and confidence are neutral Tags, and the ledger's closure is the status.
+  assert.deepEqual(headChips(cards[0]), [["severity", "should", "adp-chip"], ["confidence", "HIGH", "adp-chip"],
+    ["status", "RESOLVED", "adp-chip adp-chip--validated"]]);
+  assert.equal(cards[0].className, "adp-dl adp-dl--settled");
+  const closed = [...cards[0].querySelectorAll("dt")].find(d => d.textContent === "closed")!.nextElementSibling!;
+  assert.match(closed.innerHTML, new RegExp(`^2026-01-03 in <a class="rvl"[^>]*data-rf="pr-review-PR7-20260103-r2\\.md"[^>]*>round 2</a> · ${CONTENTS}fixed <strong>now</strong>\\.`));
+  assert.ok(fieldLabels(cards[0]).includes("Confidence basis"));
+  assert.ok(!fieldLabels(cards[0]).some(l => /^(Severity|Confidence|Status)$/.test(l!)));
+  assert.deepEqual(headChips(cards[1]), [["severity", "nit", "adp-chip"], ["confidence", "HIGH", "adp-chip"], ["status", "OPEN", "adp-chip adp-chip--open"]]);
+  assert.equal(cards[1].className, "adp-dl");
+  // The first finding starts open and the rest start folded.
+  assert.equal(cards[0].querySelector(".adp-dl__head")!.getAttribute("aria-expanded"), "true");
+  assert.equal((cards[1].querySelector(".adp-dl__body") as HTMLElement).style.display, "none");
+  assert.ok([...box.querySelectorAll(".doc > h2.adp-section")].some(h => h.textContent === "Findings"));
 });
 
 test("Review Target, Review Verdict, and Prior Findings render as grids, and a stray line keeps markdown", () => {
   const text = withLedger(review({pr: 7, k: 2, dir: RV1}), [ledgerLine("PR-COR-001", "RESOLVED", "fixed.")]);
-  const html = bodyHtml(text, {});
-  assert.equal(html.split("dl-card revcard").length - 1, 3);
-  assert.match(html, /<span class="dl-k revk">Round<\/span><span class="dl-v revv">2<\/span>/);
-  assert.match(html, new RegExp(`<span class="dl-k revk">PR-COR-001</span><span class="dl-v revv"><span class="pill dl-pill p-ok"><i>closed</i>RESOLVED</span> 2026-01-03 · ${CONTENTS}fixed\\.`));
-  assert.match(html, /<table/);
-  assert.match(html, /Round 2 of PR #7 found nothing\./);
-  assert.deepEqual([...html.matchAll(/<div class="doc"><h4>([^<]*)<\/h4>/g)].map(x => x[1]),
+  const grids = (box: Element) => [...box.querySelectorAll<HTMLElement>("div")].filter(d => d.style.display === "grid").length;
+  const value = (box: Element, label: string) => [...box.querySelectorAll("[data-rev=k]")].find(k => k.textContent === label)!.nextElementSibling!;
+  const box = bodyEl(text, {});
+  assert.equal(grids(box), 3);
+  assert.equal(value(box, "Round").textContent, "2");
+  const pc = value(box, "PR-COR-001");
+  assert.equal(pc.querySelector(".adp-chip")!.className, "adp-chip adp-chip--s adp-chip--validated");
+  assert.equal(pc.textContent, "RESOLVED 2026-01-03 · fixed.");
+  assert.ok(box.querySelector("table.adp-table"));
+  assert.match(box.innerHTML, /Round 2 of PR #7 found nothing\./);
+  assert.deepEqual([...box.querySelectorAll(".doc > h2.adp-section")].map(h => h.textContent),
     ["Review Target", "Inspected", "Findings", "Prior Findings", "Review Verdict"]);
-  assert.doesNotMatch(html, /PR Review — PR #7/);
-  assert.equal(html.split('<div class="doc"><h4>').length - 1, html.split('</h4><div class="md">').length - 1);
+  assert.doesNotMatch(box.innerHTML, /PR Review — PR #7/);
+  for (const d of box.querySelectorAll(".doc")) assert.ok(d.querySelector(":scope > .adp-prose"), "a pane lacks its prose body");
   cleanup();
-  const stray = bodyHtml(text.replace("## Prior Findings\n", "## Prior Findings\nA note that is not a ledger line.\n"), {});
-  assert.equal(stray.split("dl-card revcard").length - 1, 2);
-  assert.match(stray, /A note that is not a ledger line\./);
-  assert.match(stray, /PR-COR-001 CLOSED 2026-01-03/);
+  const stray = bodyEl(text.replace("## Prior Findings\n", "## Prior Findings\nA note that is not a ledger line.\n"), {});
+  assert.equal(grids(stray), 2);
+  assert.match(stray.innerHTML, /A note that is not a ledger line\./);
+  assert.match(stray.innerHTML, /PR-COR-001 CLOSED 2026-01-03/);
 });
 
 test("a finding card renders its text inert, and an unknown outcome word picks no class", () => {
   const text = review({pr: 9, k: 1, dir: RV2, findings: card("PR-SEC-001", {title: XSS, claim: XSS, severity: "<b>x</b> later"})});
-  const html = bodyHtml(text, {"PR-SEC-001": {id: "PR-SEC-001", file: "f.md", k: 2, date: "2026-01-03", outcome: "WEIRD", note: XSS}}, "RV2");
-  assert.doesNotMatch(html, /<script|<img|<b>|href="javascript:/i);
-  assert.match(html, /&lt;script&gt;/);
-  assert.match(html, /<span class="pill dl-pill p-low"><i>status<\/i>WEIRD<\/span>/);
-  assert.match(html, /<div class="dl-card ">/);
-  assert.match(html, /dl-k revk">severity note</);
+  const box = bodyEl(text, {"PR-SEC-001": {id: "PR-SEC-001", file: "f.md", k: 2, date: "2026-01-03", outcome: "WEIRD", note: XSS}}, "RV2");
+  assert.doesNotMatch(box.innerHTML, /<script|<img|<b>|href="javascript:/i);
+  assert.match(box.innerHTML, /&lt;script&gt;/);
+  const status = box.querySelector(".adp-dl__head .adp-chip[title=status]")!;
+  assert.deepEqual([status.textContent, status.className], ["WEIRD", "adp-chip"]);
+  assert.ok(fieldLabels(box).includes("severity note"));
 });
 
 test("a later round's closure repaints an earlier round's card on its change event", async () => {
   const c = reviewCorpus();
   c.texts[`${RV1}/pr-review-PR7-20260102-r1.md`] = review({pr: 7, k: 1, dir: RV1, findings: card("PR-COR-001")});
   const {feed} = await bootReviews(c, "#v=reviews&t=RV1&s=pr-review-PR7-20260102-r1.md");
-  assert.match($("#revBody").innerHTML, /dl-pill p-open"><i>status<\/i>OPEN/);
+  const status = () => { const x = $("#revBody .adp-dl__head .adp-chip[title=status]"); return [x.textContent, x.className]; };
+  assert.deepEqual(status(), ["OPEN", "adp-chip adp-chip--open"]);
   c.texts[`${RV1}/pr-review-PR7-20260103-r2.md`] = withLedger(c.texts[`${RV1}/pr-review-PR7-20260103-r2.md`], [ledgerLine("PR-COR-001", "RESOLVED", "fixed.")]);
   await change(feed);
-  assert.match($("#revBody").innerHTML, /dl-pill p-ok"><i>status<\/i>RESOLVED/);
-  assert.doesNotMatch($("#revBody").innerHTML, /dl-pill p-open/);
+  assert.deepEqual(status(), ["RESOLVED", "adp-chip adp-chip--validated"]);
   await click(within("revBody", ".rvl")[0]);
-  assert.match($("#revHead").innerHTML, /PR #7 · round 2/);
+  assert.match($("#revHead").innerHTML, /PR #7 · Round 2/);
   assert.equal(location.hash, "#v=reviews&t=RV1&s=pr-review-PR7-20260103-r2.md");
 });
 
@@ -2639,8 +2844,8 @@ const citedCorpus = () => {
 test("a round shows the decisions and watches it cites, and a round that cites none shows no panel", async () => {
   await bootReviews(citedCorpus(), "#v=reviews&t=AA1&s=pr-review-PR3-20260102-r1.md");
   const body = $("#revBody").innerHTML;
-  assert.match(body, /decisions cited by PR #3 · round 1/);
-  assert.match(body, /watches cited by PR #3 · round 1/);
+  assert.match(body, /decisions cited by PR #3 · Round 1/);
+  assert.match(body, /watches cited by PR #3 · Round 1/);
   assert.deepEqual(within("revBody", ".dlrow").map(r => r.getAttribute("data-dl")), ["DL-002"]);
   assert.deepEqual(within("revBody", ".wrow").map(r => r.getAttribute("data-item")), ["OT-AA1-1"]);
   assert.ok(within("revBody", ".pc").length > 0);
@@ -2659,7 +2864,7 @@ test("the reviews filter is its own, and a cited row opens its entry in the insp
   assert.equal(isOn("scrInspector"), true);
   assert.match(insp(), /\[DL-002\]/);
   // The inspector's own filter never saw the reviews click.
-  await click(within("scrInspector", ".backlink")[0]);
+  await click(within("scrInspector", '[data-op="back"]')[0]);
   await pickSection("sec-decision-log");
   const ipill = (f: string) => within("scrInspector", ".fpill").find(p => p.getAttribute("data-dlf") === f)!;
   assert.equal(ipill("all").classList.contains("is-on"), true);
@@ -2687,16 +2892,420 @@ test("a column sort on one screen reaches the other screen's cited table the nex
 });
 
 test("a severity word that names an Object member takes the fallback class", () => {
-  const html = bodyHtml(review({pr: 9, k: 1, dir: RV2, findings: card("PR-COR-001", {severity: "constructor"})}), {}, "RV2");
-  assert.match(html, /<span class="pill dl-pill p-low"><i>severity<\/i>constructor<\/span>/);
-  assert.doesNotMatch(html, /function/);
+  const box = bodyEl(review({pr: 9, k: 1, dir: RV2, findings: card("PR-COR-001", {severity: "constructor"})}), {}, "RV2");
+  const sev = box.querySelector(".adp-dl__head .adp-chip[title=severity]")!;
+  assert.deepEqual([sev.textContent, sev.className], ["constructor", "adp-chip"]);
+  assert.doesNotMatch(box.innerHTML, /function/);
 });
 
 // ---- the panels' markup ----
 
+/* R14. We render the rail from railGroups over fixture tickets set to each
+   state. Each one carries no watch, decision, or missing section, so only
+   the one we mark needs attention lands there. */
+const R14_BASE = (await S.loadCorpus(diskFetch()))!.index.tickets[0]!;
+// The rail's fold and filter props at rest: open, wide, and unfiltered.
+const RAIL_REST = {total: 0, filter: "", folded: false, narrow: false, attention: 0, selId: null, focusFilter: 0, onFilter(){}, onFold(){}};
+const asState = (dir: string, state: string, missing: string[] = []) =>
+  ({...R14_BASE, dir, id: dir, state, watches: [], decisions: [], missing}) as typeof R14_BASE;
+function railOf(tickets: (typeof R14_BASE)[]){
+  const today = "2026-11-13";
+  const groups: S.RailModelGroup[] = D.railGroups(tickets, today).map(([name, list]) =>
+    [name, list.map(t => ({key: t.dir, id: t.id || t.dir, date: t.date, slug: t.slug, ribbon: D.ribbonModel(t, today), closable: false}))]);
+  render(createElement(Rail, {...RAIL_REST, groups, selKey: null, collapsed: new Set(["closed"]), onPick(){}, onToggle(){}}));
+  return $$("#rail [data-sec]").map(s => [s.getAttribute("data-sec"), s.querySelector("[data-part=count]")!.textContent, s.getAttribute("aria-expanded")]);
+}
+
+test("the rail shows needs attention, open, in review, shipped, and closed, with closed folded", () => {
+  const heads = railOf([asState("A", "shipped", ["Decision Log"]), asState("B", "open"), asState("C", "in-review"),
+    asState("D", "shipped"), asState("E", "closed")]);
+  assert.deepEqual(heads, [["needs attention", "1", "true"], ["open", "1", "true"], ["in review", "1", "true"],
+    ["shipped", "1", "true"], ["closed", "1", "false"]]);
+  assert.ok(!$("#rail").textContent!.includes("in progress"), "no group reads in progress");
+  assert.ok(!$('#rail [data-key="E"]'), "the folded closed group shows no rows");
+});
+
+test("an empty open or in-review group renders nothing, and closed with no tickets shows folded with 0", () => {
+  assert.deepEqual(railOf([asState("D", "shipped")]), [["shipped", "1", "true"], ["closed", "0", "false"]]);
+});
+
+test("the corpus boot draws its groups in R14 order", async () => {
+  await bootCorpus();
+  assert.deepEqual($$("#rail [data-sec]").map(s => s.getAttribute("data-sec")), ["needs attention", "open", "closed"]);
+});
+
+// ---- the phase strip ----
+
+const sec = (key: string, phase: number | null, canonical = true, missing = false) => ({key, phase, canonical, missing});
+const boxes = () => $$("#phaseStrip .adp-phases__boxes > *").filter(b => b.textContent).map(b =>
+  b.textContent + (b.classList.contains("adp-phase--missing") ? "-" : "") + (b.getAttribute("aria-current") === "step" ? "*" : ""));
+
+test("the strip model marks written, missing, current, and extra boxes, and says which", () => {
+  const all = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => sec("p" + n, n));
+  const m = stripModel([...all, sec("p7b", 7), sec("ledger", null, false)], "p7b");
+  assert.equal(m.note, "All nine phases written");
+  assert.deepEqual(m.phases.map(b => b.key), all.map(e => e.key));
+  // A second canonical section of a phase lights that phase's box.
+  assert.deepEqual(m.phases.filter(b => b.current).map(b => b.label), ["7"]);
+  assert.deepEqual([m.extra!.label, m.extra!.title, m.extra!.key, m.extra!.current], ["+1", "1 extra section", "ledger", false]);
+  assert.equal(m.prompt.missing, true);
+  assert.deepEqual(m.steps, [...all.map(e => e.key), "ledger"]);
+  const inc = stripModel([sec("p1", 1), sec("missing:Knowledge Gap Document", 2, true, true), sec("p5", 5), sec("closure", null, false)], "closure");
+  assert.equal(inc.note, "Dashed boxes are missing phases");
+  assert.deepEqual(inc.phases.filter(b => b.missing).map(b => b.label), ["2", "3", "4", "6", "7", "8", "9"]);
+  assert.equal(inc.extra!.current, true);
+  // The arrows walk every extra section in turn, where the box opens the first.
+  const two = stripModel([sec("p1", 1), sec("closure", null, false), sec("ledger", null, false)], "ledger");
+  assert.deepEqual(two.steps, ["p1", "closure", "ledger"]);
+  assert.equal(two.extra!.key, "closure");
+  const only = stripModel([{key: "prompt", phase: null, canonical: false, missing: false, prompt: true}], "prompt");
+  assert.equal(only.note, "Prompt only · no phase written yet");
+  assert.equal(only.prompt.current, true);
+  assert.equal(only.extra, null);
+});
+
+// A log that skips phases warns above the strip, as the TicketIncomplete
+// board does: the label counts the gap and the text names what is there.
+test("the missing-phases note counts the gap and names what the log holds", () => {
+  const all = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => sec("p" + n, n));
+  assert.equal(gapNote(stripModel(all, null), ["Closure"]), null);
+  assert.equal(gapNote(stripModel([], null), []), null);
+  assert.deepEqual(gapNote(stripModel([sec("p1", 1), sec("p5", 5)], null), ["Closure", "Sweep amendment"]),
+    {label: "7 OF 9 PHASES MISSING", text: "This log has only Phase 1 and Phase 5, plus 2 extra sections: Closure and Sweep amendment."});
+  assert.deepEqual(gapNote(stripModel([sec("p1", 1), sec("p2", 2), sec("p5", 5)], null), ["A", "B", "C"]),
+    {label: "6 OF 9 PHASES MISSING", text: "This log has only Phase 1, Phase 2, and Phase 5, plus 3 extra sections: A, B, and C."});
+  assert.deepEqual(gapNote(stripModel([sec("p5", 5)], null), []),
+    {label: "8 OF 9 PHASES MISSING", text: "This log has only Phase 5."});
+  assert.deepEqual(gapNote(stripModel([], null), ["Ledger"]),
+    {label: "9 OF 9 PHASES MISSING", text: "This log has no phase yet, only 1 extra section: Ledger."});
+});
+
+test("the strip opens a phase or the extra sections, and the select still lists every section", async () => {
+  await bootCorpus({hash: "#t=AA1&s=sec-decision-log"});
+  assert.equal($("#gapNote .adp-notice__label").textContent, "5 OF 9 PHASES MISSING");
+  assert.equal($("#gapNote").getAttribute("role"), "note");
+  assert.deepEqual(boxes(), ["P", "1", "2-", "3-", "4-", "5*", "6-", "7", "8-", "9", "+1"]);
+  assert.equal($("#phaseStrip .adp-phases__note").textContent, "Dashed boxes are missing phases");
+  // The prev and next buttons stand as tall as the section select.
+  assert.deepEqual($$("[data-secstep]").map(b => b.style.height), ["36px", "36px"]);
+  // The arrow hint sits at the strip's right end, as the boards place it.
+  assert.equal($$("#phaseStrip .adp-phases__note")[1].style.marginLeft, "auto");
+  await click($('#phaseStrip [data-step="sec-pr-summary"]'));
+  assert.equal(secVal(), "sec-pr-summary");
+  await click($$("#phaseStrip a").find(b => b.textContent === "+1")!);
+  assert.equal(secVal(), "sec-aside-notes");
+  assert.deepEqual(boxes().filter(b => b.endsWith("*")), ["+1*"]);
+  assert.ok(options().includes("sec-aside-notes"), "the select keeps the extra section");
+  assert.ok(!$("#reviewsBtn"), "the ticket head offers no reviews entry");
+});
+
+test("← and → step through the strip, but not from a field or under the Packs drawer", async () => {
+  await bootCorpus({hash: "#t=AA1&s=sec-decision-log"});
+  await key(document.body, "ArrowRight");
+  assert.equal(secVal(), "sec-pr-summary");
+  await key(document.body, "ArrowRight");
+  await key(document.body, "ArrowRight");
+  assert.equal(secVal(), "sec-aside-notes");
+  await key(document.body, "ArrowRight");
+  assert.equal(secVal(), "sec-aside-notes", "the last box stays put");
+  for (let i = 0; i < 6; i++) await key(document.body, "ArrowLeft");
+  assert.equal(secVal(), "prompt");
+  await key($("#secSel"), "ArrowRight");
+  await key($("#railFilter"), "ArrowRight");
+  assert.equal(secVal(), "prompt", "an arrow in a field moves nothing");
+  await click($("#packsBtn"));
+  await key(document.body, "ArrowRight");
+  await click($('[aria-label="Close packs"]'));
+  assert.equal(secVal(), "prompt", "an arrow under the drawer moves nothing");
+});
+
+test("one reviews box opens the latest round, and the reviews screen's head and strip lead back to the ticket", async () => {
+  await bootReviews(reviewCorpus(), "#t=RV1&s=sec-decision-log");
+  const was = secVal();
+  const box = $('#phaseStrip [data-op="reviews"]');
+  assert.equal(box.textContent, "Reviews · 4");
+  assert.equal(box.getAttribute("title"), "4 review rounds");
+  assert.equal(box.style.whiteSpace, "nowrap");
+  await click(box);
+  assert.equal($(".screen.is-on").getAttribute("data-s"), "reviews");
+  assert.match($("#revHead").innerHTML, /PR #7 · Round 10/);
+  // The reviews screen leads with the ticket's head and strip, the Reviews box current.
+  assert.equal($('#scrReviews #phaseStrip [data-op="reviews"]').getAttribute("aria-current"), "step");
+  assert.deepEqual($$("[data-revstep]").map(b => b.style.height), ["36px", "36px"]);
+  // While a round shows, the strip's note names its pull request and that request's round count.
+  assert.match($("#scrReviews #phaseStrip .adp-phases__note").textContent!, /^PR #7 · \d+ rounds$/);
+  assert.ok($("#scrReviews #tickHead h1"), "the reviews screen has no ticket head");
+  await click($('#scrReviews [data-view="section"]'));
+  assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector");
+  assert.equal(secVal(), was, "the ticket view keeps the section the reader left");
+  await click($('#phaseStrip [data-op="reviews"]'));
+  await click($$("#scrReviews #phaseStrip a[data-step]")[0]);
+  assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector", "a phase box does not lead back");
+  // After the sections, → walks the rounds one at a time, oldest first,
+  // across both PRs, and stops at the last. ← walks back the same way and
+  // leaves the oldest round for the strip's last section.
+  const last = [...($("#secSel") as HTMLSelectElement).options].filter(o => !/^(Phase \d|Prompt)/.test(o.textContent!)).at(-1)!.value;
+  for (let i = 0; i < 12 && $(".screen.is-on").getAttribute("data-s") === "inspector"; i++) await key(document.body, "ArrowRight");
+  assert.equal($(".screen.is-on").getAttribute("data-s"), "reviews", "→ never reaches the reviews");
+  const heads: string[] = [];
+  for (let i = 0; i < 5; i++){
+    heads.push($("#revHead h2").textContent!);
+    await key(document.body, "ArrowRight");
+  }
+  assert.deepEqual(heads, ["PR #7 · Round 1", "PR #7 · Round 2", "PR #8 · Round 3", "PR #7 · Round 10", "PR #7 · Round 10"]);
+  for (let i = 0; i < 3; i++) await key(document.body, "ArrowLeft");
+  assert.equal($("#revHead h2").textContent, "PR #7 · Round 1");
+  await key(document.body, "ArrowLeft");
+  assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector");
+  assert.equal(secVal(), last, "← from the oldest round lands on the strip's last section");
+  await key($("#secSel"), "ArrowRight");
+  assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector", "an arrow in the select moves nothing");
+});
+
+// ---- the ticket head ----
+
+test("the ticket head reads the meta line, the title, the state and its source, and opens the resume pack", async () => {
+  await boot({fetch: diskFetch(), now: BASELINE_NOW, hash: "#t=FX001"});
+  const head = $("#tickHead");
+  assert.equal(head.querySelector("div")!.firstElementChild!.textContent, "FX001 · 2026-08-15 · 20260815-FX001-declared-lifecycle");
+  assert.ok(head.querySelector("h1"), "the head has no title");
+  const chip = head.querySelector(".adp-chip")!;
+  assert.equal(chip.textContent, "shipped");
+  assert.equal(chip.className, "adp-chip adp-chip--validated");
+  assert.deepEqual($$("#tickHead [aria-label=View] button").map(b => [b.textContent, b.getAttribute("aria-pressed")]),
+    [["Section", "true"], ["Full log", "false"]]);
+  await click($('#tickHead [data-op="resume"]'));
+  assert.ok($("#packDrawer"), "Resume pack opens no drawer");
+  assert.equal(($("#packSel") as HTMLSelectElement).value, "resume-ticket");
+  await click($('[aria-label="Close packs"]'));
+  assert.ok(document.activeElement === $('#tickHead [data-op="resume"]'), "focus does not return to Resume pack");
+});
+
+// ---- the decision card ----
+
+// R4: color means status only, so a confidence word is a neutral Tag.
+test("a MEDIUM decision that is OPEN colors only its status chip", async () => {
+  const log = LOG.replace("- **Confidence:** LOW", "- **Confidence:** MEDIUM");
+  await boot({hash: "#t=AA1&s=sec-decision-log", fetch: liveCorpus(LISTING, {...TEXTS, "20260101-AA1-alpha/audit-log.md": log}).fetch});
+  const card = $('#scrInspector [data-card="DL-002"]');
+  const [conf, status] = [...card.querySelectorAll(".adp-dl__head .adp-chip")];
+  assert.deepEqual([conf.textContent, conf.className], ["MEDIUM", "adp-chip"]);
+  assert.deepEqual([status.textContent, status.className], ["OPEN", "adp-chip adp-chip--open"]);
+  // The status value "OPEN — rides" keeps its tail as a note row.
+  assert.deepEqual([...card.querySelectorAll("dt")].map(d => d.textContent).slice(-1), ["status note"]);
+  assert.equal(card.querySelector("div:last-child > dd")!.textContent, "rides");
+  // A settled entry sets its title lighter, and an open one does not.
+  assert.equal($('#scrInspector [data-card="DL-001"]').className, "adp-dl adp-dl--settled");
+  assert.equal(card.className, "adp-dl");
+});
+
+/* A section opens its first card and folds the rest. A fold sets an inline
+   display, because the card body's own display rule outranks the hidden
+   attribute, and the browser test checks what a reader sees. */
+test("a section opens its first decision card, folds the rest, and a head click flips a card", async () => {
+  await bootCorpus({hash: "#t=AA1&s=sec-decision-log"});
+  const parts = (id: string) => {
+    const card = $(`#scrInspector [data-card="${id}"]`);
+    return {head: card.querySelector(".adp-dl__head") as HTMLElement, body: card.querySelector(".adp-dl__body") as HTMLElement};
+  };
+  const first = parts("DL-001"), second = parts("DL-002");
+  assert.deepEqual([first.head.getAttribute("aria-expanded"), first.body.style.display], ["true", ""]);
+  assert.deepEqual([second.head.getAttribute("aria-expanded"), second.body.style.display], ["false", "none"]);
+  assert.equal(second.head.querySelector(".adp-dl__caret")!.textContent, "▸");
+  await click(second.head.querySelector(".adp-dl__title")!);
+  assert.deepEqual([second.head.getAttribute("aria-expanded"), second.body.style.display], ["true", ""]);
+  assert.equal(second.head.querySelector(".adp-dl__caret")!.textContent, "▾");
+  await click(first.head);
+  assert.deepEqual([first.head.getAttribute("aria-expanded"), first.body.style.display], ["false", "none"]);
+});
+
+// The Created field closes a card as its footer line, as the DecisionCard
+// board draws it, and the footer folds with the card.
+test("a decision card ends with its Created line as a footer that folds with the card", async () => {
+  const log = LOG.replace("- **Decision:** pick a", "- **Decision:** pick a\n- **Created:** 2026-01-01, Phase 5");
+  await boot({hash: "#t=AA1&s=sec-decision-log", fetch: liveCorpus(LISTING_I, {...TEXTS_I, "20260101-AA1-alpha/audit-log.md": log}).fetch});
+  const card = $('#scrInspector [data-card="DL-001"]');
+  const foot = card.querySelector<HTMLElement>(".adp-dl__foot")!;
+  assert.ok(foot, "the card has no footer");
+  assert.equal(foot.previousElementSibling!.className, "adp-dl__body");
+  assert.equal(foot.textContent, "Created 2026-01-01, Phase 5");
+  assert.ok(![...card.querySelectorAll("dt")].some(d => /^created$/i.test(d.textContent!)), "Created is still a field row");
+  await click(card.querySelector(".adp-dl__head")!);
+  assert.equal(foot.style.display, "none");
+});
+
+// ---- the Reading rules ----
+
+// R7: in the shell, a run-in label is an eyebrow heading and the metadata
+// lines are one footer line. The parser's default render stays as it was.
+test("a run-in label renders as an eyebrow heading and the metadata lines as one footer, in the shell only", async () => {
+  const ps = "**What the problem is:** demo.\n\n**What the problem is not:**\n- a list item\n\n"
+    + "**Confirmed by:** russbeye   **Date:** 2026-01-01\n**Revision history:** none";
+  const log = LOG.replace("**What the problem is:** demo.", ps);
+  await boot({hash: "#t=AA1&s=sec-problem-statement", fetch: liveCorpus(LISTING_I, {...TEXTS_I, "20260101-AA1-alpha/audit-log.md": log}).fetch});
+  const prose = $("#scrInspector .adp-prose");
+  assert.deepEqual([...prose.querySelectorAll("h3[data-runin]")].map(h => h.textContent), ["What the problem is", "What the problem is not"]);
+  assert.equal(prose.querySelector("h3 + p")!.textContent, "demo.");
+  assert.equal(prose.querySelector("h3 + p + h3 + ul li")!.textContent, "a list item");
+  // A list item's content sits in one span, so the item's flex row never
+  // splits text from its inline code.
+  assert.equal(prose.querySelector("h3 + p + h3 + ul li")!.children.length, 1);
+  assert.equal(prose.querySelector("h3 + p + h3 + ul li")!.firstElementChild!.tagName, "SPAN");
+  assert.equal(prose.querySelector("footer")!.textContent, "Confirmed by: russbeye · Date: 2026-01-01 · Revision history: none");
+  assert.equal(prose.querySelectorAll("footer").length, 1);
+  const plain = P.renderSectionBody(ps);
+  assert.ok(!/<h3|<footer/.test(plain), "the default render changed");
+  assert.match(plain, /<strong>What the problem is:<\/strong> demo\./);
+});
+
+// The template writes its fields on consecutive lines, metadata included.
+// A bold sentence that does not end in a colon is not a run-in label, and a
+// metadata line that does not close the section stays prose.
+test("the Reading rules read the template's consecutive fields and leave other bold text as prose", () => {
+  const html = P.renderProse("**What the problem is:** a.\n**What the problem is not:** b.\n**Confirmed by:** x   **Date:** 2026-01-01");
+  assert.equal(html, '<h3 data-runin="">What the problem is</h3><p>a.</p><h3 data-runin="">What the problem is not</h3><p>b.</p>'
+    + '<footer data-meta=""><span>Confirmed by:</span> x<span aria-hidden="true"> · </span><span>Date:</span> 2026-01-01</footer>');
+  assert.match(P.renderProse("- one `code` two"), /<li><span>one <code[^>]*>code<\/code> two<\/span><\/li>/);
+  const plain = P.renderProse("**Gate 4 confirmation (solo).** Done.\n\n**Date:** 2026-01-01\n\nMore text.");
+  assert.ok(!/<h3|<footer/.test(plain), plain);
+});
+
+// The markdown blocks inside Prose take the design system's patterns or its
+// on-grid values, and no old theme class that sets their spacing (DL-059).
+test("prose blocks take the Table and Pre components and on-grid values, and the default render keeps the old markup", () => {
+  const md = ["| a | b |", "|---|---|", "| 1 | `x` |", "", "> quoted", "", "```", "let a = 1;", "```", "", "1. one", "", "---", "",
+    "- [x] done", "", "### Sub head"].join("\n");
+  const html = P.renderProse(md);
+  assert.match(html, /<div style="overflow-x:auto;margin:0 0 16px"><table class="adp-table">/);
+  assert.match(html, /<blockquote style="margin:0 0 16px;padding:8px 16px;[^"]*"><p style="margin:0">quoted<\/p><\/blockquote>/);
+  assert.match(html, /<pre class="adp-pre" style="margin:0 0 16px"><code style="font:inherit;color:inherit;background:none;padding:0">let a = 1;<\/code><\/pre>/);
+  assert.match(html, /<div role="list" style="margin:0 0 16px;[^"]*"><div role="listitem" style="display:grid;grid-template-columns:24px minmax\(0,1fr\);gap:8px"><span data-num="" style="font:400 12px\/24px var\(--font-mono\);color:var\(--blue-bright\)">1<\/span><span>one<\/span><\/div><\/div>/);
+  assert.match(P.renderProse("3. three\n4. four"), />3<\/span><span>three<\/span>[\s\S]*>4<\/span><span>four<\/span>/);
+  assert.match(html, /<hr style="margin:24px 0;/);
+  assert.match(html, /<li class="task"><span style="display:inline-flex;[^"]*width:16px;height:16px;[^"]*">✓<\/span><span>done<\/span><\/li>/);
+  assert.match(html, /<h3 style="margin:32px 0 8px;font:500 11px\/24px var\(--font-mono\);[^"]*color:var\(--blue-bright\)">Sub head<\/h3>/);
+  assert.doesNotMatch(html, /md-tbl|tbl-wrap|class="cb"|class="sub"|cbx|<ol/);
+  const plain = P.renderMarkdown(md);
+  assert.match(plain, /<table class="md-tbl">/);
+  assert.match(plain, /<pre class="cb">/);
+});
+
+// R4 in prose (DL-055, DL-060): a confidence word is a neutral small chip,
+// and a status word takes its StatusChip, in prose and in a card's fields.
+test("a confidence word in prose is a neutral chip, and a status word takes its status chip", async () => {
+  const log = LOG.replace("**What the problem is:** demo.", "**What the problem is:** a MEDIUM risk left OPEN.")
+    .replace("- **Decision:** pick b", "- **Decision:** pick b at HIGH");
+  await boot({hash: "#t=AA1&s=sec-problem-statement", fetch: liveCorpus(LISTING_I, {...TEXTS_I, "20260101-AA1-alpha/audit-log.md": log}).fetch});
+  const chips = [...$("#scrInspector .adp-prose p").querySelectorAll(".adp-chip")].map(c => [c.textContent, c.className]);
+  assert.deepEqual(chips, [["MEDIUM", "adp-chip adp-chip--s"], ["OPEN", "adp-chip adp-chip--s adp-chip--open"]]);
+  assert.ok(!$("#scrInspector .adp-prose .pill"), "an old pill is left in prose");
+  await pickSection("sec-decision-log");
+  await click($('#scrInspector [data-card="DL-002"] .adp-dl__head'));
+  const field = $('#scrInspector [data-card="DL-002"] dd .adp-chip');
+  assert.deepEqual([field.textContent, field.className], ["HIGH", "adp-chip adp-chip--s"]);
+  // A token in a run-in heading or the footer converts too.
+  assert.match(P.renderProse("**Risk at LOW:** x"), /<h3 data-runin="">Risk at <span class="adp-chip adp-chip--s">LOW<\/span><\/h3>/);
+});
+
+// ---- the rail's fold, filter, and narrow overlay ----
+
+const railCols = () => ($(".main") as HTMLElement).style.gridTemplateColumns;
+
+test("the rail folds to its strip and back, by button or by [, and remembers the fold per repo", async () => {
+  await bootCorpus();
+  assert.equal($("#rail .adp-rail__head .adp-label").textContent, "2 tickets");
+  await click($("#railHide"));
+  assert.ok(!$("#rail"), "a folded rail shows no rows");
+  assert.equal(railCols(), "var(--rail-collapsed) minmax(0, 1fr)");
+  assert.equal(localStorage.getItem("adp-rail:demo"), "folded");
+  // The strip counts what needs attention and names the selected ticket.
+  assert.equal($("#railStrip .adp-chip").textContent, "1");
+  assert.equal($("#railStrip .adp-chip").getAttribute("aria-label"), "1 ticket needs attention");
+  assert.equal($("#railStrip .adp-rail__vertical").textContent, "AA1");
+  await click($("#railShow"));
+  assert.ok($("#rail"));
+  assert.equal(railCols(), "var(--rail-width) minmax(0, 1fr)");
+  assert.equal(localStorage.getItem("adp-rail:demo"), null);
+  await key(document.body, "[");
+  assert.ok(!$("#rail"), "[ folds the rail");
+  await key(document.body, "[");
+  assert.ok($("#rail"), "[ opens it again");
+  await key($("#railFilter"), "[");
+  assert.ok($("#rail"), "[ typed into the filter folds nothing");
+});
+
+test("a fold stored for this repo opens the page with the rail folded", async () => {
+  await bootCorpus({stored: {"adp-rail:demo": "folded"}});
+  assert.ok($("#railStrip"));
+  assert.ok(!$("#rail"));
+});
+
+test("the filter narrows the rail, counts what it shows, and says when nothing matches", async () => {
+  await bootCorpus();
+  fireEvent.change($("#railFilter"), {target: {value: "av002"}});
+  await settle(1);
+  assert.deepEqual(rentries(), ["AV002"]);
+  assert.equal($("#rail .adp-rail__head .adp-label").textContent, "1 of 2 tickets");
+  assert.deepEqual($$("#rail [data-sec]").map(s => s.getAttribute("data-sec")), ["open", "closed"]);
+  fireEvent.change($("#railFilter"), {target: {value: "zebra"}});
+  await settle(1);
+  assert.equal($("#rail [role=status]").textContent, "No tickets match “zebra”Esc clears the filter.Clear filter");
+  assert.deepEqual($$("#rail [data-sec]").map(s => s.getAttribute("data-sec")), ["closed"]);
+  await key($("#railFilter"), "Escape");
+  assert.equal(($("#railFilter") as HTMLInputElement).value, "");
+  assert.deepEqual(rentries(), ["AA1", "AV002"]);
+  fireEvent.change($("#railFilter"), {target: {value: "zebra"}});
+  await settle(1);
+  await click([...$$("#rail button")].find(b => b.textContent === "Clear filter")!);
+  assert.equal(($("#railFilter") as HTMLInputElement).value, "");
+  assert.ok(document.activeElement === $("#railFilter"), "Clear filter hands focus back to the field");
+});
+
+test("/ opens a folded rail and moves into its filter", async () => {
+  await bootCorpus();
+  await click($("#railHide"));
+  await key(document.body, "/");
+  assert.ok($("#rail"));
+  assert.ok(document.activeElement === $("#railFilter"), "focus is not in the filter");
+});
+
+/* jsdom matches no media query, so a narrow test stands in a matchMedia
+   that matches the narrow width and reports no change. */
+async function bootNarrow(){
+  const mq = (q: string) => ({matches: q === "(max-width: 807px)", addEventListener(){}, removeEventListener(){}});
+  Object.defineProperty(window, "matchMedia", {configurable: true, value: mq});
+  return bootCorpus();
+}
+
+test("on a narrow window the rail starts folded and opens over the page", async () => {
+  try {
+    await bootNarrow();
+    assert.ok($("#railStrip"));
+    assert.ok(!$("#rail"));
+    await click($("#railShow"));
+    assert.equal(($("#rail") as HTMLElement).style.position, "absolute");
+    assert.ok($("#railStrip"), "the strip keeps its column under the open rail");
+    assert.equal(railCols(), "var(--rail-collapsed) minmax(0, 1fr)");
+    assert.ok(document.activeElement === $("#railFilter"), "the open rail takes focus into its filter");
+    assert.equal(localStorage.getItem("adp-rail:demo"), null);
+    await key(document.body, "Escape");
+    assert.ok(!$("#rail"), "Escape folds the rail");
+    assert.ok(document.activeElement === $("#railShow"), "focus returns to the » button");
+    await click($("#railShow"));
+    await click($(".main .adp-scrim"));
+    assert.ok(!$("#rail"), "the scrim folds the rail");
+    await click($("#railShow"));
+    await click(entry("AV002"));
+    assert.ok(!$("#rail"), "a pick folds the rail");
+    assert.equal($("#railStrip .adp-rail__vertical").textContent, "AV002");
+  } finally {
+    delete (window as {matchMedia?: unknown}).matchMedia;
+  }
+});
+
 test("the closed group starts collapsed, and a click opens it", async () => {
   await bootCorpus();
-  const closed = () => $$(".railsec").find(s => s.getAttribute("data-sec") === "closed")!;
+  const closed = () => $$("#rail [data-sec]").find(s => s.getAttribute("data-sec") === "closed")!;
   assert.match(closed().innerHTML, /▸/);
   await click(closed());
   assert.match(closed().innerHTML, /▾/);
@@ -2704,7 +3313,7 @@ test("the closed group starts collapsed, and a click opens it", async () => {
 
 test("the rail renders hostile harvested fields as text", () => {
   const hostile = "<img src=x onerror=alert(1)>";
-  const {container} = render(createElement(Rail, {groups: [["needs attention", [{key: hostile, id: hostile, date: hostile,
+  const {container} = render(createElement(Rail, {...RAIL_REST, groups: [["needs attention", [{key: hostile, id: hostile, date: hostile,
     slug: hostile, closable: false, ribbon: {reasons: [{txt: hostile, tone: "warn"}], more: 0}}]]],
     selKey: null, collapsed: new Set<string>(), onPick(){}, onToggle(){}}));
   assert.ok(!container.innerHTML.includes("<img"));
@@ -2725,9 +3334,21 @@ test("a decision card in a companion section renders as a card in the inspector"
   await boot({fetch: liveCorpus(LISTING_I, {...TEXTS_I, "20260101-AA1-alpha/audit-log.md": log}).fetch});
   await pickSection("sec-aside-notes");
   const pane = insp();
-  assert.match(pane, /class="dl-card rail-open"/);
-  assert.match(pane, /class="pill dl-pill p-ok"><i>conf<\/i>HIGH</);
+  assert.match(pane, /<div class="adp-dl" data-card="DL-009">/);
+  assert.match(pane, /<span class="adp-chip" title="confidence">HIGH<\/span>/);
+  assert.match(pane, /<span class="adp-chip adp-chip--open" title="status">OPEN<\/span>/);
   assert.match(pane, /<\/div><\/div><p>After the card\.<\/p>/);
+});
+
+// DL-051: a card list that follows other content sits 16px below it, and a
+// list that opens its section takes no gap.
+test("a card list keeps a space-4 gap below content above it, and none at the top of a section", async () => {
+  const log = LOG.replace("Some **prose** citing DL-002.",
+    "Some **prose** citing DL-002.\n\n### [DL-009] An aside decision\n- **Decision:** x\n- **Confidence:** HIGH\n- **Status:** OPEN");
+  await boot({hash: "#t=AA1&s=sec-decision-log", fetch: liveCorpus(LISTING_I, {...TEXTS_I, "20260101-AA1-alpha/audit-log.md": log}).fetch});
+  assert.equal(($("#scrInspector .adp-dl-list") as HTMLElement).style.marginTop, "");
+  await pickSection("sec-aside-notes");
+  assert.equal(($("#scrInspector .adp-dl-list") as HTMLElement).style.marginTop, "16px");
 });
 
 test("a due cell in the watches panel holds a date on one line and lets window prose wrap", () => {
@@ -2776,7 +3397,7 @@ test("the app offers no file input, no drop mask, and no opened-documents group"
   assert.equal($$('input[type="file"]').length, 0);
   assert.equal($$(".shellmask").length, 0);
   assert.equal($$(".rclose").length, 0);
-  assert.ok(!$$(".railsec").some(s => s.getAttribute("data-sec") === "opened documents"));
+  assert.ok(!$$("#rail [data-sec]").some(s => s.getAttribute("data-sec") === "opened documents"));
 });
 
 // V4, V5, and V6: the inspector keeps its view toggles and loses every
@@ -2787,7 +3408,7 @@ test("the inspector offers no open, reload, or paste control and no paste drawer
   assert.equal(document.getElementById("pasteArea"), null);
   assert.equal(document.getElementById("pasteImport"), null);
   assert.ok(!$("#scrInspector").textContent!.includes("drag & drop"));
-  assert.deepEqual($$("#scrInspector .op.tgl").map(b => b.getAttribute("data-view")), ["section", "full"]);
+  assert.deepEqual($$("#scrInspector [role=group][aria-label=View] button").map(b => b.getAttribute("data-view")), ["section", "full"]);
 });
 
 test("the app closes its event stream when it unmounts", async () => {
@@ -3869,7 +4490,7 @@ async function everyScreen(look: () => void){
     look();
     await click($('[data-view="full"]'));
     look();
-    if ($("#reviewsBtn")){ await tabTo("reviews"); look(); reviewed++; }
+    if ($('#phaseStrip [data-op="reviews"]')){ await tabTo("reviews"); look(); reviewed++; }
   }
   await click($("#newTaskBtn"));
   look();
@@ -3913,7 +4534,7 @@ test("no screen offers a file input, a paste field, or a drop target", async () 
    style at all, because the handlers and the tests select by them. The
    shell's grid sits in its own style attribute. */
 const THEME_CLASSES = new Set(["md", "sr-live"]);
-const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow"]);
+const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow", "fsec", "fsum"]);
 test("the app's screens use only adp-bundle.css and adp-shell.css classes outside rendered documents", async () => {
   const shell = new Set<string>();
   for (const sheet of ["adp-bundle.css", "adp-shell.css"]){

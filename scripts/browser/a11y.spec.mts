@@ -68,8 +68,12 @@ test("Tab reaches every control in document order and shows a ring on each", asy
       const at = await page.evaluate(() => {
         const a = document.activeElement as HTMLElement | null;
         if (!a || a === document.body) return {pos: null, scroller: false, html: "body"};
-        return {pos: a.getAttribute("data-tabpos"), scroller: a.scrollHeight > a.clientHeight || a.scrollWidth > a.clientWidth,
-          html: a.outerHTML.slice(0, 120)};
+        // Firefox stops on a box that overflows by a fraction of a pixel,
+        // which the rounded scroll sizes hide, so we also read its own
+        // scroll limits where the engine has them.
+        const max = a as HTMLElement & {scrollTopMax?: number; scrollLeftMax?: number};
+        return {pos: a.getAttribute("data-tabpos"), scroller: a.scrollHeight > a.clientHeight || a.scrollWidth > a.clientWidth
+          || (max.scrollTopMax || 0) > 0 || (max.scrollLeftMax || 0) > 0, html: a.outerHTML.slice(0, 120)};
       });
       if (at.pos == null && !at.scroller){ faults.push(`${where}: Tab landed on ${at.html}`); break; }
       if (at.pos != null) seen.push(Number(at.pos));
@@ -140,7 +144,7 @@ test.describe("under reduced motion", () => {
     await everyScreen(page, server.url, async where => {
       // A hover or a focus starts a transition, so we focus the ⋯ button
       // and hover a rail entry before we look. The drawer hides the rail.
-      if (!await page.locator("#packDrawer").count()){ await page.hover(".rentry"); await page.focus("#menuBtn"); }
+      if (!await page.locator("#packDrawer").count()){ await page.hover("#rail [data-key]"); await page.focus("#menuBtn"); }
       const names = await page.evaluate(() => document.getAnimations().map(a =>
         (a as CSSAnimation).animationName ?? (a as CSSTransition).transitionProperty ?? a.constructor.name));
       if (names.length) moving.push(`${where}: ${names.join(", ")}`);

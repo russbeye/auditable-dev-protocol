@@ -2,8 +2,11 @@
 /* Copied from the ADP design system's components/bundle.css at version 1793683960-f6e0.
    We leave out two blocks. The Logo rules (.adp-logo and .adp-stripe) belong to the logo work, and
    their middle stripe would put the accent somewhere other than the live dot. The preview helpers
-   (.adp-demo and .adp-stack) lay out the design system's own preview pages. Every other rule is
-   unchanged, so edit the design system and copy again rather than editing here. */
+   (.adp-demo and .adp-stack) lay out the design system's own preview pages. Two rules depart from
+   the source. A decision card's field labels take blue-bright, not dim. A prose eyebrow heading
+   takes blue-bright, not dim. Gray labels let a field or a paragraph run together with the gray
+   text under it. Every other rule is unchanged, so edit the design system and copy again rather
+   than editing here. */
 /* ADP bundle.css: the system's own component styles, written for the 2026-10-29 design pass.
    Every value comes from tokens.css (generated from tokens.json). Classes are prefixed adp- so
    they never collide with the generated type-style classes. Everything sits on a 4px baseline.
@@ -43,7 +46,7 @@ body::before{
 
 /* ---- Prose: audit-log text ---- */
 .adp-prose{max-width:72ch;font:400 16px/28px var(--font-sans);color:var(--ink)}
-.adp-prose h3{margin:32px 0 8px;font:500 11px/24px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.adp-prose h3{margin:32px 0 8px;font:500 11px/24px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--blue-bright)}
 .adp-prose h3:first-child{margin-top:0}
 .adp-prose p{margin:0 0 16px}
 .adp-prose ul{margin:0 0 16px;padding:0;list-style:none;display:flex;flex-direction:column;gap:12px;font-size:15px;line-height:24px}
@@ -149,7 +152,7 @@ body::before{
 .adp-dl__note{display:block;font:400 13px/24px var(--font-sans);color:var(--dim)}
 .adp-dl__caret{color:var(--dim);font-size:11px}
 .adp-dl__body{margin:0;padding:4px 16px 20px 92px;display:flex;flex-direction:column;gap:16px}
-.adp-dl__body dt{font:500 11px/24px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.adp-dl__body dt{font:500 11px/24px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--blue-bright)}
 .adp-dl__body dd{margin:4px 0 0;font:400 16px/28px var(--font-sans)}
 .adp-dl__body code{font-family:var(--font-mono);font-size:.86em;color:var(--code-fg);background:var(--code-bg);padding:1px 4px}
 .adp-dl__foot{padding:12px 16px 12px 92px;box-shadow:inset 0 1px 0 var(--line);font:400 13px/24px var(--font-sans);color:var(--dim)}
