@@ -426,12 +426,16 @@ function useScrollSpy(on: boolean, ticket: string | undefined, selected: string 
   }, [on, ticket]);
 }
 
+// The step that stands for the reviews box. No section key can match it,
+// because every section key starts with "sec-", "missing:", or is "prompt".
+const REVIEWS_STEP = "reviews";
+
 // A key typed into a field belongs to the field, so no shortcut takes it.
 const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName));
 
 /* ← and → step through the boxes of the phase strip: the prompt, each
-   written phase, then the extra sections. A selection on no box, such as a
-   missing phase, steps from the strip's start. */
+   written phase, the extra sections, then the reviews. A selection on no
+   box, such as a missing phase, steps from the strip's start. */
 function useArrows(on: boolean, steps: readonly string[], current: string | null, onStep: (key: string) => void){
   useEffect(() => {
     if (!on || !steps.length) return;
@@ -458,7 +462,9 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
   // into it on every render.
   const strip = stripModel(t && (t.sections.length || prompt) ? entriesOf(t, prompt) : [], sel.s);
   const box = [strip.prompt, ...strip.phases, ...(strip.extra ? [strip.extra] : [])].find(b => b.current);
-  useArrows(arrows && !!t, strip.steps, box ? box.key : null, act.onStep);
+  const reviews = t ? reviewsOf(corpus, revTok(corpus, tokenOf, t.dir), t.dir, act.onRound) : null;
+  useArrows(arrows && !!t, reviews ? [...strip.steps, REVIEWS_STEP] : strip.steps, box ? box.key : null,
+    key => key === REVIEWS_STEP ? reviews!.onOpen() : act.onStep(key));
   useLayoutEffect(() => {
     if (jump.seq <= jumped.current) return;
     jumped.current = jump.seq;
@@ -476,7 +482,6 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     : "no corpus behind this page — the inspector reads the served corpus.")}</p></div>);
 
   const top = <Tickhead t={t} view={view} act={act}/>;
-  const reviews = reviewsOf(corpus, revTok(corpus, tokenOf, t.dir), t.dir, act.onRound);
   if (!t.sections.length && !prompt)
     return regions(top,
       reviews ? <PhaseStrip model={stripModel([], null)} reviews={reviews} onPick={act.onStep}/> : null,
@@ -586,5 +591,5 @@ function useMemoPrompt(p: FetchedText | undefined): PromptView | null {
   return ref.current.out;
 }
 
-export {Html, Inspector, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
+export {Html, Inspector, typing, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
 export type {InspectorActions, InspSel, PromptView};

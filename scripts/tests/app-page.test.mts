@@ -2877,6 +2877,16 @@ test("one reviews box opens the latest round, and the reviews screen leads back 
   await click(back);
   assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector");
   assert.equal(secVal(), was, "the ticket view keeps the section the reader left");
+  // The reviews box is the strip's last stop for → too, and ← steps back.
+  for (let i = 0; i < 12 && $(".screen.is-on").getAttribute("data-s") === "inspector"; i++) await key(document.body, "ArrowRight");
+  assert.equal($(".screen.is-on").getAttribute("data-s"), "reviews", "→ never reaches the reviews");
+  assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
+  const last = $$("#phaseStrip a").length;
+  await key(document.body, "ArrowLeft");
+  assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector");
+  assert.ok(last === 0, "the reviews screen draws no strip");
+  await key($("#secSel"), "ArrowRight");
+  assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector", "an arrow in the select moves nothing");
 });
 
 // ---- the ticket head ----

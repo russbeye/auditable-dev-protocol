@@ -1,14 +1,14 @@
 /* The reviews screen: a ticket's prreview rounds, read from the served
    corpus, one round at a time with its head, its body, and the decisions
    and watches it cites. */
-import {Fragment, type ReactNode} from "react";
+import {Fragment, useEffect, type ReactNode} from "react";
 import * as D from "../lib/adp-derive-lib.ts";
 import * as P from "../lib/adp-parser-lib.ts";
 import * as S from "../lib/adp-shell-lib.ts";
 import type {Ticket} from "../lib/adp-index-lib.ts";
 import type {DLEntry} from "../lib/adp-parser-lib.ts";
 import type {Corpus, ReviewGroup, ReviewLedger, ReviewVerdictFields, SortState} from "../lib/adp-shell-lib.ts";
-import {Html, Permalink, RoundLink, decisionRows, filterCounts, revTok, watchRows} from "./Inspector.tsx";
+import {Html, Permalink, RoundLink, decisionRows, filterCounts, revTok, typing, watchRows} from "./Inspector.tsx";
 import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
 
 /* Where the screen's round selection lands: the named round when the ticket
@@ -187,10 +187,24 @@ type ReviewsProps = {
   dlFilter: string;
   decSort: SortState;
   iwSort: SortState;
+  // False while a modal holds the page, so ← leaves the screen alone.
+  arrows: boolean;
   act: ReviewsActions;
 };
 
-function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, iwSort, act}: ReviewsProps){
+function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, iwSort, arrows, act}: ReviewsProps){
+  // The reviews box is the last stop of the ticket's phase strip, so ←
+  // steps back from it into the ticket view.
+  useEffect(() => {
+    if (!arrows || !t) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || typing(e.target)) return;
+      e.preventDefault();
+      act.onTicket();
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [arrows, t, act.onTicket]);
   // A ticket's reviews open from its phase strip, so the screen leads with
   // the way back to that ticket.
   const top = (sub: string | null) => <>

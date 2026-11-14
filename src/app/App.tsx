@@ -458,7 +458,7 @@ function App({fetchFn, openFeed}: AppProps){
               sel={sel} view={view} dlFilter={dlFilter} missNotice={missNotice} fullClosed={fullClosed}
               decSort={decSort} iwSort={iwSort} jump={jump} jumped={jumped} arrows={!packsOpen} act={inspectorActions}/>
             : s === "reviews" ? <Reviews corpus={corpus} today={today} t={selTicket} tokenOf={tokenOf} round={revSel} notice={revNotice}
-              dlFilter={revDlFilter} decSort={decSort} iwSort={iwSort} act={reviewsActions}/>
+              dlFilter={revDlFilter} decSort={decSort} iwSort={iwSort} arrows={!packsOpen} act={reviewsActions}/>
             : s === "watchboard" ? <Watchboard corpus={corpus} today={today} sort={wbSort} show={wbShow}
               onSort={sortBoard} onToggleState={toggleState} onOpen={openWatch}/>
             : s === "ledgers" ? <>
