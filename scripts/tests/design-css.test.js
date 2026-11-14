@@ -161,12 +161,16 @@ test("adp-bundle.css draws a border only on a rule that fixes its height", () =>
 
 // ---- local departures from the design system's bundle ----
 
-// The one rule this copy changes (DL-049): a decision card's field labels
-// read in blue-bright and its fields sit 24px apart, so a label never blends
-// into the value under it. The header comment names the same change.
-test("a decision card's labels take blue-bright and its fields sit 24px apart", () => {
+// The two rules this copy changes (DL-049, DL-054): a decision card's field
+// labels and a prose eyebrow heading read in blue-bright, and a card's fields
+// sit 24px apart, so a label never blends into the text under it. The header
+// comment names the same changes.
+test("card labels and prose eyebrows take blue-bright, and card fields sit 24px apart", () => {
   const at = sel => props(rules(bundleCss).find(r => r.sel === sel));
   assert.equal(at(".adp-dl__body").gap, "24px");
   assert.equal(at(".adp-dl__body dt").color, "var(--blue-bright)");
-  assert.match(bundleCss.slice(0, 1200), /One rule departs from\s+the source: a decision card's field labels take blue-bright/);
+  assert.equal(at(".adp-prose h3").color, "var(--blue-bright)");
+  const head = bundleCss.slice(0, 1400);
+  assert.match(head, /Two rules depart from\s+the source\. A decision card's field labels take blue-bright/);
+  assert.match(head, /A prose eyebrow heading takes blue-bright, not dim\./);
 });
