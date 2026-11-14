@@ -348,11 +348,13 @@ function reviewsOf(corpus: Corpus | null, tok: string, dir: string, onRound: (to
 /* A select draws its own down chevron at its right edge, so it reads as a
    dropdown in both themes and every browser. The system's select sets its
    ground with the background shorthand, which leaves no arrow, and the
-   browser's own arrow is turned off by the older sheet. Two small gradient
-   triangles in the dim ink make the chevron. */
+   browser's own arrow is turned off by the older sheet. One conic gradient
+   in the dim ink fills a 90 degree wedge up from the box's bottom center,
+   which the 10 by 5 box clips to a solid down triangle. Two half triangles
+   would leave a seam wherever the select's width lands between pixels. */
 const SELECT: CSSProperties = {appearance: "none", paddingRight: 36, backgroundRepeat: "no-repeat",
-  backgroundImage: "linear-gradient(45deg, transparent 50%, var(--dim) 50%), linear-gradient(135deg, var(--dim) 50%, transparent 50%)",
-  backgroundPosition: "calc(100% - 18px) center, calc(100% - 13px) center", backgroundSize: "5px 5px, 5px 5px"};
+  backgroundImage: "conic-gradient(from -45deg at 50% 100%, var(--dim) 90deg, transparent 0)",
+  backgroundPosition: "calc(100% - 13px) center", backgroundSize: "10px 5px"};
 
 // The prev and next buttons stand as tall as the select between them, so the
 // row reads as one control. The system's button is 28px and its select 36px.
