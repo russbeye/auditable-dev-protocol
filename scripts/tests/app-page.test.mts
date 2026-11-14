@@ -20,7 +20,7 @@ import {gapNote, stripModel} from "../../src/app/PhaseStrip.tsx";
 import {Rail} from "../../src/app/Rail.tsx";
 import {ReviewBody} from "../../src/app/Reviews.tsx";
 import * as PL from "../../src/lib/adp-prompt-lib.ts";
-import {DecisionsPanel, Pills, WatchesPanel} from "../../src/app/panels.tsx";
+import {DecisionsPanel, Filters, WatchesPanel} from "../../src/app/panels.tsx";
 import type {EventFeed} from "../../src/app/live.ts";
 import type {FetchFn, FetchResponse} from "../../src/lib/adp-shell-lib.ts";
 
@@ -143,10 +143,54 @@ test("the app's rail shows what the vanilla page showed at boot, under the new t
   assert.deepEqual(got.footer, want.footer);
 });
 
+/* The Watches page follows its board, keeps the five due-state filters and
+   every fact the old table showed, and adds search and Show more. The
+   comparison rebuilds the page from the baseline's own runs by these rules,
+   which name every change:
+   - The title reads "Watches", and the old guide line and panel heading go.
+   - The subtitle keeps the live and settled counts and gains the overdue and
+     unanchored counts the filters carry.
+   - A filter splits into its state word in capitals and its count.
+   - The columns follow the Table component: Watch, What to check, Ticket,
+     Due, Status, and Left. The sort arrow turns from ▲ ▼ to ↑ ↓.
+   - A due label splits into the state word and the days left, which run
+     below zero when the watch is overdue. A live row's empty outcome dash
+     goes, because the closed filter is off and the row has no outcome. */
+function rewatched(main: Region): Region {
+  const t = main.text;
+  assert.deepEqual(t.slice(0, 3), ["watchboard", "overdue first · unanchored flagged, never dated · settled behind its chip", "every watch, corpus-wide"]);
+  let i = 4;
+  const filters: string[] = [], counts: Record<string, string> = {};
+  while (/^(overdue|soon|upcoming|unanchored|closed) \d+$/.test(t[i])){
+    const [k, n] = t[i++].split(" ");
+    counts[k] = n;
+    filters.push(k.toUpperCase(), n);
+  }
+  const heads: string[] = [];
+  const HEAD: Record<string, string> = {ticket: "Ticket", watch: "Watch", "what to check": "What to check", due: "Due", status: "Status"};
+  for (; t[i] !== "outcome"; i++) heads.push(ARROWS[t[i]] || HEAD[t[i]]);
+  i++;
+  // The old order was ticket, watch, what to check, due, status. The new
+  // order puts the watch first and the ticket third.
+  const [tk, w, what, ...rest] = heads;
+  const order = [w, what, tk, ...rest, "Left"];
+  const rows: string[] = [];
+  for (; i < t.length; i += 6){
+    const [tid, wid, wht, due, label, outcome] = t.slice(i, i + 6);
+    assert.equal(outcome, "—", "a settled row in the default view: " + wid);
+    const m = label.match(DUE_LABEL)!;
+    const st = m[1] ? ["OVERDUE", "-" + m[1] + "d"] : m[2] ? [Number(m[2]) <= 14 ? "SOON" : "UPCOMING", m[2] + "d"] : [label, "—"];
+    rows.push(wid, wht, tid, due, ...st);
+  }
+  const none = (k: string) => (counts[k] || "none") + " " + k;
+  return {text: ["Watches", t[3] + " " + none("overdue") + " · " + none("unanchored"), ...filters, ...order, ...coded(rows)],
+    attrs: ["aria-label=Search watches", "placeholder=Search watches", "aria-label=Filter watches", ...main.attrs]};
+}
 test("the app's watchboard state shows what the vanilla page showed, region for region", async () => {
   await boot({fetch: diskFetch(), now: BASELINE_NOW});
   await click(tabFor("watchboard"));
-  assert.deepEqual(snapshot(document), restyled(BASELINE["watchboard"]));
+  const want = restyled(BASELINE["watchboard"]);
+  assert.deepEqual(snapshot(document), {...want, main: rewatched(BASELINE["watchboard"].main!)});
 });
 
 /* The vanilla inspector's ops row held four controls that loaded a file
@@ -381,6 +425,101 @@ function unread(snap: Snapshot): Snapshot {
   }
   return {...got, main: {...got.main!, text}};
 }
+/* The decisions and watches panels take the Table component, in its column
+   order, and keep every fact the vanilla panels showed (G1). So the
+   comparison takes the panels out of the app's render whole, and rebuilds
+   them from the baseline's own runs by these rules, which name every change:
+   - The heading reads "Decisions cited here" or "Watches cited here", then
+     its row count.
+   - A head is capitalized, the sort arrow turns from ▲ ▼ to ↑ ↓, Age joins
+     the decisions and Left joins the watches, before "Cited in".
+   - A status or due-state word is a chip in capitals, and a filter splits
+     into its word in capitals and its count.
+   - A watch's "25D LEFT" or "OVERDUE 24D" splits into its due state and the
+     days left, which run below zero when the watch is overdue.
+   - A decision gains its age after its watch cell, which the app reads
+     from the card's Created date.
+   - On a Decision Log section the filter sits above the cards and counts
+     the cards, so its old run leaves the panel and its own tests pin it. */
+// A table sets each backticked run of a title or a watch's text as inline
+// code, so the run splits into its words around the code, as the page reads.
+const coded = (runs: string[]) => runs.flatMap(r => r.split(/`([^`]+)`/).map(x => x.trim()).filter(Boolean));
+const HEADS: Record<string, string> = {entry: "Entry", decision: "Decision", conf: "Conf", status: "Status", watch: "Watch",
+  "cited in": "Cited in", id: "Watch", "what to check": "What to check", decisions: "Entry", due: "Due"};
+const ARROWS: Record<string, string> = {"▲": "↑", "▼": "↓"};
+const DUE_LABEL = /^(?:OVERDUE (\d+)D|(\d+)D LEFT|UNANCHORED|CLOSED)$/;
+function retabled(old: string[], spine: boolean, ages: string[]): string[] {
+  const out: string[] = [];
+  let i = 0, a = 0;
+  const heads = (extra: string) => {
+    for (;;){
+      const h = old[i++];
+      if (h === "cited in") { out.push(extra, "Cited in"); return; }
+      out.push(ARROWS[h] || HEADS[h] || assert.fail("an unknown head " + h));
+    }
+  };
+  while (i < old.length){
+    const dec = old[i].startsWith("decisions cited by ");
+    assert.ok(dec || old[i].startsWith("watches cited by "), "the baseline panel starts with " + old[i]);
+    i++;
+    const rows: string[][] = [], filters: string[] = [];
+    while (/^(all|open|validated|invalidated) \d+$/.test(old[i])) filters.push(...old[i++].split(" ").map((x, j) => j ? x : x.toUpperCase()));
+    const head = out.length;
+    heads(dec ? "Age" : "Left");
+    const headRuns = out.splice(head);
+    const start = dec ? /^DL-\d+$/ : /^OT-/;
+    while (i < old.length && !/^(decisions|watches) cited by /.test(old[i])){
+      if (start.test(old[i]) && (!rows.length || rows.at(-1)!.length >= 4)) rows.push([]);
+      rows.at(-1)!.push(old[i++]);
+    }
+    out.push(dec ? "Decisions cited here" : "Watches cited here", String(rows.length), ...(dec && !spine ? filters : []), ...headRuns);
+    for (const r of rows){
+      if (dec){
+        let j = 4;
+        while (j < r.length && /^(no watch|OT-.+)$/.test(r[j])) j++;
+        out.push(r[0], r[1], r[2], r[3].toUpperCase(), ...r.slice(4, j), ages[a++], ...r.slice(j));
+      } else {
+        const j = r.findIndex((x, k) => k > 1 && DUE_LABEL.test(x));
+        assert.ok(j > 0, "the baseline watch row has no due label: " + r.join(" | "));
+        const m = r[j].match(DUE_LABEL)!;
+        const due = m[1] ? ["OVERDUE", "-" + m[1] + "d"] : m[2] ? [Number(m[2]) <= 14 ? "SOON" : "UPCOMING", m[2] + "d"] : [r[j], "—"];
+        out.push(...r.slice(0, j), ...due, ...r.slice(j + 1));
+      }
+    }
+  }
+  return out;
+}
+/* We take each panel's own record out of the app's render, and the spine's
+   filter bar from above the cards. The baseline's panels run from their
+   first heading to the end of the screen, so we split them off there. The
+   panels' attributes follow the same split, less the new group labels. */
+// How many panels and filter bars above cards the walk compared, so the test can show it met both.
+const panelSeen = {panels: 0, bars: 0, watches: 0};
+function withoutPanels(got: Snapshot, want: Region): [Snapshot, Region] {
+  const bar = $("#scrInspector .doc .adp-filters");
+  const panels = $$('#scrInspector section[aria-label="Decisions cited"], #scrInspector section[aria-label="Watches cited"]');
+  let main = got.main!;
+  const cut = (r: Region) => {
+    const at = (list: string[], run: string[]) => list.findIndex((_, j) => run.every((x, k) => list[j + k] === x));
+    const i = at(main.text, r.text), j = at(main.attrs, r.attrs);
+    assert.ok(i >= 0 && j >= 0, "the render lacks the run " + r.text.slice(0, 3).join(" | "));
+    main = {text: [...main.text.slice(0, i), ...main.text.slice(i + r.text.length)], attrs: [...main.attrs.slice(0, j), ...main.attrs.slice(j + r.attrs.length)]};
+  };
+  if (bar) { cut(record(bar)); panelSeen.bars++; }
+  const recs = panels.map(record);
+  panelSeen.panels += recs.length;
+  panelSeen.watches += panels.filter(p => p.getAttribute("aria-label") === "Watches cited").length;
+  recs.forEach(cut);
+  const from = want.text.findIndex(x => /^(decisions|watches) cited by /.test(x));
+  const oldRuns = from < 0 ? [] : want.text.slice(from);
+  const ages = $$("#scrInspector tr.dlrow td.adp-col-num").map(td => td.textContent!);
+  assert.deepEqual(recs.flatMap(r => r.text), coded(retabled(oldRuns, !!bar, ages)), "the panels");
+  const GROUPS = ["aria-label=Decisions cited", "aria-label=Watches cited", "aria-label=Filter by status"];
+  const newAttrs = recs.flatMap(r => r.attrs).filter(x => !GROUPS.includes(x));
+  const keep = want.attrs.length - newAttrs.length;
+  assert.deepEqual(want.attrs.slice(keep), newAttrs, "the panels' attributes");
+  return [{...got, main}, {text: from < 0 ? want.text : want.text.slice(0, from), attrs: want.attrs.slice(0, keep)}];
+}
 const rentries = () => $$("#rail [data-key]").map(r => r.getAttribute("data-key")!);
 const options = () => [...($("#secSel") as HTMLSelectElement).options].map(o => o.value);
 async function pickSection(key: string){ fireEvent.change($("#secSel"), {target: {value: key}}); await settle(1); }
@@ -400,8 +539,8 @@ test("the app's inspector shows what the vanilla page showed, for every section 
       await pickSection(s);
       const k = "inspector|" + t + "|section|" + s, want = BASELINE[k];
       assert.ok(want, "the baseline has no state " + k);
-      const [got, main] = decarded(unread(withoutStrip(s === "prompt" ? withoutStart(snapshot(document)) : snapshot(document))),
-        cased(reheaded(withoutOps(withoutChip(want).main!))));
+      const [snap, base] = withoutPanels(s === "prompt" ? withoutStart(snapshot(document)) : snapshot(document), cased(reheaded(withoutOps(withoutChip(want).main!))));
+      const [got, main] = decarded(unread(withoutStrip(snap)), base);
       assert.deepEqual(got, {...restyled(want), main}, k);
       seen.push(k);
     }
@@ -413,6 +552,7 @@ test("the app's inspector shows what the vanilla page showed, for every section 
   }
   assert.deepEqual(seen, keys);
   assert.ok(readSeen.runin > 0 && readSeen.meta > 0, "the walk met no run-in heading or no footer");
+  assert.ok(panelSeen.bars > 0 && panelSeen.watches > 0 && panelSeen.panels > panelSeen.watches, "the walk met no spine filter or no panel of a kind");
 }, 120000);
 
 test("the Packs drawer shows what the vanilla resume pack screen showed, for every pack and ticket", async () => {
@@ -467,8 +607,67 @@ test("the app's reviews and Ledger screens show what the vanilla reviews, calibr
   await tabTo("ledgers");
   const cal = BASELINE["calibration"], led = restyled(BASELINE["ledgers"]);
   restyled(cal);
-  assert.deepEqual(snapshot(document), {...led, main: {text: [...cal.main!.text, ...led.main!.text], attrs: [...cal.main!.attrs, ...led.main!.attrs]}});
+  assert.deepEqual(snapshot(document), {...led, main: reledgered(cal.main!, led.main!)});
 });
+
+/* The Ledger follows its board, with calibration under its title, every
+   fact the old screens showed, and search and Show more. The comparison
+   rebuilds the page from the two vanilla screens' runs by these rules,
+   which name every change:
+   - The title reads "Ledger", and the subtitle names the decisions and the
+     tickets that the calibration tiles counted. The tiles go. Their shipped
+     or closed count matches the index, which the rail's groups show.
+   - Calibration takes the Calibration component: a question for a title, a
+     percentage of ruled decisions that held, and a legend in sentence case
+     that flags each tier under ten decisions. Every count line stays.
+   - The status filters split into word and count, in the Ledger board's
+     order. Confidence is a select whose options read "High · 4".
+   - The Entry column holds the ticket and the entry, so the old ticket
+     column goes, and the status word is a chip in capitals. */
+function reledgered(cal: Region, led: Region): Region {
+  const c = cal.text, l = led.text;
+  assert.deepEqual(c.slice(0, 2), ["calibration", "does stated confidence predict outcomes"]);
+  assert.deepEqual([c[3], c[5], c[7], c[9]], ["tickets indexed", "shipped or closed", "decisions logged", "watches overdue + unanchored"]);
+  assert.equal(String([...BASE_STATES.values()].filter(s => s === "shipped" || s === "closed").length), c[4], "the shipped or closed tile");
+  assert.equal(c[10], "decision outcomes by stated confidence");
+  const tiers: string[] = [], small: string[] = [];
+  let i = 11;
+  for (; !/^validated$/.test(c[i]); ){
+    const tier = c[i++], runs: string[] = [];
+    while (!/ruled validated$|^none ruled yet$/.test(c[i])) runs.push(c[i++]);
+    const share = c[i++], m = share.match(/^(\d+) of (\d+) ruled validated$/);
+    tiers.push(tier, m ? Math.round(Number(m[1]) / Number(m[2]) * 100) + "%" : "—", ...runs, share);
+    const total = runs.reduce((n, r) => n + parseInt(r.replace(/^· /, ""), 10), 0);
+    if (total < 10) small.push(` · ${tier} has only ${total} decisions`);
+  }
+  const legend = c.slice(i).map(k => k[0].toUpperCase() + k.slice(1));
+  assert.deepEqual(l.slice(0, 4), ["ledgers", "the corpus's decision record · settled rulings included · watches live on the board", "assumptions", "status"]);
+  i = 4;
+  const status: Record<string, string> = {}, conf: Record<string, string> = {};
+  while (l[i] !== "confidence"){ const [k, n] = l[i++].split(" "); status[k] = n; }
+  i++;
+  while (/^(all|high|medium|low|other) \d+$/.test(l[i])){ const [k, n] = l[i++].split(" "); conf[k] = n; }
+  const filters = ["all", "open", "validated", "invalidated", "unknown", "other"].filter(k => status[k]).flatMap(k => [k.toUpperCase(), status[k]]);
+  const options = ["All", ...["high", "medium", "low", "other"].filter(k => conf[k] && k !== "all").map(k => k[0].toUpperCase() + k.slice(1) + " · " + conf[k])];
+  const HEAD: Record<string, string> = {entry: "Entry", decision: "Decision", conf: "Conf", status: "Status", watch: "Watch", age: "Age"};
+  assert.equal(l[i++], "ticket");
+  const heads: string[] = [];
+  for (; l[i] !== "age"; i++) heads.push(ARROWS[l[i]] || HEAD[l[i]]);
+  heads.push("Age");
+  i++;
+  const rows: string[] = [];
+  while (i < l.length){
+    const [tid, id, title, cf, st] = l.slice(i, i + 5);
+    i += 5;
+    const watch: string[] = [];
+    while (!/^(\d+d|—)$/.test(l[i])) watch.push(l[i++]);
+    rows.push(tid, id, title, cf, st.toUpperCase(), ...watch, l[i++]);
+  }
+  return {text: ["Ledger", `${c[6]} decisions across ${c[2]} tickets, settled rulings included`,
+    "Does stated confidence predict outcomes?", "Share of ruled decisions that held", ...tiers, ...legend,
+    "Bars are each tier’s own total" + small.join(""), ...filters, "Confidence", ...options, ...heads, ...coded(rows)],
+    attrs: ["aria-label=Calibration", ...cal.attrs, "aria-label=Search decisions", "placeholder=Search decisions", "aria-label=Status", ...led.attrs]};
+}
 
 // ---- the fixture the vanilla page tests use ----
 
@@ -675,15 +874,17 @@ test("the board rows live watches by default, overdue first, unanchored flagged"
   // unanchored row shows its window prose where the dated rows show a date.
   assert.ok(!scr.includes("OT-BB2-3"));
   assert.match(scr, /60 days after merge/);
+  // The due state is a chip of its own word, and Left counts the overdue days below zero.
   assert.match(scr, /UNANCHORED/);
-  assert.match(scr, /OVERDUE \d+D/);
+  assert.match(scr, /OVERDUE/);
+  assert.match(scr, /-\d+d/);
 });
 
 test("the status chips reveal settled rows with their ruling and hide a live state", async () => {
   const {hashes} = await bootBoard();
   await click(tabFor("watchboard"));
-  const chip = (s: string) => $$(".fpill").find(p => p.getAttribute("data-ws") === s)!;
-  assert.equal(chip("closed").textContent, "closed 1");
+  const chip = (s: string) => $$("#scrWatch .adp-filter").find(p => p.getAttribute("data-ws") === s)!;
+  assert.equal(chip("closed").textContent, "CLOSED 1");
   await click(chip("closed"));
   assert.deepEqual(wids(), ["OT-BB2-1", "OT-BB2-2", "OT-AA1-1", "OT-AA1-2", "OT-BB2-3"]);
   assert.match($("#scrWatch").textContent!, /VALIDATED 2026-08-10/);
@@ -756,7 +957,8 @@ test("the sorted header carries aria-sort and the arrow hides from the tree", as
   assert.equal(th("due").getAttribute("aria-sort"), null);
   await click(th("tid"));
   assert.equal(th("tid").getAttribute("aria-sort"), "descending");
-  assert.equal($$(".arr")[0].getAttribute("aria-hidden"), "true");
+  assert.equal(th("tid").querySelector("span")!.getAttribute("aria-hidden"), "true");
+  assert.equal(th("tid").textContent, "Ticket ↓");
 });
 
 test("the status header orders the default board and a flip really reverses it", async () => {
@@ -800,7 +1002,7 @@ test("an all-settled corpus says the filters hide it, and the closed chip shows 
     {"20260104-DD4-delta/audit-log.md": LOG_D}).fetch});
   await click(tabFor("watchboard"));
   assert.match($("#scrWatch").textContent!, /every watch here is hidden by the status filters/);
-  await click($$(".fpill").find(p => p.getAttribute("data-ws") === "closed")!);
+  await click($$("#scrWatch .adp-filter").find(p => p.getAttribute("data-ws") === "closed")!);
   assert.deepEqual(wids(), ["OT-DD4-1"]);
 });
 
@@ -808,8 +1010,9 @@ test("the board marks an anchored watch's due text as dated and an unanchored on
   await bootBoard();
   await click(tabFor("watchboard"));
   const cell = (text: string) => $$("#scrWatch td").find(td => td.textContent === text)!;
-  assert.equal(cell("2099-01-01").className, "mono nw");
-  assert.equal(cell("60 days after merge").className, "mono");
+  assert.equal(cell("2099-01-01").style.whiteSpace, "nowrap");
+  assert.equal(cell("60 days after merge").style.whiteSpace, "");
+  assert.equal(cell("60 days after merge").style.fontFamily, "var(--font-mono)");
 });
 
 test("board links carry real hash hrefs, so the keyboard can reach them", async () => {
@@ -1371,9 +1574,10 @@ test("the corpus boot selects the first rail entry; a full ticket renders its sp
   assert.equal(secVal(), "sec-decision-log");
   assert.equal($("#tickHead .adp-chip").textContent, "shipped");
   assert.equal($("#tickHead .adp-chip + .adp-meta").textContent, "inferred from the log");
-  assert.match(scr, /decisions cited by Decision Log/);
-  assert.match(scr, /open 1/);
-  assert.match(scr, /validated 1/);
+  // The status filter sits above the cards and counts the cards it rules.
+  assert.match(scr, /Decisions cited here/);
+  assert.match(scr, /OPEN <span>1<\/span>/);
+  assert.match(scr, /VALIDATED <span>1<\/span>/);
   assert.equal(last(hashes), "#t=AA1&s=sec-decision-log");
 });
 
@@ -1397,13 +1601,13 @@ test("a phase-scoped section shows only what it cites, with backlink chips", asy
   await click(entry("AA1"));
   await pickSection("sec-pr-summary");
   const scr = insp();
-  assert.match(scr, /decisions cited by PR Summary/);
+  assert.match(scr, /Decisions cited here/);
   assert.ok(scr.includes("DL-001"));
   assert.ok(!scr.includes(`data-dl="DL-002"`));
-  assert.match(scr, /watches cited by PR Summary/);
+  assert.match(scr, /Watches cited here/);
   assert.ok(scr.includes("OT-AA1-2"));
   assert.ok(!scr.includes(`data-item="OT-AA1-1"`));
-  assert.match(scr, /class="pc"/);
+  assert.match(scr, /class="adp-chip adp-chip--s" data-key="/);
 });
 
 test("a backlink chip names an ad hoc section by its kind instead of §", async () => {
@@ -1445,7 +1649,7 @@ test("a watch link jumps to the obligation section with the row highlighted", as
 test("the status pills filter the decisions table", async () => {
   await bootCorpus();
   await click(entry("AA1"));
-  await click($$(".fpill").find(p => p.getAttribute("data-dlf") === "open")!);
+  await click($$(".adp-filter").find(p => p.getAttribute("data-dlf") === "open")!);
   assert.ok(insp().includes(`data-dl="DL-002"`));
   assert.ok(!insp().includes(`data-dl="DL-001"`));
 });
@@ -1455,11 +1659,11 @@ test("the status pills filter the decisions table", async () => {
 test("a filter pill keeps the keyboard through its own re-render", async () => {
   await bootCorpus();
   await click(entry("AA1"));
-  const pill = $$(".fpill").find(p => p.getAttribute("data-dlf") === "open")!;
+  const pill = $$(".adp-filter").find(p => p.getAttribute("data-dlf") === "open")!;
   pill.focus();
   await click(pill);
   same(document.activeElement, pill, "focus left the pill it pressed");
-  assert.ok($$(".fpill").includes(pill));
+  assert.ok($$(".adp-filter").includes(pill));
 });
 
 test("the section dropdown keeps focus across its change re-render", async () => {
@@ -1586,10 +1790,10 @@ test("a hostile served log never lands markup in the page", async () => {
     assert.ok(!insp().includes("<img"), s);
     assert.ok(!insp().includes("<script"), s);
   }
-  // The quote-bearing confidence lands in the decisions panel as the
-  // cf-high class and inert cell text, and no tag carries the handler.
+  // The quote-bearing confidence lands in the decisions panel as inert
+  // cell text, and no tag carries the handler.
   await pickSection("sec-decision-log");
-  assert.match(insp(), /class="cf-high nw"/);
+  assert.match(insp(), /class="adp-col-conf"[^>]*>HIGH/);
   assert.ok(!/<[^>]*onmouseover/.test(insp()));
   assert.ok(!/<[^>]*onmouseover/.test($("#rail").innerHTML));
   await click(op("data-view", "full"));
@@ -1804,19 +2008,19 @@ test("a pick or a step onto a section that cannot reach the stage's top survives
 // The two builder checks of the vanilla page, held against the component
 // that replaced the builder.
 const panelRow = (statusKind: "validated" | "open") => ({id: "DL-001", title: "t", conf: "HIGH", confKind: "high" as const, statusKind,
-  watch: null, settled: {wid: "OT-1", outcome: "VALIDATED", closed: "2026-09-01"}, chips: [], hl: false});
-const panelProps = {label: "x", pills: null, sort: {k: "id", d: 1}, onSort(){}, onRow(){}, onWatch(){}, onChip(){}};
+  watch: null, settled: {wid: "OT-1", outcome: "VALIDATED", closed: "2026-09-01"}, chips: [], hl: false, age: null});
+const panelProps = {count: 1, filters: null, sort: {k: "id", d: 1}, onSort(){}, onRow(){}, onWatch(){}, onChip(){}};
 
 test("a settled decision's watch cell keeps the id and puts the ruling on hover", () => {
   const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [panelRow("validated")]}));
-  assert.ok(container.innerHTML.includes(`title="closed VALIDATED 2026-09-01">OT-1</a>`));
+  assert.match(container.innerHTML, /title="closed VALIDATED 2026-09-01"[^>]*>OT-1<\/a>/);
   // The ruled state lives in the status column, and the cell never repeats it.
-  assert.ok(!container.innerHTML.includes(`st-closed`));
+  assert.ok(!container.innerHTML.includes(`adp-chip--closed`));
 });
 
 test("an open decision with only a settled watch leads with the marker", () => {
   const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [panelRow("open")]}));
-  assert.ok(container.innerHTML.includes(`<span class="st-unanchored nw">no watch</span> <a class="wl"`));
+  assert.ok(container.innerHTML.includes(`<span class="adp-chip adp-chip--s adp-chip--open">no watch</span> <a class="wl"`));
   assert.ok(container.innerHTML.includes(`title="closed VALIDATED 2026-09-01"`));
 });
 
@@ -1965,25 +2169,25 @@ test("the ledger rows every decision, open debt first, settled outcomes last", a
   // Calibration heads the Ledger and names every outcome in its legend, so
   // we read the ledger's own part alone.
   const scr = $("#scrLedgers").innerHTML.replace($("#scrCalib").outerHTML, "");
-  assert.match(scr, /open 2/);
-  assert.match(scr, /validated 1/);
-  assert.ok(!scr.includes("invalidated"));
+  assert.match(scr, /OPEN <span>2<\/span>/);
+  assert.match(scr, /VALIDATED <span>1<\/span>/);
+  assert.ok(!scr.includes("INVALIDATED"));
 });
 
 test("the ledger pills filter corpus-wide and leave the inspector's filter alone", async () => {
   await bootBoard();
   await click(entry("AA1"));
-  await click($$(".fpill").find(p => p.getAttribute("data-dlf") === "validated")!);
+  await click($$(".adp-filter").find(p => p.getAttribute("data-dlf") === "validated")!);
   assert.deepEqual($$(".dlrow").map(r => r.getAttribute("data-dl")), ["DL-001"]);
   await click(tabFor("ledgers"));
-  await click($$(".fpill").find(p => p.getAttribute("data-lgf") === "open")!);
+  await click($$(".adp-filter").find(p => p.getAttribute("data-lgf") === "open")!);
   assert.deepEqual(lgRows().map(r => r.getAttribute("data-dl")), ["DL-002", "DL-001"]);
   await click(tabFor("inspector"));
   assert.deepEqual($$(".dlrow").map(r => r.getAttribute("data-dl")), ["DL-001"]);
-  assert.match($$(".fpill").find(p => p.getAttribute("data-dlf") && p.classList.contains("is-on"))!.textContent!, /validated/);
+  assert.match($$(".adp-filter").find(p => p.getAttribute("data-dlf") && p.getAttribute("aria-pressed") === "true")!.textContent!, /VALIDATED/);
   // The ledger's own filter held through the round trip too.
   await click(tabFor("ledgers"));
-  assert.match($$(".fpill").find(p => p.getAttribute("data-lgf") && p.classList.contains("is-on"))!.textContent!, /open/);
+  assert.match($$(".adp-filter").find(p => p.getAttribute("data-lgf") && p.getAttribute("aria-pressed") === "true")!.textContent!, /OPEN/);
 });
 
 test("a ledger entry link lands the inspector on the item in its owning section", async () => {
@@ -2037,7 +2241,8 @@ test("the ledger's sorted header carries aria-sort and the arrow hides from the 
   assert.equal(th("status").getAttribute("aria-sort"), null);
   await click(th("id"));
   assert.equal(th("id").getAttribute("aria-sort"), "descending");
-  assert.equal($$(".arr")[0].getAttribute("aria-hidden"), "true");
+  assert.equal(th("id").querySelector("span")!.getAttribute("aria-hidden"), "true");
+  assert.equal(th("id").textContent, "Entry ↓");
 });
 
 test("the ledger renders hostile harvested fields as text, and a pill carries the mark it was given", async () => {
@@ -2050,7 +2255,7 @@ test("the ledger renders hostile harvested fields as text, and a pill carries th
   assert.ok(!$("#scrLedgers").innerHTML.includes("<img"));
   assert.ok($("#scrLedgers").textContent!.includes(hostile));
   cleanup();
-  const {container} = render(createElement(Pills, {counts: {all: 1, open: 1}, active: "all", mark: "data-lgf", onPick(){}}));
+  const {container} = render(createElement(Filters, {label: "Status", counts: {all: 1, open: 1}, active: "all", mark: "data-lgf", onPick(){}}));
   assert.match(container.innerHTML, /data-lgf="open"/);
 });
 
@@ -2278,104 +2483,111 @@ test("a corpus-wide pack fills with no ticket selected, and a ticket pack still 
 
 const calTab = () => click(tabFor("calibration"));
 
-test("the calibration screen tiles the corpus and rows every confidence with the ledger's counts", async () => {
+/* The calibration tiles left with the Ledger board. Each number they
+   held still shows elsewhere: tickets and decisions in the Ledger subtitle,
+   overdue and unanchored in the Watches subtitle. */
+test("calibration rows every confidence with the ledger's counts, and the tiles' numbers live in the subtitles", async () => {
   await bootBoard();
-  // The overdue count moves with the date, so the board's chip states it.
   await click(tabFor("watchboard"));
-  const overdue = $$(".fpill").find(p => p.getAttribute("data-ws") === "overdue")!.textContent!.match(/overdue (\d+)/)![1];
+  const overdue = $$("#scrWatch .adp-filter").find(p => p.getAttribute("data-ws") === "overdue")!.textContent!.match(/OVERDUE (\d+)/)![1];
+  assert.match($("#scrWatch").textContent!, new RegExp(`· ${overdue} overdue · 1 unanchored`));
   await calTab();
+  assert.match($("#scrLedgers").textContent!, /3 decisions across 2 tickets, settled rulings included/);
+  assert.equal($$("[data-tile]").length, 0);
   const scr = $("#scrCalib").innerHTML;
-  assert.deepEqual($$(".caltile-n").map(t => t.textContent), ["2", "2", "3", overdue + "+1"]);
-  assert.deepEqual($$(".caltile").map(t => t.getAttribute("data-tile")), ["tickets", "shipped", "decisions", "watches"]);
-  assert.deepEqual($$(".calrow").map(r => r.getAttribute("data-conf")), ["high", "medium", "low"]);
+  assert.deepEqual($$("#scrCalib [data-conf]").map(r => r.getAttribute("data-conf")), ["high", "medium", "low"]);
   assert.match(scr, /1 validated/);
   assert.match(scr, /1 of 1 ruled validated/);
   assert.match(scr, /none ruled yet/);
+  // The ruled share reads as a percentage, and a tier with nothing ruled reads a dash.
+  assert.deepEqual($$("#scrCalib .adp-cal__pct").map(p => p.textContent), ["100%", "—", "—"]);
   // The separator leads the count it belongs to, so no line can end on one.
-  assert.match(scr, /<span class="calnw">· 1 open<\/span>/);
+  assert.match(scr, /<span style="white-space: nowrap;">· 1 open<\/span>/);
   assert.ok(!/·\s*<\/span>/.test(scr));
-  const segs = (k: string) => (scr.match(new RegExp(`class="calseg calseg-${k}"`, "g")) || []).length;
+  const segs = (k: string) => $$("#scrCalib [data-calk]").filter(b => b.getAttribute("data-calk") === k).length;
   assert.equal(segs("open"), 2);
   assert.equal(segs("validated"), 1);
   assert.equal(segs("invalidated"), 0);
-  for (const k of ["validated", "invalidated", "open", "unknown", "other"])
-    assert.match(scr, new RegExp(`<i class="calseg-${k}"></i>${k}`));
-  // The open count agrees with the ledger's pill on the same corpus.
-  const open = (scr.match(/(\d+) open</g) || []).reduce((n, s) => n + parseInt(s, 10), 0);
-  await click(tabFor("ledgers"));
-  assert.match($("#scrLedgers").innerHTML, new RegExp(`open ${open}`));
+  for (const k of ["Validated", "Invalidated", "Open", "Unknown", "Other"]) assert.match(scr, new RegExp(`</i>${k}</span>`));
+  assert.match(scr, /Bars are each tier’s own total · HIGH has only 2 decisions/);
+  // The open count agrees with the ledger's filter on the same corpus.
+  const open = (scr.match(/(\d+) open</g) || []).reduce((n, s) => n + parseInt(s.replace(/^· /, ""), 10), 0);
+  assert.match($("#scrLedgers").innerHTML, new RegExp(`OPEN <span>${open}</span>`));
 });
 
 const oneLog = (log: string) => liveCorpus({root: "demo", files: ["20260103-CC3-gamma/audit-log.md"]}, {"20260103-CC3-gamma/audit-log.md": log}).fetch;
 
-test("the calibration screen counts a ruled entry by its ruling, never its card", async () => {
+test("calibration counts a ruled entry by its ruling, never its card", async () => {
   await boot({fetch: oneLog(["# Audit Log — CC3 gamma", "", "## Decision Log", "", "### [DL-001] Ruled off the card",
     "- **Decision:** pick d", "- **Confidence:** MEDIUM", "- **Status:** OPEN", "", "- **DL-001 CLOSED 2026-08-10 → VALIDATED.** The ruling.", ""].join("\n"))});
   await calTab();
   const scr = $("#scrCalib").innerHTML;
   assert.match(scr, /1 validated/);
   assert.match(scr, /1 of 1 ruled validated/);
-  assert.ok(!scr.includes('class="calseg calseg-open"'));
+  assert.equal($$('#scrCalib [data-calk="open"]').length, 0);
 });
 
 // DL-007: calibration heads the Ledger, so its old link lands there.
-test("a calibration deep link boots to the Ledger with calibration at its top, and the Ledger writes its own token", async () => {
+test("a calibration deep link boots to the Ledger with calibration under its title, and the Ledger writes its own token", async () => {
   const {hashes} = await bootBoard({hash: "#v=calibration"});
   assert.equal(isOn("scrLedgers"), true);
-  same($("#scrLedgers").firstElementChild, $("#scrCalib"), "calibration does not head the Ledger");
-  assert.equal($$(".caltile").length, 4);
+  same($("#scrCalib").previousElementSibling, $("#scrLedgers h1")!.parentElement, "calibration does not follow the Ledger's title");
+  assert.equal($$("#scrCalib [data-conf]").length, 3);
   assert.match(last(hashes), /^#v=ledgers/);
 });
 
-test("with no corpus the calibration screen says so instead of tiling zeros", async () => {
+test("with no corpus the Ledger says so and draws no calibration", async () => {
   await boot();
   await calTab();
-  assert.match($("#scrCalib").innerHTML, /no corpus behind this page/);
-  assert.equal($$(".caltile").length, 0);
-  assert.equal($$(".calrow").length, 0);
+  assert.match($("#scrLedgers").innerHTML, /no corpus behind this page/);
+  assert.equal($$("#scrCalib [data-conf]").length, 0);
 });
 
-test("a corpus with no decisions tiles its zeros and names the empty record", async () => {
+test("a corpus with no decisions names the empty record in the calibration section", async () => {
   await boot({fetch: oneLog("# Audit Log — CC3 gamma\n\n## Problem Statement\n\n**What the problem is:** empty.\n")});
   await calTab();
-  assert.deepEqual($$(".caltile-n").map(t => t.textContent), ["1", "0", "0", "0+0"]);
+  assert.match($("#scrLedgers").textContent!, /0 decisions across 1 tickets/);
   assert.match($("#scrCalib").innerHTML, /no decisions on record/);
-  assert.equal($$(".calrow").length, 0);
+  assert.equal($$("#scrCalib [data-conf]").length, 0);
 });
 
-test("a bar segment lands the ledger filtered to its cell, with focus on the status pill", async () => {
+const confSel = () => $("[data-lgc-sel]") as HTMLSelectElement;
+const pickConf = async (v: string) => { fireEvent.change(confSel(), {target: {value: v}}); await settle(1); };
+
+test("a bar segment lands the ledger filtered to its cell, with focus on the status filter", async () => {
   const {hashes} = await bootBoard();
   await calTab();
-  const seg = $$(".calseg").find(s => s.getAttribute("data-calc") === "high" && s.getAttribute("data-calk") === "open")!;
+  const seg = $$("#scrCalib [data-calc]").find(s => s.getAttribute("data-calc") === "high" && s.getAttribute("data-calk") === "open")!;
   assert.match(seg.getAttribute("aria-label")!, /^1 open at HIGH/);
   await click(seg);
   assert.equal(isOn("scrLedgers"), true);
   assert.match(last(hashes), /^#v=ledgers/);
   assert.deepEqual(lgRows().map(r => r.getAttribute("data-t") + "/" + r.getAttribute("data-dl")), ["BB2/DL-001"]);
-  const on = (attr: string) => $$(".fpill").find(p => p.getAttribute(attr) && p.classList.contains("is-on"))!;
-  assert.match(on("data-lgf").textContent!, /^open 2/);
-  assert.match(on("data-lgc").textContent!, /^high 2/);
-  assert.equal($("#scrLedgers").innerHTML.includes("pilllab"), true);
-  same(document.activeElement, on("data-lgf"), "focus is not on the status pill");
+  const on = $$(".adp-filter").find(p => p.getAttribute("data-lgf") && p.getAttribute("aria-pressed") === "true")!;
+  assert.equal(on.textContent, "OPEN 2");
+  assert.equal(confSel().value, "high");
+  assert.equal(confSel().selectedOptions[0].textContent, "High · 2");
+  same(document.activeElement, on, "focus is not on the status filter");
   // Widening the confidence back to all keeps the status cut.
-  await click($$(".fpill").find(p => p.getAttribute("data-lgc") === "all")!);
+  await pickConf("all");
   assert.deepEqual(lgRows().map(r => r.getAttribute("data-dl")), ["DL-002", "DL-001"]);
   // The confidence filter is ledger state, so it holds across a tab round trip.
-  await click($$(".fpill").find(p => p.getAttribute("data-lgc") === "low")!);
+  await pickConf("low");
   await click(tabFor("inspector"));
   await click(tabFor("ledgers"));
-  assert.match(on("data-lgc").textContent!, /^low 1/);
+  assert.equal(confSel().value, "low");
+  assert.equal(confSel().selectedOptions[0].textContent, "Low · 1");
   assert.deepEqual(lgRows().map(r => r.getAttribute("data-dl")), ["DL-002"]);
 });
 
-test("the ledger pills row every kind the record holds, so no segment lands on an empty pill", async () => {
+test("the ledger filters row every kind the record holds, so no segment lands on an empty filter", async () => {
   await boot({fetch: oneLog(["# Audit Log — CC3 gamma", "", "## Decision Log", "",
     "### [DL-001] Parked", "- **Decision:** a", "- **Confidence:** CERTAIN", "- **Status:** PARKED", "",
     "### [DL-002] Unjudged", "- **Decision:** b", "- **Confidence:** LOW", "- **Status:** UNKNOWN", ""].join("\n"))});
   await calTab();
-  await click($$(".calseg").find(s => s.getAttribute("data-calc") === "other")!);
-  const pills = $$(".fpill").map(p => p.textContent);
-  assert.ok(pills.includes("other 1") && pills.includes("unknown 1"));
+  await click($$("#scrCalib [data-calc]").find(s => s.getAttribute("data-calc") === "other")!);
+  const pills = $$(".adp-filter").map(p => p.textContent);
+  assert.ok(pills.includes("OTHER 1") && pills.includes("UNKNOWN 1"));
   assert.deepEqual(lgRows().map(r => r.getAttribute("data-dl")), ["DL-001"]);
 });
 
@@ -2383,7 +2595,7 @@ test("a change event keeps focus on the calibration segment it held", async () =
   const live = liveCorpus(LISTING, {...TEXTS});
   const {feed} = await boot({fetch: live.fetch});
   await calTab();
-  const seg = $$(".calseg").find(s => s.getAttribute("data-calc") === "low")!;
+  const seg = $$("#scrCalib [data-calc]").find(s => s.getAttribute("data-calc") === "low")!;
   seg.focus();
   live.texts["20260102-BB2-beta/audit-log.md"] = LOG_B + "\n## Amendment Notes\n\nlate news.\n";
   await change(feed);
@@ -2667,7 +2879,7 @@ test("a rail pick resets the decisions filter, the collapsed sections, and the r
   const c = reviewCorpus();
   c.texts[`${RV1}/audit-log.md`] = LOG.replace("AA1 alpha", "RV1 rounds").replace(/OT-AA1-/g, "OT-RV1-");
   await bootReviews(c, "#t=RV1&s=sec-decision-log");
-  await click($$(".fpill").find(p => p.getAttribute("data-dlf") === "open")!);
+  await click($$(".adp-filter").find(p => p.getAttribute("data-dlf") === "open")!);
   await click(op("data-view", "full"));
   await click(($$(".fsec") as HTMLDetailsElement[]).find(d => d.getAttribute("data-key") === "sec-problem-statement")!.querySelector(".fsum")!);
   await click(entry("RV2"));
@@ -2676,7 +2888,7 @@ test("a rail pick resets the decisions filter, the collapsed sections, and the r
   assert.equal(ps.open, true);
   await click(op("data-view", "section"));
   await pickSection("sec-decision-log");
-  assert.equal($$(".fpill").find(p => p.getAttribute("data-dlf") === "all")!.classList.contains("is-on"), true);
+  assert.equal($$(".adp-filter").find(p => p.getAttribute("data-dlf") === "all")!.getAttribute("aria-pressed"), "true");
   await click(tabFor("reviews"));
   assert.match($("#revHead").innerHTML, /PR #7 · Round 10/);
   await click(entry("RV2"));
@@ -2869,21 +3081,21 @@ const citedCorpus = () => {
 test("a round shows the decisions and watches it cites, and a round that cites none shows no panel", async () => {
   await bootReviews(citedCorpus(), "#v=reviews&t=AA1&s=pr-review-PR3-20260102-r1.md");
   const body = $("#revBody").innerHTML;
-  assert.match(body, /decisions cited by PR #3 · Round 1/);
-  assert.match(body, /watches cited by PR #3 · Round 1/);
+  assert.match(body, /Decisions cited here/);
+  assert.match(body, /Watches cited here/);
   assert.deepEqual(within("revBody", ".dlrow").map(r => r.getAttribute("data-dl")), ["DL-002"]);
   assert.deepEqual(within("revBody", ".wrow").map(r => r.getAttribute("data-item")), ["OT-AA1-1"]);
-  assert.ok(within("revBody", ".pc").length > 0);
+  assert.ok(within("revBody", "a.adp-chip[data-key]").length > 0);
   await revStep(1);
-  assert.doesNotMatch($("#revBody").innerHTML, /cited by/);
+  assert.doesNotMatch($("#revBody").innerHTML, /cited here/);
 });
 
 test("the reviews filter is its own, and a cited row opens its entry in the inspector", async () => {
   await bootReviews(citedCorpus(), "#v=reviews&t=AA1&s=pr-review-PR3-20260102-r1.md");
-  const rpill = (f: string) => within("revBody", ".fpill").find(p => p.getAttribute("data-rdf") === f)!;
-  assert.deepEqual(within("revBody", ".fpill").map(p => p.getAttribute("data-rdf")), ["all", "open"]);
+  const rpill = (f: string) => within("revBody", ".adp-filter").find(p => p.getAttribute("data-rdf") === f)!;
+  assert.deepEqual(within("revBody", ".adp-filter").map(p => p.getAttribute("data-rdf")), ["all", "open"]);
   await click(rpill("open"));
-  assert.equal(rpill("open").classList.contains("is-on"), true);
+  assert.equal(rpill("open").getAttribute("aria-pressed"), "true");
   assert.equal(isOn("scrReviews"), true);
   await click(within("revBody", ".dlrow")[0]);
   assert.equal(isOn("scrInspector"), true);
@@ -2891,9 +3103,9 @@ test("the reviews filter is its own, and a cited row opens its entry in the insp
   // The inspector's own filter never saw the reviews click.
   await click(within("scrInspector", '[data-op="back"]')[0]);
   await pickSection("sec-decision-log");
-  const ipill = (f: string) => within("scrInspector", ".fpill").find(p => p.getAttribute("data-dlf") === f)!;
-  assert.equal(ipill("all").classList.contains("is-on"), true);
-  assert.equal(ipill("open").classList.contains("is-on"), false);
+  const ipill = (f: string) => within("scrInspector", ".adp-filter").find(p => p.getAttribute("data-dlf") === f)!;
+  assert.equal(ipill("all").getAttribute("aria-pressed"), "true");
+  assert.equal(ipill("open").getAttribute("aria-pressed"), "false");
 });
 
 test("a column sort on one screen reaches the other screen's cited table the next time it shows", async () => {
@@ -3328,6 +3540,26 @@ test("on a narrow window the rail starts folded and opens over the page", async 
   }
 });
 
+// The NarrowLedger board lists each entry on three lines, and calibration
+// sets each count line under its bar. No entry, word, or count leaves.
+test("on a narrow window the Ledger lists its entries and calibration drops its count column", async () => {
+  try {
+    await bootNarrow();
+    await tabTo("ledgers");
+    assert.equal($$("#scrLedgers table").length, 0);
+    const items = $$("#scrLedgers li.lgrow");
+    assert.deepEqual(items.map(r => r.getAttribute("data-t") + "/" + r.getAttribute("data-dl")), ["AA1/DL-002", "AA1/DL-001"]);
+    const open = items[0];
+    assert.deepEqual([...open.querySelectorAll("a.wbl")].map(a => a.textContent), ["AA1", "DL-002", "OT-AA1-1"]);
+    assert.match(open.textContent!, /OPEN/);
+    assert.match(open.textContent!, /watch OT-AA1-1/);
+    assert.equal(($("#scrCalib .adp-cal__grid") as HTMLElement).style.gridTemplateColumns, "64px minmax(0, 1fr) 56px");
+    assert.ok($$("#scrCalib .adp-cal__count").every(c => (c as HTMLElement).style.gridColumn === "2 / -1"));
+  } finally {
+    delete (window as {matchMedia?: unknown}).matchMedia;
+  }
+});
+
 test("the closed group starts collapsed, and a click opens it", async () => {
   await bootCorpus();
   const closed = () => $$("#rail [data-sec]").find(s => s.getAttribute("data-sec") === "closed")!;
@@ -3345,10 +3577,18 @@ test("the rail renders hostile harvested fields as text", () => {
   assert.ok(container.textContent!.includes(hostile));
 });
 
+// The Table boards set a backticked run as inline code. The words stay as
+// the log wrote them, and a lone backtick stays text.
+test("a table sets a backticked run of a title as inline code and keeps a lone backtick", () => {
+  const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [{id: "DL-001", title: "The seam returns `{index, texts}`; a ` stays",
+    conf: "HIGH", confKind: "high", statusKind: "open", watch: null, settled: null, chips: [], hl: false, age: null}]}));
+  assert.ok(container.innerHTML.includes('<td>The seam returns <code class="adp-code">{index, texts}</code>; a ` stays</td>'));
+});
+
 test("the decisions panel renders hostile harvested fields as text", () => {
   const hostile = "<img src=x onerror=alert(1)>";
-  const {container} = render(createElement(DecisionsPanel, {...panelProps, label: hostile, rows: [{id: hostile, title: hostile, conf: hostile,
-    confKind: "other", statusKind: "open", watch: hostile, settled: null, chips: [{key: hostile, label: hostile, title: hostile}], hl: false}]}));
+  const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [{id: hostile, title: hostile, conf: hostile,
+    confKind: "other", statusKind: "open", watch: hostile, settled: null, chips: [{key: hostile, label: hostile, title: hostile}], hl: false, age: null}]}));
   assert.ok(!container.innerHTML.includes("<img"));
   assert.ok(container.textContent!.includes(hostile));
 });
@@ -3379,40 +3619,44 @@ test("a card list keeps a space-4 gap below content above it, and none at the to
 test("a due cell in the watches panel holds a date on one line and lets window prose wrap", () => {
   const prose = "until the developer's next live session with the testbed, no later than the start of ZUP-B3";
   const row = (o: {dueText: string; dueDated: boolean}) => ({wid: "OT-A1-1", what: "w", dls: [], state: "upcoming" as const,
-    stateLabel: "upcoming 30d", chips: [], hl: false, ...o});
-  const {container} = render(createElement(WatchesPanel, {label: "x", sort: {k: "wid", d: 1}, onSort(){}, onWatch(){}, onChip(){},
+    stateLabel: "upcoming 30d", chips: [], hl: false, left: 30, ...o});
+  const {container} = render(createElement(WatchesPanel, {sort: {k: "wid", d: 1}, onSort(){}, onWatch(){}, onChip(){},
     rows: [row({dueText: "2026-12-24", dueDated: true}), {...row({dueText: prose, dueDated: false}), wid: "OT-A1-2"}]}));
   const html = container.innerHTML;
-  assert.ok(html.includes('<td class="mono nw">2026-12-24</td>'));
-  assert.ok(html.includes('<td class="mono">until the developer'));
-  assert.ok(html.includes('<td class="mono nw">OT-A1-1</td>'));
-  assert.ok(html.includes('<span class="st-upcoming nw">upcoming 30d</span>'));
+  // The Table component's id and number columns hold one line by their classes.
+  assert.ok(html.includes('<td style="font-family: var(--font-mono); font-size: 12px; white-space: nowrap;">2026-12-24</td>'));
+  assert.ok(html.includes('<td style="font-family: var(--font-mono); font-size: 12px;">until the developer'));
+  assert.ok(html.includes('<td class="adp-col-id">OT-A1-1</td>'));
+  assert.ok(html.includes('<span class="adp-chip adp-chip--s adp-chip--validated">UPCOMING</span>'));
+  assert.ok(html.includes('<td class="adp-col-num">30d</td>'));
 });
 
 test("the inspector marks an anchored watch's due text as dated and an unanchored one as prose", async () => {
   await bootCorpus();
   await pickSection("sec-obligation-ticket-list");
-  assert.ok(insp().includes('<td class="mono nw">2099-01-01</td>'));
-  assert.ok(insp().includes('<td class="mono">60 days after merge</td>'));
+  assert.ok(insp().includes('<td style="font-family: var(--font-mono); font-size: 12px; white-space: nowrap;">2099-01-01</td>'));
+  assert.ok(insp().includes('<td style="font-family: var(--font-mono); font-size: 12px;">60 days after merge</td>'));
 });
 
 test("the decisions panel and the ledger hold every id, label, and age on one line", async () => {
   const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [{id: "DL-104", title: "t", conf: "MEDIUM",
-    confKind: "medium", statusKind: "open", watch: null, settled: null, chips: [], hl: false}]}));
+    confKind: "medium", statusKind: "open", watch: null, settled: null, chips: [], hl: false, age: 12}]}));
   const panel = container.innerHTML;
-  assert.ok(panel.includes('<td class="mono nw">DL-104</td>'));
-  assert.ok(panel.includes('<span class="cf-medium nw">MEDIUM</span>'));
-  assert.ok(panel.includes('<span class="st-open nw">open</span>'));
-  assert.ok(panel.includes('<td><span class="st-unanchored nw">no watch</span></td>'));
+  // The id, conf, and age columns hold one line, and a chip holds its word on one line by the bundle's rule.
+  assert.ok(panel.includes('<td class="adp-col-id">DL-104</td>'));
+  assert.ok(panel.includes('<td class="adp-col-conf" style="white-space: nowrap;">MEDIUM</td>'));
+  assert.ok(panel.includes('<span class="adp-chip adp-chip--s adp-chip--open">OPEN</span>'));
+  assert.ok(panel.includes('<td class="adp-col-id"><span class="adp-chip adp-chip--s adp-chip--open">no watch</span></td>'));
+  assert.ok(panel.includes('<td class="adp-col-num">12d</td>'));
   cleanup();
   const log = ["## Decision Log", "", "### [DL-104] t", "- **Confidence:** MEDIUM", "- **Created:** 2026-08-13", "- **Status:** OPEN", ""].join("\n");
   await boot({fetch: liveCorpus({root: "demo", files: ["20260101-A1-one/audit-log.md"]}, {"20260101-A1-one/audit-log.md": log}).fetch});
   await click(tabFor("ledgers"));
   const ledger = $("#scrLedgers").innerHTML;
-  assert.match(ledger, /<td class="mono nw"><a class="wbl"[^>]*data-item="DL-104">DL-104<\/a><\/td>/);
-  assert.ok(ledger.includes('<span class="cf-medium nw">MEDIUM</span>'));
-  assert.ok(ledger.includes('<span class="st-open nw">open</span>'));
-  assert.ok(ledger.includes('<td class="mono nw">12d</td>'));
+  assert.match(ledger, /<td class="adp-col-id"><a class="wbl"[^>]*>A1<\/a> <a class="wbl"[^>]*data-item="DL-104"[^>]*>DL-104<\/a><\/td>/);
+  assert.ok(ledger.includes('<td class="adp-col-conf" style="white-space: nowrap;">MEDIUM</td>'));
+  assert.ok(ledger.includes('<span class="adp-chip adp-chip--s adp-chip--open">OPEN</span>'));
+  assert.ok(ledger.includes('<td class="adp-col-num">12d</td>'));
 });
 
 // ---- what the app leaves out ----
@@ -3453,14 +3697,19 @@ const STANDALONE = JSON.parse(readFixture("standalone-exports.json")) as {form: 
 // so the inspector opens on the prompt pane.
 const PFILE = "20260618-GROW6687-email-validation/prompt.yaml";
 const stamped = (d: PL.PromptDocument) => { d.schema_version = "1.0"; return d; };
-const ntField = (nf: string) => $$("#scrNew .nt-in").find(el => el.getAttribute("data-nf") === nf) as HTMLInputElement;
-const ntOp = (name: string) => click($$("#scrNew .op").find(o => o.getAttribute("data-op") === name)!);
+const ntField = (nf: string) => $$("#scrNew [data-nf]").find(el => el.getAttribute("data-nf") === nf) as HTMLInputElement;
+// The preview drawer sits outside the screen, so an op button is found page-wide.
+const ntOp = (name: string) => click($$("[data-op]").find(o => o.getAttribute("data-op") === name)!);
 const ntType = async (el: Element, value: string) => { fireEvent.change(el, {target: {value}}); await settle(1); };
 const ntSet = (nf: string, value: string) => ntType(ntField(nf), value);
 const ntOps = () => $("#ntOps").textContent!;
 const ntSide = () => $("#ntSide");
-const ntChecks = () => $$("#ntSide code").map(c => c.textContent!);
-const ntAdd = (list: string) => click($$(".nt-add").find(b => b.getAttribute("data-nadd") === list)!);
+// The checklist's directory line, less its lead words.
+const ntDir = () => $("#ntDir").textContent!.replace(/^Saves to /, "");
+// Every unmet check in the validator's order, from both columns of the checklist.
+const ntChecks = () => $$("#checklist [data-issue]").sort((a, b) => Number(a.getAttribute("data-at")) - Number(b.getAttribute("data-at")))
+  .map(li => li.getAttribute("data-issue")!);
+const ntAdd = (list: string) => click($$("[data-nadd]").find(b => b.getAttribute("data-nadd") === list)!);
 const ntChip = (a: string) => $$("#scrNew input").find(i => i.getAttribute("data-nart") === a) as HTMLInputElement;
 const ntSwitch = (k: string) => $$("#scrNew input").find(i => i.getAttribute("data-nf") === "protocol." + k) as HTMLInputElement;
 const ticked = () => $$("#scrNew input").filter(i => (i as HTMLInputElement).checked && i.getAttribute("data-nart")).map(i => i.getAttribute("data-nart"));
@@ -3495,7 +3744,8 @@ async function bootPrompt(text = GOLDEN, opts: BootOpts = {}){
   return {...b, live};
 }
 type PromptBoot = Awaited<ReturnType<typeof bootPrompt>>;
-async function startFrom(ctx: PromptBoot, text?: string, answer: "replace" | "keep" | null = "replace"){
+let startOps = "";
+async function startFrom(ctx: PromptBoot, text?: string, answer: "replace" | "keep" | null = "replace", keepIdentity = true){
   if (text != null){
     ctx.live.texts[PFILE] = text;
     await act(async () => { ctx.feed.onmessage!(); });
@@ -3505,16 +3755,78 @@ async function startFrom(ctx: PromptBoot, text?: string, answer: "replace" | "ke
   await click(op("data-op", "startfrom"));
   if (answer === "replace" && document.getElementById("ntReplace")) await click($("#ntReplace"));
   if (answer === "keep" && document.getElementById("ntKeep")) await click($("#ntKeep"));
+  /* A start blanks the ID and takes today's date, which the test "start
+     from this prompt loads the ticket's prompt.yaml into a new draft equal
+     to its parsed fields, less the ID and the date" pins. The fidelity
+     tests check every other field against the source, so we type the
+     source's ID and date back through the form. */
+  // The report as the start left it. Typing the ID back is an edit, and an
+  // edit takes a clean import's report away with the banner.
+  startOps = isOn("scrNew") ? ntOps() : "";
+  if (!keepIdentity || answer === "keep" || document.getElementById("ntReplace") || !isOn("scrNew")) return;
+  let src: unknown = null;
+  try { src = PL.parseYAML(ctx.live.texts[PFILE] ?? GOLDEN, []); } catch { src = null; }
+  if (!src || typeof src !== "object") return;
+  const task = (src as {task?: unknown}).task;
+  const {id, date} = (task && typeof task === "object" ? task : {}) as {id?: unknown; date?: unknown};
+  await ntSet("task.id", id == null ? "" : String(id));
+  await ntSet("task.date", date == null ? "" : String(date));
+  // The draft saves on a pause, so we flush it the way a closing tab does.
+  fireEvent(window, new Event("pagehide"));
 }
 
 // R8, the write half. The vanilla ops row held four controls that loaded a
 // prompt from outside .adp, and the app has none of them.
 const REMOVED_NT_OPS = {text: ["↑ open yaml", "⌨ paste", "load example", "drag & drop .yaml anywhere"], attrs: ["title=open a prompt.yaml"]};
+/* New task follows its boards, and its baseline holds chrome
+   only, since a blank form shows no audit text. So the comparison walks the
+   baseline's runs in order through this table. Each run maps to the words
+   the new screen shows for it, or to null where the run left with a named
+   reason, and every mapped run must show on the new screen. A run the table
+   does not expect fails the test, so nothing leaves unnamed.
+   - Labels and headings take sentence case, and the eyebrows read in
+     capitals by their style, not their text.
+   - The side card's badge, its "— required" rows, and its heading become
+     the bar's count and the checklist's Required column, which names each
+     check in plain words.
+   - The fold hint "id + statement + how to verify" leaves with the folds,
+     and the requirements' column heads show once a row exists. */
+const NT_RUNS: [string, string | null][] = [["new task", "New task"], ["clear", "Discard draft"], ["task", "Task"], ["id", "ID"],
+  ["title", "Title"], ["author", "Author"], ["date", "Date"], ["slug · directory name only, not in the yaml", "Slug"], ["preamble", "Preamble"],
+  ["prompt", "Prompt"], ["role", "Role"], ["lens", "Lens"], ["priorities · what wins when goals conflict", "Priorities"], ["+ add", "+ Add priority"],
+  ["context", "Context"], ["background", "Background"], ["out of scope · named exclusions", "Out of scope"], ["+ add", "+ Add"],
+  ["must not · hard prohibitions", "Must not"], ["+ add", "+ Add"], ["references · path, lines, note", "References"], ["+ add reference", "+ Add reference"],
+  ["links", "Links"], ["+ add", "+ Add link"], ["lessons learned", "Lessons learned"], ["+ add lesson", "+ Add lesson"], ["requirements", "Requirements"],
+  ["id + statement + how to verify", null], ["+ add requirement", "+ Add requirement"], ["output", "Output"], ["destination", "Destination"],
+  ["format", "Format"], ["choose…", "Choose…"], ...PL.FORMATS.map(f => [f, f] as [string, string]), ["structure", "Structure"],
+  ["protocol", "Protocol"], ["apply protocol", "Apply protocol"], ["stake recommendation", "Stake a recommendation"],
+  ["log assumptions", "Log assumptions"], ["flag low confidence", "Flag low confidence"], ["artifacts · which to produce", "Artifacts to produce"],
+  ["problem_statement", "Problem statement"], ["knowledge_gap", "Knowledge gap"], ["recommendation_brief", "Recommendation brief"],
+  ["premortem", "Pre-mortem"], ["decision_log", "Decision log"], ["test_adversary", "Test adversary"], ["pr_summary", "PR summary"],
+  ["deployment_risk", "Deployment risk"], ["obligation_tickets", "Obligation tickets"],
+  ["defers · phases this task defers, with a reason each", "+ Defer a phase, with a reason"], ["+ add deferral", null], ["export", null],
+  ["⚠ 7 protocol checks unmet", "7 to go"], ["task.id", "Task ID"], ["— required", null], ["task.title", "Title"], ["— required", null],
+  ["task.author", "Author"], ["— required", null], ["prompt", "Prompt"], ["— required", null], ["output.format", "Output format"], ["— required", null],
+  ["output.destination", "Output destination"], ["— required", null], ["requirements", "At least one requirement"], ["— required", null]];
 test("the app's new task screen shows what the vanilla page showed, less the four load controls", async () => {
   await baselineBoot();
   await click($("#newTaskBtn"));
-  const want = BASELINE["new task"];
-  assert.deepEqual(snapshot(document), {...restyled(want), main: withoutOps(want.main!, REMOVED_NT_OPS)});
+  const want = BASELINE["new task"], got = snapshot(document);
+  assert.deepEqual({...got, main: null}, {...restyled(want), main: null});
+  const old = withoutOps(want.main!, REMOVED_NT_OPS).text;
+  const text = got.main!.text;
+  const tail = [old.length - 5, old.length];
+  assert.deepEqual(old.slice(0, tail[0]), NT_RUNS.map(([o]) => o), "the baseline's runs are not the vanilla form's");
+  for (const [o, n] of NT_RUNS) if (n != null) assert.ok(text.includes(n), `"${o}" shows as "${n}"`);
+  // The last five runs: the directory line, the three export buttons, and the autosave line.
+  const [dir, copy, dl, view, auto] = old.slice(tail[0]);
+  assert.match(dir, /^\.adp\/\d{8}-<TASKID>-<slug>\/prompt\.yaml$/);
+  assert.equal($("#ntDir").textContent, "Saves to " + dir);
+  assert.deepEqual([copy, dl, view, auto], ["⧉ copy yaml", "↓ download", "view yaml", "draft autosaves locally · restored on return"]);
+  for (const n of ["Copy YAML", "Download", "Preview YAML", "for a new run. The draft saves as you type."]) assert.ok(text.includes(n), n);
+  // Every placeholder stays but the preamble's, which waits behind its add control.
+  const placeholders = withoutOps(want.main!, REMOVED_NT_OPS).attrs.filter(a => a.startsWith("placeholder=") && !a.includes("Instructions about how"));
+  for (const a of placeholders) assert.ok(got.main!.attrs.includes(a), a);
 });
 
 test("the new task screen carries the standalone's field set and boots with today's date", async () => {
@@ -3522,7 +3834,7 @@ test("the new task screen carries the standalone's field set and boots with toda
   assert.equal(isOn("scrNew"), true);
   assert.equal($("#newTaskBtn").getAttribute("aria-pressed"), "true");
   await startFrom(ctx);
-  const nfs = $$("#scrNew .nt-in").map(el => el.getAttribute("data-nf")).filter(Boolean) as string[];
+  const nfs = $$("#scrNew [data-nf]").map(el => el.getAttribute("data-nf")).filter(Boolean) as string[];
   for (const k of ["task.id", "task.title", "task.author", "task.date", "preamble", "role.lens",
     "role.priorities.0", "prompt", "constraints.out_of_scope.0", "constraints.must_not.0",
     "context.background", "context.references.0.path", "context.references.0.lines",
@@ -3542,27 +3854,54 @@ test("the new task screen carries the standalone's field set and boots with toda
   await click($("#newTaskBtn"));
   assert.equal(ntField("task.date").value, today());
   assert.equal(ntField("task.id").value, "");
-  assert.match(ntSide().textContent!, /7 protocol checks unmet/);
+  assert.match(ntSide().textContent!, /7 to go/);
   assert.equal(ntChecks()[0], "task.id");
-  assert.match(ntSide().textContent!, /— required/);
+  assert.match($("#checklist").textContent!, /Required · 7/);
   assert.match(last(hashes), /^#v=new%20task/);
 });
 
 // The ticket's prompt.yaml becomes the draft, field for field.
-test("start from this prompt loads the ticket's prompt.yaml into a new draft equal to its parsed fields", async () => {
+// A new task needs its own ID and starts today, so the copy leaves the
+// ID and the slug blank and takes today's date. Every other field is the
+// source's, and the banner links the ticket the prompt came from.
+test("start from this prompt loads the ticket's prompt.yaml into a new draft equal to its parsed fields, less the ID and the date", async () => {
   const ctx = await bootPrompt();
   assert.equal(isOn("scrInspector"), true);
-  await startFrom(ctx, undefined, null);
+  await startFrom(ctx, undefined, null, false);
   assert.equal(isOn("scrNew"), true);
   const want = stamped(PL.normalize(PL.parseYAML(GOLDEN)));
+  want.task.id = "";
+  want.task.date = today();
   assert.deepEqual(draft().doc, want);
   assert.equal(draft().slug, "");
   assert.match(ntOps(), new RegExp(`imported ${PFILE} — all recognized fields\\.`));
-  assert.equal(ntField("task.id").value, "GROW-6687-email-validation");
+  assert.match(ntOps(), /Started from GROW6687’s prompt\. Everything but the ID and slug was copied, and the date is today’s\./);
+  assert.equal($("#ntOps a").getAttribute("href"), "#t=GROW6687");
+  assert.equal(ntField("task.id").value, "");
+  assert.equal(ntField("task.date").value, today());
   assert.equal(ntField("protocol.defers.1.reason").value, "Follow-up obligations ride the GROW-6688 cleanup ticket");
-  assert.equal(await preview(), GOLDEN);
   assert.equal(await preview(), PL.buildYaml(want));
-  assert.match(ntSide().textContent!, /valid · schema 1\.0/);
+  assert.deepEqual(ntChecks(), ["task.id"]);
+  // Start blank drops the copy at once, and the banner goes with it.
+  await ntOp("ntblank");
+  assert.equal(ntField("task.title").value, "");
+  assert.ok(!/Started from/.test(ntOps()));
+  assert.equal(localStorage.getItem("adp-mc-draft"), null);
+  // Once the reader edits the started copy, Start blank leaves with the
+  // banner, so one click can never discard typed work. Discard draft, with
+  // its second click, stays the way to drop it.
+  await startFrom(ctx, undefined, null, false);
+  await ntSet("task.title", "my own title");
+  assert.equal($$('[data-op="ntblank"]').length, 0);
+  assert.ok(!/Started from/.test(ntOps()));
+  // The clean import's quiet line leaves with the banner, and never grows into a Notice.
+  assert.ok(!/all recognized fields/.test(ntOps()));
+  fireEvent(window, new Event("pagehide"));
+  assert.equal(draft().doc.task.title, "my own title");
+  // Typing the source's ID and date back gives the source's bytes.
+  await startFrom(ctx);
+  assert.equal(await preview(), GOLDEN);
+  assert.match(ntSide().textContent!, /Valid · schema 1\.0/);
 });
 
 test("the start action sits on the prompt pane alone, and an unreadable prompt has none", async () => {
@@ -3603,15 +3942,15 @@ test("copy, download, and the directory line carry the export bytes and the conv
   await boot();
   await click($("#newTaskBtn"));
   const day = today().replace(/-/g, "");
-  assert.equal($("#ntDir").textContent, `.adp/${day}-<TASKID>-<slug>/prompt.yaml`);
+  assert.equal(ntDir(), `.adp/${day}-<TASKID>-<slug>/prompt.yaml`);
   await ntSet("task.title", "Shared shell chrome, extracted!");
   await ntSet("task.id", "AV-016");
   assert.equal(($("#ntSlug") as HTMLInputElement).value, "");
-  assert.equal($("#ntDir").textContent, `.adp/${day}-AV016-shared-shell-chrome-extracted/prompt.yaml`);
+  assert.equal(ntDir(), `.adp/${day}-AV016-shared-shell-chrome-extracted/prompt.yaml`);
   await ntType($("#ntSlug"), "custom");
-  assert.equal($("#ntDir").textContent, `.adp/${day}-AV016-custom/prompt.yaml`);
+  assert.equal(ntDir(), `.adp/${day}-AV016-custom/prompt.yaml`);
   await ntType($("#ntSlug"), "");
-  assert.equal($("#ntDir").textContent, `.adp/${day}-AV016-shared-shell-chrome-extracted/prompt.yaml`);
+  assert.equal(ntDir(), `.adp/${day}-AV016-shared-shell-chrome-extracted/prompt.yaml`);
   // The slug never reaches the yaml.
   assert.ok(!/slug/.test(await preview()));
   // Copy writes the preview's bytes and reports, then rests.
@@ -3621,7 +3960,7 @@ test("copy, download, and the directory line carry the export bytes and the conv
   assert.equal(got.at(-1), await preview());
   assert.equal(op("data-op", "ntcopy").textContent, "copied");
   await advance(1200);
-  assert.equal(op("data-op", "ntcopy").textContent, "⧉ copy yaml");
+  assert.equal(op("data-op", "ntcopy").textContent, "Copy YAML");
   // Download hands the export bytes to an anchor named for the task id.
   const blobs: Blob[] = [], clicked: string[] = [];
   URL.createObjectURL = (b: Blob) => { blobs.push(b); return "blob:nt"; };
@@ -3639,8 +3978,10 @@ test("a denied clipboard write says so and opens the yaml it sends the reader to
   await click($("#newTaskBtn"));
   await click(op("data-op", "ntcopy"));
   assert.match(op("data-op", "ntcopy").textContent!, /copy failed — select the text/);
+  // The preview opens as the PreviewYaml board's modal drawer.
   assert.ok(document.getElementById("ntYamlPre"));
-  assert.ok(scrolled.includes($("#ntYaml")));
+  assert.equal($("#ntYaml").getAttribute("role"), "dialog");
+  assert.deepEqual(scrolled, []);
   assert.deepEqual(got, []);
 });
 
@@ -3656,7 +3997,7 @@ test("rows add and remove by path, an emptied defers editor drops the key, and c
   await ntSet("protocol.defers.0.phase", "analysis");
   await ntSet("protocol.defers.0.reason", "manual pass");
   assert.match(await preview(), /defers:\n    - phase: "analysis"\n      reason: "manual pass"/);
-  await click($$(".nt-del").find(b => b.getAttribute("data-ndel") === "protocol.defers.0")!);
+  await click($$("[data-ndel]").find(b => b.getAttribute("data-ndel") === "protocol.defers.0")!);
   assert.ok(!/defers/.test(await preview()));
   assert.match(await preview(), /- id: "R1"\n    statement: "it works"\n    verify: "run it"/);
   // Artifacts tick in any order and export in the lib's.
@@ -3689,14 +4030,14 @@ test("a draft saves on a pause, flushes on pagehide, restores on the next boot, 
   await click($("#newTaskBtn"));
   assert.equal(ntField("task.id").value, "AV-016");
   assert.equal(($("#ntSlug") as HTMLInputElement).value, "own-slug");
-  assert.equal($("#ntDir").textContent, `.adp/${today().replace(/-/g, "")}-AV016-own-slug/prompt.yaml`);
+  assert.equal(ntDir(), `.adp/${today().replace(/-/g, "")}-AV016-own-slug/prompt.yaml`);
   // One click arms, the timer disarms, and two clicks wipe and drop the key.
   ntTimers();
   await ntOp("ntclear");
-  assert.match(ntOps(), /confirm clear/);
+  assert.equal(op("data-op", "ntclear").textContent, "Confirm discard");
   assert.equal(ntField("task.id").value, "AV-016");
   await advance(1200);
-  assert.ok(!/confirm clear/.test(ntOps()));
+  assert.equal(op("data-op", "ntclear").textContent, "Discard draft");
   await ntOp("ntclear");
   await ntOp("ntclear");
   assert.equal(ntField("task.id").value, "");
@@ -3731,9 +4072,12 @@ test("a blocked storage and an unreadable draft both boot the blank form", async
 test("the builder renders the full form with no corpus", async () => {
   await boot({hash: "#v=new%20task"});
   assert.equal(isOn("scrNew"), true);
-  // The blank form's twelve scalar fields. The lists start empty.
-  assert.equal($$("#scrNew .nt-in").length, 12);
-  assert.match(ntSide().textContent!, /7 protocol checks unmet/);
+  // The blank form's eleven scalar fields. The preamble waits behind its add
+  // control, and the lists start empty.
+  assert.equal($$("#scrNew input[type=text], #scrNew textarea, #scrNew select").length, 11);
+  await ntOp("ntpreamble");
+  assert.equal($$("#scrNew input[type=text], #scrNew textarea, #scrNew select").length, 12);
+  assert.match(ntSide().textContent!, /7 to go/);
   assert.equal(ntField("task.date").value, today());
 });
 
@@ -3762,13 +4106,13 @@ test("a switch or chip toggles in place and keeps the keyboard", async () => {
   await click(sw);
   same(document.activeElement, sw, "the switch lost focus");
   same(ntSwitch("apply"), sw, "the switch was rebuilt");
-  assert.equal(sw.parentElement!.classList.contains("is-on"), false);
+  assert.equal(sw.checked, false);
   assert.match(await preview(), /apply: false/);
   const chip = ntChip("premortem");
   chip.focus();
   await click(chip);
   same(document.activeElement, chip, "the chip lost focus");
-  assert.equal(chip.parentElement!.classList.contains("is-on"), true);
+  assert.equal(chip.checked, true);
   assert.match(await preview(), /- premortem\n/);
 });
 
@@ -3776,9 +4120,9 @@ test("a select drops its placeholder color on a pick and takes it back on a clea
   await boot();
   await click($("#newTaskBtn"));
   await ntSet("output.format", "patch");
-  assert.equal(ntField("output.format").classList.contains("is-unset"), false);
+  assert.equal(ntField("output.format").style.color, "");
   await ntSet("output.format", "");
-  assert.equal(ntField("output.format").classList.contains("is-unset"), true);
+  assert.equal(ntField("output.format").style.color, "var(--faint)");
 });
 
 test("an imported format or phase the form cannot show is cleared and named, so the bytes match the form", async () => {
@@ -3828,7 +4172,7 @@ test("the pending question stands alone", async () => {
   assert.match(ntOps(), /with 1 issue: foo/);
   await startFrom(ctx, GOLDEN, null);
   assert.match(ntOps(), /replace it with/);
-  assert.equal($$("#ntOps .nt-report").length, 1);
+  assert.equal($$("#ntOps [role=status]").length, 1);
   await click($("#ntKeep"));
   assert.equal(ntField("task.id").value, "A-1");
 });
@@ -3848,31 +4192,35 @@ test("a restored draft of a blank form takes a prompt at once", async () => {
   assert.equal(ntField("task.id").value, "GROW-6687-email-validation");
 });
 
-test("the yaml panel sits in the form column under the sticky card and scrolls into view on show", async () => {
-  const scrolled = recordScrolls();
+// Preview YAML is the PreviewYaml board's modal drawer. The page behind
+// it goes inert, and Escape or × closes it.
+test("Preview YAML opens a modal drawer over an inert page, and Escape or × closes it", async () => {
   await boot();
   await click($("#newTaskBtn"));
   await ntOp("ntyaml");
-  assert.ok($("#ntYamlPre").closest(".nt-form"));
-  assert.equal(scrolled.filter(e => e.id === "ntYaml").length, 1);
+  assert.equal($("#ntYaml").getAttribute("aria-modal"), "true");
+  assert.ok(!$("#ntYamlPre").closest("#scrNew"));
+  assert.ok($(".main").hasAttribute("inert"));
+  assert.match($("#ntYaml").textContent!, /7 TO GOschema 1\.0 · 7 findings/);
+  await click($('[aria-label="Close preview"]'));
+  assert.equal(document.getElementById("ntYaml"), null);
+  assert.ok(!$(".main").hasAttribute("inert"));
   await ntOp("ntyaml");
-  assert.equal(document.getElementById("ntYamlPre"), null);
-  await ntOp("ntyaml");
-  assert.equal(scrolled.filter(e => e.id === "ntYaml").length, 2);
+  await key(document.activeElement!, "Escape");
+  assert.equal(document.getElementById("ntYaml"), null);
 });
 
 test("the output path prints once, in the export card, under its own heading", async () => {
   const ctx = await bootPrompt();
   await startFrom(ctx);
-  const dir = $("#ntDir").textContent!;
+  const dir = ntDir()!;
   assert.match(dir, /prompt\.yaml$/);
   assert.equal($("#scrNew").textContent!.split(dir).length - 1, 1);
-  assert.equal($("#scrNew").firstElementChild!.outerHTML, "<h2>new task</h2>");
-  // The card and the document block cannot share a heading, or the unmet
-  // list's output.format key reads as a line about the card.
-  assert.equal(ntSide().firstElementChild!.outerHTML, "<h2>export</h2>");
+  assert.equal($("#scrNew h1").textContent, "New task");
+  // The path prints in the export checklist, apart from the form's fields.
+  assert.ok($("#ntDir").closest('[aria-label="Export checklist"]'));
   await ntSet("task.id", "AV-099");
-  assert.match($("#ntDir").textContent!, /AV099/);
+  assert.match(ntDir()!, /AV099/);
 });
 
 test("a deferral item that is not a mapping is dropped and named on import, and a draft holding one boots the form", async () => {
@@ -4010,7 +4358,7 @@ test("a multiline value in a single-line field is flattened, named, and the byte
   assert.equal(ntField("task.title").value, "line one line two");
   const y = await preview();
   assert.match(y, /  title: "line one line two"\n/);
-  assert.match(ntSide().textContent!, /valid · schema 1\.0/);
+  assert.match(ntSide().textContent!, /Valid · schema 1\.0/);
   const skipped: string[] = [];
   assert.equal((PL.parseYAML(y, skipped) as {task: {title: string}}).task.title, "line one line two");
   assert.deepEqual(skipped, []);
@@ -4035,7 +4383,7 @@ test("a map or a list where a block's own field belongs is dropped and named", a
   assert.ok(!/\[object Object\]/.test(y));
   assert.ok(!/lens|destination|format:/.test(y));
   assert.match(y, /  apply: true\n/);
-  assert.match($("#ntDir").textContent!, /-<slug>\/prompt\.yaml$/);
+  assert.match(ntDir()!, /-<slug>\/prompt\.yaml$/);
 });
 
 test("the export image trims every value and drops a blank row from a list of plain values", async () => {
@@ -4076,7 +4424,7 @@ test("a draft nobody has typed into takes today's date, and one with content kee
   await boot({draft: JSON.stringify({doc: {task: {date: "2026-09-28"}}})});
   await click($("#newTaskBtn"));
   assert.equal(ntField("task.date").value, today());
-  assert.match($("#ntDir").textContent!, new RegExp("^\\.adp/" + today().replace(/-/g, "") + "-"));
+  assert.match(ntDir()!, new RegExp("^\\.adp/" + today().replace(/-/g, "") + "-"));
   reboot();
   await boot({draft: JSON.stringify({doc: {task: {id: "ZUP-1", date: "2026-09-28"}}})});
   await click($("#newTaskBtn"));
@@ -4114,10 +4462,10 @@ test("a number or a boolean in a field reads as its text, and a block scalar tak
     .replace("  background: |\n    Signup currently trusts the client to validate. Bad addresses reach the users table.", "  background: 5");
   const ctx = await bootPrompt(text);
   await startFrom(ctx);
-  assert.match(ntOps(), /— all recognized fields/);
+  assert.match(startOps, /— all recognized fields/);
   assert.equal(ntField("task.title").value, "true");
   assert.equal(ntField("context.background").value, "5");
-  assert.match(ntSide().textContent!, /valid · schema 1\.0/);
+  assert.match(ntSide().textContent!, /Valid · schema 1\.0/);
   const y = await preview();
   assert.match(y, /  title: "true"\n/);
   assert.match(y, /  background: \|\n    5\n/);
@@ -4175,7 +4523,7 @@ test("the badge numbers a requirement row the way the form does", async () => {
 // The checks a blank form fails, in the order the side card lists them.
 const BLANK_KEYS = ["task.id", "task.title", "task.author", "prompt",
   "output.format", "output.destination", "requirements"];
-const ntRows = (list: string) => $$(`#scrNew .nt-in[data-nf^="${list}."]`);
+const ntRows = (list: string) => $$(`#scrNew [data-nf^="${list}."]`);
 
 test("the blank form pins its exact issue keys, and one defers row adds its phase and reason", async () => {
   await boot();
@@ -4183,10 +4531,11 @@ test("the blank form pins its exact issue keys, and one defers row adds its phas
   assert.deepEqual(ntChecks(), BLANK_KEYS);
   await ntAdd("protocol.defers");
   assert.deepEqual(ntChecks(), BLANK_KEYS.concat(["protocol.defers[0].phase", "protocol.defers[0].reason"]));
-  // Each check row prints its key and the fixed word required.
-  const rows = $$("#ntSide .nt-checks li").map(li => li.innerHTML);
-  assert.equal(rows.length, 9);
-  for (const row of rows) assert.match(row, /^<code>[^<]+<\/code> — required$/);
+  // A blank form's checks are the Required column's, and a defers row's two
+  // checks go under Also fix with the validator's message.
+  assert.equal($("#checklist").textContent!.match(/Required · \d+/)![0], "Required · 7");
+  assert.deepEqual($$("#checklist li[data-issue]:not([data-req]) div:last-child").map(d => d.textContent),
+    ["pick one of " + PL.PHASES.join("|"), "required within item"]);
 });
 
 test("the phase select offers exactly the nine phases, and a phase with no reason adds one check", async () => {
@@ -4203,15 +4552,15 @@ test("the phase select offers exactly the nine phases, and a phase with no reaso
 test("the defers controls carry accessible names and button semantics", async () => {
   await boot();
   await click($("#newTaskBtn"));
-  const add = $$(".nt-add").find(b => b.getAttribute("data-nadd") === "protocol.defers")!;
+  const add = $$("[data-nadd]").find(b => b.getAttribute("data-nadd") === "protocol.defers")!;
   assert.equal(add.tagName, "BUTTON");
-  assert.equal(add.textContent, "+ add deferral");
+  assert.equal(add.textContent, "+ Defer a phase, with a reason");
   await ntAdd("protocol.defers");
-  assert.equal(ntField("protocol.defers.0.phase").getAttribute("aria-label"), "phase");
-  assert.equal(ntField("protocol.defers.0.reason").getAttribute("aria-label"), "Why this phase does not run");
-  const rm = $$(".nt-del").find(b => b.getAttribute("data-ndel") === "protocol.defers.0")!;
+  assert.equal(ntField("protocol.defers.0.phase").getAttribute("aria-label"), "Deferred phase 1");
+  assert.equal(ntField("protocol.defers.0.reason").getAttribute("aria-label"), "Deferred phase 1 reason");
+  const rm = $$("[data-ndel]").find(b => b.getAttribute("data-ndel") === "protocol.defers.0")!;
   assert.equal(rm.tagName, "BUTTON");
-  assert.equal(rm.getAttribute("aria-label"), "remove row");
+  assert.equal(rm.getAttribute("aria-label"), "Remove deferred phase 1");
 });
 
 test("defers rows ride the draft across a reload, and a draft with no defers restores none", async () => {
@@ -4268,7 +4617,7 @@ test("the golden prompt starts VALID with no checks", async () => {
   const ctx = await bootPrompt();
   await startFrom(ctx);
   assert.deepEqual(ntChecks(), []);
-  assert.match(ntSide().textContent!, /valid · schema 1\.0/);
+  assert.match(ntSide().textContent!, /Valid · schema 1\.0/);
 });
 
 test("a priorities row without a lens adds exactly the role.lens check", async () => {
@@ -4294,7 +4643,7 @@ test("an artifacts key with no value imports as the untouched chip row on both b
   const text = 'task:\n  id: "A-1"\nprotocol:\n  apply: true\n  artifacts:\n';
   const ctx = await bootPrompt(text);
   await startFrom(ctx);
-  assert.match(ntOps(), /— all recognized fields/);
+  assert.match(startOps, /— all recognized fields/);
   assert.equal(ntField("task.id").value, "A-1");
   assert.deepEqual(ticked(), PL.DEFAULT_ARTIFACTS);
   await sameOnBoth(text);
@@ -4322,15 +4671,15 @@ test("the slug input holds the slug a person typed, and the directory line holds
   await ntSet("task.title", "First title");
   await ntAdd("context.links");
   assert.equal(($("#ntSlug") as HTMLInputElement).value, "");
-  assert.match($("#ntDir").textContent!, /-first-title\/prompt\.yaml$/);
+  assert.match(ntDir()!, /-first-title\/prompt\.yaml$/);
   await ntSet("task.title", "Second title");
   assert.equal(($("#ntSlug") as HTMLInputElement).value, "");
-  assert.match($("#ntDir").textContent!, /-second-title\/prompt\.yaml$/);
+  assert.match(ntDir()!, /-second-title\/prompt\.yaml$/);
   // A typed slug owns the line, and clearing it hands the line back.
   await ntType($("#ntSlug"), "mine");
-  assert.match($("#ntDir").textContent!, /-mine\/prompt\.yaml$/);
+  assert.match(ntDir()!, /-mine\/prompt\.yaml$/);
   await ntType($("#ntSlug"), "");
-  assert.match($("#ntDir").textContent!, /-second-title\/prompt\.yaml$/);
+  assert.match(ntDir()!, /-second-title\/prompt\.yaml$/);
 });
 
 test("a blur on a text field leaves the export card's buttons in the document", async () => {
@@ -4353,9 +4702,9 @@ test("a typed slug reaches the directory line in the convention's kebab case", a
   await ntType($("#ntSlug"), "My Slug!");
   // The input keeps what the person typed, so the caret stays where it is.
   assert.equal(($("#ntSlug") as HTMLInputElement).value, "My Slug!");
-  assert.match($("#ntDir").textContent!, /-my-slug\/prompt\.yaml$/);
+  assert.match(ntDir()!, /-my-slug\/prompt\.yaml$/);
   await ntSet("task.id", "AV-016");
-  assert.equal(Bld.parseDirName($("#ntDir").textContent!.split("/")[1])!.slug, "my-slug");
+  assert.equal(Bld.parseDirName(ntDir()!.split("/")[1])!.slug, "my-slug");
 });
 
 test("a confirmed clear takes its disarm timer with it, and a re-armed clear holds its full window", async () => {
@@ -4365,12 +4714,12 @@ test("a confirmed clear takes its disarm timer with it, and a re-armed clear hol
   await ntOp("ntclear");
   await ntOp("ntclear");
   await ntOp("ntclear");
-  assert.match(ntOps(), /confirm clear/);
+  assert.equal(op("data-op", "ntclear").textContent, "Confirm discard");
   // The pending timer is the new arm's own, so it holds the window the
   // button promises instead of the leftover from the arm before it.
   assert.equal(vi.getTimerCount(), 1);
   await advance(1200);
-  assert.ok(!/confirm clear/.test(ntOps()));
+  assert.equal(op("data-op", "ntclear").textContent, "Discard draft");
 });
 
 test("a second copy inside the window takes the label timer with it", async () => {
@@ -4388,7 +4737,7 @@ test("a second copy inside the window takes the label timer with it", async () =
   await advance(600);
   assert.equal(op("data-op", "ntcopy").textContent, "copied");
   await advance(600);
-  assert.equal(op("data-op", "ntcopy").textContent, "⧉ copy yaml");
+  assert.equal(op("data-op", "ntcopy").textContent, "Copy YAML");
 });
 
 test("a confirmed clear takes a pending question with the form", async () => {
@@ -4437,30 +4786,6 @@ test("the live region speaks the verdict after an edit or a start that flips it,
   assert.equal(live().textContent, "Valid");
 });
 
-// Each form section folds by its heading, and the fold survives a tab
-// switch and leaves the section's values in place.
-test("a form section collapses and reopens by its heading", async () => {
-  const ctx = await bootPrompt();
-  await startFrom(ctx);
-  const head = (name: string) => $$(".nt-sechead").find(b => b.textContent === name)!;
-  assert.deepEqual($$(".nt-sechead").map(b => b.textContent),
-    ["task", "role", "context", "lessons learned", "requirements id + statement + how to verify", "output", "protocol"]);
-  const role = head("role");
-  assert.equal(role.getAttribute("aria-expanded"), "true");
-  const body = document.getElementById(role.getAttribute("aria-controls")!)!;
-  assert.equal(body.hidden, false);
-  await click(role);
-  assert.equal(role.getAttribute("aria-expanded"), "false");
-  assert.equal(body.hidden, true);
-  assert.equal(ntField("role.lens").value, "Staff engineer accountable for data integrity");
-  await tabTo("watchboard");
-  await click($("#newTaskBtn"));
-  assert.equal(head("role").getAttribute("aria-expanded"), "false");
-  await click(head("role"));
-  assert.equal(document.getElementById(head("role").getAttribute("aria-controls")!)!.hidden, false);
-  assert.match(await preview(), /lens: "Staff engineer accountable for data integrity"/);
-});
-
 // New task has no open, paste, or example control, and no drop hint. The
 // one way in for a written prompt is the start action on a ticket.
 test("new task offers no open, paste, or example control and no drop hint", async () => {
@@ -4472,21 +4797,20 @@ test("new task offers no open, paste, or example control and no drop hint", asyn
   assert.ok(!$("#scrNew").textContent!.includes("drag & drop"));
 });
 
-// A focus request and a yaml scroll each serve the click that made them. A
-// later return to the screen mounts it again and must replay neither.
-test("a return to New task replays neither the last row's focus nor the yaml scroll", async () => {
-  const scrolled = recordScrolls();
+// A focus request serves the click that made it. A later return to the
+// screen mounts it again and must not replay it.
+test("a return to New task replays neither the last row's focus nor the preview", async () => {
   await boot();
   await click($("#newTaskBtn"));
   await ntAdd("requirements");
   same(document.activeElement, ntField("requirements.0.id"), "the new row did not take focus");
   ntField("task.title").focus();
   await ntOp("ntyaml");
-  assert.equal(scrolled.length, 1);
+  await click($('[aria-label="Close preview"]'));
   await tabTo("watchboard");
   await click($("#newTaskBtn"));
   assert.ok(document.activeElement !== ntField("requirements.0.id"), "the return replayed the row's focus");
-  assert.equal(scrolled.length, 1, "the return replayed the yaml scroll");
+  assert.equal(document.getElementById("ntYaml"), null, "the return reopened the preview");
   // The next request still acts once.
   await ntAdd("requirements");
   same(document.activeElement, ntField("requirements.1.id"), "a new request after the return did not take focus");
@@ -4555,11 +4879,11 @@ test("no screen offers a file input, a paste field, or a drop target", async () 
    from adp-bundle.css, or from adp-shell.css on a screen not yet moved onto
    the design system. Rendered documents sit in .md, where the theme's
    document styles apply. Two theme classes are deliberate: .md itself, and
-   .sr-live, which hides New task's spoken verdict. Five classes carry no
+   .sr-live, which hides New task's spoken verdict. The hook classes carry no
    style at all, because the handlers and the tests select by them. The
    shell's grid sits in its own style attribute. */
 const THEME_CLASSES = new Set(["md", "sr-live"]);
-const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow", "fsec", "fsum"]);
+const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow", "dlrow", "wbl", "wl", "fsec", "fsum"]);
 test("the app's screens use only adp-bundle.css and adp-shell.css classes outside rendered documents", async () => {
   const shell = new Set<string>();
   for (const sheet of ["adp-bundle.css", "adp-shell.css"]){

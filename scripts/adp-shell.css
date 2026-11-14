@@ -32,25 +32,13 @@ html{scrollbar-gutter:auto}
 .shellmask.is-on{display:grid}
 .shellmask .maskmsg{font-family:var(--mono);font-size:18px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
 
-
 /* ---- inspector chrome ---- */
 
 .screen h2{font-family:var(--mono);font-size:13px;letter-spacing:.1em;text-transform:uppercase;
   margin:0 0 12px}
-.isub{color:var(--faint);font-size:10.5px;letter-spacing:.06em;margin-left:8px}
-.hsub{float:right;font-weight:400;text-transform:none;letter-spacing:0}
 .tickhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0 10px}
 .tbig{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent)}
 
-.mops{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 10px}
-.mgap{flex:1}
-.op{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
-  border:1px solid var(--line);background:var(--inset);color:var(--dim);padding:5px 10px;cursor:pointer}
-.op:hover{color:var(--ink);border-color:var(--line-bright)}
-.op[disabled]{opacity:.4;cursor:default}
-.op.op-acc{border-color:var(--accent);color:var(--accent);background:none}
-.op.op-acc:hover{background:var(--accent);color:var(--accent-ink)}
-.op.tgl.is-on{color:var(--accent-ink);background:var(--accent);border-color:var(--accent)}
 .drophint{margin-left:auto;border-style:dashed}
 
 .drawer{border:1px solid var(--line);background:var(--panel);padding:10px;margin:0 0 10px}
@@ -77,7 +65,6 @@ html{scrollbar-gutter:auto}
 .doc{border:1px solid var(--line);background:var(--panel);padding:14px 18px;margin:0 0 14px}
 .doc h4{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;
   margin:0 0 10px;color:var(--ink)}
-.dnotice{font-size:12px;color:var(--dim);font-style:italic;margin:0 0 8px}
 /* The reviews screen's head sits above the rendered round. A round file name
    is one long token, so a link breaks anywhere rather than widen the stage. */
 .revhead{margin:0 0 14px}
@@ -116,157 +103,11 @@ html{scrollbar-gutter:auto}
 .pcard-none{font-family:var(--mono);font-size:10.5px;color:var(--faint);font-style:italic}
 @media(max-width:560px){.pcard-grid{grid-template-columns:minmax(0,1fr)}.pcard-k{padding-bottom:2px}.pcard-v{padding-top:2px}}
 
-/* The heading's pill row floats right. flow-root keeps the float inside the
-   panel's border, and everything after the heading clears it, so neither a
-   table nor an empty-state notice runs down beside a wide row. */
-.ipanel{border:1px solid var(--line);background:var(--panel);padding:12px 14px;margin:0 0 14px;display:flow-root}
-.ipanel h2 ~ *{clear:both}
-.ipanel h2{margin:0 0 10px}
-.tblwrap{overflow-x:auto}
-.ipanel table{width:100%;border-collapse:collapse;font-size:11.5px}
-.ipanel th{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--faint);text-align:left;padding:4px 10px 6px 6px;border-bottom:1px solid var(--line);
-  cursor:pointer;white-space:nowrap}
-.ipanel th:hover{color:var(--dim)}
-.ipanel td{padding:6px 10px 6px 6px;border-bottom:1px solid var(--line);vertical-align:top}
-.ipanel tr:last-child td{border-bottom:none}
-.arr{color:var(--accent);margin-left:3px}
 /* The typeface and the wrap rule are separate classes, so a cell picks each
    on its own. An id, a date, or a status word holds on one line with .nw,
    and prose in the same font, such as a watch's window, wraps. */
 .mono{font-family:var(--mono)}
 .nw{white-space:nowrap}
-.dlrow{cursor:pointer}
-.dlrow:hover td{background:var(--inset)}
-/* The row is the unit of highlight. The background may repeat per cell, since
-   abutting cells read as one band, but the accent bar goes on the first cell
-   only — on every cell it reads as a border around each one. */
-.is-hl td{background:var(--inset)}
-.is-hl td:first-child{box-shadow:inset 2px 0 0 var(--accent)}
-/* .wbl is the watchboard's link class. It looks like .wl but routes across
-   tickets, so it stays a separate name for the delegated handler's sake. */
-.wl,.wbl{font-family:var(--mono);color:var(--accent);cursor:pointer;white-space:nowrap}
-.pc{font-family:var(--mono);font-size:10px;border:1px solid var(--line);color:var(--dim);
-  padding:1px 5px;margin-right:3px;cursor:pointer;white-space:nowrap}
-.pc:hover{color:var(--accent);border-color:var(--accent)}
-.fpill{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
-  border:1px solid var(--line);background:none;color:var(--dim);padding:2px 8px;cursor:pointer}
-.fpill.is-on{color:var(--accent-ink);background:var(--accent);border-color:var(--accent)}
-.pillgrp{white-space:nowrap;margin-left:10px}
-.pilllab{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-right:2px}
-
-.cf-high{color:var(--ok)}
-.cf-medium{color:var(--warn)}
-.cf-low{color:var(--bad)}
-.cf-other{color:var(--unk)}
-.st-open{color:var(--warn)}
-.st-validated{color:var(--ok)}
-.st-invalidated{color:var(--bad)}
-.st-unknown{color:var(--unk)}
-.st-other{color:var(--unk)}
-.st-overdue{color:var(--bad)}
-.st-soon{color:var(--warn)}
-.st-upcoming{color:var(--ok)}
-.st-unanchored{color:var(--warn)}
-/* Settled debt reads quiet, whatever its outcome was. */
-.st-closed{color:var(--faint)}
-
-/* ---- calibration ---- */
-
-.caltiles{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin:0 0 14px}
-@media(max-width:900px){.caltiles{grid-template-columns:repeat(2,1fr)}}
-.caltile{border:1px solid var(--line);background:var(--panel);padding:12px 14px}
-.caltile-n{font-family:var(--mono);font-size:26px;font-weight:700}
-.caltile-l{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-top:2px}
-.calrow{display:grid;grid-template-columns:110px 1fr 210px;gap:12px;align-items:center;margin:0 0 10px}
-.callab{font-family:var(--mono);font-size:11px}
-/* The bar's width is its bucket's share of the largest bucket; the segments
-   split it by flex. The floor keeps a one-entry segment visible, and the bar
-   clips instead of growing when several floors crowd a short bar. */
-.calbar{display:flex;height:16px;gap:2px;overflow:hidden}
-/* A segment is a button, so the browser's button chrome is cleared and only
-   the kind's fill paints it. */
-.calseg{min-width:8px;border:0;padding:0;margin:0;cursor:pointer}
-.calseg:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.calseg-validated{background:var(--ok)}
-.calseg-invalidated{background:var(--bad)}
-.calseg-open{background:var(--warn)}
-.calseg-unknown{background:var(--unk)}
-.calseg-other{background:var(--line-bright)}
-.calcnt{font-family:var(--mono);font-size:10.5px;color:var(--dim);text-align:right;line-height:1.6}
-.calshare{color:var(--faint)}
-.calnw{white-space:nowrap}
-.callegend{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:10px;letter-spacing:.08em;
-  text-transform:uppercase;color:var(--dim);margin-top:10px}
-.callegend i{display:inline-block;width:9px;height:9px;margin-right:5px}
-
 
 /* ---- new task ---- */
 
-/* The builder lifts the screen cap and shares the stage with the card two
-   to one, so a wide stage widens the inputs instead of leaving a margin.
-   The card sticks over the whole grid. The rail takes 240px of the
-   viewport, so the grid folds at 1290px, where the stage is 1050px wide.
-   Under the fold the card heads the column and stops sticking, since a
-   sticky element below several screens of form never engages. */
-.screen.nt-wide{max-width:1400px}
-.nt-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:16px;align-items:start}
-.nt-side{position:sticky;top:0}
-@media(max-width:1290px){.nt-grid{grid-template-columns:1fr}.nt-side{order:-1;position:static}}
-/* Element rules stay inside the form, so the inspector's paste drawer and
-   the section select keep their own look. */
-.nt-form .nt-lbl,.nt-sub{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--faint);margin:10px 0 4px}
-.nt-form .nt-in{width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);
-  font-family:var(--mono);font-size:12px;padding:7px 9px;outline:none;box-sizing:border-box}
-.nt-form .nt-in:focus{border-color:var(--accent)}
-.nt-form textarea.nt-in{resize:vertical;min-height:90px;line-height:1.55}
-.nt-form textarea.nt-short{min-height:60px}
-.nt-form select.is-unset{color:var(--faint)}
-.nt-row{display:grid;gap:8px;margin-bottom:8px;align-items:start}
-.nt-row4{grid-template-columns:minmax(0,1fr) minmax(0,2fr) minmax(0,1fr) 120px}
-.nt-row1{grid-template-columns:minmax(0,1fr) 24px}
-.nt-row2{grid-template-columns:1fr 1fr 24px}
-.nt-row3{grid-template-columns:1fr 90px 1fr 24px}
-.nt-rowr{grid-template-columns:70px 1.2fr 1fr 24px}
-.nt-rowo{grid-template-columns:minmax(0,1fr) 140px}
-.nt-rowd{grid-template-columns:150px minmax(0,1fr) 24px}
-/* Each row shape folds on its own. The task row has no delete cell and
-   keeps two columns. The three-input rows stack, with the delete last. */
-@media(max-width:1000px){
-  .nt-row4{grid-template-columns:1fr 1fr}
-  .nt-row3,.nt-rowr{grid-template-columns:1fr}
-  .nt-row3 .nt-del,.nt-rowr .nt-del{justify-self:end}
-}
-.nt-del{font-family:var(--mono);color:var(--faint);border:1px solid var(--line);background:none;cursor:pointer;height:32px}
-.nt-del:hover{color:var(--bad);border-color:var(--bad)}
-.nt-add{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
-  border:1px solid var(--line);background:none;color:var(--dim);padding:5px 11px;cursor:pointer;margin-top:2px}
-.nt-add:hover{color:var(--ink);border-color:var(--line-bright)}
-/* A form section's heading is its collapse button. The caret is drawn here,
-   so the heading's text stays the word the section is named by. */
-.nt-sechead{font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left}
-.nt-sechead::before{content:"▾";display:inline-block;width:1.2em;color:var(--faint)}
-.nt-sechead[aria-expanded="false"]::before{content:"▸"}
-.nt-sechead:hover::before{color:var(--accent)}
-.nt-sechead:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.nt-sec h2:has(> .nt-sechead[aria-expanded="false"]){margin:0}
-.nt-togs,.nt-chips{display:flex;gap:2px;flex-wrap:wrap;margin-top:4px}
-.nt-tog,.nt-chip{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
-  border:1px solid var(--line);background:var(--inset);color:var(--faint);padding:3px 9px;cursor:pointer}
-.nt-tog input,.nt-chip input{margin:0 4px 0 0;vertical-align:-1px}
-.nt-tog.is-on,.nt-chip.is-on{color:var(--ok);border-color:var(--ok)}
-.nt-vchit{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ok);
-  border:1px solid var(--ok);padding:2px 8px;display:inline-block;margin-bottom:10px}
-.nt-vchit.is-bad{color:var(--warn);border-color:var(--warn)}
-.nt-checks{font-family:var(--mono);font-size:11px;color:var(--warn);line-height:1.9;margin:0 0 8px;padding:0;list-style:none}
-.nt-checks code{font-family:var(--mono)}
-.nt-dir{font-family:var(--mono);font-size:11px;color:var(--ok);margin-top:8px;overflow-wrap:anywhere}
-.nt-sidebtns{display:flex;flex-direction:column;gap:8px;margin-top:10px}
-.nt-sidebtns .op{width:100%;text-align:left}
-.nt-autosave{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-top:10px}
-/* The armed clear reads as a warning until the timer disarms it. */
-.op.is-armed{color:var(--warn);border-color:var(--warn)}
-.nt-report{font-family:var(--mono);font-size:11px;margin:0 0 10px}
-.nt-report.is-ok{color:var(--ok)}
-.nt-report.is-warn{color:var(--warn)}

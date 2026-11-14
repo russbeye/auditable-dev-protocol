@@ -12,7 +12,7 @@ import type {Ticket} from "../lib/adp-index-lib.ts";
 import type {DLEntry, EscapedHtml, Section} from "../lib/adp-parser-lib.ts";
 import type {YamlMap, YamlValue} from "../lib/adp-prompt-lib.ts";
 import type {Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPanelRow} from "../lib/adp-shell-lib.ts";
-import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
+import {DecisionsPanel, Filters, WatchesPanel, liveFilter, type PanelActions} from "./panels.tsx";
 import {PhaseStrip, gapNote, stripModel, type StripReviews} from "./PhaseStrip.tsx";
 
 type HtmlProps = {html: EscapedHtml; as?: "div" | "span" | "td" | "dd"; className?: string; style?: CSSProperties;
@@ -241,9 +241,17 @@ function PromptBody({pr}: {pr: PromptView}){
 // otherwise. The pane and the full log both read this rule.
 // Mission control draws the design system's decision card.
 const DS = {ds: true};
-function SectionBody({sec, body}: {sec: Section | null; body: string}){
-  return sec ? <Html as="div" className="md adp-prose" style={FILL} onClick={foldCard}
-    html={P.metaFor(sec.title).spine ? P.renderDecisionLog(body, DS) : P.renderSectionBody(body, DS)}/> : null;
+/* The status filter above a Decision Log's cards hides each card it rules
+   out. The cards arrive as rendered HTML, so we set an inline display on
+   each one after every render, the same way a fold hides a card's fields. */
+function SectionBody({sec, body, show}: {sec: Section | null; body: string; show?: (id: string) => boolean}){
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    for (const c of box.current ? box.current.querySelectorAll<HTMLElement>(".adp-dl[data-card]") : [])
+      c.style.display = !show || show(c.getAttribute("data-card")!) ? "" : "none";
+  });
+  return sec ? <div ref={box} style={{display: "contents"}}><Html as="div" className="md adp-prose" style={FILL} onClick={foldCard}
+    html={P.metaFor(sec.title).spine ? P.renderDecisionLog(body, DS) : P.renderSectionBody(body, DS)}/></div> : null;
 }
 
 /* The permalink copies the page's address. The label says it copied for a
@@ -430,11 +438,13 @@ function chipModel(t: Ticket, key: string){
    and the reviews screen sort, chip, and highlight a cited entry the same
    way. */
 const CONF_RANK: Record<string, number> = {high: 3, medium: 2, low: 1};
-function decisionRows(t: Ticket, shown: Ticket["decisions"], sort: SortState, item: string | null): DecisionPanelRow[] {
+function decisionRows(t: Ticket, shown: Ticket["decisions"], sort: SortState, item: string | null, today: string): DecisionPanelRow[] {
   return D.sortRows(shown, sort.k, sort.d, {
     id: d => d.id, title: d => d.title, conf: d => CONF_RANK[P.dlConfKind(d.confidence)] || 0,
     status: d => D.decisionKind(d), watch: d => (D.coveringWatch(t, d.id) || {wid: ""}).wid,
-    cited: d => D.citingSections(t, d.id).length
+    cited: d => D.citingSections(t, d.id).length,
+    // A dateless card maps to Infinity, so the ascending pass keeps it last.
+    age: d => d.created ? -D.daysUntil(d.created, today) : Infinity
   }).map(d => {
     // A settled row shows how its watch ended, so the empty watch column
     // never reads as data loss once coverage has closed.
@@ -442,18 +452,21 @@ function decisionRows(t: Ticket, shown: Ticket["decisions"], sort: SortState, it
     return {id: d.id, title: d.title, conf: P.dlChipSplit(d.confidence).word, confKind: P.dlConfKind(d.confidence),
       statusKind: D.decisionKind(d), watch: (D.coveringWatch(t, d.id) || {wid: null}).wid,
       settled: sw && {wid: sw.wid, outcome: sw.outcome, closed: sw.closed},
-      chips: D.citingSections(t, d.id).map(k => chipModel(t, k)), hl: item === d.id};
+      chips: D.citingSections(t, d.id).map(k => chipModel(t, k)), hl: item === d.id,
+      age: d.created ? -D.daysUntil(d.created, today) : null};
   });
 }
 function watchRows(t: Ticket, list: Ticket["watches"], sort: SortState, item: string | null, today: string): WatchPanelRow[] {
   return D.sortRows(list, sort.k, sort.d, {
     wid: w => w.wid, what: w => w.what, dl: w => (w.dl || []).join(","),
     due: w => w.anchored ? D.daysUntil(w.due!, today) : Infinity,
-    state: w => D.dueState(w, today), cited: w => D.citingSections(t, w.wid).length
+    state: w => D.dueState(w, today), cited: w => D.citingSections(t, w.wid).length,
+    left: w => w.anchored && !w.closed ? D.daysUntil(w.due!, today) : Infinity
   }).map(w => ({wid: w.wid, what: w.what, dls: w.dl || [],
     dueText: w.anchored ? w.due : (w.window || "relative"), dueDated: !!w.anchored,
     state: D.dueState(w, today), stateLabel: D.dueLabel(w, today),
-    chips: D.citingSections(t, w.wid).map(k => chipModel(t, k)), hl: item === w.wid}));
+    chips: D.citingSections(t, w.wid).map(k => chipModel(t, k)), hl: item === w.wid,
+    left: w.anchored && !w.closed ? D.daysUntil(w.due!, today) : null}));
 }
 
 const STATUS_FILTERS = ["open", "validated", "invalidated"] as const;
@@ -572,7 +585,7 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
   // head), the section nav, and the body (pane and panels).
   const regions = (top: ReactNode, nav: ReactNode, body: ReactNode) =>
     <><div id="inspTop">{top}</div><div id="inspNav">{nav}</div><div id="inspBody">{body}</div></>;
-  if (!t) return regions(null, null, <div className="ipanel"><Notice text={notice || (corpus
+  if (!t) return regions(null, null, <div><Notice text={notice || (corpus
     ? "select a ticket from the rail"
     : "no corpus behind this page — the inspector reads the served corpus.")}/></div>);
 
@@ -580,10 +593,26 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
   if (!t.sections.length && !prompt)
     return regions(top,
       reviews ? <PhaseStrip model={stripModel([], null)} reviews={reviews} onPick={act.onStep}/> : null,
-      <div className="ipanel"><Notice text="this ticket has no audit log yet — only its prompt or other files sit in the directory."/></div>);
+      <div><Notice text="this ticket has no audit log yet — only its prompt or other files sit in the directory."/></div>);
 
   const entries = entriesOf(t, prompt);
   const states = statesOf(t, entries, prompt, today);
+
+  // The status filter in Section view. A Decision Log section draws it above
+  // its cards, where it rules the cards and the panel's rows alike, as the
+  // TicketDecisionLog board draws it. Any other section draws it in the panel.
+  // Above the cards, the filter counts the cards the section draws, as the
+  // board counts them. The panel can cite more entries than that, from the
+  // rest of the log, and its head gives its own count.
+  const items = view !== "full" ? D.sectionItems(t, sel.s || "") : null;
+  const shownSec = sel.item ? null : pd.byKey[(entries.find(x => x.key === sel.s) || entries[0] || {key: ""}).key] || null;
+  const cardIds = shownSec && P.metaFor(shownSec.title).spine
+    ? new Set([...shownSec.body.join("\n").matchAll(/^### \[(DL-\d+)\]/gm)].map(m => m[1])) : null;
+  const spine = !!items && !!cardIds && cardIds.size > 0;
+  const counts = items ? filterCounts(spine ? t.decisions.filter(d => cardIds!.has(d.id)) : items.decisions) : {};
+  const active = liveFilter(dlFilter, counts);
+  const kindOf = new Map(t.decisions.map(d => [d.id, D.decisionKind(d)]));
+  const filters = (style?: CSSProperties) => <Filters label="Filter by status" counts={counts} active={active} mark="data-dlf" style={style} onPick={act.onFilter}/>;
 
   const sectionPane = (en: Entry | undefined) => {
     const sec = en && !en.missing ? pd.byKey[en.key] || null : null;
@@ -594,7 +623,8 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
       badge={en && en.missing ? "missing" : en && !en.canonical ? "non-canonical" : null}
       notice={missNotice || (en && en.missing ? "this section was never written. A missing canonical section is an attention reason on the rail." : null)}
       action={round ? <p style={{margin: "0 0 16px"}}><RoundLink tok={revTok(corpus, tokenOf, round.dir)} file={round.file} label="open round in reviews ›" onRound={act.onRound}/></p> : null}>
-      <SectionBody sec={sec} body={body}/>
+      {spine ? filters({marginBottom: 16}) : null}
+      <SectionBody sec={sec} body={body} show={spine && active !== "all" ? id => kindOf.get(id) === active : undefined}/>
     </DocPane>;
   };
 
@@ -640,17 +670,13 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
       : <DocPane heading="Prompt" meta="prompt.yaml" notice={missNotice || promptNotice(pr)} action={start}><PromptBody pr={pr}/></DocPane>;
   } else pane = sectionPane(entries.find(x => x.key === sel.s) || entries[0]);
 
-  if (view !== "full"){
-    const items = D.sectionItems(t, sel.s || "");
-    const counts = filterCounts(items.decisions);
-    const shown = dlFilter === "all" ? items.decisions : items.decisions.filter(d => D.decisionKind(d) === dlFilter);
-    const en = entries.find(x => x.key === sel.s);
-    const label = en ? en.title : "this section";
+  if (items){
+    const shown = active === "all" ? items.decisions : items.decisions.filter(d => D.decisionKind(d) === active);
     panels = <>
-      {items.decisions.length ? <DecisionsPanel label={label} sort={decSort} rows={decisionRows(t, shown, decSort, sel.item)}
-        pills={<Pills counts={counts} active={dlFilter} mark="data-dlf" onPick={act.onFilter}/>}
+      {items.decisions.length ? <DecisionsPanel sort={decSort} count={items.decisions.length} rows={decisionRows(t, shown, decSort, sel.item, today)}
+        filters={spine ? null : filters({marginTop: 12})}
         onSort={act.onSort} onRow={act.onRow} onWatch={act.onWatch} onChip={act.onChip}/> : null}
-      {items.watches.length ? <WatchesPanel label={label} sort={iwSort} rows={watchRows(t, items.watches, iwSort, sel.item, today)}
+      {items.watches.length ? <WatchesPanel sort={iwSort} rows={watchRows(t, items.watches, iwSort, sel.item, today)}
         onSort={act.onSort} onWatch={act.onWatch} onChip={act.onChip}/> : null}
     </>;
   }

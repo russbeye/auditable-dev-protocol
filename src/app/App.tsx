@@ -11,7 +11,7 @@ import type {FetchFn, HashSelection, Pack, RailModelGroup, Screen, SortState, Th
 import {Inspector, promptOf, resolveSection, type InspectorActions} from "./Inspector.tsx";
 import {Calibration, Ledgers} from "./Ledgers.tsx";
 import {useLiveCorpus, type EventFeed} from "./live.ts";
-import {NewTask, useNewTask} from "./NewTask.tsx";
+import {NewTask, YamlPreview, useNewTask} from "./NewTask.tsx";
 import {PackDrawer} from "./Pack.tsx";
 import {Rail} from "./Rail.tsx";
 import {Reviews, groupsOf, resolveRound, type ReviewsActions} from "./Reviews.tsx";
@@ -34,7 +34,15 @@ const SHOWN: Screen[] = ["inspector", "reviews", "watchboard", "ledgers", "new t
    until their stage converts them. */
 const SYSTEM_TYPE: Partial<Record<Screen, CSSProperties>> = {
   "inspector": {font: "400 16px/24px var(--font-sans)", color: "var(--ink)"},
-  "reviews": {font: "400 16px/24px var(--font-sans)", color: "var(--ink)"}};
+  "reviews": {font: "400 16px/24px var(--font-sans)", color: "var(--ink)"},
+  "watchboard": {font: "400 15px/24px var(--font-sans)", color: "var(--ink)", maxWidth: "var(--page-max)", margin: "0 auto"},
+  "ledgers": {font: "400 15px/24px var(--font-sans)", color: "var(--ink)", maxWidth: "var(--page-max)", margin: "0 auto"},
+  "new task": {font: "400 16px/24px var(--font-sans)", color: "var(--ink)", maxWidth: "var(--page-max)", margin: "0 auto"}};
+/* The Watches, Ledger, and New task pages pad the stage as their boards pad
+   the page, and a narrow window pads it as the NarrowLedger board does. The
+   rail stays beside them, as on every screen. */
+const PAGE_SCREENS: ReadonlySet<Screen> = new Set(["watchboard", "ledgers", "new task"]);
+const PAGE_PAD = "40px 48px 80px", NARROW_PAD = "32px 24px 80px";
 const SCREEN_IDS: Record<Screen, string> = {"inspector": "scrInspector", "reviews": "scrReviews", "watchboard": "scrWatch",
   "ledgers": "scrLedgers", "calibration": "scrLedgers", "resume pack": "scrInspector", "new task": "scrNew"};
 const SHORTCUTS: [string, string][] = [["[", "Show or hide tickets"], ["← →", "Previous or next phase"], ["/", "Filter tickets"],
@@ -234,7 +242,7 @@ function App({fetchFn, openFeed}: AppProps){
   useEffect(() => {
     if (!lgFocus.current || screen !== "ledgers") return;
     lgFocus.current = false;
-    const pill = [...document.querySelectorAll<HTMLElement>(".fpill")].find(p => p.getAttribute("data-lgf") === lgFilter);
+    const pill = [...document.querySelectorAll<HTMLElement>(".adp-filter[data-lgf]")].find(p => p.getAttribute("data-lgf") === lgFilter);
     pill?.focus();
   });
 
@@ -379,7 +387,10 @@ function App({fetchFn, openFeed}: AppProps){
     onSpy: key => setSel(prev => prev.s === key ? prev : {...prev, s: key, item: null}),
     // A ticket's prompt is the one way a written prompt reaches the form.
     // New task comes forward with its report or its question.
-    onStartFrom: (text, source) => { nt.startFrom(text, source); setScreen("new task"); },
+    onStartFrom: (text, source) => {
+      nt.startFrom(text, source, selTicket ? {tok: tokenOf(selTicket), label: selTicket.id || selTicket.dir} : null);
+      setScreen("new task");
+    },
     onResume: opener => openPacks(opener, "resume-ticket"),
   };
   const reviewsActions: ReviewsActions = {...panelActions,
@@ -424,11 +435,14 @@ function App({fetchFn, openFeed}: AppProps){
   const status = booting && !corpus ? "loading" : !corpus ? (absent ? "empty" : "failed") : !tickets.length ? "empty" : null;
 
   const railOn = !(screen === "inspector" && status);
+  // The Packs drawer and the YAML preview are modal, so the page behind
+  // either one takes no keys, focus, or clicks.
+  const modal = packsOpen || (screen === "new task" && nt.showYaml);
   // f flips the ticket between its section and its full log, [ folds or opens
   // the rail, and / opens the rail if it is folded and moves into its filter.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || packsOpen) return;
+      if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || modal) return;
       if (e.key === "f" && screen === "inspector" && selTicket){
         e.preventDefault();
         setView(v => v === "full" ? "section" : "full");
@@ -443,14 +457,14 @@ function App({fetchFn, openFeed}: AppProps){
     };
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
-  }, [screen, selTicket, packsOpen, railOn, railFolded, foldRail]);
+  }, [screen, selTicket, modal, railOn, railFolded, foldRail]);
 
   return <div className="shell" style={{display: "grid", gridTemplateRows: "auto 1fr", height: "100dvh"}}>
     <TopBar repo={S.repoLabel(corpus ? corpus.index : null)} live={live} down={status === "failed"} at={at} screen={screen} theme={theme}
       about={about} shortcuts={SHORTCUTS} onView={go} onPacks={o => openPacks(o)} onNewTask={() => go("new task")} onTheme={setTheme}
-      inert={packsOpen}/>
+      inert={modal}/>
     {/* The drawer is modal, so the page behind it takes no focus or clicks while it is open. */}
-    <div className="main" inert={packsOpen} style={screen === "inspector" && status ? {display: "flex", flexDirection: "column", overflowY: "auto"}
+    <div className="main" inert={modal} style={screen === "inspector" && status ? {display: "flex", flexDirection: "column", overflowY: "auto"}
       : {position: "relative", gridTemplateColumns: (railFolded || narrow ? "var(--rail-collapsed)" : "var(--rail-width)") + " minmax(0, 1fr)"}}>
       {screen === "inspector" && status
         ? <StatusPage kind={status} root={root} host={location.host} onRetry={retry} onNewTask={() => go("new task")}
@@ -459,8 +473,8 @@ function App({fetchFn, openFeed}: AppProps){
       <Rail groups={railShown} total={tickets.length} selKey={selKey} collapsed={railCollapsed} filter={railFilter} folded={railFolded}
         narrow={narrow} attention={attention} selId={selTicket ? selTicket.id || selTicket.dir : null} focusFilter={railFocus}
         onPick={k => { pick(k); if (narrow) setRailOver(false); }} onToggle={toggleRail} onFilter={setRailFilter} onFold={foldRail}/>
-      <main className="stage">
-        {SHOWN.map(s => <section key={s} className={"screen" + (s === "new task" ? " nt-wide" : "") + (s === screen ? " is-on" : "")}
+      <main className="stage" style={PAGE_SCREENS.has(screen) ? {padding: narrow ? NARROW_PAD : PAGE_PAD} : undefined}>
+        {SHOWN.map(s => <section key={s} className={"screen" + (s === screen ? " is-on" : "")}
           data-s={s} id={SCREEN_IDS[s]} style={SYSTEM_TYPE[s]}>
           {s !== screen ? null
             : s === "inspector" ? <Inspector corpus={corpus} today={today} t={selTicket} tokenOf={tokenOf} notice={bootNotice}
@@ -470,16 +484,16 @@ function App({fetchFn, openFeed}: AppProps){
               dlFilter={revDlFilter} decSort={decSort} iwSort={iwSort} arrows={!packsOpen} act={reviewsActions}/>
             : s === "watchboard" ? <Watchboard corpus={corpus} today={today} sort={wbSort} show={wbShow}
               onSort={sortBoard} onToggleState={toggleState} onOpen={openWatch}/>
-            : s === "ledgers" ? <>
-              <div id="scrCalib"><Calibration corpus={corpus} today={today} onCell={openLedgerCell}/></div>
-              <Ledgers corpus={corpus} today={today} sort={laSort} status={lgFilter} conf={lgConf}
-                onSort={k => setLaSort(prev => ({k, d: prev.k === k ? -prev.d : 1}))} onStatus={setLgFilter} onConf={setLgConf} onOpen={openWatch}/></>
-            : s === "new task" ? <NewTask nt={nt}/>
+            : s === "ledgers" ? <Ledgers corpus={corpus} today={today} sort={laSort} status={lgFilter} conf={lgConf}
+                narrow={narrow} calibration={<div id="scrCalib"><Calibration corpus={corpus} today={today} narrow={narrow} onCell={openLedgerCell}/></div>}
+                onSort={k => setLaSort(prev => ({k, d: prev.k === k ? -prev.d : 1}))} onStatus={setLgFilter} onConf={setLgConf} onOpen={openWatch}/>
+            : s === "new task" ? <NewTask nt={nt} onOpenTicket={k => { pick(k); go("inspector"); }}/>
             : null}
         </section>)}
       </main>
         </>}
     </div>
+    {screen === "new task" && nt.showYaml ? <YamlPreview nt={nt}/> : null}
     {packsOpen ? <PackDrawer packs={packs} sel={selPack} corpus={corpus} today={today} t={selTicket}
       advisories={advisories} bootNotice={bootNotice} copyLabel={copyLabel}
       onPick={name => { setSelPack(name); setCopyLabel(null); }} onCopy={copyPack} onClose={closePacks}/> : null}

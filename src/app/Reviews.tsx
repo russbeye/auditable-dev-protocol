@@ -11,7 +11,7 @@ import type {Corpus, ReviewGroup, ReviewLedger, ReviewVerdictFields, SortState, 
 import {FILL, Html, Notice, PANE, ROUND_STEP, SELECT, STEP_BTN, roundSteps, useArrows, P_GRID, P_K, P_V, Permalink, RoundLink, SECTION_HEAD, Tickhead, decisionRows, entriesOf, filterCounts,
   promptOf, revTok, reviewsOf, watchRows} from "./Inspector.tsx";
 import {PhaseStrip, stripModel} from "./PhaseStrip.tsx";
-import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
+import {DecisionsPanel, Filters, WatchesPanel, liveFilter, type PanelActions} from "./panels.tsx";
 
 /* Where the screen's round selection lands: the named round when the ticket
    holds it, else the latest round with a notice when a round was named. The
@@ -241,7 +241,7 @@ function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, i
   // The four regions keep the vanilla page's ids.
   const regions = (topEl: ReactNode, nav: ReactNode, head: ReactNode, body: ReactNode) =>
     <><div id="revTop">{topEl}</div><div id="revNav">{nav}</div><div id="revHead">{head}</div><div id="revBody">{body}</div></>;
-  const empty = (sub: string | null, text: string) => regions(top(sub), null, null, <div className="ipanel">
+  const empty = (sub: string | null, text: string) => regions(top(sub), null, null, <div>
     {notice ? <Notice text={notice}/> : null}<Notice text={text}/></div>);
   if (!t) return empty(null, corpus ? "select a ticket from the rail to read its review rounds."
     : "no corpus behind this page. The reviews screen reads review files from the served corpus.");
@@ -265,12 +265,13 @@ function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, i
   let panels: ReactNode = null;
   if (r.error == null){
     const items = S.reviewItems(t, r.text);
-    const shown = dlFilter === "all" ? items.decisions : items.decisions.filter(d => D.decisionKind(d) === dlFilter);
+    const counts = filterCounts(items.decisions), active = liveFilter(dlFilter, counts);
+    const shown = active === "all" ? items.decisions : items.decisions.filter(d => D.decisionKind(d) === active);
     panels = <>
-      {items.decisions.length ? <DecisionsPanel label={title} sort={decSort} rows={decisionRows(t, shown, decSort, null)}
-        pills={<Pills counts={filterCounts(items.decisions)} active={dlFilter} mark="data-rdf" onPick={act.onFilter}/>}
+      {items.decisions.length ? <DecisionsPanel sort={decSort} count={items.decisions.length} rows={decisionRows(t, shown, decSort, null, today)}
+        filters={<Filters label="Filter by status" counts={counts} active={active} mark="data-rdf" style={{marginTop: 12}} onPick={act.onFilter}/>}
         onSort={act.onSort} onRow={act.onRow} onWatch={act.onWatch} onChip={act.onChip}/> : null}
-      {items.watches.length ? <WatchesPanel label={title} sort={iwSort} rows={watchRows(t, items.watches, iwSort, null, today)}
+      {items.watches.length ? <WatchesPanel sort={iwSort} rows={watchRows(t, items.watches, iwSort, null, today)}
         onSort={act.onSort} onWatch={act.onWatch} onChip={act.onChip}/> : null}
     </>;
   }
