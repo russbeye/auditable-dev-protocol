@@ -436,7 +436,7 @@ function renderDSCard(id: string, title: string, confidence: string, status: str
   const settled=kind==='validated'||kind==='invalidated'||kind==='unknown';
   const rows=body.map(f=>`<div><dt>${esc(f.label)}</dt><dd>${decorate(inline(f.value))}</dd></div>`).join('');
   const shut=open?'':' style="display:none"';
-  const trail=trailing?`<div class="md dl-trail"${shut}>${renderMarkdown(trailing)}</div>`:'';
+  const trail=trailing?`<div class="md dl-trail"${shut}>${proseBlocks(renderMarkdown(trailing))}</div>`:'';
   return `<div class="adp-dl${settled?' adp-dl--settled':''}" data-card="${escAttr(id)}">`
     + `<button type="button" class="adp-dl__head" aria-expanded="${open}">`
     + `<span class="adp-dl__id">${id?esc(id):'—'}</span><span class="adp-dl__title">${decorate(inline(title))}</span>`
@@ -478,11 +478,7 @@ function renderProse(md: unknown): EscapedHtml{
   let start=end; const meta: DLField[]=[];
   while(start>0){ const m=metaPairs(lines[start-1]); if(!m) break; meta.unshift(...m); start--; }
   let html=''; let chunk: string[]=[]; let inFence=false;
-  // A Prose list item lays its marker and its content out as a flex row, so
-  // we wrap the content in one span. Bare, each text run and code span would
-  // become a flex item of its own and break the line apart.
-  const items=(h: string)=>h.replace(/<li([^>]*)>/g,'<li$1><span>').replace(/<\/li>/g,'</span></li>');
-  const flush=()=>{ if(chunk.join('').trim()) html+=items(renderMarkdown(chunk.join('\n'))); chunk=[]; };
+  const flush=()=>{ if(chunk.join('').trim()) html+=proseBlocks(renderMarkdown(chunk.join('\n'))); chunk=[]; };
   for(let i=0;i<start;i++){
     const line=lines[i];
     if(/^\s*```/.test(line)) inFence=!inFence;
@@ -499,6 +495,28 @@ function renderProse(md: unknown): EscapedHtml{
   if(meta.length) html+=`<footer data-meta="">`+meta.map((f,i)=>(i?'<span aria-hidden="true"> · </span>':'')
     +`<span>${esc(f.label)}:</span> ${decorate(inline(f.value))}`).join('')+`</footer>`;
   return html as EscapedHtml;
+}
+/* The markdown blocks inside Prose take the design system's own patterns or,
+   where the system has none, on-grid values from its tokens. A table is the
+   Table component and a code block the Pre component. A blockquote, a
+   numbered list, a rule, a task box, and a fourth to sixth level heading take
+   inline values, so the old theme's rules for them no longer reach a ticket.
+   A plain list item lays its marker and its content out as a flex row, so we
+   wrap the content in one span. Bare, each text run and code span would
+   become a flex item of its own and break the line apart. A task item keeps
+   its own row of box and text. */
+const SUB_HEAD='margin:32px 0 8px;font:500 11px/24px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--blue-bright)';
+function proseBlocks(h: string): string{
+  return h
+    .replace(/<li>/g,'<li><span>').replace(/<li class="task">([\s\S]*?)<\/li>/g,'<li class="task">$1</LI>')
+    .replace(/<\/li>/g,'</span></li>').replace(/<\/LI>/g,'</li>')
+    .replace(/<div class="tbl-wrap"><table class="md-tbl">/g,'<div style="overflow-x:auto;margin:0 0 16px"><table class="adp-table">')
+    .replace(/<blockquote>/g,'<blockquote style="margin:0 0 16px;padding:8px 16px;border:0;box-shadow:inset 2px 0 0 var(--line-bright);background:none;color:var(--ink-2)">')
+    .replace(/<pre class="cb"><code>/g,'<pre class="adp-pre" style="margin:0 0 16px"><code style="font:inherit;color:inherit;background:none;padding:0">')
+    .replace(/<ol class="md-list"/g,'<ol class="md-list" style="margin:0 0 16px;gap:12px"')
+    .replace(/<hr>/g,'<hr style="margin:24px 0;height:1px;border:0;background:none;box-shadow:inset 0 1px 0 var(--line)">')
+    .replace(/<span class="cbx( on)? ?">/g,(_,on)=>`<span class="cbx${on||''}" style="width:16px;height:16px;margin:4px 0 0">`)
+    .replace(/<h([3-6]) class="sub">/g,(_,n)=>`<h${n} style="${SUB_HEAD}">`);
 }
 const proseHtml=(md: unknown, opts?: DLRenderOpts): EscapedHtml=>opts&&opts.ds?renderProse(md):renderMarkdown(md);
 

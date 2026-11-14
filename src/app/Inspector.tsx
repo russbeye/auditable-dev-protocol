@@ -292,7 +292,7 @@ function Tickhead({t, view, act}: {t: Ticket; view: ViewMode | null; act: Inspec
         <span className={"adp-chip " + STATE_CHIP[t.state]} style={{textTransform: "uppercase"}}
           title="lifecycle state — declared in front matter, or inferred from section presence on legacy logs">{t.state}</span>
         <span className="adp-meta">{SOURCE[t.state_source]}</span>
-        {t.pr ? <><span aria-hidden="true" style={{color: "var(--faint)"}}>·</span><span className="adp-meta">PR #{t.pr}</span></> : null}
+        {t.pr ? <><span className="adp-meta" aria-hidden="true" style={{color: "var(--faint)"}}>·</span><span className="adp-meta">PR #{t.pr}</span></> : null}
       </div>
     </div>
     {view ? <div style={{display: "flex", gap: 8, alignItems: "center"}}>
@@ -578,8 +578,8 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     // A prompt that did not parse still gets the action, so New task can
     // say why it took nothing.
     const pr = prompt!;
-    const start = pr.state === "unreadable" ? null : <div className="mops">
-      <button type="button" className="op op-acc" data-op="startfrom" onClick={() => act.onStartFrom(pr.text, t.dir + "/prompt.yaml")}>start from this prompt</button></div>;
+    const start = pr.state === "unreadable" ? null : <div style={{margin: "0 0 16px"}}>
+      <button type="button" className="adp-btn" data-op="startfrom" onClick={() => act.onStartFrom(pr.text, t.dir + "/prompt.yaml")}>start from this prompt</button></div>;
     pane = <DocPane heading="prompt.yaml" notice={missNotice || promptNotice(pr)} action={start}><PromptBody pr={pr}/></DocPane>;
   } else pane = sectionPane(entries.find(x => x.key === sel.s) || entries[0]);
 

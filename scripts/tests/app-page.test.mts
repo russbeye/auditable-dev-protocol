@@ -3035,6 +3035,25 @@ test("the Reading rules read the template's consecutive fields and leave other b
   assert.ok(!/<h3|<footer/.test(plain), plain);
 });
 
+// The markdown blocks inside Prose take the design system's patterns or its
+// on-grid values, and no old theme class that sets their spacing (DL-059).
+test("prose blocks take the Table and Pre components and on-grid values, and the default render keeps the old markup", () => {
+  const md = ["| a | b |", "|---|---|", "| 1 | `x` |", "", "> quoted", "", "```", "let a = 1;", "```", "", "1. one", "", "---", "",
+    "- [x] done", "", "### Sub head"].join("\n");
+  const html = P.renderProse(md);
+  assert.match(html, /<div style="overflow-x:auto;margin:0 0 16px"><table class="adp-table">/);
+  assert.match(html, /<blockquote style="margin:0 0 16px;padding:8px 16px;/);
+  assert.match(html, /<pre class="adp-pre" style="margin:0 0 16px"><code style="font:inherit;color:inherit;background:none;padding:0">let a = 1;<\/code><\/pre>/);
+  assert.match(html, /<ol class="md-list" style="margin:0 0 16px;gap:12px"><li><span>one<\/span><\/li><\/ol>/);
+  assert.match(html, /<hr style="margin:24px 0;/);
+  assert.match(html, /<li class="task"><span class="cbx on" style="width:16px;height:16px;margin:4px 0 0">✓<\/span><span>done<\/span><\/li>/);
+  assert.match(html, /<h3 style="margin:32px 0 8px;font:500 11px\/24px var\(--font-mono\);[^"]*color:var\(--blue-bright\)">Sub head<\/h3>/);
+  assert.doesNotMatch(html, /md-tbl|tbl-wrap|class="cb"|class="sub"/);
+  const plain = P.renderMarkdown(md);
+  assert.match(plain, /<table class="md-tbl">/);
+  assert.match(plain, /<pre class="cb">/);
+});
+
 // ---- the rail's fold, filter, and narrow overlay ----
 
 const railCols = () => ($(".main") as HTMLElement).style.gridTemplateColumns;
