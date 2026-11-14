@@ -421,12 +421,13 @@ function dlSplitBody(lines: string[]): DLBodySplit{
    default card stays the markup the render goldens pin, so a caller asks for
    this one by option. Confidence is a neutral Tag, and the status alone takes
    a status chip's color. A note that the split word leaves behind becomes a
-   field row, as on the default card, so no text is lost. Every card starts
-   open, and a settled one sets its title lighter. The head is a button that
-   folds the fields, which the page wires up. */
+   field row, as on the default card, so no text is lost. A settled entry
+   sets its title lighter. The head is a button that folds the fields, which
+   the page wires up. A folded card hides its fields with an inline display,
+   because the body's own display rule would outrank the hidden attribute. */
 const DS_STATUS: Record<DLStatusKind,string>={invalidated:' adp-chip--invalidated',validated:' adp-chip--validated',
   open:' adp-chip--open',unknown:' adp-chip--unknown',other:''};
-function renderDSCard(id: string, title: string, confidence: string, status: string, body: DLField[], trailing: string): EscapedHtml{
+function renderDSCard(id: string, title: string, confidence: string, status: string, body: DLField[], trailing: string, open: boolean): EscapedHtml{
   const conf=confidence?dlChipSplit(confidence):null;
   const stat=status?dlChipSplit(status):null;
   const kind=dlStatusKind(status);
@@ -434,17 +435,20 @@ function renderDSCard(id: string, title: string, confidence: string, status: str
   if(stat&&stat.tail) body.push({label:'status note',value:kind==='other'?status.trim():stat.tail});
   const settled=kind==='validated'||kind==='invalidated'||kind==='unknown';
   const rows=body.map(f=>`<div><dt>${esc(f.label)}</dt><dd>${decorate(inline(f.value))}</dd></div>`).join('');
-  const trail=trailing?`<div class="md dl-trail">${renderMarkdown(trailing)}</div>`:'';
+  const shut=open?'':' style="display:none"';
+  const trail=trailing?`<div class="md dl-trail"${shut}>${renderMarkdown(trailing)}</div>`:'';
   return `<div class="adp-dl${settled?' adp-dl--settled':''}" data-card="${escAttr(id)}">`
-    + `<button type="button" class="adp-dl__head" aria-expanded="true">`
+    + `<button type="button" class="adp-dl__head" aria-expanded="${open}">`
     + `<span class="adp-dl__id">${id?esc(id):'—'}</span><span class="adp-dl__title">${decorate(inline(title))}</span>`
     + `<span>${conf?`<span class="adp-chip" title="confidence">${esc(conf.word)}</span>`:''}</span>`
     + `<span>${stat?`<span class="adp-chip${DS_STATUS[kind]}" title="status">${esc(stat.word)}</span>`:''}</span>`
-    + `<span class="adp-dl__caret" aria-hidden="true">▾</span></button>`
-    + (rows?`<dl class="adp-dl__body">${rows}</dl>`:'')+trail+`</div>` as EscapedHtml;
+    + `<span class="adp-dl__caret" aria-hidden="true">${open?'▾':'▸'}</span></button>`
+    + (rows?`<dl class="adp-dl__body"${shut}>${rows}</dl>`:'')+trail+`</div>` as EscapedHtml;
 }
 
-type DLRenderOpts = {ds?: boolean};
+// open sets whether a design system card starts with its fields shown. It
+// defaults to shown, and the section renderers show the first card alone.
+type DLRenderOpts = {ds?: boolean; open?: boolean};
 function renderDLCard(entry: DLEntry, opts?: DLRenderOpts): EscapedHtml{
   const hm=entry.head.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
   const id=hm?hm[1].trim():''; const title=hm?hm[2].trim():entry.head;
@@ -457,7 +461,7 @@ function renderDLCard(entry: DLEntry, opts?: DLRenderOpts): EscapedHtml{
     if(k==='status'){ status=f.value; continue; }
     body.push(f);
   }
-  if(opts&&opts.ds) return renderDSCard(id,title,confidence,status,body,split.trailing);
+  if(opts&&opts.ds) return renderDSCard(id,title,confidence,status,body,split.trailing,opts.open!==false);
   const conf=confidence?dlConfPill(confidence):null;
   const stat=status?dlStatusPill(status):null;
   // We append the note rows after the author's fields so the pill order
@@ -527,7 +531,7 @@ function dlStatusCounts(body: unknown): DLStatusCounts{
 const RE_CARD_HEAD=/^###\s+\[DL-\d+\]/;
 function renderSectionBody(body: unknown, opts?: DLRenderOpts): EscapedHtml{
   const lines=String(body).replace(/\r\n/g,'\n').split('\n');
-  const out: string[]=[]; let prose: string[]=[]; let cards: string[]=[]; let inFence=false; let any=false;
+  const out: string[]=[]; let prose: string[]=[]; let cards: string[]=[]; let inFence=false; let any=false; let seen=0;
   const list=opts&&opts.ds?'adp-dl-list':'dl-cards';
   const flushCards=()=>{ if(cards.length) out.push(`<div class="${list}">${cards.join('')}</div>`); cards=[]; };
   const flushProse=()=>{
@@ -548,7 +552,8 @@ function renderSectionBody(body: unknown, opts?: DLRenderOpts): EscapedHtml{
         if(/^\s*```/.test(l)) fence=true;
         card.push(l); i++;
       }
-      cards.push(renderDLCard({head, lines:card}, opts));
+      cards.push(renderDLCard({head, lines:card}, opts&&{...opts, open:!seen}));
+      seen++;
       continue;
     }
     if(/^\s*```/.test(line)) inFence=!inFence;
@@ -564,7 +569,7 @@ function renderDecisionLog(body: unknown, opts?: DLRenderOpts): EscapedHtml{
   // back to the generic renderer instead of showing an empty deck of cards.
   if(!entries.length) return renderMarkdown(body);
   return ((pre?`<div class="md">${renderMarkdown(pre)}</div>`:'')
-    + `<div class="${opts&&opts.ds?'adp-dl-list':'dl-cards'}">${entries.map(e=>renderDLCard(e,opts)).join('')}</div>`) as EscapedHtml;
+    + `<div class="${opts&&opts.ds?'adp-dl-list':'dl-cards'}">${entries.map((e,i)=>renderDLCard(e,opts&&{...opts, open:i===0})).join('')}</div>`) as EscapedHtml;
 }
 
 export {esc, escAttr, safeLinkUrl, inline, decorate, TOK, renderMarkdown, ART, SECTION_KINDS,

@@ -312,7 +312,7 @@ function decarded(got: Snapshot, want: Region): [Snapshot, Region] {
     from = i;
   }
   const main = got.main!;
-  return [{...got, main: {text: cut(main.text, ["▾"], carets, "carets"), attrs: cut(main.attrs, ["title=confidence", "title=status"], chips.length, "chip titles")}},
+  return [{...got, main: {text: cut(main.text, ["▾", "▸"], carets, "carets"), attrs: cut(main.attrs, ["title=confidence", "title=status"], chips.length, "chip titles")}},
     {text, attrs: want.attrs}];
 }
 const rentries = () => $$("#rail [data-key]").map(r => r.getAttribute("data-key")!);
@@ -2955,18 +2955,24 @@ test("a MEDIUM decision that is OPEN colors only its status chip", async () => {
   assert.equal(card.className, "adp-dl");
 });
 
-test("a decision card's head folds and unfolds its fields", async () => {
+/* A section opens its first card and folds the rest. A fold sets an inline
+   display, because the card body's own display rule outranks the hidden
+   attribute, and the browser test checks what a reader sees. */
+test("a section opens its first decision card, folds the rest, and a head click flips a card", async () => {
   await bootCorpus({hash: "#t=AA1&s=sec-decision-log"});
-  const card = $('#scrInspector [data-card="DL-001"]');
-  const head = card.querySelector(".adp-dl__head") as HTMLElement, body = card.querySelector(".adp-dl__body") as HTMLElement;
-  assert.equal(head.getAttribute("aria-expanded"), "true");
-  await click(head);
-  assert.equal(head.getAttribute("aria-expanded"), "false");
-  assert.equal(body.hidden, true);
-  assert.equal(head.querySelector(".adp-dl__caret")!.textContent, "▸");
-  await click(head.querySelector(".adp-dl__title")!);
-  assert.equal(head.getAttribute("aria-expanded"), "true");
-  assert.equal(body.hidden, false);
+  const parts = (id: string) => {
+    const card = $(`#scrInspector [data-card="${id}"]`);
+    return {head: card.querySelector(".adp-dl__head") as HTMLElement, body: card.querySelector(".adp-dl__body") as HTMLElement};
+  };
+  const first = parts("DL-001"), second = parts("DL-002");
+  assert.deepEqual([first.head.getAttribute("aria-expanded"), first.body.style.display], ["true", ""]);
+  assert.deepEqual([second.head.getAttribute("aria-expanded"), second.body.style.display], ["false", "none"]);
+  assert.equal(second.head.querySelector(".adp-dl__caret")!.textContent, "▸");
+  await click(second.head.querySelector(".adp-dl__title")!);
+  assert.deepEqual([second.head.getAttribute("aria-expanded"), second.body.style.display], ["true", ""]);
+  assert.equal(second.head.querySelector(".adp-dl__caret")!.textContent, "▾");
+  await click(first.head);
+  assert.deepEqual([first.head.getAttribute("aria-expanded"), first.body.style.display], ["false", "none"]);
 });
 
 // ---- the rail's fold, filter, and narrow overlay ----

@@ -7,6 +7,23 @@ import {SCRIPTS_DIR} from "../adp-runtime.mts";
 
 test.use({viewport: {width: 1440, height: 900}});
 
+// A decision card folds in a real engine. The card body sets its own
+// display, so jsdom, which applies no stylesheet, cannot see a fold that
+// the cascade undoes. The first card of a section starts open and the rest
+// start folded.
+test("a decision card's head folds and unfolds its fields in the browser", async ({page, server}) => {
+  await open(page, server.url + "#t=FX001&s=sec-decision-log");
+  const cards = page.locator("#scrInspector .adp-dl");
+  await expect(cards).toHaveCount(2);
+  await expect(cards.nth(0).locator(".adp-dl__body")).toBeVisible();
+  await expect(cards.nth(1).locator(".adp-dl__body")).toBeHidden();
+  await cards.nth(1).locator(".adp-dl__head").click();
+  await expect(cards.nth(1).locator(".adp-dl__body")).toBeVisible();
+  await expect(cards.nth(1).locator(".adp-dl__head")).toHaveAttribute("aria-expanded", "true");
+  await cards.nth(0).locator(".adp-dl__head").click();
+  await expect(cards.nth(0).locator(".adp-dl__body")).toBeHidden();
+});
+
 // OT-MC012-10. The launcher's server always binds a free port, so only a
 // test can bring one back on the port an open page still watches.
 test("the live word returns from CACHED to WATCHING when the server restarts on its port", async ({page}) => {

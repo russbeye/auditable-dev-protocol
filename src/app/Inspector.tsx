@@ -29,7 +29,9 @@ function Html({html, as = "span", className, onClick}: HtmlProps){
 
 /* A decision card's head folds its fields. The cards arrive as rendered
    HTML, so one listener on the section finds the head that took the click
-   and flips it in place. A fold lasts until the section renders new text. */
+   and flips it in place. We fold with an inline display, because the card
+   body's own display rule outranks the hidden attribute. A fold lasts until
+   the section renders new text. */
 function foldCard(e: ReactMouseEvent<HTMLElement>){
   const head = (e.target as Element).closest(".adp-dl__head");
   if (!head || !e.currentTarget.contains(head)) return;
@@ -37,7 +39,7 @@ function foldCard(e: ReactMouseEvent<HTMLElement>){
   head.setAttribute("aria-expanded", String(open));
   const caret = head.querySelector(".adp-dl__caret");
   if (caret) caret.textContent = open ? "▾" : "▸";
-  for (let el = head.nextElementSibling; el; el = el.nextElementSibling) (el as HTMLElement).hidden = !open;
+  for (let el = head.nextElementSibling; el; el = el.nextElementSibling) (el as HTMLElement).style.display = open ? "" : "none";
 }
 
 // ---- the ticket's text, parsed once per text ----
