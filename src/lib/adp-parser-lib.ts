@@ -434,12 +434,12 @@ function renderDSCard(id: string, title: string, confidence: string, status: str
   if(conf&&conf.tail) body.push({label:'confidence note',value:dlConfKind(confidence)==='other'?confidence.trim():conf.tail});
   if(stat&&stat.tail) body.push({label:'status note',value:kind==='other'?status.trim():stat.tail});
   const settled=kind==='validated'||kind==='invalidated'||kind==='unknown';
-  const rows=body.map(f=>`<div><dt>${esc(f.label)}</dt><dd>${decorate(inline(f.value))}</dd></div>`).join('');
+  const rows=body.map(f=>`<div><dt>${esc(f.label)}</dt><dd>${dsTokens(decorate(inline(f.value)))}</dd></div>`).join('');
   const shut=open?'':' style="display:none"';
   const trail=trailing?`<div class="md dl-trail"${shut}>${proseBlocks(renderMarkdown(trailing))}</div>`:'';
   return `<div class="adp-dl${settled?' adp-dl--settled':''}" data-card="${escAttr(id)}">`
     + `<button type="button" class="adp-dl__head" aria-expanded="${open}">`
-    + `<span class="adp-dl__id">${id?esc(id):'—'}</span><span class="adp-dl__title">${decorate(inline(title))}</span>`
+    + `<span class="adp-dl__id">${id?esc(id):'—'}</span><span class="adp-dl__title">${dsTokens(decorate(inline(title)))}</span>`
     + `<span>${conf?`<span class="adp-chip" title="confidence">${esc(conf.word)}</span>`:''}</span>`
     + `<span>${stat?`<span class="adp-chip${DS_STATUS[kind]}" title="status">${esc(stat.word)}</span>`:''}</span>`
     + `<span class="adp-dl__caret" aria-hidden="true">${open?'▾':'▸'}</span></button>`
@@ -485,7 +485,7 @@ function renderProse(md: unknown): EscapedHtml{
     const m=!inFence ? line.match(RE_RUNIN) : null;
     if(m && !metaPairs(line)){
       flush();
-      html+=`<h3 data-runin="">${decorate(inline(m[1].trim()))}</h3>`;
+      html+=`<h3 data-runin="">${dsTokens(decorate(inline(m[1].trim())))}</h3>`;
       if(m[2].trim()) chunk.push(m[2]);
       continue;
     }
@@ -493,7 +493,7 @@ function renderProse(md: unknown): EscapedHtml{
   }
   flush();
   if(meta.length) html+=`<footer data-meta="">`+meta.map((f,i)=>(i?'<span aria-hidden="true"> · </span>':'')
-    +`<span>${esc(f.label)}:</span> ${decorate(inline(f.value))}`).join('')+`</footer>`;
+    +`<span>${esc(f.label)}:</span> ${dsTokens(decorate(inline(f.value)))}`).join('')+`</footer>`;
   return html as EscapedHtml;
 }
 /* The markdown blocks inside Prose take the design system's own patterns or,
@@ -505,9 +505,18 @@ function renderProse(md: unknown): EscapedHtml{
    wrap the content in one span. Bare, each text run and code span would
    become a flex item of its own and break the line apart. A task item keeps
    its own row of box and text. */
+/* A token pill becomes a small chip of the design system. Color means status
+   alone (R4), so a confidence word is a neutral Tag, and a status word takes
+   the StatusChip of its meaning. The word itself never changes. */
+const DS_TOKEN: Record<string, string>={OPEN:' adp-chip--open',PENDING:' adp-chip--open',VALIDATED:' adp-chip--validated',
+  YES:' adp-chip--validated',INVALIDATED:' adp-chip--invalidated',NO:' adp-chip--invalidated',UNKNOWN:' adp-chip--unknown',
+  UNOBSERVABLE:' adp-chip--unknown'};
+function dsTokens(h: string): string{
+  return h.replace(/<span class="pill p-[a-z]+">([^<]*)<\/span>/g,(_,w: string)=>`<span class="adp-chip adp-chip--s${DS_TOKEN[w]||''}">${w}</span>`);
+}
 const SUB_HEAD='margin:32px 0 8px;font:500 11px/24px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--blue-bright)';
 function proseBlocks(h: string): string{
-  return h
+  return dsTokens(h)
     .replace(/<li>/g,'<li><span>').replace(/<li class="task">([\s\S]*?)<\/li>/g,'<li class="task">$1</LI>')
     .replace(/<\/li>/g,'</span></li>').replace(/<\/LI>/g,'</li>')
     .replace(/<div class="tbl-wrap"><table class="md-tbl">/g,'<div style="overflow-x:auto;margin:0 0 16px"><table class="adp-table">')

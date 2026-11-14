@@ -297,7 +297,9 @@ function packChrome(old: Region, drawer: Region){
    takes the titles and carets out of the app's render, and each count must
    equal the chips and cards on show, so nothing else can leave. */
 function decarded(got: Snapshot, want: Region): [Snapshot, Region] {
-  const chips = $$("#scrInspector .adp-dl .adp-chip"), carets = $$("#scrInspector .adp-dl__caret").length;
+  // The head carries the two chips with a title. A token chip in a title or a
+  // field is the log's own word, which the baseline holds as it is.
+  const chips = $$("#scrInspector .adp-dl__head > span > .adp-chip[title]"), carets = $$("#scrInspector .adp-dl__caret").length;
   const cut = (list: string[], gone: string[], n: number, what: string) => {
     const out = list.filter(x => !gone.includes(x));
     assert.equal(list.length - out.length, n, what);
@@ -3052,6 +3054,23 @@ test("prose blocks take the Table and Pre components and on-grid values, and the
   const plain = P.renderMarkdown(md);
   assert.match(plain, /<table class="md-tbl">/);
   assert.match(plain, /<pre class="cb">/);
+});
+
+// R4 in prose (DL-055, DL-060): a confidence word is a neutral small chip,
+// and a status word takes its StatusChip, in prose and in a card's fields.
+test("a confidence word in prose is a neutral chip, and a status word takes its status chip", async () => {
+  const log = LOG.replace("**What the problem is:** demo.", "**What the problem is:** a MEDIUM risk left OPEN.")
+    .replace("- **Decision:** pick b", "- **Decision:** pick b at HIGH");
+  await boot({hash: "#t=AA1&s=sec-problem-statement", fetch: liveCorpus(LISTING_I, {...TEXTS_I, "20260101-AA1-alpha/audit-log.md": log}).fetch});
+  const chips = [...$("#scrInspector .adp-prose p").querySelectorAll(".adp-chip")].map(c => [c.textContent, c.className]);
+  assert.deepEqual(chips, [["MEDIUM", "adp-chip adp-chip--s"], ["OPEN", "adp-chip adp-chip--s adp-chip--open"]]);
+  assert.ok(!$("#scrInspector .adp-prose .pill"), "an old pill is left in prose");
+  await pickSection("sec-decision-log");
+  await click($('#scrInspector [data-card="DL-002"] .adp-dl__head'));
+  const field = $('#scrInspector [data-card="DL-002"] dd .adp-chip');
+  assert.deepEqual([field.textContent, field.className], ["HIGH", "adp-chip adp-chip--s"]);
+  // A token in a run-in heading or the footer converts too.
+  assert.match(P.renderProse("**Risk at LOW:** x"), /<h3 data-runin="">Risk at <span class="adp-chip adp-chip--s">LOW<\/span><\/h3>/);
 });
 
 // ---- the rail's fold, filter, and narrow overlay ----
