@@ -36,6 +36,27 @@ function rules(css){
 }
 const props = r => Object.fromEntries(r.decls.map(d => [d.prop, d.value]));
 
+// ---- R1: the app loads the two system sheets and nothing else ----
+
+const linked = () => [...read("app.html").matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(m => m[1]);
+
+test("the app loads exactly adp-tokens.css and adp-bundle.css, in that order", () => {
+  assert.deepEqual(linked(), ["adp-tokens.css", "adp-bundle.css"]);
+  assert.equal([...read("app.html").matchAll(/<link\b|<style\b|@import/g)].length, 2);
+  for (const gone of ["adp-theme.css", "adp-shell.css"]) assert.ok(!fs.existsSync(path.join(SCRIPTS, gone)), gone);
+});
+
+/* A clip on the page root hides content that runs past the window instead
+   of letting the reader scroll to it, so no sheet the app loads sets one.
+   A :root selector, with or without an attribute suffix, selects html. */
+test("no page root in a sheet the app loads clips horizontal overflow", () => {
+  for (const name of linked()) for (const r of rules(read(name))){
+    const roots = r.sel.split(",").map(s => s.trim()).filter(s => s === "html" || s === "body" || /^:root(\[[^\]]*\])*$/.test(s));
+    if (!roots.length) continue;
+    assert.deepEqual(r.decls.map(d => d.prop).filter(p => p === "overflow" || p === "overflow-x"), [], name + " " + r.sel);
+  }
+});
+
 // ---- R2: adp-tokens.css is tokens.json, both themes, nothing else ----
 
 test("adp-tokens.css is what the generator writes from the checked-in tokens.json", () => {

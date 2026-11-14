@@ -46,8 +46,10 @@ function foldCard(e: ReactMouseEvent<HTMLElement>){
 /* A Prose container in the ticket view fills its pane. The Prose component
    caps its column at 72ch, which left a long card and its prose in a narrow
    band with the rest of the pane empty, so the reader asked for the full
-   width. The pane's own padding keeps the text off its edges. */
-const FILL: CSSProperties = {maxWidth: "none"};
+   width. The pane's own padding keeps the text off its edges. A log carries
+   long unbroken runs, such as a bare URL or an identifier in code, so we
+   break those mid-token rather than let one widen the pane. */
+const FILL: CSSProperties = {maxWidth: "none", overflowWrap: "break-word"};
 
 // ---- the ticket's text, parsed once per text ----
 
@@ -159,8 +161,7 @@ function resolveSection(t: Ticket, prompt: PromptView | null, s: string | null, 
    Every value shows, so the board's "Show more" folds are left out. The
    YAML key name sits in the title's tooltip, not beside it, because a second
    name for every key read as a second header. The
-   parts carry data-p hooks, not the old pcard classes, which the old sheet
-   still styles for the vanilla builder. */
+   parts carry data-p hooks, which the tests select by. */
 const P_NONE: CSSProperties = {color: "var(--faint)", fontStyle: "italic"};
 const P_GRID: CSSProperties = {display: "grid", gridTemplateColumns: "minmax(96px, 160px) minmax(0, 1fr)", columnGap: 16};
 const P_CELL: CSSProperties = {padding: "8px 0", minWidth: 0, overflowWrap: "anywhere"};
@@ -281,12 +282,9 @@ function Notice({text, label}: {text: string; label?: string}){
 }
 
 // A pane takes the DecisionCard's surface, the panel ground under an inset
-// line, on the 4px grid. The design system has no pane of its own, and the
-// old pane class's border and ground no longer reach it.
+// line, on the 4px grid. The design system has no pane of its own.
 const PANE: CSSProperties = {padding: "16px 24px", margin: "0 0 16px", border: 0, background: "var(--panel)",
   boxShadow: "inset 0 0 0 1px var(--line)"};
-// The old sheet's ".screen h2" outranks the system's section class and sets a
-// mono uppercase face, so the section heading states the system's values.
 const SECTION_HEAD: CSSProperties = {margin: 0, font: "600 20px/28px var(--font-sans)", letterSpacing: "normal", textTransform: "none"};
 const FSEC: CSSProperties = {boxShadow: "inset 0 1px 0 var(--line)"};
 const FSUM: CSSProperties = {padding: "12px 0", cursor: "pointer", font: "600 16px/24px var(--font-sans)", color: "var(--ink)"};

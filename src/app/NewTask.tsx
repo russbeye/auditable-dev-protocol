@@ -325,6 +325,10 @@ type NewTaskState = ReturnType<typeof useNewTask>;
 type Act = Pick<NewTaskState, "setField" | "addRow" | "delRow">;
 
 const FULL: CSSProperties = {width: "100%"};
+// We keep a spoken twin rendered but off screen. display:none would silence
+// it for assistive technology, so we clip it to one pixel instead.
+const SR_ONLY: CSSProperties = {position: "absolute", width: 1, height: 1, margin: -1, padding: 0, border: 0, overflow: "hidden",
+  clip: "rect(0 0 0 0)", whiteSpace: "nowrap"};
 type TextProps = {path: string; v: string; ph?: string; id?: string; aria?: string; prose?: boolean; sm?: boolean; act: Act};
 function Text({path, v, ph, id, aria, prose, sm, act}: TextProps){
   return <input type="text" className={"adp-input" + (sm ? " adp-input--sm" : "") + (prose ? " adp-input--prose" : "")} id={id} data-nf={path}
@@ -410,7 +414,7 @@ function Checklist({nt}: {nt: NewTaskState}){
     <div><div style={label}>Required · {unmet}</div><ul style={{...list, gap: 4}}>{REQUIRED.map(([k, name]) => {
       const done = !keys.has(k);
       return <li key={k} data-req={k} data-issue={done ? undefined : k} data-at={done ? undefined : at(k)} style={{display: "flex", gap: 12, font: "400 15px/24px var(--font-sans)", color: done ? "var(--dim)" : "var(--ink-2)"}}>
-        <span aria-hidden="true" style={{color: done ? "var(--ok)" : "var(--faint)"}}>{done ? "●" : "○"}</span>{name}{done ? <span className="sr-live"> done</span> : null}</li>;
+        <span aria-hidden="true" style={{color: done ? "var(--ok)" : "var(--faint)"}}>{done ? "●" : "○"}</span>{name}{done ? <span style={SR_ONLY}> done</span> : null}</li>;
     })}</ul></div>
     <div><div style={label}>Also fix · {other.length}</div><ul style={{...list, gap: 8}}>{other.map(([k, msg], i) => <li key={i} data-issue={k} data-at={nt.issues.findIndex(x => x[0] === k && x[1] === msg)}>
       <div style={{font: "400 12px/24px var(--font-mono)", color: "var(--blue-bright)"}}>{k}</div>
@@ -439,7 +443,7 @@ function Bar({nt}: {nt: NewTaskState}){
       <button type="button" className="adp-btn adp-btn--text" data-op="ntdl" onClick={nt.download}>Download</button>
       <button type="button" className="adp-btn adp-btn--text" data-op="ntyaml" onClick={nt.toggleYaml}>Preview YAML</button>
       <button type="button" className="adp-btn" data-op="ntcopy" onClick={nt.copy}>{nt.copyLabel || "Copy YAML"}</button>
-      <div className="sr-live" id="ntLive" role="status" aria-live="polite">{nt.spoken}</div>
+      <div style={SR_ONLY} id="ntLive" role="status" aria-live="polite">{nt.spoken}</div>
     </div>
   </div>;
 }

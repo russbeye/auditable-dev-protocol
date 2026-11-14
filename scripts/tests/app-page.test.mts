@@ -3419,7 +3419,10 @@ test("prose blocks take the Table and Pre components and on-grid values, and the
   assert.match(html, /<div role="list" style="margin:0 0 16px;[^"]*"><div role="listitem" style="display:grid;grid-template-columns:24px minmax\(0,1fr\);gap:8px"><span data-num="" style="font:400 12px\/24px var\(--font-mono\);color:var\(--blue-bright\)">1<\/span><span>one<\/span><\/div><\/div>/);
   assert.match(P.renderProse("3. three\n4. four"), />3<\/span><span>three<\/span>[\s\S]*>4<\/span><span>four<\/span>/);
   assert.match(html, /<hr style="margin:24px 0;/);
-  assert.match(html, /<li class="task"><span style="display:inline-flex;[^"]*width:16px;height:16px;[^"]*">✓<\/span><span>done<\/span><\/li>/);
+  // A task item is a div, because the Prose rule gives every li a ▸ marker
+  // that no inline style can hide, and a task item shows its box instead.
+  assert.match(html, /<div role="listitem" class="task" style="display:flex;gap:12px;align-items:flex-start"><span style="display:inline-flex;[^"]*width:16px;height:16px;[^"]*">✓<\/span><span>done<\/span><\/div>/);
+  assert.doesNotMatch(html, /<li class="task"/);
   assert.match(html, /<h3 style="margin:32px 0 8px;font:500 11px\/24px var\(--font-mono\);[^"]*color:var\(--blue-bright\)">Sub head<\/h3>/);
   assert.doesNotMatch(html, /md-tbl|tbl-wrap|class="cb"|class="sub"|cbx|<ol/);
   const plain = P.renderMarkdown(md);
@@ -4876,25 +4879,21 @@ test("no screen offers a file input, a paste field, or a drop target", async () 
 // ---- the sheets own the app's classes ----
 
 /* Everything the app paints outside a rendered document takes its classes
-   from adp-bundle.css, or from adp-shell.css on a screen not yet moved onto
-   the design system. Rendered documents sit in .md, where the theme's
-   document styles apply. Two theme classes are deliberate: .md itself, and
-   .sr-live, which hides New task's spoken verdict. The hook classes carry no
+   from adp-bundle.css, the one sheet with class rules. Rendered documents sit
+   in .md, which carries the parser's own classes. The hook classes carry no
    style at all, because the handlers and the tests select by them. The
-   shell's grid sits in its own style attribute. */
-const THEME_CLASSES = new Set(["md", "sr-live"]);
-const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow", "dlrow", "wbl", "wl", "fsec", "fsum"]);
-test("the app's screens use only adp-bundle.css and adp-shell.css classes outside rendered documents", async () => {
+   shell's layout sits in style attributes. */
+const HOOK_CLASSES = new Set(["shell", "main", "stage", "screen", "is-on", "doc", "secnav", "md", "sth", "wbrow", "wrow", "lgrow",
+  "dlrow", "wbl", "wl", "fsec", "fsum"]);
+test("the app's screens use only adp-bundle.css classes outside rendered documents", async () => {
+  const css = fs.readFileSync(path.join(import.meta.dirname, "..", "adp-bundle.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   const shell = new Set<string>();
-  for (const sheet of ["adp-bundle.css", "adp-shell.css"]){
-    const css = fs.readFileSync(path.join(import.meta.dirname, "..", sheet), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-    for (const seg of css.split(/\{[^{}]*\}/)) for (const m of seg.matchAll(/\.([A-Za-z_-][A-Za-z0-9_-]*)/g)) shell.add(m[1]);
-  }
+  for (const seg of css.split(/\{[^{}]*\}/)) for (const m of seg.matchAll(/\.([A-Za-z_-][A-Za-z0-9_-]*)/g)) shell.add(m[1]);
   const used = new Set<string>();
   const take = () => { for (const el of $$("[class]")) if (!el.parentElement?.closest(".md"))
     for (const c of el.getAttribute("class")!.split(/\s+/)) if (c) used.add(c); };
   await everyScreen(take);
-  const orphans = [...used].filter(c => !shell.has(c) && !THEME_CLASSES.has(c) && !HOOK_CLASSES.has(c)).sort();
+  const orphans = [...used].filter(c => !shell.has(c) && !HOOK_CLASSES.has(c)).sort();
   assert.deepEqual(orphans, []);
   // A hook that gains a rule belongs in the sheet's set, not in this list.
   for (const c of HOOK_CLASSES) assert.ok(used.has(c) && !shell.has(c), c);
