@@ -8,7 +8,7 @@ import * as S from "../lib/adp-shell-lib.ts";
 import type {Ticket} from "../lib/adp-index-lib.ts";
 import type {DLEntry} from "../lib/adp-parser-lib.ts";
 import type {Corpus, ReviewGroup, ReviewLedger, ReviewVerdictFields, SortState, ViewMode} from "../lib/adp-shell-lib.ts";
-import {FILL, Html, Notice, PANE, ROUND_STEP, STEP_BTN, roundSteps, useArrows, P_GRID, P_K, P_V, Permalink, RoundLink, SECTION_HEAD, Tickhead, decisionRows, entriesOf, filterCounts,
+import {FILL, Html, Notice, PANE, ROUND_STEP, SELECT, STEP_BTN, roundSteps, useArrows, P_GRID, P_K, P_V, Permalink, RoundLink, SECTION_HEAD, Tickhead, decisionRows, entriesOf, filterCounts,
   promptOf, revTok, reviewsOf, watchRows} from "./Inspector.tsx";
 import {PhaseStrip, stripModel} from "./PhaseStrip.tsx";
 import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
@@ -277,10 +277,10 @@ function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, i
   const tok = revTok(corpus, tokenOf, t.dir);
   return regions(top(t.dir, g.label + " · " + (g.rounds.length === 1 ? "1 round" : g.rounds.length + " rounds")),
     <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "12px 0 16px"}}>
-      {groups.length > 1 ? <select id="revPr" className="adp-select" aria-label="pull request" style={{lineHeight: "normal"}} value={g.pr}
+      {groups.length > 1 ? <select id="revPr" className="adp-select" aria-label="pull request" style={{...SELECT, lineHeight: "normal"}} value={g.pr}
         onChange={e => act.onPr(e.target.value)}>{groups.map(x => <option key={x.pr} value={x.pr}>{x.label}</option>)}</select> : null}
       <button type="button" className="adp-btn" data-revstep="-1" style={STEP_BTN} disabled={at.ri <= 0} onClick={() => act.onPick(g.rounds[at.ri - 1].file)}>‹ prev</button>
-      <select id="revSel" className="adp-select" aria-label="round" style={{flex: "0 1 440px", minWidth: 220, lineHeight: "normal"}} value={r.file}
+      <select id="revSel" className="adp-select" aria-label="round" style={{...SELECT, flex: "0 1 440px", minWidth: 220, lineHeight: "normal"}} value={r.file}
         onChange={e => act.onPick(e.target.value)}>
         {g.rounds.map(x => <option key={x.file} value={x.file}>{"Round " + x.k + " · " + x.date}</option>)}</select>
       <button type="button" className="adp-btn" data-revstep="1" style={STEP_BTN} disabled={at.ri >= g.rounds.length - 1} onClick={() => act.onPick(g.rounds[at.ri + 1].file)}>next ›</button>

@@ -345,6 +345,15 @@ function reviewsOf(corpus: Corpus | null, tok: string, dir: string, onRound: (to
   return {count: rounds.length, current, onOpen: () => onRound(tok, latest.file)};
 }
 
+/* A select draws its own down chevron at its right edge, so it reads as a
+   dropdown in both themes and every browser. The system's select sets its
+   ground with the background shorthand, which leaves no arrow, and the
+   browser's own arrow is turned off by the older sheet. Two small gradient
+   triangles in the dim ink make the chevron. */
+const SELECT: CSSProperties = {appearance: "none", paddingRight: 36, backgroundRepeat: "no-repeat",
+  backgroundImage: "linear-gradient(45deg, transparent 50%, var(--dim) 50%), linear-gradient(135deg, var(--dim) 50%, transparent 50%)",
+  backgroundPosition: "calc(100% - 18px) center, calc(100% - 13px) center", backgroundSize: "5px 5px, 5px 5px"};
+
 // The prev and next buttons stand as tall as the select between them, so the
 // row reads as one control. The system's button is 28px and its select 36px.
 const STEP_BTN: CSSProperties = {height: 36};
@@ -354,7 +363,7 @@ function SecNav({entries, states, selKey, onPick, onStep}: {entries: Entry[]; st
   const i = entries.findIndex(en => en.key === selKey);
   return <div className="secnav" style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "12px 0 16px"}}>
     <button type="button" className="adp-btn" data-secstep="-1" style={STEP_BTN} disabled={i <= 0} onClick={() => onStep(-1)}>‹ prev</button>
-    <select id="secSel" className="adp-select" aria-label="section" style={{flex: "0 1 440px", minWidth: 220, lineHeight: "normal"}}
+    <select id="secSel" className="adp-select" aria-label="section" style={{...SELECT, flex: "0 1 440px", minWidth: 220, lineHeight: "normal"}}
       value={i >= 0 ? entries[i].key : ""} onChange={e => onPick(e.target.value)}>
       {entries.map(en => {
         const st = states[en.key];
@@ -682,5 +691,5 @@ function useMemoPrompt(p: FetchedText | undefined): PromptView | null {
   return ref.current.out;
 }
 
-export {FILL, Html, Inspector, Notice, ROUND_STEP, STEP_BTN, roundSteps, useArrows, Tickhead, reviewsOf, PANE, P_GRID, P_K, P_V, SECTION_HEAD, typing, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
+export {FILL, Html, Inspector, Notice, ROUND_STEP, SELECT, STEP_BTN, roundSteps, useArrows, Tickhead, reviewsOf, PANE, P_GRID, P_K, P_V, SECTION_HEAD, typing, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
 export type {InspectorActions, InspSel, PromptView};

@@ -6,6 +6,7 @@ import * as S from "../lib/adp-shell-lib.ts";
 import type {Advisory} from "../lib/adp-index-builder-lib.ts";
 import type {Ticket} from "../lib/adp-index-lib.ts";
 import type {Corpus, Pack} from "../lib/adp-shell-lib.ts";
+import {SELECT} from "./Inspector.tsx";
 
 type PackProps = {
   // Null until the pack load answers, and after a load that failed.
@@ -82,7 +83,7 @@ function PackDrawer({packs, sel, corpus, today, t, advisories, bootNotice, copyL
       <div className="adp-drawer__body" style={{flex: "1 1 auto", minHeight: 0, overflowY: "auto"}}>
         {pack ? <div style={{display: "flex", alignItems: "flex-end", gap: 12, flexWrap: "wrap"}}>
           <label className="adp-field" style={{flex: "1 1 240px"}}>Pack
-            <select className="adp-select" id="packSel" value={pack.name} onChange={e => onPick(e.target.value)}>
+            <select className="adp-select" id="packSel" style={SELECT} value={pack.name} onChange={e => onPick(e.target.value)}>
               {packs!.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
             </select>
           </label>

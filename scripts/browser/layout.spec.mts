@@ -90,6 +90,8 @@ test.describe("at 1440px", () => {
           const cs = getComputedStyle(el), name = el.outerHTML.slice(0, 80);
           if (cs.borderTopLeftRadius !== "0px" || cs.borderBottomRightRadius !== "0px") out.push(`${name} has a rounded corner`);
           if (!/^"?(JetBrains Mono|Space Grotesk)"?/.test(cs.fontFamily)) out.push(`${name} is set in ${cs.fontFamily}`);
+          // A select with the browser's arrow turned off must draw its own, so it reads as a dropdown.
+          if (el.matches(".adp-select") && cs.appearance === "none" && cs.backgroundImage === "none") out.push(`${name} shows no dropdown arrow`);
           const want = HEIGHT.find(([sel]) => el.matches(sel));
           if (want && want[1] > 0 && Math.abs(el.getBoundingClientRect().height - want[1]) > 0.5)
             out.push(`${name} is ${el.getBoundingClientRect().height}px, not ${want[1]}px`);
