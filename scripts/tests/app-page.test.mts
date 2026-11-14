@@ -326,7 +326,8 @@ function decarded(got: Snapshot, want: Region): [Snapshot, Region] {
    again, and the footer loses its separators. */
 // How many headings and footers the walk mapped back, so a test can show it met both.
 const readSeen = {runin: 0, meta: 0};
-function unread(got: Snapshot): Snapshot {
+function unread(snap: Snapshot): Snapshot {
+  let got = snap;
   const text = got.main!.text.slice();
   let from = 0;
   for (const el of $$("#scrInspector h3[data-runin], #scrInspector footer[data-meta]")){
@@ -338,6 +339,24 @@ function unread(got: Snapshot): Snapshot {
     text.splice(i, run.length, ...back);
     from = i + back.length;
   }
+  // A prompt key's YAML name moved from beside its title into the title's
+  // tooltip (DL-064). For each title in page order we put the name back as a
+  // run after the title and its one-line value, and take the tooltip out of
+  // the attributes.
+  from = 0;
+  const attrs = got.main!.attrs.slice();
+  for (const el of $$("#scrInspector [data-p=title]")){
+    const i = text.indexOf(el.textContent!, from);
+    assert.ok(i >= 0, "the render lacks prompt title " + el.textContent);
+    const val = el.nextElementSibling;
+    const at = i + 1 + (val && val.getAttribute("data-p") === "val" ? record(val).text.length : 0);
+    text.splice(at, 0, el.getAttribute("title")!);
+    from = at + 1;
+    const j = attrs.indexOf("title=" + el.getAttribute("title"));
+    assert.ok(j >= 0, "the render lacks the tooltip of " + el.textContent);
+    attrs.splice(j, 1);
+  }
+  got = {...got, main: {...got.main!, attrs}};
   // A numbered list shows its numbers as text (DL-062), where the vanilla
   // page drew them with a counter. We take each number run out in page order.
   from = 0;
@@ -2349,7 +2368,8 @@ test("the prompt view renders every top-level key, the unknown one included", ()
   const heads = [...html.matchAll(/<span data-p="title"[^>]*>([^<]+)<\/span>/g)].map(m => m[1]);
   assert.deepEqual(heads, ["Schema Version", "Task", "Preamble", "Role", "Prompt", "Constraints",
     "Context", "Lessons Learned", "Output", "Requirements", "Protocol", "Reviewer Notes"]);
-  assert.match(html, /<span data-p="key"[^>]*>lessons_learned<\/span>/);
+  assert.match(html, /<span data-p="title" title="lessons_learned"[^>]*>Lessons Learned<\/span>/);
+  assert.doesNotMatch(html, /data-p="key"/);
   assert.match(html, /<span data-p="title"[^>]*>Schema Version<\/span><span data-p="val"[^>]*>1\.0<\/span>/);
   assert.match(html, /<div data-p="k"[^>]*>title<\/div><div data-p="v"[^>]*>Full prompt<\/div>/);
   assert.match(html, /<th>path<\/th><th>lines<\/th><th>note<\/th>/);
@@ -2378,7 +2398,7 @@ test("block text inside a table cell renders as markdown", () => {
 test("the prompt view draws eyebrow titles and grid rows with no old card class", () => {
   const html = promptHtml(FULL_PROMPT);
   assert.doesNotMatch(html, /class="[^"]*pcard/);
-  assert.match(html, /<span data-p="title" style="font: 500 11px\/24px var\(--font-mono\);[^"]*color: var\(--blue-bright\);">Task<\/span>/);
+  assert.match(html, /<span data-p="title" title="task" style="font: 500 11px\/24px var\(--font-mono\);[^"]*color: var\(--blue-bright\);">Task<\/span>/);
   assert.match(html, /<div data-p="k" style="padding: 8px 0px;[^"]*font: 400 13px\/24px var\(--font-sans\);/);
   assert.match(html, /<div data-p="v" style="padding: 8px 0px;[^"]*font: 400 15px\/24px var\(--font-sans\);/);
   // Spacing alone keeps the rows apart (DL-063), so no row draws a rule.

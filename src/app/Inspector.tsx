@@ -150,6 +150,8 @@ function resolveSection(t: Ticket, prompt: PromptView | null, s: string | null, 
    and exact. A link item becomes an anchor only for an absolute http, https,
    or mailto URL, because a relative one would resolve against this page.
    Every value shows, so the board's "Show more" folds are left out. The
+   YAML key name sits in the title's tooltip, not beside it, because a second
+   name for every key read as a second header. The
    parts carry data-p hooks, not the old pcard classes, which the old sheet
    still styles for the vanilla builder. */
 const P_NONE: CSSProperties = {color: "var(--faint)", fontStyle: "italic"};
@@ -159,7 +161,6 @@ const P_K: CSSProperties = {...P_CELL, font: "400 13px/24px var(--font-sans)", c
 const P_V: CSSProperties = {...P_CELL, font: "400 15px/24px var(--font-sans)", color: "var(--ink)"};
 const P_TITLE: CSSProperties = {font: "500 11px/24px var(--font-mono)", letterSpacing: ".14em", textTransform: "uppercase", color: "var(--blue-bright)"};
 const P_VAL: CSSProperties = {font: "400 16px/28px var(--font-sans)", color: "var(--ink)", minWidth: 0, overflowWrap: "anywhere"};
-const P_KEY: CSSProperties = {marginLeft: "auto", font: "400 12px/24px var(--font-mono)", color: "var(--faint)"};
 function Scalar({v, at}: {v: unknown; at: string}){
   if (v == null || v === "") return <span style={P_NONE}>empty</span>;
   if (typeof v === "string" && at === "context.links[]" && S.LINK_ITEM.test(v) && P.safeLinkUrl(v))
@@ -208,9 +209,8 @@ function PromptCards({obj}: {obj: YamlMap}){
     const v = obj[k];
     return <section key={k} data-p="card" style={{marginTop: n ? 32 : 0}}>
       <div style={{display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 8}}>
-        <span data-p="title" style={P_TITLE}>{S.keyTitle(k)}</span>
-        {S.isLine(v) ? <span data-p="val" style={P_VAL}><Scalar v={v} at={k}/></span> : null}
-        <span data-p="key" style={P_KEY}>{k}</span></div>
+        <span data-p="title" title={k} style={P_TITLE}>{S.keyTitle(k)}</span>
+        {S.isLine(v) ? <span data-p="val" style={P_VAL}><Scalar v={v} at={k}/></span> : null}</div>
       {S.isLine(v) ? null : <Value v={v} at={k}/>}
     </section>;
   })}</div>;
