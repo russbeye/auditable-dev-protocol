@@ -13,7 +13,7 @@ import type {DLEntry, EscapedHtml, Section} from "../lib/adp-parser-lib.ts";
 import type {YamlMap, YamlValue} from "../lib/adp-prompt-lib.ts";
 import type {Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPanelRow} from "../lib/adp-shell-lib.ts";
 import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
-import {PhaseStrip, stripModel, type StripReviews} from "./PhaseStrip.tsx";
+import {PhaseStrip, gapNote, stripModel, type StripReviews} from "./PhaseStrip.tsx";
 
 type HtmlProps = {html: EscapedHtml; as?: "div" | "span" | "td" | "dd"; className?: string; style?: CSSProperties;
   onClick?(e: ReactMouseEvent<HTMLElement>): void};
@@ -260,8 +260,9 @@ type DocPaneProps = {back?: string; onBack?(): void; heading: string; badge?: st
 
 /* A message in the ticket view: a section never written, a link that found
    nothing, or no ticket yet. It takes the design system's Notice. */
-function Notice({text}: {text: string}){
-  return <div className="adp-notice" style={{marginBottom: 16}}><span className="adp-notice__text">{text}</span></div>;
+function Notice({text, label}: {text: string; label?: string}){
+  return <div className="adp-notice" style={{marginBottom: 16}}>
+    {label ? <span className="adp-notice__label">{label}</span> : null}<span className="adp-notice__text">{text}</span></div>;
 }
 
 // A pane takes the DecisionCard's surface, the panel ground under an inset
@@ -623,8 +624,10 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     </>;
   }
 
+  const gap = gapNote(strip, entries.filter(en => !en.prompt && !en.missing && !en.canonical).map(en => en.title));
   return regions(top,
-    <><PhaseStrip model={strip} reviews={reviews} onPick={act.onStep}/>
+    <>{gap ? <div id="gapNote" role="note" style={{marginTop: 16}}><Notice label={gap.label} text={gap.text}/></div> : null}
+      <PhaseStrip model={strip} reviews={reviews} onPick={act.onStep}/>
       <SecNav entries={entries} states={states} selKey={sel.s} onPick={act.onSection} onStep={d => {
         const i = entries.findIndex(en => en.key === sel.s) + d;
         if (i >= 0 && i < entries.length) act.onStep(entries[i].key);

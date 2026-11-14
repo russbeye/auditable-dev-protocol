@@ -16,7 +16,7 @@ import * as D from "../../src/lib/adp-derive-lib.ts";
 import * as P from "../../src/lib/adp-parser-lib.ts";
 import {App} from "../../src/app/App.tsx";
 import {PromptCards, SPY_SLACK} from "../../src/app/Inspector.tsx";
-import {stripModel} from "../../src/app/PhaseStrip.tsx";
+import {gapNote, stripModel} from "../../src/app/PhaseStrip.tsx";
 import {Rail} from "../../src/app/Rail.tsx";
 import {ReviewBody} from "../../src/app/Reviews.tsx";
 import * as PL from "../../src/lib/adp-prompt-lib.ts";
@@ -240,19 +240,21 @@ function regrouped(rail: Region): Region {
   return {text: [BASE_STATES.size + " tickets", "«", ...out], attrs: ["aria-label=Tickets", "title=Hide tickets [",
     "aria-label=Hide tickets sidebar", "aria-label=Filter tickets", "placeholder=Filter tickets", ...rail.attrs]};
 }
-/* The phase strip is new, so the comparison takes the strip's own record
-   out of the app's render, as one unbroken run in place. The strip's tests
-   pin what it shows. */
+/* The phase strip and the missing-phases note above it are new, so the
+   comparison takes each one's own record out of the app's render, as one
+   unbroken run in place. Their own tests pin what they show. */
 function withoutStrip(snap: Snapshot): Snapshot {
-  const el = $("#phaseStrip");
-  if (!el) return snap;
   const cut = (list: string[], run: string[]) => {
     const i = list.findIndex((_, j) => run.every((x, k) => list[j + k] === x));
-    assert.ok(i >= 0, "the render lacks the strip's run " + run.join(" | "));
+    assert.ok(i >= 0, "the render lacks the run " + run.join(" | "));
     return [...list.slice(0, i), ...list.slice(i + run.length)];
   };
-  const r = record(el);
-  return {...snap, main: {...snap.main!, text: cut(snap.main!.text, r.text), attrs: cut(snap.main!.attrs, r.attrs)}};
+  for (const el of [$("#gapNote"), $("#phaseStrip")]){
+    if (!el) continue;
+    const r = record(el);
+    snap = {...snap, main: {...snap.main!, text: cut(snap.main!.text, r.text), attrs: cut(snap.main!.attrs, r.attrs)}};
+  }
+  return snap;
 }
 /* The section select no longer carries a chip with the shown section's
    state (CD5). The option text still names every state but "complete", so
@@ -2947,8 +2949,26 @@ test("the strip model marks written, missing, current, and extra boxes, and says
   assert.equal(only.extra, null);
 });
 
+// A log that skips phases warns above the strip, as the TicketIncomplete
+// board does: the label counts the gap and the text names what is there.
+test("the missing-phases note counts the gap and names what the log holds", () => {
+  const all = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => sec("p" + n, n));
+  assert.equal(gapNote(stripModel(all, null), ["Closure"]), null);
+  assert.equal(gapNote(stripModel([], null), []), null);
+  assert.deepEqual(gapNote(stripModel([sec("p1", 1), sec("p5", 5)], null), ["Closure", "Sweep amendment"]),
+    {label: "7 OF 9 PHASES MISSING", text: "This log has only Phase 1 and Phase 5, plus 2 extra sections: Closure and Sweep amendment."});
+  assert.deepEqual(gapNote(stripModel([sec("p1", 1), sec("p2", 2), sec("p5", 5)], null), ["A", "B", "C"]),
+    {label: "6 OF 9 PHASES MISSING", text: "This log has only Phase 1, Phase 2, and Phase 5, plus 3 extra sections: A, B, and C."});
+  assert.deepEqual(gapNote(stripModel([sec("p5", 5)], null), []),
+    {label: "8 OF 9 PHASES MISSING", text: "This log has only Phase 5."});
+  assert.deepEqual(gapNote(stripModel([], null), ["Ledger"]),
+    {label: "9 OF 9 PHASES MISSING", text: "This log has no phase yet, only 1 extra section: Ledger."});
+});
+
 test("the strip opens a phase or the extra sections, and the select still lists every section", async () => {
   await bootCorpus({hash: "#t=AA1&s=sec-decision-log"});
+  assert.equal($("#gapNote .adp-notice__label").textContent, "5 OF 9 PHASES MISSING");
+  assert.equal($("#gapNote").getAttribute("role"), "note");
   assert.deepEqual(boxes(), ["P", "1", "2-", "3-", "4-", "5*", "6-", "7", "8-", "9", "+1"]);
   assert.equal($("#phaseStrip .adp-phases__note").textContent, "Dashed boxes are missing phases");
   await click($('#phaseStrip [data-step="sec-pr-summary"]'));

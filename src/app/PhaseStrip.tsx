@@ -35,6 +35,25 @@ function stripModel(entries: readonly StripEntry[], selKey: string | null): Stri
   return {prompt, phases, extra, note, steps};
 }
 
+// Lists names the way a sentence does: "A", "A and B", "A, B, and C".
+function spoken(names: readonly string[]): string {
+  return names.length < 3 ? names.join(" and ") : names.slice(0, -1).join(", ") + ", and " + names[names.length - 1];
+}
+
+/* A log that skips phases gets a warning above the strip. The label counts
+   the missing phases, and the text names what the log does hold, so the
+   reader knows the gap before reading any section. A complete log, and a
+   ticket with no log, get no warning. */
+function gapNote(model: StripModel, extraTitles: readonly string[]): {label: string; text: string} | null {
+  const written = model.phases.filter(b => !b.missing).map(b => "Phase " + b.label);
+  if (written.length === 9 || (!written.length && !extraTitles.length)) return null;
+  const has = written.length ? "This log has only " + spoken(written) : "This log has no phase yet";
+  const extra = !extraTitles.length ? ""
+    : (written.length ? ", plus " : ", only ") + (extraTitles.length === 1 ? "1 extra section: " : extraTitles.length + " extra sections: ")
+      + spoken(extraTitles);
+  return {label: (9 - written.length) + " OF 9 PHASES MISSING", text: has + extra + "."};
+}
+
 // The reviews box carries the ticket's round count and opens its latest round.
 // It is current while the reviews screen shows a round.
 type StripReviews = {count: number; current?: boolean; onOpen(): void};
@@ -68,5 +87,5 @@ function PhaseStrip({model, reviews, onPick}: PhaseStripProps){
   </nav>;
 }
 
-export {PhaseStrip, stripModel};
+export {PhaseStrip, gapNote, stripModel};
 export type {StripEntry, StripModel, StripReviews};
