@@ -82,11 +82,26 @@ function Rail(p: RailProps){
     wasOver.current = over;
   }, [over]);
 
+  /* The rail scrolls on its own, and a row runs three lines, so a ticket
+     near the rail's foot can sit below its first screen. Whenever the
+     selection changes or the rail opens, we scroll the rail, and only the
+     rail, by the least amount that shows the selected row. A row the reader
+     can already see stays put. */
+  const railRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const box = railRef.current;
+    const row = box && p.selId ? [...box.querySelectorAll<HTMLElement>("[data-key]")].find(el => el.dataset.key === p.selId) : null;
+    if (!box || !row) return;
+    const r = row.getBoundingClientRect(), b = box.getBoundingClientRect();
+    if (r.top < b.top) box.scrollTop -= b.top - r.top;
+    else if (r.bottom > b.bottom) box.scrollTop += r.bottom - b.bottom;
+  }, [p.selId, p.folded]);
+
   const strip = <Strip attention={p.attention} selId={p.selId} onFold={p.onFold} stripRef={stripRef}/>;
   if (p.folded) return strip;
   const shown = p.groups.reduce((n, [, list]) => n + list.length, 0);
   const q = p.filter.trim();
-  const rail = <aside className="adp-rail" id="rail" aria-label="Tickets" style={over ? OVER : {width: "auto", overflowY: "auto"}}>
+  const rail = <aside ref={railRef} className="adp-rail" id="rail" aria-label="Tickets" style={over ? OVER : {width: "auto", overflowY: "auto"}}>
     <div className="adp-rail__head">
       <span className="adp-label" style={{color: "var(--faint)"}}>{q ? shown + " of " + p.total + " tickets" : p.total + " tickets"}</span>
       <button type="button" className="adp-btn adp-btn--icon" id="railHide" aria-expanded="true" aria-controls="rail"

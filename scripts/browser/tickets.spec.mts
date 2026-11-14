@@ -24,10 +24,36 @@ test("a decision card's head folds and unfolds its fields in the browser", async
   await expect(cards.nth(0).locator(".adp-dl__body")).toBeHidden();
 });
 
+// A rail row carries its date and reason on lines of their own (DL-038), so
+// the rail runs long. At 1290px a ticket picked from the bottom of the rail
+// must still show its row on screen when the page boots on it.
+test.describe("at 1290px", () => {
+  test.use({viewport: {width: 1290, height: 720}});
+  test("the selected ticket's rail row is on screen at boot, even at the rail's foot", async ({page, server}) => {
+    await open(page, server.url);
+    const keys = await page.locator("#rail a.adp-rail__item[data-key]").evaluateAll(a => a.map(x => x.getAttribute("data-key")!));
+    expect(keys.length).toBeGreaterThan(3);
+    const last = keys.at(-1)!;
+    await open(page, server.url + "#t=" + encodeURIComponent(last));
+    const row = page.locator(`#rail a.adp-rail__item[data-key="${last}"]`);
+    await expect(row).toHaveAttribute("aria-current", "true");
+    await expect(row).toBeInViewport();
+    const seen = await row.evaluate(el => {
+      let box: HTMLElement | null = el.parentElement;
+      while (box && !(box.scrollHeight > box.clientHeight && /auto|scroll/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
+      const r = el.getBoundingClientRect(), b = (box || document.documentElement).getBoundingClientRect();
+      return r.top >= Math.max(b.top, 0) - 1 && r.bottom <= Math.min(b.bottom, innerHeight) + 1;
+    });
+    expect(seen).toBe(true);
+  });
+});
+
 // A section's cards and prose fill the pane inside its padding, because the
 // Prose column cap left a long card in a narrow band (DL-056).
 test("a section's decision cards span the pane's content width", async ({page, server}) => {
   await open(page, server.url + "#t=FX001&s=sec-decision-log");
+  // The page renders the section after boot, so we wait for its first card before we measure.
+  await expect(page.locator("#scrInspector .adp-dl").first()).toBeVisible();
   const widths = await page.evaluate(() => {
     const card = document.querySelector("#scrInspector .adp-dl") as HTMLElement;
     const pane = card.closest(".doc") as HTMLElement;
