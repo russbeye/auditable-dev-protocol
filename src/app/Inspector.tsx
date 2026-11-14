@@ -142,8 +142,8 @@ function resolveSection(t: Ticket, prompt: PromptView | null, s: string | null, 
 // ---- the prompt view ----
 
 /* The prompt view reads as a document, as the TicketPrompt board draws it.
-   Each top-level key is an eyebrow heading, and a one-line value sits beside
-   it. A map is a list of label and value rows, kept apart by spacing alone,
+   Each top-level key is its own pane with a section heading, as each section
+   of a review round is, and a one-line value sits beside the heading. A map is a list of label and value rows, kept apart by spacing alone,
    because a rule under every row drew the eye away from the text. A multi-line
    string is prose, so it goes through the markdown renderer the logs use,
    with the design system's blocks and chips. A one-line string shows escaped
@@ -159,7 +159,6 @@ const P_GRID: CSSProperties = {display: "grid", gridTemplateColumns: "minmax(96p
 const P_CELL: CSSProperties = {padding: "8px 0", minWidth: 0, overflowWrap: "anywhere"};
 const P_K: CSSProperties = {...P_CELL, font: "400 13px/24px var(--font-sans)", color: "var(--dim)"};
 const P_V: CSSProperties = {...P_CELL, font: "400 15px/24px var(--font-sans)", color: "var(--ink)"};
-const P_TITLE: CSSProperties = {font: "500 11px/24px var(--font-mono)", letterSpacing: ".14em", textTransform: "uppercase", color: "var(--blue-bright)"};
 const P_VAL: CSSProperties = {font: "400 16px/28px var(--font-sans)", color: "var(--ink)", minWidth: 0, overflowWrap: "anywhere"};
 function Scalar({v, at}: {v: unknown; at: string}){
   if (v == null || v === "") return <span style={P_NONE}>empty</span>;
@@ -205,11 +204,11 @@ function PromptField({k, v, at}: {k: string; v: YamlValue; at: string}){
 function PromptCards({obj}: {obj: YamlMap}){
   const known = S.NT_KEYS[""].filter(k => k in obj);
   const keys = known.concat(Object.keys(obj).filter(k => !known.includes(k)));
-  return <div>{keys.map((k, n) => {
+  return <div>{keys.map(k => {
     const v = obj[k];
-    return <section key={k} data-p="card" style={{marginTop: n ? 32 : 0}}>
-      <div style={{display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 8}}>
-        <span data-p="title" title={k} style={P_TITLE}>{S.keyTitle(k)}</span>
+    return <section key={k} data-p="card" className="doc" style={PANE}>
+      <div style={{display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: S.isLine(v) ? 0 : 16}}>
+        <h2 data-p="title" title={k} className="adp-section" style={SECTION_HEAD}>{S.keyTitle(k)}</h2>
         {S.isLine(v) ? <span data-p="val" style={P_VAL}><Scalar v={v} at={k}/></span> : null}</div>
       {S.isLine(v) ? null : <Value v={v} at={k}/>}
     </section>;
@@ -265,9 +264,11 @@ function Notice({text}: {text: string}){
   return <div className="adp-notice" style={{marginBottom: 16}}><span className="adp-notice__text">{text}</span></div>;
 }
 
-// The section pane sits on the 4px grid. The old pane class keeps its panel
-// ground and border, and we set its padding and spacing here.
-const PANE: CSSProperties = {padding: "16px 24px", margin: "0 0 16px"};
+// A pane takes the DecisionCard's surface, the panel ground under an inset
+// line, on the 4px grid. The design system has no pane of its own, and the
+// old pane class's border and ground no longer reach it.
+const PANE: CSSProperties = {padding: "16px 24px", margin: "0 0 16px", border: 0, background: "var(--panel)",
+  boxShadow: "inset 0 0 0 1px var(--line)"};
 // The old sheet's ".screen h2" outranks the system's section class and sets a
 // mono uppercase face, so the section heading states the system's values.
 const SECTION_HEAD: CSSProperties = {margin: 0, font: "600 20px/28px var(--font-sans)", letterSpacing: "normal", textTransform: "none"};
@@ -600,7 +601,11 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     const pr = prompt!;
     const start = pr.state === "unreadable" ? null : <div style={{margin: "0 0 16px"}}>
       <button type="button" className="adp-btn" data-op="startfrom" onClick={() => act.onStartFrom(pr.text, t.dir + "/prompt.yaml")}>start from this prompt</button></div>;
-    pane = <DocPane heading="prompt.yaml" notice={missNotice || promptNotice(pr)} action={start}><PromptBody pr={pr}/></DocPane>;
+    // A parsed prompt sets each key in a pane of its own under the prompt's
+    // pane, so the keys read as sections. A raw prompt stays inside.
+    pane = pr.state === "parsed" || pr.state === "issues"
+      ? <><DocPane heading="prompt.yaml" notice={missNotice || promptNotice(pr)} action={start}/><PromptBody pr={pr}/></>
+      : <DocPane heading="prompt.yaml" notice={missNotice || promptNotice(pr)} action={start}><PromptBody pr={pr}/></DocPane>;
   } else pane = sectionPane(entries.find(x => x.key === sel.s) || entries[0]);
 
   if (view !== "full"){

@@ -2374,12 +2374,12 @@ test("the prompt view renders every top-level key, the unknown one included", ()
   PL.parseYAML(FULL_PROMPT, issues);
   assert.deepEqual(issues, []);
   const html = promptHtml(FULL_PROMPT);
-  const heads = [...html.matchAll(/<span data-p="title"[^>]*>([^<]+)<\/span>/g)].map(m => m[1]);
+  const heads = [...html.matchAll(/<h2 data-p="title"[^>]*>([^<]+)<\/h2>/g)].map(m => m[1]);
   assert.deepEqual(heads, ["Schema Version", "Task", "Preamble", "Role", "Prompt", "Constraints",
     "Context", "Lessons Learned", "Output", "Requirements", "Protocol", "Reviewer Notes"]);
-  assert.match(html, /<span data-p="title" title="lessons_learned"[^>]*>Lessons Learned<\/span>/);
+  assert.match(html, /<h2 data-p="title" title="lessons_learned"[^>]*>Lessons Learned<\/h2>/);
   assert.doesNotMatch(html, /data-p="key"/);
-  assert.match(html, /<span data-p="title"[^>]*>Schema Version<\/span><span data-p="val"[^>]*>1\.0<\/span>/);
+  assert.match(html, /<h2 data-p="title"[^>]*>Schema Version<\/h2><span data-p="val"[^>]*>1\.0<\/span>/);
   assert.match(html, /<div data-p="k"[^>]*>title<\/div><div data-p="v"[^>]*>Full prompt<\/div>/);
   assert.match(html, /<th>path<\/th><th>lines<\/th><th>note<\/th>/);
   assert.match(html, /<th>id<\/th><th>statement<\/th><th>verify<\/th>/);
@@ -2402,12 +2402,14 @@ test("block text inside a table cell renders as markdown", () => {
   assert.match(html, /<td>Keep \*\*this\*\* exact<\/td>/);
 });
 
-// The prompt view reads as a document on the design system (DL-061): blue
-// eyebrow titles, label rows on the grid, and none of the old card classes.
-test("the prompt view draws eyebrow titles and grid rows with no old card class", () => {
+// The prompt view reads on the design system (DL-061, DL-067): each key in a
+// pane of its own under a section heading, label rows on the grid, and none
+// of the old card classes.
+test("the prompt view sets each key in its own pane with grid rows and no old card class", () => {
   const html = promptHtml(FULL_PROMPT);
   assert.doesNotMatch(html, /class="[^"]*pcard/);
-  assert.match(html, /<span data-p="title" title="task" style="font: 500 11px\/24px var\(--font-mono\);[^"]*color: var\(--blue-bright\);">Task<\/span>/);
+  assert.match(html, /<section data-p="card" class="doc" style="padding: 16px 24px; margin: 0px 0px 16px; border: 0px; background: var\(--panel\); box-shadow: inset 0 0 0 1px var\(--line\);"><div[^>]*><h2 data-p="title" title="task" class="adp-section" style="margin: 0px; font: 600 20px\/28px var\(--font-sans\);[^"]*">Task<\/h2>/);
+  assert.equal(html.split('<section data-p="card" class="doc"').length - 1, 12);
   assert.match(html, /<div data-p="k" style="padding: 8px 0px;[^"]*font: 400 13px\/24px var\(--font-sans\);/);
   assert.match(html, /<div data-p="v" style="padding: 8px 0px;[^"]*font: 400 15px\/24px var\(--font-sans\);/);
   // Spacing alone keeps the rows apart (DL-063), so no row draws a rule.
