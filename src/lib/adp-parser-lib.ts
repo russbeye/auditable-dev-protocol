@@ -417,7 +417,35 @@ function dlSplitBody(lines: string[]): DLBodySplit{
   return {fieldLines:lines, trailing:''};
 }
 
-function renderDLCard(entry: DLEntry): EscapedHtml{
+/* The design system's DecisionCard, which mission control draws. The
+   default card stays the markup the render goldens pin, so a caller asks for
+   this one by option. Confidence is a neutral Tag, and the status alone takes
+   a status chip's color. A note that the split word leaves behind becomes a
+   field row, as on the default card, so no text is lost. Every card starts
+   open, and a settled one sets its title lighter. The head is a button that
+   folds the fields, which the page wires up. */
+const DS_STATUS: Record<DLStatusKind,string>={invalidated:' adp-chip--invalidated',validated:' adp-chip--validated',
+  open:' adp-chip--open',unknown:' adp-chip--unknown',other:''};
+function renderDSCard(id: string, title: string, confidence: string, status: string, body: DLField[], trailing: string): EscapedHtml{
+  const conf=confidence?dlChipSplit(confidence):null;
+  const stat=status?dlChipSplit(status):null;
+  const kind=dlStatusKind(status);
+  if(conf&&conf.tail) body.push({label:'confidence note',value:dlConfKind(confidence)==='other'?confidence.trim():conf.tail});
+  if(stat&&stat.tail) body.push({label:'status note',value:kind==='other'?status.trim():stat.tail});
+  const settled=kind==='validated'||kind==='invalidated'||kind==='unknown';
+  const rows=body.map(f=>`<div><dt>${esc(f.label)}</dt><dd>${decorate(inline(f.value))}</dd></div>`).join('');
+  const trail=trailing?`<div class="md dl-trail">${renderMarkdown(trailing)}</div>`:'';
+  return `<div class="adp-dl${settled?' adp-dl--settled':''}" data-card="${escAttr(id)}">`
+    + `<button type="button" class="adp-dl__head" aria-expanded="true">`
+    + `<span class="adp-dl__id">${id?esc(id):'—'}</span><span class="adp-dl__title">${decorate(inline(title))}</span>`
+    + `<span>${conf?`<span class="adp-chip" title="confidence">${esc(conf.word)}</span>`:''}</span>`
+    + `<span>${stat?`<span class="adp-chip${DS_STATUS[kind]}" title="status">${esc(stat.word)}</span>`:''}</span>`
+    + `<span class="adp-dl__caret" aria-hidden="true">▾</span></button>`
+    + (rows?`<dl class="adp-dl__body">${rows}</dl>`:'')+trail+`</div>` as EscapedHtml;
+}
+
+type DLRenderOpts = {ds?: boolean};
+function renderDLCard(entry: DLEntry, opts?: DLRenderOpts): EscapedHtml{
   const hm=entry.head.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
   const id=hm?hm[1].trim():''; const title=hm?hm[2].trim():entry.head;
   const split=dlSplitBody(entry.lines);
@@ -429,6 +457,7 @@ function renderDLCard(entry: DLEntry): EscapedHtml{
     if(k==='status'){ status=f.value; continue; }
     body.push(f);
   }
+  if(opts&&opts.ds) return renderDSCard(id,title,confidence,status,body,split.trailing);
   const conf=confidence?dlConfPill(confidence):null;
   const stat=status?dlStatusPill(status):null;
   // We append the note rows after the author's fields so the pill order
@@ -496,10 +525,11 @@ function dlStatusCounts(body: unknown): DLStatusCounts{
    a list of bold labels such as "- **PR-COR-001:** fixed", renders after
    the card. A section with no card renders exactly as renderMarkdown would. */
 const RE_CARD_HEAD=/^###\s+\[DL-\d+\]/;
-function renderSectionBody(body: unknown): EscapedHtml{
+function renderSectionBody(body: unknown, opts?: DLRenderOpts): EscapedHtml{
   const lines=String(body).replace(/\r\n/g,'\n').split('\n');
   const out: string[]=[]; let prose: string[]=[]; let cards: string[]=[]; let inFence=false; let any=false;
-  const flushCards=()=>{ if(cards.length) out.push(`<div class="dl-cards">${cards.join('')}</div>`); cards=[]; };
+  const list=opts&&opts.ds?'adp-dl-list':'dl-cards';
+  const flushCards=()=>{ if(cards.length) out.push(`<div class="${list}">${cards.join('')}</div>`); cards=[]; };
   const flushProse=()=>{
     const t=prose.join('\n'); prose=[];
     if(!t.trim()) return;
@@ -518,7 +548,7 @@ function renderSectionBody(body: unknown): EscapedHtml{
         if(/^\s*```/.test(l)) fence=true;
         card.push(l); i++;
       }
-      cards.push(renderDLCard({head, lines:card}));
+      cards.push(renderDLCard({head, lines:card}, opts));
       continue;
     }
     if(/^\s*```/.test(line)) inFence=!inFence;
@@ -528,13 +558,13 @@ function renderSectionBody(body: unknown): EscapedHtml{
   flushProse(); flushCards();
   return out.join('') as EscapedHtml;
 }
-function renderDecisionLog(body: unknown): EscapedHtml{
+function renderDecisionLog(body: unknown, opts?: DLRenderOpts): EscapedHtml{
   const {pre,entries}=parseDLEntries(body);
   // A Decision Log written as prose has no ### entries. Those sections fall
   // back to the generic renderer instead of showing an empty deck of cards.
   if(!entries.length) return renderMarkdown(body);
   return ((pre?`<div class="md">${renderMarkdown(pre)}</div>`:'')
-    + `<div class="dl-cards">${entries.map(renderDLCard).join('')}</div>`) as EscapedHtml;
+    + `<div class="${opts&&opts.ds?'adp-dl-list':'dl-cards'}">${entries.map(e=>renderDLCard(e,opts)).join('')}</div>`) as EscapedHtml;
 }
 
 export {esc, escAttr, safeLinkUrl, inline, decorate, TOK, renderMarkdown, ART, SECTION_KINDS,
@@ -543,7 +573,7 @@ export {esc, escAttr, safeLinkUrl, inline, decorate, TOK, renderMarkdown, ART, S
   dlRail, parseDLEntries, dlEntryStatus, dlStatusCounts, renderDLCard, renderSectionBody,
   renderDecisionLog};
 export type {EscapedHtml, SectionKind, SectionMeta, ArtEntry, FrontMatterSplit, Section, ParsedSections,
-  DLField, DLChipSplit, DLChip, DLConfKind, DLStatusKind, DLBodySplit, DLEntry, DLEntries, DLStatusCounts};
+  DLField, DLChipSplit, DLChip, DLConfKind, DLStatusKind, DLBodySplit, DLEntry, DLEntries, DLStatusCounts, DLRenderOpts};
 
 /* HTML this library built from document text, with every document character
    escaped. React renders a string of HTML only when it carries this brand,

@@ -1,7 +1,7 @@
 /* The inspector: one ticket's log, a section at a time or whole, with the
    decisions and watches the shown section cites. This file holds the app's
    one component that hands React a string of HTML. */
-import {useEffect, useLayoutEffect, useRef, useState, type ReactNode} from "react";
+import {useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode} from "react";
 import * as D from "../lib/adp-derive-lib.ts";
 import * as I from "../lib/adp-index-lib.ts";
 import * as P from "../lib/adp-parser-lib.ts";
@@ -15,16 +15,29 @@ import type {Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPa
 import {DecisionsPanel, Pills, WatchesPanel, type PanelActions} from "./panels.tsx";
 import {PhaseStrip, stripModel, type StripReviews} from "./PhaseStrip.tsx";
 
-type HtmlProps = {html: EscapedHtml; as?: "div" | "span" | "td"; className?: string};
+type HtmlProps = {html: EscapedHtml; as?: "div" | "span" | "td"; className?: string; onClick?(e: ReactMouseEvent<HTMLElement>): void};
 
 /* The one place the app hands React a string of HTML. The prop takes only
    the parser library's escaped render, because the brand is cast nowhere
    else. A bare span takes no box of its own, so markup placed beside text
    sits in its parent's layout as if the parent held it directly. */
-function Html({html, as = "span", className}: HtmlProps){
+function Html({html, as = "span", className, onClick}: HtmlProps){
   const Tag = as;
   return <Tag className={className} style={as === "span" && !className ? {display: "contents"} : undefined}
-    dangerouslySetInnerHTML={{__html: html}}/>;
+    onClick={onClick} dangerouslySetInnerHTML={{__html: html}}/>;
+}
+
+/* A decision card's head folds its fields. The cards arrive as rendered
+   HTML, so one listener on the section finds the head that took the click
+   and flips it in place. A fold lasts until the section renders new text. */
+function foldCard(e: ReactMouseEvent<HTMLElement>){
+  const head = (e.target as Element).closest(".adp-dl__head");
+  if (!head || !e.currentTarget.contains(head)) return;
+  const open = head.getAttribute("aria-expanded") !== "true";
+  head.setAttribute("aria-expanded", String(open));
+  const caret = head.querySelector(".adp-dl__caret");
+  if (caret) caret.textContent = open ? "▾" : "▸";
+  for (let el = head.nextElementSibling; el; el = el.nextElementSibling) (el as HTMLElement).hidden = !open;
 }
 
 // ---- the ticket's text, parsed once per text ----
@@ -196,8 +209,11 @@ function PromptBody({pr}: {pr: PromptView}){
 // A section body renders as the decision-log card list when its title is
 // the spine, and as markdown with any decision cards drawn in place
 // otherwise. The pane and the full log both read this rule.
+// Mission control draws the design system's decision card.
+const DS = {ds: true};
 function SectionBody({sec, body}: {sec: Section | null; body: string}){
-  return sec ? <Html as="div" className="md" html={P.metaFor(sec.title).spine ? P.renderDecisionLog(body) : P.renderSectionBody(body)}/> : null;
+  return sec ? <Html as="div" className="md" onClick={foldCard}
+    html={P.metaFor(sec.title).spine ? P.renderDecisionLog(body, DS) : P.renderSectionBody(body, DS)}/> : null;
 }
 
 /* The permalink copies the page's address. The label says it copied for a
@@ -529,7 +545,7 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     const card = pd.cards[sel.item];
     pane = <DocPane back={en ? en.title : "sections"} onBack={act.onBack} heading={"[" + sel.item + "]"}
       notice={card ? null : "this entry is cited here but not present in the loaded text."}>
-      {card ? <Html as="div" className="md" html={P.renderDLCard(card)}/> : null}
+      {card ? <Html as="div" className="md" onClick={foldCard} html={P.renderDLCard(card, DS)}/> : null}
     </DocPane>;
   } else if (sel.s === PROMPT_KEY){
     // A prompt that did not parse still gets the action, so New task can

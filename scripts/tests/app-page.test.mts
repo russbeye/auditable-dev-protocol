@@ -288,6 +288,33 @@ function packChrome(old: Region, drawer: Region){
   assert.deepEqual(newRest, oldRest);
   assert.deepEqual(drawer.attrs, [...old.attrs, "aria-label=Close packs"]);
 }
+/* The decision cards follow the DecisionCard component (DL-047). The
+   vanilla pills led each word with its kind, "conf" or "status", as a run
+   of its own. The new chips carry the kind as a title, and each head gains
+   a fold caret. So the comparison takes out of the baseline, chip by chip
+   in page order, the kind run that sits right before that chip's word. It
+   takes the titles and carets out of the app's render, and each count must
+   equal the chips and cards on show, so nothing else can leave. */
+function decarded(got: Snapshot, want: Region): [Snapshot, Region] {
+  const chips = $$("#scrInspector .adp-dl .adp-chip"), carets = $$("#scrInspector .adp-dl__caret").length;
+  const cut = (list: string[], gone: string[], n: number, what: string) => {
+    const out = list.filter(x => !gone.includes(x));
+    assert.equal(list.length - out.length, n, what);
+    return out;
+  };
+  const text = want.text.slice();
+  let from = 0;
+  for (const c of chips){
+    const kind = c.getAttribute("title") === "confidence" ? "conf" : "status";
+    const i = text.findIndex((x, j) => j >= from && x === kind && text[j + 1] === c.textContent);
+    assert.ok(i >= 0, "the baseline has no " + kind + " pill for " + c.textContent);
+    text.splice(i, 1);
+    from = i;
+  }
+  const main = got.main!;
+  return [{...got, main: {text: cut(main.text, ["▾"], carets, "carets"), attrs: cut(main.attrs, ["title=confidence", "title=status"], chips.length, "chip titles")}},
+    {text, attrs: want.attrs}];
+}
 const rentries = () => $$("#rail [data-key]").map(r => r.getAttribute("data-key")!);
 const options = () => [...($("#secSel") as HTMLSelectElement).options].map(o => o.value);
 async function pickSection(key: string){ fireEvent.change($("#secSel"), {target: {value: key}}); await settle(1); }
@@ -307,13 +334,15 @@ test("the app's inspector shows what the vanilla page showed, for every section 
       await pickSection(s);
       const k = "inspector|" + t + "|section|" + s, want = BASELINE[k];
       assert.ok(want, "the baseline has no state " + k);
-      const got = withoutStrip(s === "prompt" ? withoutStart(snapshot(document)) : snapshot(document));
-      assert.deepEqual(got, {...restyled(want), main: reheaded(withoutOps(withoutChip(want).main!))}, k);
+      const [got, main] = decarded(withoutStrip(s === "prompt" ? withoutStart(snapshot(document)) : snapshot(document)),
+        reheaded(withoutOps(withoutChip(want).main!)));
+      assert.deepEqual(got, {...restyled(want), main}, k);
       seen.push(k);
     }
     await click($('[data-view="full"]'));
     const k = "inspector|" + t + "|full", want = BASELINE[k];
-    assert.deepEqual(withoutStrip(snapshot(document)), {...restyled(want), main: reheaded(withoutOps(withoutChip(want).main!))}, k);
+    const [got, main] = decarded(withoutStrip(snapshot(document)), reheaded(withoutOps(withoutChip(want).main!)));
+    assert.deepEqual(got, {...restyled(want), main}, k);
     seen.push(k);
   }
   assert.deepEqual(seen, keys);
@@ -1234,7 +1263,7 @@ test("the corpus boot selects the first rail entry; a full ticket renders its sp
   assert.match($("#rail").innerHTML, /9 SECTIONS MISSING/);
   const scr = insp();
   // The section body went through the parser library's Decision Log renderer.
-  assert.match(scr, /dl-card/);
+  assert.match(scr, /class="adp-dl-list"/);
   assert.match(scr, /DL-001/);
   // The nav lists the prompt, 5 real sections, and 5 missing canonicals.
   assert.equal($$("#secSel option").length, 11);
@@ -1474,7 +1503,7 @@ test("an entry housed outside the spine still opens as a card", async () => {
   await click(entry("LT1"));
   await click($$(".dlrow").find(r => r.getAttribute("data-dl") === "DL-009")!);
   assert.match(insp(), /\[DL-009\]/);
-  assert.match(insp(), /dl-card|dl-grid/);
+  assert.match(insp(), /class="adp-dl[ "]/);
   assert.ok(!insp().includes("not present in the loaded text"));
 });
 
@@ -2908,6 +2937,38 @@ test("the ticket head reads the meta line, the title, the state and its source, 
   assert.ok(document.activeElement === $('#tickHead [data-op="resume"]'), "focus does not return to Resume pack");
 });
 
+// ---- the decision card ----
+
+// R4: color means status only, so a confidence word is a neutral Tag.
+test("a MEDIUM decision that is OPEN colors only its status chip", async () => {
+  const log = LOG.replace("- **Confidence:** LOW", "- **Confidence:** MEDIUM");
+  await boot({hash: "#t=AA1&s=sec-decision-log", fetch: liveCorpus(LISTING, {...TEXTS, "20260101-AA1-alpha/audit-log.md": log}).fetch});
+  const card = $('#scrInspector [data-card="DL-002"]');
+  const [conf, status] = [...card.querySelectorAll(".adp-dl__head .adp-chip")];
+  assert.deepEqual([conf.textContent, conf.className], ["MEDIUM", "adp-chip"]);
+  assert.deepEqual([status.textContent, status.className], ["OPEN", "adp-chip adp-chip--open"]);
+  // The status value "OPEN — rides" keeps its tail as a note row.
+  assert.deepEqual([...card.querySelectorAll("dt")].map(d => d.textContent).slice(-1), ["status note"]);
+  assert.equal(card.querySelector("div:last-child > dd")!.textContent, "rides");
+  // A settled entry sets its title lighter, and an open one does not.
+  assert.equal($('#scrInspector [data-card="DL-001"]').className, "adp-dl adp-dl--settled");
+  assert.equal(card.className, "adp-dl");
+});
+
+test("a decision card's head folds and unfolds its fields", async () => {
+  await bootCorpus({hash: "#t=AA1&s=sec-decision-log"});
+  const card = $('#scrInspector [data-card="DL-001"]');
+  const head = card.querySelector(".adp-dl__head") as HTMLElement, body = card.querySelector(".adp-dl__body") as HTMLElement;
+  assert.equal(head.getAttribute("aria-expanded"), "true");
+  await click(head);
+  assert.equal(head.getAttribute("aria-expanded"), "false");
+  assert.equal(body.hidden, true);
+  assert.equal(head.querySelector(".adp-dl__caret")!.textContent, "▸");
+  await click(head.querySelector(".adp-dl__title")!);
+  assert.equal(head.getAttribute("aria-expanded"), "true");
+  assert.equal(body.hidden, false);
+});
+
 // ---- the rail's fold, filter, and narrow overlay ----
 
 const railCols = () => ($(".main") as HTMLElement).style.gridTemplateColumns;
@@ -3035,8 +3096,9 @@ test("a decision card in a companion section renders as a card in the inspector"
   await boot({fetch: liveCorpus(LISTING_I, {...TEXTS_I, "20260101-AA1-alpha/audit-log.md": log}).fetch});
   await pickSection("sec-aside-notes");
   const pane = insp();
-  assert.match(pane, /class="dl-card rail-open"/);
-  assert.match(pane, /class="pill dl-pill p-ok"><i>conf<\/i>HIGH</);
+  assert.match(pane, /<div class="adp-dl" data-card="DL-009">/);
+  assert.match(pane, /<span class="adp-chip" title="confidence">HIGH<\/span>/);
+  assert.match(pane, /<span class="adp-chip adp-chip--open" title="status">OPEN<\/span>/);
   assert.match(pane, /<\/div><\/div><p>After the card\.<\/p>/);
 });
 
