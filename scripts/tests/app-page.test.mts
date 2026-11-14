@@ -143,8 +143,8 @@ test("the app's rail shows what the vanilla page showed at boot, under the new t
   assert.deepEqual(got.footer, want.footer);
 });
 
-/* The Watches board draws no rail, and the page follows its board (G1, G2,
-   G3). The comparison rebuilds the page from the baseline's own runs by
+/* The Watches page follows its board, keeps the five due-state filters and
+   every fact the old table showed, and adds search and Show more. The comparison rebuilds the page from the baseline's own runs by
    these rules, which name every change:
    - The title reads "Watches", and the old guide line and panel heading go.
    - The subtitle keeps the live and settled counts and gains the overdue and
@@ -609,8 +609,8 @@ test("the app's reviews and Ledger screens show what the vanilla reviews, calibr
   assert.deepEqual(snapshot(document), {...led, main: reledgered(cal.main!, led.main!)});
 });
 
-/* The Ledger follows its board, with calibration under its title (G1, G3,
-   G4). The comparison rebuilds the page from the two vanilla screens' runs by
+/* The Ledger follows its board, with calibration under its title, every
+   fact the old screens showed, and search and Show more. The comparison rebuilds the page from the two vanilla screens' runs by
    these rules, which name every change:
    - The title reads "Ledger", and the subtitle names the decisions and the
      tickets that the calibration tiles counted. The tiles go. Their shipped
@@ -2481,7 +2481,7 @@ test("a corpus-wide pack fills with no ticket selected, and a ticket pack still 
 
 const calTab = () => click(tabFor("calibration"));
 
-/* The calibration tiles left with the Ledger board (G4). Each number they
+/* The calibration tiles left with the Ledger board. Each number they
    held still shows elsewhere: tickets and decisions in the Ledger subtitle,
    overdue and unanchored in the Watches subtitle. */
 test("calibration rows every confidence with the ledger's counts, and the tiles' numbers live in the subtitles", async () => {
@@ -3753,12 +3753,12 @@ async function startFrom(ctx: PromptBoot, text?: string, answer: "replace" | "ke
   await click(op("data-op", "startfrom"));
   if (answer === "replace" && document.getElementById("ntReplace")) await click($("#ntReplace"));
   if (answer === "keep" && document.getElementById("ntKeep")) await click($("#ntKeep"));
-  /* A start blanks the ID and takes today's date (F3), which the test
-     "a start from a prompt blanks the ID and the slug and takes today's
-     date" pins. The fidelity tests check every other field against the
+  /* A start blanks the ID and takes today's date, which the test "start
+     from this prompt loads the ticket's prompt.yaml into a new draft equal
+     to its parsed fields, less the ID and the date" pins. The fidelity tests check every other field against the
      source, so we type the source's ID and date back through the form. */
   // The report as the start left it. Typing the ID back is an edit, and an
-  // edit takes a clean import's report away with the banner (DL-089).
+  // edit takes a clean import's report away with the banner.
   startOps = isOn("scrNew") ? ntOps() : "";
   if (!keepIdentity || answer === "keep" || document.getElementById("ntReplace") || !isOn("scrNew")) return;
   let src: unknown = null;
@@ -3775,7 +3775,7 @@ async function startFrom(ctx: PromptBoot, text?: string, answer: "replace" | "ke
 // R8, the write half. The vanilla ops row held four controls that loaded a
 // prompt from outside .adp, and the app has none of them.
 const REMOVED_NT_OPS = {text: ["↑ open yaml", "⌨ paste", "load example", "drag & drop .yaml anywhere"], attrs: ["title=open a prompt.yaml"]};
-/* New task follows its board (F1, F2, F4), and its baseline holds chrome
+/* New task follows its boards, and its baseline holds chrome
    only, since a blank form shows no audit text. So the comparison walks the
    baseline's runs in order through this table. Each run maps to the words
    the new screen shows for it, or to null where the run left with a named
@@ -3858,7 +3858,7 @@ test("the new task screen carries the standalone's field set and boots with toda
 });
 
 // The ticket's prompt.yaml becomes the draft, field for field.
-// F3: a new task needs its own ID and starts today, so the copy leaves the
+// A new task needs its own ID and starts today, so the copy leaves the
 // ID and the slug blank and takes today's date. Every other field is the
 // source's, and the banner links the ticket the prompt came from.
 test("start from this prompt loads the ticket's prompt.yaml into a new draft equal to its parsed fields, less the ID and the date", async () => {
@@ -4189,7 +4189,7 @@ test("a restored draft of a blank form takes a prompt at once", async () => {
   assert.equal(ntField("task.id").value, "GROW-6687-email-validation");
 });
 
-// F4: Preview YAML is the PreviewYaml board's modal drawer. The page behind
+// Preview YAML is the PreviewYaml board's modal drawer. The page behind
 // it goes inert, and Escape or × closes it.
 test("Preview YAML opens a modal drawer over an inert page, and Escape or × closes it", async () => {
   await boot();

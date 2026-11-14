@@ -123,7 +123,7 @@ for (const [name, opener, panel] of [["⋯ menu", "#menuBtn", "#hdrMenu"], ["Pac
 
 // OT-MC012-19 needs a screen reader. This test proves the text reaches the
 // region, which is what a reader would announce.
-// A start leaves the task id blank (F3), so typing one flips the verdict.
+// A start leaves the task id blank, so typing one flips the verdict.
 test("New task's live region speaks the verdict after a start and after the task id is typed", async ({page, server}) => {
   await open(page, server.url + "#t=FX091");
   await page.click('[data-op="startfrom"]');
