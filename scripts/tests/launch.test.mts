@@ -11,7 +11,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import {repoKey, SKILL_DIR} from "../adp-runtime.mts";
-import {requireInstall} from "./global-setup.mts";
+import {requireInstall, sweepSandboxes} from "./global-setup.mts";
 
 const SCRIPTS = path.join(import.meta.dirname, "..");
 const LAUNCH = path.join(SCRIPTS, "adp-launch.mts");
@@ -19,8 +19,9 @@ const PACKS_DIR = path.join(SCRIPTS, "..", "packs");
 const POSIX = process.platform !== "win32";
 
 // We resolve fixtures the way the launcher does. On Windows the temp dir can
-// carry an 8.3 short name, and only the native realpath expands it.
-const sandbox = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "adp-launch-")));
+// carry an 8.3 short name, and only the native realpath expands it. The pid in
+// the name lets the suite's setup find a sandbox whose run died.
+const sandbox = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), `adp-launch-${process.pid}-`)));
 const tmpEnv = (dir: string) => ({...process.env, TMPDIR: dir, TEMP: dir, TMP: dir});
 
 function makeRepo(name: string): string {
@@ -433,6 +434,25 @@ test("the suite's setup checks the install before it builds", () => {
   const body = src.slice(src.indexOf("export default async function setup()"));
   const check = body.indexOf("requireInstall(SKILL_DIR)");
   assert.ok(check > 0 && check < body.indexOf("build("), "setup() must call requireInstall(SKILL_DIR) before build(");
+  assert.ok(body.includes("sweepSandboxes()"), "setup() must call sweepSandboxes()");
+});
+
+/* A run killed before its afterAll leaves a sandbox named after a dead pid,
+   with a live server inside. The sweep must stop that server and leave a
+   live run's sandbox alone. */
+test("the suite's setup deletes a dead run's sandbox, and the servers in it exit", {timeout: 20_000}, async () => {
+  const tmp = fs.mkdtempSync(path.join(sandbox, "sweep-"));
+  const deadPid = spawnSync(process.execPath, ["-e", ""]).pid!;
+  const stale = path.join(tmp, `adp-launch-${deadPid}-x`), live = path.join(tmp, `adp-launch-${process.pid}-x`);
+  fs.mkdirSync(path.join(stale, "tmp"), {recursive: true});
+  fs.mkdirSync(live);
+  const url = await launch(makeRepo("swept"), path.join(stale, "tmp"));
+  await track(url);
+  sweepSandboxes(tmp);
+  assert.equal(fs.existsSync(stale), false);
+  assert.equal(fs.existsSync(live), true);
+  await new Promise(res => setTimeout(res, 2600));
+  await assert.rejects(fetch(baseOf(url) + "/health"), "the server in the dead run's sandbox still answers");
 });
 
 /* A copy of the skill holds what a clone holds: the sources, the pages, the
