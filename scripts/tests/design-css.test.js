@@ -10,7 +10,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const {readFixture} = require("./helpers.js");
-const {generate, PLAIN} = require("../gen-adp-tokens.mts");
+const {generate, OVERRIDES, PLAIN} = require("../gen-adp-tokens.mts");
 
 const SCRIPTS = path.join(__dirname, "..");
 const read = name => fs.readFileSync(path.join(SCRIPTS, name), "utf8");
@@ -63,6 +63,12 @@ test("adp-tokens.css is what the generator writes from the checked-in tokens.jso
   assert.equal(tokensCss, generate(TOKENS));
 });
 
+// The two contrast overrides of DL-096 are the only values that differ from
+// tokens.json, so a third needs a logged entry and an edit here.
+test("the generator overrides exactly two color values, dark blue-bright and light bad", () => {
+  assert.deepEqual(OVERRIDES, {"blue-bright": {dark: "#647eff"}, "bad": {light: "#c21b1b"}});
+});
+
 test("adp-tokens.css declares every token in tokens.json for both themes, and nothing else", () => {
   const blocks = Object.fromEntries(rules(tokensCss).map(r => [r.sel, props(r)]));
   const themes = TOKENS.color.themes.map(t => t.id);
@@ -71,7 +77,7 @@ test("adp-tokens.css declares every token in tokens.json for both themes, and no
   for (const id of themes){
     const sel = id === themes[0] ? `:root, :root[data-theme="${id}"]` : `:root[data-theme="${id}"]`;
     const want = Object.fromEntries(TOKENS.color.tokens.map(t =>
-      ["--" + t.name, typeof t.value === "string" ? t.value : t.value[id] ?? t.value[themes[0]]]));
+      ["--" + t.name, OVERRIDES[t.name]?.[id] ?? (typeof t.value === "string" ? t.value : t.value[id] ?? t.value[themes[0]])]));
     assert.deepEqual(blocks[sel], want, id);
   }
   const plain = {};
@@ -209,4 +215,50 @@ test("inline code and a summary's marker set line-height 1, so neither grows a l
   const head = bundleCss.match(/\/\*[^*]*Copied from[\s\S]*?\*\//)[0].replace(/\s+/g, " ");
   assert.match(head, /Inline code sets line-height 1/);
   assert.match(head, /A summary's marker sets line-height 1 too/);
+});
+
+// ---- R9: text reaches 4.5:1 and controls 3:1, apart from faint ----
+
+/* A control's marks are tokens on known grounds, so we check them here. The
+   rendered text pairs are measured in a11y.spec.mts. Faint is the one
+   exception, kept for non-essential text, and every faint pair is named. A
+   placeholder is faint on an input's inset ground. */
+const themeTokens = id => {
+  const blocks = Object.fromEntries(rules(tokensCss).map(r => [r.sel, props(r)]));
+  return blocks[Object.keys(blocks).find(s => s.includes(`[data-theme="${id}"]`))];
+};
+const lum = hex => {
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map(x => x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4);
+  return .2126 * r + .7152 * g + .0722 * b;
+};
+const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+const GROUNDS = ["bg", "panel", "panel-2", "inset"];
+// A filled button is named by its label, not by its fill, so its fill is no
+// mark of its own. The white label on the blue fill is text, checked below.
+const CONTROL_MARKS = [["the focus ring, a pressed filter's border, and a checked box", "blue-bright", GROUNDS]];
+const FAINT_PAIRS = {dark: {"placeholder on inset": 3.08, "quiet text on bg": 3.12, "quiet text on panel": 2.97, "quiet text on panel-2": 2.76},
+  light: {"placeholder on inset": 3.62, "quiet text on bg": 3.62, "quiet text on panel": 4.00, "quiet text on panel-2": 3.39}};
+
+test("every control mark reaches 3:1 on every ground it sits on, in both themes", () => {
+  for (const id of ["dark", "light"]){
+    const t = n => themeTokens(id)["--" + n];
+    for (const [what, mark, grounds] of CONTROL_MARKS) for (const g of grounds)
+      assert.ok(contrast(t(mark), t(g)) >= 3, `${id}: ${what} on ${g} reads ${contrast(t(mark), t(g)).toFixed(2)}:1`);
+    // The live dot is accent in dark and blue in light, on the top bar's bg.
+    const dot = id === "dark" ? t("accent") : t("blue");
+    assert.ok(contrast(dot, t("bg")) >= 3, `${id}: the live dot`);
+  }
+});
+
+test("every text token reaches 4.5:1 on every ground, and faint is the one named exception", () => {
+  for (const id of ["dark", "light"]){
+    const t = n => themeTokens(id)["--" + n];
+    for (const fg of ["ink", "ink-2", "dim", "blue-bright", "warn", "ok", "bad", "unk"]) for (const g of GROUNDS)
+      assert.ok(contrast(t(fg), t(g)) >= 4.5, `${id}: ${fg} on ${g} reads ${contrast(t(fg), t(g)).toFixed(2)}:1`);
+    assert.ok(contrast(t("code-fg"), t("code-bg")) >= 4.5, `${id}: code`);
+    assert.ok(contrast("#ffffff", t("blue")) >= 4.5, `${id}: the primary button's label`);
+    const faint = Object.fromEntries(GROUNDS.map(g => [(g === "inset" ? "placeholder on " : "quiet text on ") + g, +contrast(t("faint"), t(g)).toFixed(2)]));
+    assert.deepEqual(faint, FAINT_PAIRS[id]);
+  }
 });

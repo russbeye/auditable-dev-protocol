@@ -162,3 +162,58 @@ test.describe("under reduced motion", () => {
     expect(after).toBe(0);
   });
 });
+
+/* R9 in a real engine. On every screen, in both themes, we take each element
+   that holds its own text, flatten every background from the page ground up
+   to it, and measure its color against that ground. Text must reach 4.5:1.
+   The one exception is faint, which the system keeps for non-essential text,
+   and we name each faint pair the screens draw so a new one needs a look. A
+   control's own pairs are tokens, so design-css.test.js checks them. */
+const FAINT_PAIRS = ["dark faint on bg", "dark faint on panel", "dark faint on panel-2",
+  "light faint on bg", "light faint on panel", "light faint on panel-2"];
+function textPairs(){
+  const root = getComputedStyle(document.documentElement);
+  const NAMES = ["bg", "panel", "panel-2", "inset", "code-bg", "ink", "ink-2", "dim", "faint", "blue", "blue-bright", "warn", "ok", "bad", "unk", "code-fg"];
+  // A computed color reads as rgb() or, for a mixed color, as color(srgb) with channels from 0 to 1.
+  const parse = (s: string) => { const n = (s.match(/[\d.]+/g) || []).map(Number);
+    return s.startsWith("color(") ? [n[0] * 255, n[1] * 255, n[2] * 255, n[3] ?? 1] : [n[0], n[1], n[2], n[3] ?? 1]; };
+  const probe = document.createElement("i");
+  document.body.append(probe);
+  const tok = Object.fromEntries(NAMES.map(n => { probe.style.color = `var(--${n})`; return [n, parse(getComputedStyle(probe).color)]; }));
+  probe.remove();
+  const name = (c: number[]) => Object.entries(tok).find(([, v]) => Math.abs(v[0] - c[0]) + Math.abs(v[1] - c[1]) + Math.abs(v[2] - c[2]) < 3)?.[0] ?? "a tint";
+  const over = (top: number[], under: number[]) => [0, 1, 2].map(i => top[i] * top[3] + under[i] * (1 - top[3])).concat(1);
+  const lum = (c: number[]) => { const f = (x: number) => { x /= 255; return x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; };
+    return .2126 * f(c[0]) + .7152 * f(c[1]) + .0722 * f(c[2]); };
+  const out: Record<string, {ratio: number; at: string}> = {};
+  for (const el of document.querySelectorAll<HTMLElement>("body *")){
+    if (!el.checkVisibility({opacityProperty: true, visibilityProperty: true})) continue;
+    if (![...el.childNodes].some(n => n.nodeType === 3 && n.textContent!.trim())) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width <= 1 || r.height <= 1 || el.closest("[disabled], [aria-disabled=true]")) continue;
+    let ground = tok.bg;
+    const chain: HTMLElement[] = [];
+    for (let e: HTMLElement | null = el; e; e = e.parentElement) chain.unshift(e);
+    for (const e of chain){ const bg = parse(getComputedStyle(e).backgroundColor); if (bg[3] > 0) ground = over(bg, ground); }
+    const fg = parse(getComputedStyle(el).color), flat = over(fg, ground);
+    const a = lum(flat), b = lum(ground), ratio = (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
+    const key = `${document.documentElement.getAttribute("data-theme")} ${name(fg)} on ${name(ground)}`;
+    if (!out[key] || out[key].ratio > ratio) out[key] = {ratio: +ratio.toFixed(2), at: el.outerHTML.slice(0, 80)};
+  }
+  return out;
+}
+test("every text pair on every screen reaches 4.5:1 in both themes, apart from the named faint pairs", async ({page, server}) => {
+  test.setTimeout(240_000);
+  const pairs: Record<string, {ratio: number; at: string}> = {};
+  const take = async () => { for (const [k, v] of Object.entries(await page.evaluate(textPairs))) if (!pairs[k] || pairs[k].ratio > v.ratio) pairs[k] = v; };
+  for (const theme of ["dark", "light"]){
+    await page.addInitScript(t => localStorage.setItem("adp-theme", t), theme);
+    await everyScreen(page, server.url, take);
+    await page.click("#menuBtn");
+    await take();
+  }
+  const low = Object.entries(pairs).filter(([k, v]) => v.ratio < 4.5 && !/ faint on /.test(k)).map(([k, v]) => `${k} ${v.ratio}:1 at ${v.at}`);
+  expect(low).toEqual([]);
+  expect(Object.keys(pairs).filter(k => / faint on /.test(k)).sort()).toEqual(FAINT_PAIRS);
+  expect(Object.keys(pairs).length).toBeGreaterThan(40);
+});
