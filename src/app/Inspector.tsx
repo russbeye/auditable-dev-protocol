@@ -96,6 +96,13 @@ function parseLog(text: string): ParsedLog {
 const PROMPT_KEY = "prompt";
 type Entry = SectionEntry & {prompt?: boolean};
 
+/* A section's title in the select and over its pane. Titles read in
+   sentence case, so the prompt reads "Prompt" and a phase "Phase 5 ·
+   Decision Log". The file name stays beside the prompt's heading. */
+function titleOf(en: Entry): string {
+  return en.prompt ? "Prompt" : en.phase != null ? "Phase " + en.phase + " · " + en.title : en.title;
+}
+
 function entriesOf(t: Ticket, prompt: PromptView | null): Entry[] {
   const entries: Entry[] = D.sectionEntries(t);
   return prompt ? [{key: PROMPT_KEY, title: "prompt.yaml", phase: null, canonical: false, missing: false, prompt: true}, ...entries] : entries;
@@ -255,7 +262,7 @@ function Permalink(){
   return <button type="button" className="adp-btn adp-btn--text" data-permalink="1" title="copy link to this view" onClick={copy}>{copied ? "copied" : "⧉ link"}</button>;
 }
 
-type DocPaneProps = {back?: string; onBack?(): void; heading: string; badge?: string | null; notice?: string | null;
+type DocPaneProps = {back?: string; onBack?(): void; heading: string; meta?: string; badge?: string | null; notice?: string | null;
   action?: ReactNode; children?: ReactNode};
 
 /* A message in the ticket view: a section never written, a link that found
@@ -276,11 +283,12 @@ const SECTION_HEAD: CSSProperties = {margin: 0, font: "600 20px/28px var(--font-
 const FSEC: CSSProperties = {boxShadow: "inset 0 1px 0 var(--line)"};
 const FSUM: CSSProperties = {padding: "12px 0", cursor: "pointer", font: "600 16px/24px var(--font-sans)", color: "var(--ink)"};
 
-function DocPane({back, onBack, heading, badge, notice, action, children}: DocPaneProps){
+function DocPane({back, onBack, heading, meta, badge, notice, action, children}: DocPaneProps){
   return <div className="doc" style={PANE}>
     {back ? <button type="button" className="adp-btn adp-btn--text" data-op="back" style={{marginBottom: 8}} onClick={onBack}>← back to {back}</button> : null}
     <div style={{display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16}}>
       <h2 className="adp-section" style={SECTION_HEAD}>{heading}</h2>
+      {meta ? <span className="adp-meta" style={{fontFamily: "var(--font-mono)"}}>{meta}</span> : null}
       {badge ? <span className="adp-chip adp-chip--s">{badge}</span> : null}
       <Permalink/>
     </div>
@@ -350,7 +358,7 @@ function SecNav({entries, states, selKey, onPick, onStep}: {entries: Entry[]; st
       value={i >= 0 ? entries[i].key : ""} onChange={e => onPick(e.target.value)}>
       {entries.map(en => {
         const st = states[en.key];
-        const base = en.phase != null ? `phase ${en.phase} · ${en.title}` : en.title;
+        const base = titleOf(en);
         return <option key={en.key} value={en.key}>{st.label === "complete" ? base : `${base} — ${st.label}`}</option>;
       })}
     </select>
@@ -563,7 +571,7 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     const body = sec ? sec.body.join("\n") : "";
     const ref = S.reviewFileRef(body);
     const round = ref && corpus && corpus.reviews && (corpus.reviews[ref.dir] || []).some(f => f.file === ref.file) ? ref : null;
-    return <DocPane heading={en ? (en.phase != null ? "phase " + en.phase + " · " + en.title : en.title) : "—"}
+    return <DocPane heading={en ? titleOf(en) : "—"}
       badge={en && en.missing ? "missing" : en && !en.canonical ? "non-canonical" : null}
       notice={missNotice || (en && en.missing ? "this section was never written. A missing canonical section is an attention reason on the rail." : null)}
       action={round ? <p style={{margin: "0 0 16px"}}><RoundLink tok={revTok(corpus, tokenOf, round.dir)} file={round.file} label="open round in reviews ›" onRound={act.onRound}/></p> : null}>
@@ -579,7 +587,7 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
       <button type="button" className="adp-btn adp-btn--text" data-exp="close" onClick={() => act.onExpand(false, list.map(en => en.key))}>collapse all</button></div>
       {list.map(en => {
         const sec = en.prompt ? null : pd.byKey[en.key] || null;
-        const heading = en.prompt ? "prompt.yaml" : en.phase != null ? "phase " + en.phase + " · " + en.title : en.title;
+        const heading = titleOf(en);
         const badge = en.prompt || en.canonical ? null : "non-canonical";
         const pn = en.prompt ? promptNotice(prompt!) : null;
         // We toggle the details ourselves, so the collapse state lives in
@@ -609,8 +617,8 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     // A parsed prompt sets each key in a pane of its own under the prompt's
     // pane, so the keys read as sections. A raw prompt stays inside.
     pane = pr.state === "parsed" || pr.state === "issues"
-      ? <><DocPane heading="prompt.yaml" notice={missNotice || promptNotice(pr)} action={start}/><PromptBody pr={pr}/></>
-      : <DocPane heading="prompt.yaml" notice={missNotice || promptNotice(pr)} action={start}><PromptBody pr={pr}/></DocPane>;
+      ? <><DocPane heading="Prompt" meta="prompt.yaml" notice={missNotice || promptNotice(pr)} action={start}/><PromptBody pr={pr}/></>
+      : <DocPane heading="Prompt" meta="prompt.yaml" notice={missNotice || promptNotice(pr)} action={start}><PromptBody pr={pr}/></DocPane>;
   } else pane = sectionPane(entries.find(x => x.key === sel.s) || entries[0]);
 
   if (view !== "full"){

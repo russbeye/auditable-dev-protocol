@@ -193,7 +193,18 @@ function restyled(want: Snapshot, screen = want.screen): Snapshot {
   assert.deepEqual(want.header, {text: ["ADP ·", "MISSION CONTROL", "WATCHING", "☾", "theme", "≡", want.screen!, "project: corpus",
     ...OLD_TABS, "+ new task"], attrs: ["title=Toggle light / dark"]}, "the baseline header is not the vanilla header");
   assert.match(want.footer!.text.join(" "), /^schema adp-index\/1 · \d+ tickets · read-only · rebuilt in-memory from the working tree$/);
-  return {...want, screen, header: NEW_HEADER, footer: null, rail: want.rail && regrouped(want.rail)};
+  return {...want, screen, header: NEW_HEADER, footer: null, rail: want.rail && regrouped(want.rail), main: want.main && cased(want.main)};
+}
+/* Section and round titles read in sentence case (DL-070), where the vanilla
+   page lowercased the phase and round words and titled the prompt by its file
+   name. The comparison raises those words in the baseline. The prompt's pane
+   heading reads "Prompt" with the file name beside it, ahead of its link, and
+   the select and the full log's summary read "Prompt" alone. Every other
+   run stays as it was. */
+function cased(main: Region): Region {
+  const text = main.text.flatMap((x, i) => x !== "prompt.yaml" ? [x] : main.text[i + 1] === "⧉ link" ? ["Prompt", x] : ["Prompt"]);
+  return {...main, text: text.map(x => x.replace(/^phase (\d) · /, "Phase $1 · ").replace(/^round (\d+) · /, "Round $1 · ")
+    .replace(/ · round (\d+)$/, " · Round $1"))};
 }
 /* The rail's groups follow the index states (DL-037). Every ticket in the
    baseline's "in progress" group is open, so that group becomes the open
@@ -390,13 +401,13 @@ test("the app's inspector shows what the vanilla page showed, for every section 
       const k = "inspector|" + t + "|section|" + s, want = BASELINE[k];
       assert.ok(want, "the baseline has no state " + k);
       const [got, main] = decarded(unread(withoutStrip(s === "prompt" ? withoutStart(snapshot(document)) : snapshot(document))),
-        reheaded(withoutOps(withoutChip(want).main!)));
+        cased(reheaded(withoutOps(withoutChip(want).main!))));
       assert.deepEqual(got, {...restyled(want), main}, k);
       seen.push(k);
     }
     await click($('[data-view="full"]'));
     const k = "inspector|" + t + "|full", want = BASELINE[k];
-    const [got, main] = decarded(unread(withoutStrip(snapshot(document))), reheaded(withoutOps(withoutChip(want).main!)));
+    const [got, main] = decarded(unread(withoutStrip(snapshot(document))), cased(reheaded(withoutOps(withoutChip(want).main!))));
     assert.deepEqual(got, {...restyled(want), main}, k);
     seen.push(k);
   }
@@ -1498,16 +1509,16 @@ test("a link to a vanished section falls back with a visible notice", async () =
    existed, with the section and heading each one opened then. The vanilla
    test captured the pairs from the page at 8cb020a. */
 const PINNED_LANDINGS = [
-  ["sec-problem-statement", "phase 1 · Problem Statement"],
-  ["sec-decision-log", "phase 5 · Decision Log"],
+  ["sec-problem-statement", "Phase 1 · Problem Statement"],
+  ["sec-decision-log", "Phase 5 · Decision Log"],
   ["sec-aside-notes", "Aside Notes"],
-  ["sec-pr-summary", "phase 7 · PR Summary"],
-  ["sec-obligation-ticket-list", "phase 9 · Obligation Ticket List"],
-  ["missing:Knowledge Gap", "phase 2 · Knowledge Gap"],
-  ["missing:Recommendation Brief", "phase 3 · Recommendation Brief"],
-  ["missing:Pre-Mortem Report", "phase 4 · Pre-Mortem Report"],
-  ["missing:Test Adversary", "phase 6 · Test Adversary"],
-  ["missing:Deployment Risk", "phase 8 · Deployment Risk"]
+  ["sec-pr-summary", "Phase 7 · PR Summary"],
+  ["sec-obligation-ticket-list", "Phase 9 · Obligation Ticket List"],
+  ["missing:Knowledge Gap", "Phase 2 · Knowledge Gap"],
+  ["missing:Recommendation Brief", "Phase 3 · Recommendation Brief"],
+  ["missing:Pre-Mortem Report", "Phase 4 · Pre-Mortem Report"],
+  ["missing:Test Adversary", "Phase 6 · Test Adversary"],
+  ["missing:Deployment Risk", "Phase 8 · Deployment Risk"]
 ];
 
 test("every section hash lands where it landed before the prompt entry", async () => {
@@ -2445,7 +2456,7 @@ test("a ticket with a prompt lists it ahead of phase 1 and steps to it", async (
   await click(op("data-secstep", "-1"));
   assert.equal(secVal(), "prompt");
   const scr = insp();
-  assert.match(scr, /<h2 class="adp-section"[^>]*>prompt\.yaml</);
+  assert.match(scr, /<h2 class="adp-section"[^>]*>Prompt</);
   assert.match(scr, /Make the <strong>alpha<\/strong> path work/);
   assert.equal($("#phaseStrip [aria-current=step]").textContent, "P");
   assert.match(scr, /data-secstep="-1" style="height: 36px;" disabled/);
@@ -2460,7 +2471,7 @@ test("the prompt view has a deep link", async () => {
   vi.restoreAllMocks();
   await bootCorpus({hash: "#t=AA1&s=prompt"});
   assert.equal(secVal(), "prompt");
-  assert.match(insp(), /<h2 class="adp-section"[^>]*>prompt\.yaml</);
+  assert.match(insp(), /<h2 class="adp-section"[^>]*>Prompt</);
   assert.doesNotMatch(insp(), /was not found in this log/);
 });
 
@@ -2478,7 +2489,7 @@ test("a missing or unparseable prompt.yaml affects only its own ticket", async (
   await boot({hash: "#t=AA1&s=prompt", fetch: liveCorpus(LISTING_I, texts).fetch});
   assert.equal($$("#rail [data-key]").length, 2);
   assert.match(insp(), /prompt\.yaml is listed in the corpus but could not be read\./);
-  assert.equal([...($("#secSel") as HTMLSelectElement).options].find(o => o.value === "prompt")!.textContent, "prompt.yaml — unreadable");
+  assert.equal([...($("#secSel") as HTMLSelectElement).options].find(o => o.value === "prompt")!.textContent, "Prompt — unreadable");
   await click(entry("AV002"));
   assert.match(insp(), /did not parse as YAML/);
   assert.match(insp(), /<pre class="rawpre">\[1, 2, 3\]/);
@@ -2572,7 +2583,7 @@ test("a reviews deep link opens the ticket's latest round with its head", async 
   await bootReviews(reviewCorpus(), "#v=reviews&t=RV1");
   assert.equal(isOn("scrReviews"), true);
   const head = $("#revHead").innerHTML;
-  assert.match(head, /PR #7 · round 10/);
+  assert.match(head, /PR #7 · Round 10/);
   assert.match(head, /2026-01-05/);
   assert.match(head, /APPROVE/);
   assert.match(head, /must 0 \/ should 1 \/ question 0 \/ nit 0/);
@@ -2593,7 +2604,7 @@ test("the step controls walk one PR's rounds in number order and stop at both en
   assert.equal(op("data-revstep", "1").hasAttribute("disabled"), false);
   await revStep(1); await revStep(1);
   assert.equal(op("data-revstep", "1").hasAttribute("disabled"), true);
-  assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
+  assert.match($("#revHead").innerHTML, /PR #7 · Round 10/);
 });
 
 test("a ticket with two PRs offers a PR select, and a switch lands on that PR's latest round", async () => {
@@ -2601,7 +2612,7 @@ test("a ticket with two PRs offers a PR select, and a switch lands on that PR's 
   await bootReviews(c, "#v=reviews&t=RV1");
   assert.deepEqual([...$("#revPr").children].map(o => o.textContent), ["PR #7", "PR #8"]);
   await pickSelect($("#revPr"), "PR8");
-  assert.match($("#revHead").innerHTML, /PR #8 · round 3/);
+  assert.match($("#revHead").innerHTML, /PR #8 · Round 3/);
   assert.deepEqual([...$("#revSel").children].map(o => o.getAttribute("value")), ["pr-review-PR8-20260104-r3.md"]);
   assert.equal(location.hash, "#v=reviews&t=RV1&s=pr-review-PR8-20260104-r3.md");
   // The hash reopens the same round in a fresh page.
@@ -2609,7 +2620,7 @@ test("a ticket with two PRs offers a PR select, and a switch lands on that PR's 
   cleanup();
   vi.restoreAllMocks();
   await bootReviews(c, hash);
-  assert.match($("#revHead").innerHTML, /PR #8 · round 3/);
+  assert.match($("#revHead").innerHTML, /PR #8 · Round 3/);
   await click(entry("RV2"));
   assert.equal(document.getElementById("revPr"), null);
 });
@@ -2618,7 +2629,7 @@ test("the reviews screen follows the rail, and a ticket with no rounds shows an 
   await bootReviews(reviewCorpus(), "#v=reviews&t=RV1");
   await click(entry("RV2"));
   assert.equal(isOn("scrReviews"), true);
-  assert.match($("#revHead").innerHTML, /PR #9 · round/);
+  assert.match($("#revHead").innerHTML, /PR #9 · Round/);
   await click(entry("AV002"));
   assert.equal(isOn("scrReviews"), true);
   assert.match(revHtml(), /this ticket has no review files/);
@@ -2642,9 +2653,9 @@ test("a rail pick resets the decisions filter, the collapsed sections, and the r
   await pickSection("sec-decision-log");
   assert.equal($$(".fpill").find(p => p.getAttribute("data-dlf") === "all")!.classList.contains("is-on"), true);
   await click(tabFor("reviews"));
-  assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
+  assert.match($("#revHead").innerHTML, /PR #7 · Round 10/);
   await click(entry("RV2"));
-  assert.match($("#revHead").innerHTML, /PR #9 · round 3/);
+  assert.match($("#revHead").innerHTML, /PR #9 · Round 3/);
   assert.doesNotMatch($("#revHead").innerHTML, /was not found in this ticket/);
 });
 
@@ -2675,9 +2686,9 @@ test("prior rounds in another ticket link to that ticket's reviews tab", async (
   assert.equal(links[0].getAttribute("href"), "#v=reviews&t=RV1&s=pr-review-PR7-20260103-r2.md");
   await click(links[1]);
   assert.match($("#revHead").innerHTML, /ticket "NOPE-gone" is not in this corpus\./);
-  assert.match($("#revHead").innerHTML, /PR #9 · round 1/);
+  assert.match($("#revHead").innerHTML, /PR #9 · Round 1/);
   await click(within("revHead", ".rvl")[0]);
-  assert.match($("#revHead").innerHTML, /PR #7 · round 2/);
+  assert.match($("#revHead").innerHTML, /PR #7 · Round 2/);
   assert.equal(entry("RV1").getAttribute("aria-current") === "true", true);
   assert.equal(location.hash, "#v=reviews&t=RV1&s=pr-review-PR7-20260103-r2.md");
 });
@@ -2694,7 +2705,7 @@ test("an unreadable round, a round with no verdict, and a stale round link each 
   vi.restoreAllMocks();
   await bootReviews(c, "#v=reviews&t=RV1&s=pr-review-PR7-20990101-r99.md");
   assert.match($("#revHead").innerHTML, /was not found in this ticket/);
-  assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
+  assert.match($("#revHead").innerHTML, /PR #7 · Round 10/);
 });
 
 test("an inspector pointer section links to its round, and the inspector keeps its section", async () => {
@@ -2708,7 +2719,7 @@ test("an inspector pointer section links to its round, and the inspector keeps i
   assert.equal(link.textContent, "open round in reviews ›");
   await click(link);
   assert.equal(isOn("scrReviews"), true);
-  assert.match($("#revHead").innerHTML, /PR #7 · round 2/);
+  assert.match($("#revHead").innerHTML, /PR #7 · Round 2/);
   await click(tabFor("inspector"));
   assert.equal(secVal(), key);
   assert.equal(location.hash, "#t=RV1&s=" + encodeURIComponent(key));
@@ -2815,7 +2826,7 @@ test("a later round's closure repaints an earlier round's card on its change eve
   await change(feed);
   assert.deepEqual(status(), ["RESOLVED", "adp-chip adp-chip--validated"]);
   await click(within("revBody", ".rvl")[0]);
-  assert.match($("#revHead").innerHTML, /PR #7 · round 2/);
+  assert.match($("#revHead").innerHTML, /PR #7 · Round 2/);
   assert.equal(location.hash, "#v=reviews&t=RV1&s=pr-review-PR7-20260103-r2.md");
 });
 
@@ -2833,8 +2844,8 @@ const citedCorpus = () => {
 test("a round shows the decisions and watches it cites, and a round that cites none shows no panel", async () => {
   await bootReviews(citedCorpus(), "#v=reviews&t=AA1&s=pr-review-PR3-20260102-r1.md");
   const body = $("#revBody").innerHTML;
-  assert.match(body, /decisions cited by PR #3 · round 1/);
-  assert.match(body, /watches cited by PR #3 · round 1/);
+  assert.match(body, /decisions cited by PR #3 · Round 1/);
+  assert.match(body, /watches cited by PR #3 · Round 1/);
   assert.deepEqual(within("revBody", ".dlrow").map(r => r.getAttribute("data-dl")), ["DL-002"]);
   assert.deepEqual(within("revBody", ".wrow").map(r => r.getAttribute("data-item")), ["OT-AA1-1"]);
   assert.ok(within("revBody", ".pc").length > 0);
@@ -3013,7 +3024,7 @@ test("one reviews box opens the latest round, and the reviews screen's head and 
   assert.equal(box.style.whiteSpace, "nowrap");
   await click(box);
   assert.equal($(".screen.is-on").getAttribute("data-s"), "reviews");
-  assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
+  assert.match($("#revHead").innerHTML, /PR #7 · Round 10/);
   // The reviews screen leads with the ticket's head and strip, the Reviews box current.
   assert.equal($('#scrReviews #phaseStrip [data-op="reviews"]').getAttribute("aria-current"), "step");
   assert.deepEqual($$("[data-revstep]").map(b => b.style.height), ["36px", "36px"]);
@@ -3029,7 +3040,7 @@ test("one reviews box opens the latest round, and the reviews screen's head and 
   // The reviews box is the strip's last stop for → too, and ← steps back.
   for (let i = 0; i < 12 && $(".screen.is-on").getAttribute("data-s") === "inspector"; i++) await key(document.body, "ArrowRight");
   assert.equal($(".screen.is-on").getAttribute("data-s"), "reviews", "→ never reaches the reviews");
-  assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
+  assert.match($("#revHead").innerHTML, /PR #7 · Round 10/);
   await key(document.body, "ArrowLeft");
   assert.equal($(".screen.is-on").getAttribute("data-s"), "inspector");
   await key($("#secSel"), "ArrowRight");

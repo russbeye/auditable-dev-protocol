@@ -243,7 +243,7 @@ function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, i
     <PhaseStrip model={{...stripModel(t.sections.length || corpus?.prompts[t.dir] ? entriesOf(t, promptOf(corpus?.prompts[t.dir])) : [], null),
       ...(note ? {note} : {})}}
       reviews={reviewsOf(corpus, revTok(corpus, tokenOf, t.dir), t.dir, act.onRound, true)} onPick={act.onSection}/></>
-    : <h2 className="adp-section" style={{...SECTION_HEAD, marginBottom: 12}}>reviews{sub ? <>{" "}<span className="adp-meta">{sub}</span></> : null}</h2>;
+    : <h2 className="adp-section" style={{...SECTION_HEAD, marginBottom: 12}}>Reviews{sub ? <>{" "}<span className="adp-meta">{sub}</span></> : null}</h2>;
   // The four regions keep the vanilla page's ids.
   const regions = (topEl: ReactNode, nav: ReactNode, head: ReactNode, body: ReactNode) =>
     <><div id="revTop">{topEl}</div><div id="revNav">{nav}</div><div id="revHead">{head}</div><div id="revBody">{body}</div></>;
@@ -267,7 +267,7 @@ function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, i
   }
   // The round cites decisions and watches the way a log section does, so
   // it gets the inspector's two panels under the body.
-  const title = g.label + " · round " + r.k;
+  const title = g.label + " · Round " + r.k;
   let panels: ReactNode = null;
   if (r.error == null){
     const items = S.reviewItems(t, r.text);
@@ -288,7 +288,7 @@ function Reviews({corpus, today, t, tokenOf, round, notice, dlFilter, decSort, i
       <button type="button" className="adp-btn" data-revstep="-1" style={STEP_BTN} disabled={at.ri <= 0} onClick={() => act.onPick(g.rounds[at.ri - 1].file)}>‹ prev</button>
       <select id="revSel" className="adp-select" aria-label="round" style={{flex: "0 1 440px", minWidth: 220, lineHeight: "normal"}} value={r.file}
         onChange={e => act.onPick(e.target.value)}>
-        {g.rounds.map(x => <option key={x.file} value={x.file}>{"round " + x.k + " · " + x.date}</option>)}</select>
+        {g.rounds.map(x => <option key={x.file} value={x.file}>{"Round " + x.k + " · " + x.date}</option>)}</select>
       <button type="button" className="adp-btn" data-revstep="1" style={STEP_BTN} disabled={at.ri >= g.rounds.length - 1} onClick={() => act.onPick(g.rounds[at.ri + 1].file)}>next ›</button>
     </div>,
     <ReviewHead title={title} date={r.date} fields={fields} notices={notices} prior={prior} dir={t.dir} onRound={act.onRound}/>,
