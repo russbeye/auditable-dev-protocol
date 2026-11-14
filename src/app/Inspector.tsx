@@ -337,11 +337,15 @@ function reviewsOf(corpus: Corpus | null, tok: string, dir: string, onRound: (to
   return {count: rounds.length, current, onOpen: () => onRound(tok, latest.file)};
 }
 
+// The prev and next buttons stand as tall as the select between them, so the
+// row reads as one control. The system's button is 28px and its select 36px.
+const STEP_BTN: CSSProperties = {height: 36};
+
 function SecNav({entries, states, selKey, onPick, onStep}: {entries: Entry[]; states: Record<string, SectionState>;
   selKey: string | null; onPick(key: string): void; onStep(d: number): void}){
   const i = entries.findIndex(en => en.key === selKey);
   return <div className="secnav" style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "12px 0 16px"}}>
-    <button type="button" className="adp-btn" data-secstep="-1" disabled={i <= 0} onClick={() => onStep(-1)}>‹ prev</button>
+    <button type="button" className="adp-btn" data-secstep="-1" style={STEP_BTN} disabled={i <= 0} onClick={() => onStep(-1)}>‹ prev</button>
     <select id="secSel" className="adp-select" aria-label="section" style={{flex: "0 1 440px", minWidth: 220, lineHeight: "normal"}}
       value={i >= 0 ? entries[i].key : ""} onChange={e => onPick(e.target.value)}>
       {entries.map(en => {
@@ -350,7 +354,7 @@ function SecNav({entries, states, selKey, onPick, onStep}: {entries: Entry[]; st
         return <option key={en.key} value={en.key}>{st.label === "complete" ? base : `${base} — ${st.label}`}</option>;
       })}
     </select>
-    <button type="button" className="adp-btn" data-secstep="1" disabled={i < 0 || i >= entries.length - 1} onClick={() => onStep(1)}>next ›</button>
+    <button type="button" className="adp-btn" data-secstep="1" style={STEP_BTN} disabled={i < 0 || i >= entries.length - 1} onClick={() => onStep(1)}>next ›</button>
   </div>;
 }
 
@@ -662,5 +666,5 @@ function useMemoPrompt(p: FetchedText | undefined): PromptView | null {
   return ref.current.out;
 }
 
-export {FILL, Html, Inspector, Notice, Tickhead, reviewsOf, PANE, P_GRID, P_K, P_V, SECTION_HEAD, typing, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
+export {FILL, Html, Inspector, Notice, STEP_BTN, Tickhead, reviewsOf, PANE, P_GRID, P_K, P_V, SECTION_HEAD, typing, Permalink, PromptCards, RoundLink, PROMPT_KEY, promptOf, resolveSection, entriesOf, decisionRows, watchRows, filterCounts, revTok, SPY_SLACK};
 export type {InspectorActions, InspSel, PromptView};

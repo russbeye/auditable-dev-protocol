@@ -80,7 +80,8 @@ test.describe("at 1440px", () => {
     const faults: string[] = [];
     await everyScreen(page, server.url, async where => {
       faults.push(...(await page.evaluate(() => {
-        const HEIGHT: [string, number][] = [[".adp-btn--primary", 36], [".adp-btn--text", -1], [".adp-btn", 28], [".adp-chip--s", 20],
+        // The prev and next buttons stand as tall as the select between them.
+        const HEIGHT: [string, number][] = [[".adp-btn[data-secstep], .adp-btn[data-revstep]", 36], [".adp-btn--primary", 36], [".adp-btn--text", -1], [".adp-btn", 28], [".adp-chip--s", 20],
           [".adp-chip", 24], [".adp-filter", 24], [".adp-input--sm", 32], [".adp-input", 36], [".adp-select", 36],
           [".adp-seg--full", 32], [".adp-seg", 28]];
         const out: string[] = [];

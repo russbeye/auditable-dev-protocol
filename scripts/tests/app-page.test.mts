@@ -2448,7 +2448,7 @@ test("a ticket with a prompt lists it ahead of phase 1 and steps to it", async (
   assert.match(scr, /<h2 class="adp-section"[^>]*>prompt\.yaml</);
   assert.match(scr, /Make the <strong>alpha<\/strong> path work/);
   assert.equal($("#phaseStrip [aria-current=step]").textContent, "P");
-  assert.match(scr, /data-secstep="-1" disabled/);
+  assert.match(scr, /data-secstep="-1" style="height: 36px;" disabled/);
 });
 
 test("the prompt view has a deep link", async () => {
@@ -2971,6 +2971,8 @@ test("the strip opens a phase or the extra sections, and the select still lists 
   assert.equal($("#gapNote").getAttribute("role"), "note");
   assert.deepEqual(boxes(), ["P", "1", "2-", "3-", "4-", "5*", "6-", "7", "8-", "9", "+1"]);
   assert.equal($("#phaseStrip .adp-phases__note").textContent, "Dashed boxes are missing phases");
+  // The prev and next buttons stand as tall as the section select.
+  assert.deepEqual($$("[data-secstep]").map(b => b.style.height), ["36px", "36px"]);
   // The arrow hint sits at the strip's right end, as the boards place it.
   assert.equal($$("#phaseStrip .adp-phases__note")[1].style.marginLeft, "auto");
   await click($('#phaseStrip [data-step="sec-pr-summary"]'));
@@ -3014,6 +3016,7 @@ test("one reviews box opens the latest round, and the reviews screen's head and 
   assert.match($("#revHead").innerHTML, /PR #7 · round 10/);
   // The reviews screen leads with the ticket's head and strip, the Reviews box current.
   assert.equal($('#scrReviews #phaseStrip [data-op="reviews"]').getAttribute("aria-current"), "step");
+  assert.deepEqual($$("[data-revstep]").map(b => b.style.height), ["36px", "36px"]);
   // While a round shows, the strip's note names its pull request and that request's round count.
   assert.match($("#scrReviews #phaseStrip .adp-phases__note").textContent!, /^PR #7 · \d+ rounds$/);
   assert.ok($("#scrReviews #tickHead h1"), "the reviews screen has no ticket head");
