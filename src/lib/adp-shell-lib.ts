@@ -1,21 +1,20 @@
-/* adp-shell-lib.ts — shared chrome and screen builders for the mission-control
-   shell. Screen tabs, theme, status text, the corpus seam, the hash grammar,
-   and the rail/inspector HTML builders live here, so the app and the Node
-   tests run the same code. Builders are pure string functions over prepared
-   models, and every interpolated field is escaped, because the app renders
-   whatever a repo's logs hold. Effects are injected: loadCorpus takes a fetch
-   function, so Node tests pass a stub instead of faking a global. */
+/* adp-shell-lib.ts holds the mission-control logic that is not React: the
+   screen names and the hash grammar, the theme choice, the corpus seam, the
+   review round parsers, the pack fill, and New task's prompt checks. The app
+   and the Node tests run the same code. Effects are injected, so loadCorpus
+   takes a fetch function and a Node test passes a stub instead of faking a
+   global. */
 import * as B from "./adp-index-builder-lib.ts";
 import * as P from "./adp-parser-lib.ts";
 import * as D from "./adp-derive-lib.ts";
 import * as PL from "./adp-prompt-lib.ts";
 import type {IndexDocument, Ticket, PremortemRow} from "./adp-index-lib.ts";
 import type {IndexFile, Advisory} from "./adp-index-builder-lib.ts";
-import type {DueState, RibbonModel, SectionEntry, SectionState, SectionItems, WatchCounts, WatchboardRow,
-  SettledWatch, LedgerRow, CalibrationModel, CalibrationTiles} from "./adp-derive-lib.ts";
-import type {DLConfKind, DLStatusKind, DLEntry} from "./adp-parser-lib.ts";
+import type {DueState, RibbonModel, SectionItems, WatchCounts, WatchboardRow,
+  SettledWatch, LedgerRow} from "./adp-derive-lib.ts";
+import type {DLConfKind, DLStatusKind} from "./adp-parser-lib.ts";
 import type {PromptDocument, PromptProtocol, PromptReference, PromptLesson, PromptRequirement, PromptDefer,
-  ValidationFinding, YamlMap, YamlValue} from "./adp-prompt-lib.ts";
+  YamlMap} from "./adp-prompt-lib.ts";
 
 type Screen = "inspector" | "reviews" | "watchboard" | "ledgers" | "calibration" | "resume pack" | "new task";
 type HashSelection = {v: string | null; t: string | null; s: string | null; item: string | null};
@@ -36,41 +35,17 @@ type Corpus = {
 };
 type RailEntry = {key: string; id: string; date: string | null; slug: string | null; ribbon: RibbonModel; closable: boolean};
 type RailModelGroup = [name: string, list: RailEntry[]];
-type Chit = {txt: string; title?: string};
-type TickheadModel = {title: string; chits: Chit[]};
 type ViewMode = "section" | "full";
-type OpsRowModel = {fsa: boolean; canReload: boolean; viewMode: ViewMode; pasteOpen: boolean};
-type SecNavEntry = Pick<SectionEntry, "key" | "title" | "phase">;
-type DocPaneModel = {
-  back?: string; heading: string; badge?: string | null; notice?: string | null;
-  actionHtml?: string; bodyHtml?: string;
-};
-type RawPaneModel = {heading: string; raw: string};
 type SortState = {k: string; d: number};
 type CitationChip = {key: string; label: string; title: string};
-type WatchLink = (wid: string, title?: string) => string;
 type CoverageRow = {watch: string | null; settled: SettledWatch | null; statusKind: DLStatusKind};
 type DecisionPanelRow = CoverageRow & {
   id: string; title: string; conf: string; confKind: DLConfKind; chips: CitationChip[]; hl: boolean; age: number | null;
 };
-type DecisionsPanelModel = {label: string; sort: SortState; pills: string; rows: DecisionPanelRow[]};
 type WatchPanelRow = {
   wid: string; what: string; dls: string[]; dueText: string | null; dueDated: boolean;
   state: DueState; stateLabel: string; chips: CitationChip[]; hl: boolean; left: number | null;
 };
-type WatchesPanelModel = {label: string; sort: SortState; rows: WatchPanelRow[]};
-type BoardRow = {
-  tid: string; wid: string; what: string; dueText: string | null; dueDated: boolean;
-  state: DueState; stateLabel: string; outcomeText: string | null; outcomeKind: DLStatusKind | null;
-};
-type WatchboardModel = {sort: SortState; rows: BoardRow[]; live: number; settled: number; pills: string; empty: string};
-type AssumptionRow = CoverageRow & {
-  tid: string; id: string; title: string; conf: string; confKind: DLConfKind; ageText: string;
-};
-type AssumptionLedgerModel = {sort: SortState; rows: AssumptionRow[]; pills: string; empty: string};
-type FullLogSection = {key: string; open: boolean; heading: string; badge?: string | null; bodyHtml: string};
-type CalibrationScreenModel = {model: CalibrationModel | null; notice: string};
-type CalTileKey = keyof CalibrationTiles | "watches";
 type PackBasisKind = "direct" | "inference" | "assertion" | "other" | "none";
 type PackGapKind = "no signal" | "dangling pointer" | "UNOBSERVABLE";
 type AdvisoryDetail = {finding: string; after?: string; offset?: number};
@@ -78,48 +53,21 @@ type PackWatchRow = {tid: string; wid: string; what: string; due: string | null;
 type PackEntryRow = {tid: string; id: string; title: string; confidence: string};
 type PackGapRow = PackEntryRow & {gap: PackGapKind};
 type PackPremortemRow = {tid: string; mode: string; likelihood: string; implemented_at: string};
-type PackContext = ReturnType<typeof packContext>;
 type Pack = {name: string; file: string; text: string};
-type PackScreenModel =
-  | {packs: null; notice: string}
-  | {packs: Pack[]; sel: string; file: string; text: string; slots: string[];
-    notice: string | null; copyLabel: string | null};
 type BlankRow = PromptReference | PromptLesson | PromptRequirement | PromptDefer | "";
 type NtShape = "text" | "block" | "line" | "map" | "maps" | "plains";
 type NtSwitchKey = keyof Pick<PromptProtocol, "apply" | "stake_single_recommendation" | "log_assumptions" | "flag_low_confidence">;
 type Placed = {doc: Record<string, unknown>; issues: string[]};
 type BuilderReport = {tone: "ok" | "warn"; text: string};
-type BuilderOpsModel = {
-  clearLabel: string | null; pasteOpen: boolean; pasteText: string;
-  pending: string | null; report: BuilderReport | null;
-};
-type BuilderSideModel = {issues: ValidationFinding[]; dir: string; copyLabel: string | null; showYaml: boolean};
-type BuilderModel = BuilderOpsModel & BuilderSideModel & {slug: string; yaml: string};
 type ReviewRound = {file: string; k: number; date: string; text?: string; error?: string};
 type ReviewGroup = {pr: string; label: string; rounds: ReviewRound[]};
 type ReviewVerdictKey = "verdict" | "confidence" | "counts" | "opened" | "closed" | "carried";
 type ReviewVerdictFields = Partial<Record<ReviewVerdictKey, string>>;
 type ReviewHead = {fields: ReviewVerdictFields | null; missing: string[]};
 type ReviewRef = {dir: string; file: string};
-type PriorReviewLink = ReviewRef & {tok?: string | null};
-type ReviewHeadModel = {
-  title: string; date?: string; fields: ReviewVerdictFields | null; notices: string[];
-  prior: PriorReviewLink[]; dir: string;
-};
 type ReviewLedgerRow = {id: string; date: string; outcome: string; note: string};
 type ReviewClosure = ReviewLedgerRow & {file: string; k: number};
 type ReviewLedger = Record<string, ReviewClosure>;
-type ReviewBodyModel = {ledger: ReviewLedger; tok: string};
-
-
-const esc = P.esc, escAttr = P.escAttr;
-
-/* The seven screens are the accepted product enumeration from the mockup,
-   plus reviews beside the inspector. The first six render as tabs. "new
-   task" lights the accent button instead, so it never sits in the tab
-   strip. */
-const SCREENS: Screen[] = ["inspector", "reviews", "watchboard", "ledgers", "calibration", "resume pack", "new task"];
-const TAB_SCREENS = SCREENS.slice(0, 6);
 
 // IDX-004 wants a calendar-true YYYY-MM-DD. We compose it from local date
 // parts, because a UTC composition would date a late-evening build tomorrow.
@@ -127,13 +75,6 @@ function localDate(now?: Date | null): string{
   const d = now || new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
-}
-
-function tabsHtml(selScreen: string): string{
-  return TAB_SCREENS.map(s => {
-    const on = s === selScreen;
-    return `<button class="mtab${on ? " is-on" : ""}" role="tab" aria-selected="${on}" data-s="${s}">${s}</button>`;
-  }).join("");
 }
 
 function footerText(index: IndexDocument | null): string{
@@ -316,95 +257,6 @@ async function loadCorpus(fetchFn: FetchFn, opts?: LoadCorpusOptions | null): Pr
 
 // ---- the rail ----
 
-/* One rail entry: a container holding two sibling buttons, because a close
-   control inside the entry button could never take the keyboard. The entry
-   button carries the selection and the close button sits over its corner,
-   painted above it by document order. */
-function railEntryHtml(e: RailEntry, selKey: string | null): string{
-  const rib = e.ribbon.reasons.map(r => `<span class="r-${r.tone}">${esc(r.txt)}</span>`).join(" · ")
-    + (e.ribbon.more ? ` <span class="rmore">+${e.ribbon.more}</span>` : "");
-  return `<div class="rrow">`
-    + `<button type="button" class="rentry${e.key === selKey ? " is-sel" : ""}" data-key="${escAttr(e.key)}">`
-    + `<span class="rid">${esc(e.id)}${e.date ? ` <span class="rdate">· ${esc(e.date)}</span>` : ""}</span>`
-    + `<span class="rslug">${esc(e.slug)}</span>`
-    + `<span class="rrib">${rib}</span></button>`
-    // The accessible name carries the entry id, so a reader tabbing the
-    // rail hears which document each close button closes.
-    + (e.closable ? `<button type="button" class="rclose" data-close="${escAttr(e.key)}" title="close document" aria-label="close ${escAttr(e.id)}">×</button>` : "")
-    + `</div>`;
-}
-
-function railHtml(groups: RailModelGroup[], selKey: string | null, collapsed: ReadonlySet<string>): string{
-  return groups.map(([name, list]) => {
-    const closed = collapsed.has(name);
-    // tabindex -1 lets the page hand focus to a section header after a
-    // close empties the list; the header never joins the tab order.
-    return `<div class="railsec" data-sec="${escAttr(name)}" tabindex="-1">`
-      + `<span><span class="rcv">${closed ? "▸" : "▾"}</span><span class="rname">${esc(name)}</span></span>`
-      + `<b class="rcount">${list.length}</b></div>`
-      + (closed ? "" : list.map(e => railEntryHtml(e, selKey)).join(""));
-  }).join("");
-}
-
-// ---- the inspector ----
-
-function tickheadHtml(m: TickheadModel): string{
-  return `<div class="tickhead"><span class="tbig">${esc(m.title)}</span>`
-    + m.chits.map(c =>
-      `<span class="chit"${c.title ? ` title="${escAttr(c.title)}"` : ""}>${esc(c.txt)}</span>`).join("")
-    + `</div>`;
-}
-
-function opsRowHtml(m: OpsRowModel): string{
-  return `<div class="mops">`
-    + `<button type="button" class="op op-acc" data-op="openwatch" title="pick audit logs to open${m.fsa ? " and watch" : ""}">⌖ open${m.fsa ? " &amp; watch" : ""}</button>`
-    + `<button type="button" class="op" data-op="reload"${m.canReload ? "" : " disabled"}>↻ reload</button>`
-    + `<button type="button" class="op" data-op="paste">⌨ paste</button>`
-    + `<span class="mgap"></span>`
-    + `<button type="button" class="op tgl${m.viewMode === "section" ? " is-on" : ""}" data-view="section">section</button>`
-    + `<button type="button" class="op tgl${m.viewMode === "full" ? " is-on" : ""}" data-view="full">full log</button>`
-    + `<span class="chit drophint">drag &amp; drop .md anywhere</span></div>`
-    + (m.pasteOpen ? `<div class="drawer"><label for="pasteArea">paste an audit log</label>`
-      + `<textarea id="pasteArea" placeholder="paste protocol output…"></textarea>`
-      + `<button type="button" class="op" id="pasteImport">open as document</button></div>` : "");
-}
-
-function secNavHtml(entries: SecNavEntry[], states: Record<string, SectionState>, selKey: string | null): string{
-  const i = entries.findIndex(en => en.key === selKey);
-  const opts = entries.map(en => {
-    const st = states[en.key];
-    const base = en.phase != null ? `phase ${en.phase} · ${en.title}` : en.title;
-    const label = st.label === "complete" ? base : `${base} — ${st.label}`;
-    return `<option value="${escAttr(en.key)}"${en.key === selKey ? " selected" : ""}>${esc(label)}</option>`;
-  }).join("");
-  const cur = i >= 0 ? states[entries[i].key] : {label: "—", tone: "mute"};
-  return `<div class="secnav">`
-    + `<button type="button" class="op" data-secstep="-1"${i <= 0 ? " disabled" : ""}>‹ prev</button>`
-    + `<select id="secSel" class="secsel" aria-label="section">${opts}</select>`
-    + `<button type="button" class="op" data-secstep="1"${i < 0 || i >= entries.length - 1 ? " disabled" : ""}>next ›</button>`
-    + `<span class="secchit t-${cur.tone}">${esc(cur.label)}</span></div>`;
-}
-
-const permalink = `<button type="button" class="lnk" data-permalink="1" title="copy link to this view">⧉ link</button>`;
-
-// m.bodyHtml is parser-lib output and m.actionHtml is a builder's markup,
-// so both land unescaped by design. Every other field is text.
-function docPaneHtml(m: DocPaneModel): string{
-  return `<div class="doc">`
-    + (m.back ? `<div class="backrow"><a class="backlink">← back to ${esc(m.back)}</a></div>` : "")
-    + `<h4>${esc(m.heading)}${m.badge ? ` <span class="ncbadge">${esc(m.badge)}</span>` : ""} ${permalink}</h4>`
-    + (m.notice ? `<p class="dnotice">${esc(m.notice)}</p>` : "")
-    + (m.actionHtml || "")
-    + (m.bodyHtml || "")
-    + `</div>`;
-}
-
-function rawPaneHtml(m: RawPaneModel): string{
-  return `<div class="doc"><h4>${esc(m.heading)} ${permalink}</h4>`
-    + `<p class="dnotice">no sections found — shown raw. An audit log with ## headings renders like any ticket.</p>`
-    + `<pre class="rawpre">${esc(m.raw)}</pre></div>`;
-}
-
 /* The prompt view gives each top-level key a card, shaped like a Decision
    Log card: a head with the key's title, then a grid of field rows. A
    top-level one-line value sits in the head itself. A list of flat
@@ -418,267 +270,6 @@ const keyLabel = (k: string) => k.replace(/_/g, " ");
 const keyTitle = (k: string) => keyLabel(k).replace(/(^|\s)([a-z])/g, (m: string, s: string, c: string) => s + c.toUpperCase());
 const isFlat = (x: unknown): x is YamlMap => isMap(x) && Object.keys(x).every(k => !isMap(x[k]) && !Array.isArray(x[k]));
 const isLine = (x: unknown): boolean => !isMap(x) && !Array.isArray(x) && !(typeof x === "string" && x.includes("\n"));
-const NONE = `<span class="pcard-none">none</span>`;
-
-// A link item stands alone, and a relative one would resolve against this
-// page, so we make an anchor only for an absolute http, https, or mailto URL.
-function promptScalarHtml(v: unknown, at: string): string{
-  if (v == null || v === "") return `<span class="pcard-none">empty</span>`;
-  if (typeof v === "string" && at === "context.links[]" && LINK_ITEM.test(v) && P.safeLinkUrl(v))
-    return `<a href="${escAttr(v)}" target="_blank" rel="noopener noreferrer">${esc(v)}</a>`;
-  return esc(String(v));
-}
-
-function promptValueHtml(v: YamlValue, at: string): string{
-  if (typeof v === "string" && v.includes("\n")) return `<div class="md">${P.renderMarkdown(v)}</div>`;
-  if (Array.isArray(v)){
-    if (!v.length) return NONE;
-    if (v.every(isFlat)){
-      const cols: string[] = [];
-      v.forEach(r => Object.keys(r).forEach(k => { if (!cols.includes(k)) cols.push(k); }));
-      return `<div class="md"><div class="tbl-wrap"><table class="md-tbl"><thead><tr>`
-        + cols.map(c => `<th>${esc(keyLabel(c))}</th>`).join("") + `</tr></thead><tbody>`
-        + v.map(r => `<tr>` + cols.map(c => `<td>${isLine(r[c]) ? promptScalarHtml(r[c], at + "[]." + c)
-          : P.renderMarkdown(r[c])}</td>`).join("") + `</tr>`).join("")
-        + `</tbody></table></div></div>`;
-    }
-    return `<div class="md"><ul class="md-list">` + v.map(x =>
-      `<li>${isLine(x) ? promptScalarHtml(x, at + "[]") : promptValueHtml(x, at + "[]")}</li>`).join("") + `</ul></div>`;
-  }
-  if (isMap(v)){
-    const ks = Object.keys(v);
-    if (!ks.length) return NONE;
-    return `<div class="pcard-grid">` + ks.map(k =>
-      `<div class="pcard-k">${esc(keyLabel(k))}</div><div class="pcard-v">${promptValueHtml(v[k], at + "." + k)}</div>`).join("")
-      + `</div>`;
-  }
-  return promptScalarHtml(v, at);
-}
-
-// The builder's keys come first in the order it writes them. A key the
-// builder does not know still shows, after them and in file order, because
-// a hand-written prompt may carry one and the view must not hide it.
-function promptViewHtml(obj: YamlMap): string{
-  const known = NT_KEYS[""].filter(k => k in obj);
-  const keys = known.concat(Object.keys(obj).filter(k => !known.includes(k)));
-  return `<div class="pcards">` + keys.map(k => {
-    const v = obj[k];
-    const head = `<div class="pcard-head"><span class="pcard-title">${esc(keyTitle(k))}</span>`
-      + (isLine(v) ? `<span class="pcard-val">${promptScalarHtml(v, k)}</span>` : "")
-      + `<span class="pcard-key">${esc(k)}</span></div>`;
-    if (isLine(v)) return `<section class="pcard">${head}</section>`;
-    const body = isMap(v) ? promptValueHtml(v, k) : `<div class="pcard-body">${promptValueHtml(v, k)}</div>`;
-    return `<section class="pcard">${head}${body}</section>`;
-  }).join("") + `</div>`;
-}
-
-
-// The tabindex puts every sort header in the tab order, because a bare th
-// never takes keyboard focus; the page's keydown path fires the sort.
-// scope="col" makes the columnheader role explicit instead of leaving it
-// to browser heuristics, because aria-sort only means something on that
-// role. aria-sort names the active order on the one sorted header, which
-// is the only header the ARIA spec wants it on. The arrow repeats that
-// order visually, so we hide the glyph from the accessibility tree.
-const th = (sort: SortState, t: string, k: string, label: string): string => {
-  const on = sort.k === k;
-  return `<th class="sth" scope="col" tabindex="0" data-t="${t}" data-k="${k}"`
-    + (on ? ` aria-sort="${sort.d > 0 ? "ascending" : "descending"}"` : "")
-    + `>${label}${on ? `<span class="arr" aria-hidden="true">${sort.d > 0 ? "▲" : "▼"}</span>` : ""}</th>`;
-};
-const chips = (list: CitationChip[]): string => list.map(c =>
-  `<a class="pc" data-key="${escAttr(c.key)}" title="${escAttr(c.title)}">${esc(c.label)}</a>`).join("");
-
-// attr names the data mark the pills carry, so the inspector's filter and
-// the ledger's filter route to different state through one delegated path.
-// The default keys are the inspector's three statuses. A caller that counts
-// more kinds passes its own list; a key with no count never renders.
-const PILL_KEYS = ["all", "open", "validated", "invalidated"];
-function pillsHtml(counts: Record<string, number>, active: string, attr?: string, keys?: readonly string[]): string{
-  const a = attr || "data-dlf";
-  return (keys || PILL_KEYS)
-    .filter(f => f === "all" || counts[f])
-    .map(f => `<button type="button" class="fpill${active === f ? " is-on" : ""}" ${a}="${f}">${f} ${counts[f]}</button>`)
-    .join(" ");
-}
-
-// Two pill groups side by side each start with an "all", so a group label
-// says which axis the pill filters.
-function pillGroupHtml(label: string, pills: string): string{
-  return `<span class="pillgrp"><span class="pilllab">${esc(label)}</span> ${pills}</span>`;
-}
-
-// A decision's coverage cell, shared by the inspector and the ledger. The
-// link builder is injected because the two screens route differently. An
-// open decision whose watch has closed is unwatched again, so the marker
-// leads. A settled watch keeps its cell to the id; how coverage ended
-// rides the link's hover title, because the ruled state already sits in
-// the status column beside it.
-function watchCell(d: CoverageRow, link: WatchLink): string{
-  return d.watch ? link(d.watch)
-    : d.settled ? (d.statusKind === "open" ? `<span class="st-unanchored nw">no watch</span> ` : "")
-      + link(d.settled.wid, "closed " + d.settled.outcome + " " + d.settled.closed)
-    : d.statusKind === "open" ? `<span class="st-unanchored nw">no watch</span>` : "";
-}
-
-function decisionsPanelHtml(m: DecisionsPanelModel): string{
-  const wl = (wid: string, title?: string) => `<a class="wl" data-item="${escAttr(wid)}"`
-    + `${title ? ` title="${escAttr(title)}"` : ""}>${esc(wid)}</a>`;
-  const rows = m.rows.map(d => `<tr class="dlrow${d.hl ? " is-hl" : ""}" data-dl="${escAttr(d.id)}">`
-    + `<td class="mono nw">${esc(d.id)}</td><td>${esc(d.title)}</td>`
-    + `<td><span class="cf-${d.confKind} nw">${esc(d.conf)}</span></td>`
-    + `<td><span class="st-${d.statusKind} nw">${esc(d.statusKind)}</span></td>`
-    + `<td>${watchCell(d, wl)}</td>`
-    + `<td>${chips(d.chips)}</td></tr>`).join("");
-  return `<div class="ipanel"><h2>decisions cited by ${esc(m.label)} <span class="hsub">${m.pills}</span></h2>`
-    + `<div class="tblwrap"><table><tr>${th(m.sort, "dec", "id", "entry")}${th(m.sort, "dec", "title", "decision")}`
-    + `${th(m.sort, "dec", "conf", "conf")}${th(m.sort, "dec", "status", "status")}`
-    + `${th(m.sort, "dec", "watch", "watch")}${th(m.sort, "dec", "cited", "cited in")}</tr>${rows}</table></div></div>`;
-}
-
-function watchesPanelHtml(m: WatchesPanelModel): string{
-  const rows = m.rows.map(w => `<tr class="wrow${w.hl ? " is-hl" : ""}" data-item="${escAttr(w.wid)}">`
-    + `<td class="mono nw">${esc(w.wid)}</td><td>${esc(w.what)}</td>`
-    + `<td>${w.dls.map(d => `<a class="wl" data-item="${escAttr(d)}">${esc(d)}</a>`).join(" ")}</td>`
-    + `<td class="mono${w.dueDated ? " nw" : ""}">${esc(w.dueText)}</td>`
-    + `<td><span class="st-${w.state} nw">${esc(w.stateLabel)}</span></td>`
-    + `<td>${chips(w.chips)}</td></tr>`).join("");
-  return `<div class="ipanel"><h2>watches cited by ${esc(m.label)}</h2>`
-    + `<div class="tblwrap"><table><tr>${th(m.sort, "iw", "wid", "id")}${th(m.sort, "iw", "what", "what to check")}`
-    + `${th(m.sort, "iw", "dl", "decisions")}${th(m.sort, "iw", "due", "due")}`
-    + `${th(m.sort, "iw", "state", "status")}${th(m.sort, "iw", "cited", "cited in")}</tr>${rows}</table></div></div>`;
-}
-
-// ---- the watchboard ----
-
-// The board's status filters are toggle chips, one per due state that
-// exists in the corpus, each carrying its count so a hidden state still
-// says how much it hides. Multi-select on purpose: show and hide compose.
-function statusPillsHtml(counts: Record<string, number>, visible: ReadonlySet<string>): string{
-  return ["overdue", "soon", "upcoming", "unanchored", "closed"]
-    .filter(s => counts[s])
-    .map(s => `<button type="button" class="fpill${visible.has(s) ? " is-on" : ""}" data-ws="${s}">${s} ${counts[s]}</button>`)
-    .join(" ");
-}
-
-/* The corpus-wide watch table — the shell's one watch surface, so settled
-   rows render here behind their filter chip with the outcome the closure
-   ledger recorded. Both link cells are .wbl anchors: the ticket cell
-   carries data-t alone and the watch cell adds data-item, so one delegated
-   handler routes both into the inspector. The status column shares the
-   derivation's group order, the mockup's rule — the two columns are one
-   ordering read two ways. */
-function watchboardHtml(m: WatchboardModel): string{
-  const head = `<h2>every watch, corpus-wide <span class="hsub">${m.live} live · ${m.settled} settled · ${m.pills}</span></h2>`;
-  if (!m.rows.length)
-    return `<div class="ipanel">${head}<p class="dnotice">${esc(m.empty)}</p></div>`;
-  // The hrefs are real deep links, so the keyboard can reach and fire the
-  // anchors; the page's delegated handler stops the browser's own hash jump.
-  const rows = m.rows.map(w => `<tr class="wbrow" data-wid="${escAttr(w.wid)}">`
-    + `<td><a class="wbl" href="${escAttr(hashWrite({t: w.tid}))}" data-t="${escAttr(w.tid)}">${esc(w.tid)}</a></td>`
-    + `<td><a class="wbl" href="${escAttr(hashWrite({t: w.tid, item: w.wid}))}" data-t="${escAttr(w.tid)}" data-item="${escAttr(w.wid)}">${esc(w.wid)}</a></td>`
-    + `<td>${esc(w.what)}</td>`
-    + `<td class="mono${w.dueDated ? " nw" : ""}">${esc(w.dueText)}</td>`
-    + `<td><span class="st-${w.state} nw">${esc(w.stateLabel)}</span></td>`
-    + `<td>${w.outcomeText ? `<span class="st-${w.outcomeKind} nw">${esc(w.outcomeText)}</span>` : "—"}</td></tr>`).join("");
-  return `<div class="ipanel">${head}`
-    + `<div class="tblwrap"><table><tr>${th(m.sort, "wb", "tid", "ticket")}${th(m.sort, "wb", "wid", "watch")}`
-    + `${th(m.sort, "wb", "what", "what to check")}${th(m.sort, "wb", "due", "due")}`
-    + `${th(m.sort, "wb", "state", "status")}${th(m.sort, "wb", "outcome", "outcome")}</tr>${rows}</table></div></div>`;
-}
-
-// ---- the ledger ----
-
-// Ledger rows link the way board rows do: real deep-link hrefs on .wbl
-// anchors, so the shipped delegated route and the keyboard serve them
-// unchanged. The ticket cell lands the default view and the id cell lands
-// the item in its owning section.
-const ledgerLink = (tid: string, item?: string | null, title?: string): string =>
-  `<a class="wbl" href="${escAttr(hashWrite(item ? {t: tid, item} : {t: tid}))}"`
-  + ` data-t="${escAttr(tid)}"${item ? ` data-item="${escAttr(item)}"` : ""}`
-  + `${title ? ` title="${escAttr(title)}"` : ""}>${esc(item || tid)}</a>`;
-
-/* The assumption ledger: every decision on record, corpus-wide. The status
-   and coverage cells reuse the inspector's vocabulary, so a row reads the
-   same on both screens. */
-function assumptionLedgerHtml(m: AssumptionLedgerModel): string{
-  const head = `<h2>assumptions <span class="hsub">${m.pills}</span></h2>`;
-  if (!m.rows.length)
-    return `<div class="ipanel">${head}<p class="dnotice">${esc(m.empty)}</p></div>`;
-  const rows = m.rows.map(d => `<tr class="lgrow" data-t="${escAttr(d.tid)}" data-dl="${escAttr(d.id)}">`
-    + `<td>${ledgerLink(d.tid)}</td>`
-    + `<td class="mono nw">${ledgerLink(d.tid, d.id)}</td>`
-    + `<td>${esc(d.title)}</td>`
-    + `<td><span class="cf-${d.confKind} nw">${esc(d.conf)}</span></td>`
-    + `<td><span class="st-${d.statusKind} nw">${esc(d.statusKind)}</span></td>`
-    + `<td>${watchCell(d, (wid, title) => ledgerLink(d.tid, wid, title))}</td>`
-    + `<td class="mono nw">${esc(d.ageText)}</td></tr>`).join("");
-  return `<div class="ipanel">${head}`
-    + `<div class="tblwrap"><table><tr>${th(m.sort, "la", "tid", "ticket")}${th(m.sort, "la", "id", "entry")}`
-    + `${th(m.sort, "la", "title", "decision")}${th(m.sort, "la", "conf", "conf")}`
-    + `${th(m.sort, "la", "status", "status")}${th(m.sort, "la", "watch", "watch")}`
-    + `${th(m.sort, "la", "age", "age")}</tr>${rows}</table></div></div>`;
-}
-
-function fullLogHtml(list: FullLogSection[]): string{
-  return `<div class="mops"><button type="button" class="op" data-exp="open">expand all</button>`
-    + `<button type="button" class="op" data-exp="close">collapse all</button></div>`
-    + list.map(s => `<details class="fsec" data-key="${escAttr(s.key)}"${s.open ? " open" : ""}>`
-      + `<summary class="fsum">${esc(s.heading)}${s.badge ? ` <span class="ncbadge">${esc(s.badge)}</span>` : ""}</summary>`
-      + `<div class="fbody">${s.bodyHtml}</div></details>`).join("");
-}
-
-// ---- calibration ----
-
-/* Every number on the screen is the model's; this builder only draws. A
-   bar's length is its bucket's share of the largest bucket, and its
-   segments split that length by outcome, so a bar reads against the
-   corpus and not against its own row. The stylesheet gives a segment a
-   floor width, so one entry beside forty stays visible. */
-const CAL_TILES: [CalTileKey, string][] = [["tickets", "tickets indexed"], ["shipped", "shipped or closed"],
-  ["decisions", "decisions logged"], ["watches", "watches overdue + unanchored"]];
-const CAL_KINDS = D.STATUS_KINDS;
-function calibrationHtml(m: CalibrationScreenModel): string{
-  const head = `<h2>calibration <span class="isub">does stated confidence predict outcomes</span></h2>`;
-  if (!m.model)
-    return head + `<div class="ipanel"><p class="dnotice">${esc(m.notice)}</p></div>`;
-  const {tiles, buckets} = m.model;
-  const tileText = (k: CalTileKey) => k === "watches" ? `${tiles.overdue}+${tiles.unanchored}` : String(tiles[k]);
-  const tilesHtml = `<div class="caltiles">` + CAL_TILES.map(([k, label]) =>
-    `<div class="caltile" data-tile="${k}"><div class="caltile-n">${esc(tileText(k))}</div>`
-    + `<div class="caltile-l">${esc(label)}</div></div>`).join("") + `</div>`;
-  const panelHead = `<h2>decision outcomes by stated confidence</h2>`;
-  if (!tiles.decisions)
-    return head + tilesHtml + `<div class="ipanel">${panelHead}<p class="dnotice">${esc(m.notice)}</p></div>`;
-  const maxN = Math.max(...buckets.map(b => b.total), 1);
-  const rows = buckets.map(b => {
-    // The other bucket has no word of its own, so it names the tokens it met.
-    const label = b.kind === "other" ? b.tokens.join(", ") : b.kind.toUpperCase();
-    // A segment is a button that lands the ledger filtered to its cell.
-    // The name carries the count, so a screen reader hears what a sighted
-    // reader infers from the bar's length.
-    const segs = CAL_KINDS.filter(k => b.counts[k]).map(k =>
-      `<button type="button" class="calseg calseg-${k}" style="flex:${b.counts[k]}"`
-      + ` data-calc="${escAttr(b.kind)}" data-calk="${k}"`
-      + ` title="${escAttr(`${b.counts[k]} ${k} at ${label} — open in the ledger`)}"`
-      + ` aria-label="${escAttr(`${b.counts[k]} ${k} at ${label} — open in the ledger`)}"></button>`).join("");
-    // The separator rides inside the span that follows it, so a wrapped
-    // count string breaks between whole counts and never ends in a dot.
-    const counts = CAL_KINDS.filter(k => b.counts[k]).map((k, i) =>
-      `<span class="calnw">${i ? "· " : ""}${b.counts[k]} ${k}</span>`).join(" ") || "—";
-    const share = b.ruled.ruled
-      ? `${b.ruled.validated} of ${b.ruled.ruled} ruled validated` : "none ruled yet";
-    return `<div class="calrow" data-conf="${escAttr(b.kind)}">`
-      + `<span class="callab"><span class="cf-${b.kind}">${esc(label)}</span></span>`
-      + `<div class="calbar" style="width:${Math.round(b.total / maxN * 1000) / 10}%">${segs}</div>`
-      + `<span class="calcnt">${counts}<br><span class="calshare">${esc(share)}</span></span></div>`;
-  }).join("");
-  const legend = `<div class="callegend">` + CAL_KINDS.map(k =>
-    `<span><i class="calseg-${k}"></i>${k}</span>`).join("") + `</div>`;
-  return head + tilesHtml + `<div class="ipanel">${panelHead}${rows}${legend}</div>`;
-}
-
-// ---- resume packs ----
 
 /* A pack is plain text plus three constructs and nothing else. {{path}}
    inserts one value. {{#name}}…{{/name}} repeats its body per item of a
@@ -955,42 +546,6 @@ async function loadPacks(fetchFn: FetchFn): Promise<Pack[] | null>{
   }
 }
 
-const PACK_DOCS = `<div class="packdocs"><h3>add your own pack</h3>`
-  + `<p>Drop a <code>.pack.md</code> file into the skill's <code>packs/</code> directory and reload: `
-  + `it appears here. A pack is plain text plus three constructs, filled from the ticket index: `
-  + `<code>{{path}}</code> inserts one value, <code>{{#name}}…{{/name}}</code> repeats its body for `
-  + `each item of a list, or once when name holds a present value, and <code>{{^name}}…{{/name}}</code> `
-  + `renders its body only when the list is empty or the value is missing. Nothing else is `
-  + `interpreted: a missing value renders empty, and the same index fills the same bytes.</p>`;
-
-/* The pack screen. m.packs null means nothing loaded, and only the notice
-   renders. Otherwise the row, the source line, and either the filled
-   block with its copy control or the notice that explains why there is no
-   fill. m.text is the pack's bytes and lands escaped. */
-function packScreenHtml(m: PackScreenModel): string{
-  const head = `<h2>resume pack <span class="isub">deterministic · copy into your next interactive session</span></h2>`;
-  if (!m.packs)
-    return head + `<div class="ipanel"><p class="dnotice">${esc(m.notice)}</p></div>`;
-  const row = `<div class="packrow">` + m.packs.map(p =>
-    `<button type="button" class="pk${p.name === m.sel ? " is-on" : ""}" data-pk="${escAttr(p.name)}">${esc(p.name)}</button>`).join("")
-    + `</div>`;
-  const body = m.notice
-    ? `<div class="ipanel"><p class="dnotice">${esc(m.notice)}</p></div>`
-    : `<pre class="packpre" id="packText">${esc(m.text)}</pre>`
-      + `<div class="mops"><button type="button" class="op op-acc" data-op="copypack">${esc(m.copyLabel || "⧉ copy pack")}</button></div>`;
-  return head + row + `<div class="packsrc">source: ${esc(m.file)}</div>` + body
-    + PACK_DOCS + `<h3>slots used by this pack</h3>`
-    + `<div class="slotlist">${m.slots.map(esc).join("  ")}</div></div>`;
-}
-
-// ---- new task ----
-
-/* The builder screen writes a prompt.yaml through the prompt lib. The
-   document is the lib's own shape, so a field on the screen is a dotted
-   path into it: data-nf="context.references.0.note". The page's one input
-   listener writes e.target.value to that path, and a new key is a markup
-   change here, never a handler there. */
-
 function slugOf(title: string | null | undefined): string{
   return String(title || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
@@ -1164,135 +719,6 @@ function unknownValues(obj: unknown): string[]{
   return issues;
 }
 
-const ntLabel = (text: string, forId?: string) => `<label class="nt-lbl"${forId ? ` for="${forId}"` : ""}>${esc(text)}</label>`;
-const ntText = (path: string, v: string, ph?: string, id?: string) =>
-  `<input type="text" class="nt-in"${id ? ` id="${id}"` : ""} data-nf="${path}" value="${escAttr(v || "")}" placeholder="${escAttr(ph || "")}" aria-label="${escAttr(ph || path)}">`;
-const ntArea = (path: string, v: string, ph: string, id?: string, cls?: string) =>
-  `<textarea class="nt-in${cls ? " " + cls : ""}"${id ? ` id="${id}"` : ""} data-nf="${path}" placeholder="${escAttr(ph || "")}" aria-label="${escAttr(ph || path)}">${esc(v || "")}</textarea>`;
-const ntDel = (path: string) => `<button type="button" class="nt-del" data-ndel="${path}" aria-label="remove row">×</button>`;
-const ntAdd = (list: string, text: string) => `<button type="button" class="nt-add" data-nadd="${list}">+ ${esc(text)}</button>`;
-
-// A list of plain strings: one input and a remove button per row.
-function ntList(list: string, items: string[], label: string, ph: string): string{
-  return `<div class="nt-sub">${esc(label)}</div>`
-    + items.map((v, i) => `<div class="nt-row nt-row1">${ntText(`${list}.${i}`, v, ph)}${ntDel(`${list}.${i}`)}</div>`).join("")
-    + ntAdd(list, "add");
-}
-
-function builderOpsHtml(m: BuilderOpsModel): string{
-  const clear = m.clearLabel || "clear";
-  return `<div class="mops">`
-    + `<button type="button" class="op op-acc" data-op="ntopen" title="open a prompt.yaml">↑ open yaml</button>`
-    + `<button type="button" class="op" data-op="ntpaste">⌨ paste</button>`
-    + `<span class="mgap"></span>`
-    + `<button type="button" class="op" data-op="ntexample">load example</button>`
-    + `<button type="button" class="op${m.clearLabel ? " is-armed" : ""}" data-op="ntclear">${esc(clear)}</button>`
-    + `<span class="chit drophint">drag &amp; drop .yaml anywhere</span></div>`
-    + (m.pasteOpen ? `<div class="drawer"><label for="ntPaste">paste a prompt.yaml</label>`
-      + `<textarea id="ntPaste" placeholder="paste prompt.yaml…">${esc(m.pasteText || "")}</textarea>`
-      + `<button type="button" class="op" id="ntImport">import into form</button></div>` : "")
-    + (m.pending ? `<p class="nt-report is-warn" role="status">a form is in progress — replace it with ${esc(m.pending)}? `
-      + `<button type="button" class="op" id="ntReplace">replace the form</button> `
-      + `<button type="button" class="op" id="ntKeep">keep the form</button></p>` : "")
-    + (m.report ? `<p class="nt-report is-${m.report.tone}" role="status">${esc(m.report.text)}</p>` : "");
-}
-
-/* The side card: the badge, the unmet checks by key, the directory line,
-   and the export controls. The page rebuilds only this on a keystroke, so
-   the form's inputs keep their caret. */
-function builderSideHtml(m: BuilderSideModel): string{
-  const n = m.issues.length;
-  const chit = n
-    ? `<span class="nt-vchit is-bad">⚠ ${n} protocol check${n === 1 ? "" : "s"} unmet</span>`
-    : `<span class="nt-vchit">valid · schema 1.0</span>`;
-  // Every row prints its key and the fixed word required, the standalone's
-  // panel wording, so no message can outgrow the card.
-  const list = n ? `<ul class="nt-checks">` + m.issues.map(([k]) => `<li><code>${esc(k)}</code> — required</li>`).join("") + `</ul>` : "";
-  return `<h2>export</h2>${chit}${list}`
-    + `<div class="nt-dir" id="ntDir">${esc(m.dir)}</div>`
-    + `<div class="nt-sidebtns">`
-    + `<button type="button" class="op op-acc" data-op="ntcopy">${esc(m.copyLabel || "⧉ copy yaml")}</button>`
-    + `<button type="button" class="op" data-op="ntdl">↓ download</button>`
-    + `<button type="button" class="op tgl${m.showYaml ? " is-on" : ""}" data-op="ntyaml">${m.showYaml ? "hide yaml" : "view yaml"}</button>`
-    + `</div><div class="nt-autosave">draft autosaves locally · restored on return</div>`;
-}
-
-function builderHtml(doc: PromptDocument, m: BuilderModel): string{
-  const t = doc.task, r = doc.role, c = doc.context, o = doc.output, p = doc.protocol;
-  const defers = Array.isArray(p.defers) ? p.defers : [];
-  const artifacts = Array.isArray(p.artifacts) ? p.artifacts : [];
-  // The path prints once, in the card, since a keystroke redraws the card
-  // and the heading rule would show a slug in capitals.
-  const head = `<h2>new task</h2>`;
-  const task = `<div class="ipanel"><h2>task</h2><div class="nt-row nt-row4">`
-    + `<div>${ntLabel("id", "nt_id")}${ntText("task.id", t.id, "AV-016", "nt_id")}</div>`
-    + `<div>${ntLabel("title", "nt_title")}${ntText("task.title", t.title, "One line naming the task", "nt_title")}</div>`
-    + `<div>${ntLabel("author", "nt_author")}${ntText("task.author", t.author, "Who wrote this", "nt_author")}</div>`
-    + `<div>${ntLabel("date", "nt_date")}${ntText("task.date", t.date, "YYYY-MM-DD", "nt_date")}</div></div>`
-    + ntLabel("slug · directory name only, not in the yaml", "ntSlug")
-    + `<input type="text" class="nt-in" id="ntSlug" value="${escAttr(m.slug)}" placeholder="kebab-case-slug" aria-label="slug">`
-    + ntLabel("preamble", "nt_preamble") + ntArea("preamble", doc.preamble, "Instructions about how to read this prompt, before the task itself", "nt_preamble", "nt-short")
-    + ntLabel("prompt", "nt_prompt") + ntArea("prompt", doc.prompt, "What to do, and the outcome a person should see when it works", "nt_prompt")
-    + `</div>`;
-  const role = `<div class="ipanel"><h2>role</h2>`
-    + ntLabel("lens", "nt_lens") + ntText("role.lens", r.lens, "The seniority and specialty to reason from", "nt_lens")
-    + ntList("role.priorities", r.priorities, "priorities · what wins when goals conflict", "e.g. testability")
-    + `</div>`;
-  const refs = c.references.map((x, i) => `<div class="nt-row nt-row3">`
-    + ntText(`context.references.${i}.path`, x.path, "src/path/to/file.ts")
-    + ntText(`context.references.${i}.lines`, x.lines, "42-88")
-    + ntText(`context.references.${i}.note`, x.note, "Why this location matters")
-    + ntDel(`context.references.${i}`) + `</div>`).join("");
-  const context = `<div class="ipanel"><h2>context</h2>`
-    + ntLabel("background", "nt_bg") + ntArea("context.background", c.background, "System history, intent, org constraints", "nt_bg", "nt-short")
-    + ntList("constraints.out_of_scope", doc.constraints.out_of_scope, "out of scope · named exclusions", "What this task is not")
-    + ntList("constraints.must_not", doc.constraints.must_not, "must not · hard prohibitions", "The line not to cross")
-    + `<div class="nt-sub">references · path, lines, note</div>` + refs + ntAdd("context.references", "add reference")
-    + ntList("context.links", c.links, "links", "https://…")
-    + `</div>`;
-  const lessons = `<div class="ipanel"><h2>lessons learned</h2>`
-    + doc.lessons_learned.map((x, i) => `<div class="nt-row nt-row2">`
-      + ntText(`lessons_learned.${i}.context`, x.context, "What a prior session tried or surfaced")
-      + ntText(`lessons_learned.${i}.takeaway`, x.takeaway, "The dead end to avoid, or the fact now known")
-      + ntDel(`lessons_learned.${i}`) + `</div>`).join("")
-    + ntAdd("lessons_learned", "add lesson") + `</div>`;
-  const reqs = `<div class="ipanel"><h2>requirements <span class="isub">id + statement + how to verify</span></h2>`
-    + doc.requirements.map((x, i) => `<div class="nt-row nt-rowr">`
-      + ntText(`requirements.${i}.id`, x.id, "R1")
-      + ntText(`requirements.${i}.statement`, x.statement, "Requirement")
-      + ntText(`requirements.${i}.verify`, x.verify, "How to verify")
-      + ntDel(`requirements.${i}`) + `</div>`).join("")
-    + ntAdd("requirements", "add requirement") + `</div>`;
-  const fmtOpts = [""].concat(PL.FORMATS).map(f =>
-    `<option value="${f}"${o.format === f ? " selected" : ""}>${f || "choose…"}</option>`).join("");
-  const output = `<div class="ipanel"><h2>output</h2><div class="nt-row nt-rowo">`
-    + `<div>${ntLabel("destination", "nt_dest")}${ntText("output.destination", o.destination, "Where the work lands", "nt_dest")}</div>`
-    + `<div>${ntLabel("format", "nt_fmt")}<select class="nt-in${o.format ? "" : " is-unset"}" id="nt_fmt" data-nf="output.format" aria-label="format">${fmtOpts}</select></div></div>`
-    + ntLabel("structure", "nt_struct") + ntArea("output.structure", o.structure, "How the output is organized", "nt_struct", "nt-short")
-    + `</div>`;
-  const switches = NT_SWITCHES.map(([k, text]) =>
-    `<label class="nt-tog${p[k] ? " is-on" : ""}"><input type="checkbox" data-nf="protocol.${k}"${p[k] ? " checked" : ""}> ${esc(text)}</label>`).join("");
-  const chips = PL.ARTIFACTS.map(a =>
-    `<label class="nt-chip${artifacts.includes(a) ? " is-on" : ""}"><input type="checkbox" data-nart="${a}"${artifacts.includes(a) ? " checked" : ""}> ${a}</label>`).join("");
-  const deferRows = defers.map((d, i) => `<div class="nt-row nt-rowd">`
-    + `<select class="nt-in${d.phase ? "" : " is-unset"}" data-nf="protocol.defers.${i}.phase" aria-label="phase">`
-    + [""].concat(PL.PHASES).map(ph => `<option value="${ph}"${d.phase === ph ? " selected" : ""}>${ph ? ph.replace(/_/g, " ") : "phase…"}</option>`).join("")
-    + `</select>` + ntText(`protocol.defers.${i}.reason`, d.reason, "Why this phase does not run")
-    + ntDel(`protocol.defers.${i}`) + `</div>`).join("");
-  const protocol = `<div class="ipanel"><h2>protocol</h2><div class="nt-togs">${switches}</div>`
-    + `<div class="nt-sub">artifacts · which to produce</div><div class="nt-chips">${chips}</div>`
-    + `<div class="nt-sub">defers · phases this task defers, with a reason each</div>` + deferRows + ntAdd("protocol.defers", "add deferral")
-    + `</div>`;
-  // The yaml panel sits in the form column. The card sticks over the
-  // whole grid, so a panel in a row of its own would slide under the card.
-  const yaml = m.showYaml ? `<div class="ipanel" id="ntYaml"><h2>prompt.yaml</h2><pre class="packpre" id="ntYamlPre">${esc(m.yaml)}</pre></div>` : "";
-  return head + `<div id="ntOps">${builderOpsHtml(m)}</div>`
-    + `<div class="nt-grid"><div class="nt-form">${task}${role}${context}${lessons}${reqs}${output}${protocol}${yaml}</div>`
-    + `<div class="ipanel nt-side" id="ntSide">${builderSideHtml(m)}</div></div>`;
-}
-
-// ---- the reviews screen ----
-
 /* A ticket's rounds, grouped by PR. prreview numbers k across the whole
    ticket directory, so a PR's first round here can carry a k above 1. We
    sort by the number, because a string sort puts r10 before r2. The groups
@@ -1354,41 +780,6 @@ function reviewFileRef(body: string | null | undefined): ReviewRef | null{
   return parts.length === 2 && REVIEW_NAME.test(parts[1]) ? {dir: parts[0], file: parts[1]} : null;
 }
 
-// The PR select joins the row only when the ticket holds more than one PR.
-function reviewNavHtml(groups: ReviewGroup[], gi: number, ri: number): string{
-  const g = groups[gi];
-  const prSel = groups.length > 1
-    ? `<select id="revPr" class="secsel" aria-label="pull request">` + groups.map((x, i) =>
-      `<option value="${escAttr(x.pr)}"${i === gi ? " selected" : ""}>${esc(x.label)}</option>`).join("") + `</select>`
-    : "";
-  const opts = g.rounds.map((r, i) =>
-    `<option value="${escAttr(r.file)}"${i === ri ? " selected" : ""}>${esc("round " + r.k + " · " + r.date)}</option>`).join("");
-  return `<div class="secnav">` + prSel
-    + `<button type="button" class="op" data-revstep="-1"${ri <= 0 ? " disabled" : ""}>‹ prev</button>`
-    + `<select id="revSel" class="secsel" aria-label="round">${opts}</select>`
-    + `<button type="button" class="op" data-revstep="1"${ri >= g.rounds.length - 1 ? " disabled" : ""}>next ›</button></div>`;
-}
-
-// A round link is an in-page hash, so its href never carries a URL that
-// came out of a review file. The tok is the ticket's rail token.
-function reviewLinkHtml(tok: string, file: string, label: string): string{
-  return `<a class="rvl" href="${escAttr(hashWrite({v: "reviews", t: tok, s: file}))}" data-t="${escAttr(tok)}" data-rf="${escAttr(file)}">${esc(label)}</a>`;
-}
-
-function reviewHeadHtml(m: ReviewHeadModel): string{
-  const f: ReviewVerdictFields = m.fields || {};
-  const chits = [m.date].concat(m.fields ? [f.verdict, f.confidence] : []).filter(Boolean);
-  const dd = (k: string, v: string | undefined) => `<dt>${esc(k)}</dt><dd>${esc(v || "—")}</dd>`;
-  return `<div class="revhead"><div class="tickhead"><span class="tbig">${esc(m.title)}</span>`
-    + chits.map(c => `<span class="chit">${esc(c)}</span>`).join("") + ` ${permalink}</div>`
-    + m.notices.map(n => `<p class="dnotice">${esc(n)}</p>`).join("")
-    + (m.fields ? `<dl class="revfields">${dd("counts", f.counts)}${dd("opened", f.opened)}`
-      + `${dd("closed", f.closed)}${dd("carried open", f.carried)}</dl>` : "")
-    + (m.prior.length ? `<p class="revprior">earlier rounds: ` + m.prior.map(p =>
-      reviewLinkHtml(p.tok || p.dir, p.file, p.file + (p.dir === m.dir ? "" : " · " + p.dir))).join(", ") + `</p>` : "")
-    + `</div>`;
-}
-
 /* A round cites decisions and watches by the same id tokens a log section
    does, so we scan it with the index builder's own harvest. Only ids the
    ticket defines count, which drops a token that names another ticket's
@@ -1425,126 +816,23 @@ function reviewLedger(rounds: readonly ReviewRound[] | null | undefined): Review
   return out;
 }
 
-// Both maps are closed, so a word from a review file picks a class but
-// never writes into the attribute that carries it.
+// The map is closed, so a word from a review file picks a class but never
+// writes into the attribute that carries it.
 const SEVERITY_PILL: Record<string, string> = {must: "p-high", should: "p-med", question: "p-unk", nit: "p-low"};
-const OUTCOME_PILL: Record<string, [string, string]> = {RESOLVED: ["p-ok", "rail-ok"], ACCEPTED: ["p-unk", "rail-unk"], REFUTED: ["p-low", ""]};
-const revPill = (kind: string, cls: string, word: string) => `<span class="pill dl-pill ${cls}"><i>${kind}</i>${esc(word)}</span>`;
-const revRow = (label: string, html: string) => `<div class="dl-row"><span class="dl-k revk">${esc(label)}</span><span class="dl-v revv">${html}</span></div>`;
-const revText = (v: string) => P.decorate(P.inline(v));
 
-/* A finding card follows the Decision Log card. The severity, confidence,
-   and status move into the head as pills, and every other field keeps its
-   row. The status pill shows the ledger's closure when one exists, and the
-   card's written Status only when no later round closed the finding. */
-function findingCardHtml(entry: DLEntry, m: Partial<ReviewBodyModel>): string{
-  const hm = entry.head.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
-  const id = hm ? hm[1].trim() : "", title = hm ? hm[2].trim() : entry.head;
-  const split = P.dlSplitBody(entry.lines);
-  let sev = "", conf = "", status = "";
-  const rows: string[] = [];
-  for (const f of P.parseDLFields(split.fieldLines)){
-    const k = f.label.toLowerCase();
-    if (k === "severity") sev = f.value;
-    else if (k === "confidence") conf = f.value;
-    else if (k === "status") status = f.value;
-    else rows.push(revRow(f.label, revText(f.value)));
-  }
-  let pills = "", rail = "";
-  if (sev){
-    const s = P.dlChipSplit(sev), cls = Object.hasOwn(SEVERITY_PILL, s.word.toLowerCase()) ? SEVERITY_PILL[s.word.toLowerCase()] : "";
-    const note = cls ? s.tail : s.tail ? sev.trim() : "";
-    pills += revPill("severity", cls || "p-low", s.word);
-    if (note) rows.push(revRow("severity note", revText(note)));
-  }
-  if (conf){
-    const c = P.dlConfPill(conf);
-    pills += c.html;
-    if (c.note) rows.push(revRow("confidence note", revText(c.note)));
-  }
-  const closed = id && m.ledger && m.ledger[id];
-  if (closed){
-    const [cls, r] = OUTCOME_PILL[closed.outcome] || ["p-low", ""];
-    pills += revPill("status", cls, closed.outcome);
-    rail = r;
-    rows.push(revRow("closed", esc(closed.date) + " in " + reviewLinkHtml(m.tok!, closed.file, "round " + closed.k)
-      + (closed.note ? " · " + revText(closed.note) : "")));
-  } else if (status){
-    const st = P.dlStatusPill(status);
-    pills += st.html;
-    rail = P.dlRail(status);
-    if (st.note) rows.push(revRow("status note", revText(st.note)));
-  }
-  const trail = split.trailing ? `<div class="md dl-trail">${P.renderMarkdown(split.trailing)}</div>` : "";
-  return `<div class="dl-card ${rail}"><div class="dl-head"><span class="dl-id">${id ? esc(id) : "—"}</span>`
-    + `<span class="dl-title">${revText(title)}</span><span class="dl-pills">${pills}</span></div>`
-    + (rows.length ? `<div class="dl-grid revgrid">${rows.join("")}</div>` : "") + trail + `</div>`;
-}
-
-// A labelled field list becomes a ruled grid. Any line that is not a field
-// sends the section back to markdown, so nothing in it goes missing.
-function fieldGridHtml(lines: string[]): string | null{
-  const split = P.dlSplitBody(lines);
-  const fields = P.parseDLFields(split.fieldLines);
-  if (!fields.length || split.trailing || fields.some(f => !f.label)) return null;
-  return `<div class="dl-card revcard"><div class="dl-grid revgrid">` + fields.map(f => revRow(f.label, revText(f.value))).join("") + `</div></div>`;
-}
-
-function ledgerHtml(lines: string[]): string | null{
-  const {rows, clean} = ledgerRows(lines);
-  if (!rows.length || !clean) return null;
-  return `<div class="dl-card revcard"><div class="dl-grid revgrid">` + rows.map(r => {
-    const [cls] = OUTCOME_PILL[r.outcome] || ["p-low"];
-    return revRow(r.id, revPill("closed", cls, r.outcome) + " " + esc(r.date) + (r.note ? " · " + revText(r.note) : ""));
-  }).join("") + `</div></div>`;
-}
-
-/* The round body renders section by section, one doc panel each, the way
-   the inspector shows a log section. Review Target, Review Verdict,
-   Findings, and Prior Findings carry prreview's field grammar, so they
-   become cards. Every other section, and any section that breaks the
-   grammar, renders as markdown exactly as the file reads. Every panel body
-   sits inside the md block, as the inspector's cards do, so a code span or
-   a link inside a card takes the same style as one in prose. The file's H1
-   repeats what the round head already says, so we drop it. m.ledger comes
-   from reviewLedger over the round's PR group, and m.tok is the ticket's
-   rail token for the links to closing rounds. */
-function reviewBodyHtml(text: string | null | undefined, m?: ReviewBodyModel): string{
-  const md = (h: string) => `<div class="md">${h}</div>`;
-  const panel = (title: string, html: string) => `<div class="doc">${title ? `<h4>${esc(title)}</h4>` : ""}${html}</div>`;
-  const doc = P.parseSections(String(text || ""));
-  if (doc.front != null) return `<div class="revdoc">${panel("", md(P.renderMarkdown(String(text))))}</div>`;
-  const intro = doc.intro.replace(/^#\s.*\n?/, "").trim();
-  let html = intro ? panel("", md(P.renderMarkdown(intro))) : "";
-  for (const sec of doc.secs){
-    const t = sec.title.trim(), body = sec.body.join("\n");
-    let part: string | null = null;
-    if (t === "Review Target" || t === "Review Verdict") part = fieldGridHtml(sec.body);
-    else if (t === "Prior Findings") part = ledgerHtml(sec.body);
-    else if (t === "Findings"){
-      const {pre, entries} = P.parseDLEntries(body);
-      if (entries.length) part = (pre ? P.renderMarkdown(pre) : "") + `<div class="dl-cards">${entries.map(e => findingCardHtml(e, m || {})).join("")}</div>`;
-    }
-    html += panel(t, md(part != null ? part : P.renderMarkdown(body)));
-  }
-  return `<div class="revdoc">${html}</div>`;
-}
-
-export {NT_KEYS, LINK_ITEM, SEVERITY_PILL, OUTCOME_PILL, ledgerRows, keyLabel, keyTitle, isFlat, isLine, isMap, NT_SWITCHES, SCREENS, TAB_SCREENS, localDate, tabsHtml, footerText, VIEWS, viewOf, screenFromHash, repoLabel, pageTitle, themeChoice, themeFor,
+export {NT_KEYS, LINK_ITEM, SEVERITY_PILL, ledgerRows, keyLabel, keyTitle, isFlat, isLine, isMap, NT_SWITCHES, localDate, footerText, VIEWS, viewOf, screenFromHash, repoLabel, pageTitle, themeChoice, themeFor,
   hashRead, hashWrite, logPaths, promptPaths, reviewPaths, corpusUrl, loadCorpus,
-  railEntryHtml, railHtml, tickheadHtml, opsRowHtml, secNavHtml, docPaneHtml, rawPaneHtml,
-  promptViewHtml, reviewRounds, reviewHead, priorReviews, reviewFileRef, reviewNavHtml,
-  reviewLinkHtml, reviewHeadHtml, reviewLedger, reviewBodyHtml, reviewItems, pillsHtml,
-  pillGroupHtml, decisionsPanelHtml, watchesPanelHtml, statusPillsHtml, watchboardHtml,
-  assumptionLedgerHtml, fullLogHtml, calibrationHtml, fillPack, packSlots, packReadsTicket,
-  packBasisKind, packGapKind, packContext, loadPacks, packScreenHtml, slugOf, promptDir, blankRow,
-  unknownKeys, unknownValues, placeable, builderOpsHtml, builderSideHtml, builderHtml};
+  reviewRounds, reviewHead, priorReviews, reviewFileRef,
+  reviewLedger, reviewItems,
+  fillPack, packSlots, packReadsTicket,
+  packBasisKind, packGapKind, packContext, loadPacks, slugOf, promptDir, blankRow,
+  unknownKeys, unknownValues, placeable};
 export type {Screen, ThemeChoice, HashSelection, HashSelectionInput, FetchResponse, FetchFn,
-  LoadCorpusOptions, FetchedText, ReviewFile, Corpus, RailEntry, RailModelGroup, Chit, TickheadModel, ViewMode,
-  OpsRowModel, SecNavEntry, DocPaneModel, RawPaneModel, SortState, CitationChip, WatchLink, CoverageRow,
-  DecisionPanelRow, DecisionsPanelModel, WatchPanelRow, WatchesPanelModel, BoardRow, WatchboardModel,
-  AssumptionRow, AssumptionLedgerModel, FullLogSection, CalibrationScreenModel, PackBasisKind, PackGapKind,
-  PackWatchRow, PackEntryRow, PackGapRow, PackPremortemRow, PackContext, Pack, PackScreenModel, BlankRow,
-  NtSwitchKey, Placed, BuilderReport, BuilderOpsModel, BuilderSideModel, BuilderModel, ReviewRound, ReviewGroup,
-  ReviewVerdictKey, ReviewVerdictFields, ReviewHead, ReviewRef, PriorReviewLink, ReviewHeadModel,
-  ReviewLedgerRow, ReviewClosure, ReviewLedger, ReviewBodyModel};
+  LoadCorpusOptions, FetchedText, ReviewFile, Corpus, RailEntry, RailModelGroup, ViewMode,
+  SortState, CitationChip, CoverageRow,
+  DecisionPanelRow, WatchPanelRow,
+  PackBasisKind, PackGapKind,
+  PackWatchRow, PackEntryRow, PackGapRow, PackPremortemRow, Pack, BlankRow,
+  NtSwitchKey, Placed, BuilderReport, ReviewRound, ReviewGroup,
+  ReviewVerdictKey, ReviewVerdictFields, ReviewHead, ReviewRef,
+  ReviewLedgerRow, ReviewClosure, ReviewLedger};
