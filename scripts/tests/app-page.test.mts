@@ -13,6 +13,7 @@ import {act, cleanup, fireEvent, render} from "@testing-library/react";
 import * as Bld from "../../src/lib/adp-index-builder-lib.ts";
 import * as S from "../../src/lib/adp-shell-lib.ts";
 import * as D from "../../src/lib/adp-derive-lib.ts";
+import * as P from "../../src/lib/adp-parser-lib.ts";
 import {App} from "../../src/app/App.tsx";
 import {PromptCards, SPY_SLACK} from "../../src/app/Inspector.tsx";
 import {stripModel} from "../../src/app/PhaseStrip.tsx";
@@ -315,6 +316,28 @@ function decarded(got: Snapshot, want: Region): [Snapshot, Region] {
   return [{...got, main: {text: cut(main.text, ["▾", "▸"], carets, "carets"), attrs: cut(main.attrs, ["title=confidence", "title=status"], chips.length, "chip titles")}},
     {text, attrs: want.attrs}];
 }
+/* The Reading rules turn a bold run-in label into an eyebrow heading and the
+   closing metadata lines into one footer (DL-052). The heading drops the
+   label's colon, and the footer joins its pairs with " · ". So for each
+   marked heading and footer, in page order, we find its own runs in the
+   app's render and map them back: the heading's last run takes its colon
+   again, and the footer loses its separators. */
+// How many headings and footers the walk mapped back, so a test can show it met both.
+const readSeen = {runin: 0, meta: 0};
+function unread(got: Snapshot): Snapshot {
+  const text = got.main!.text.slice();
+  let from = 0;
+  for (const el of $$("#scrInspector h3[data-runin], #scrInspector footer[data-meta]")){
+    const run = record(el).text;
+    const i = text.findIndex((_, j) => j >= from && run.every((x, k) => text[j + k] === x));
+    assert.ok(i >= 0, "the render lacks the run of " + el.outerHTML.slice(0, 60));
+    const back = el.tagName === "H3" ? [...run.slice(0, -1), run.at(-1) + ":"] : run.filter(x => x !== "·");
+    readSeen[el.tagName === "H3" ? "runin" : "meta"]++;
+    text.splice(i, run.length, ...back);
+    from = i + back.length;
+  }
+  return {...got, main: {...got.main!, text}};
+}
 const rentries = () => $$("#rail [data-key]").map(r => r.getAttribute("data-key")!);
 const options = () => [...($("#secSel") as HTMLSelectElement).options].map(o => o.value);
 async function pickSection(key: string){ fireEvent.change($("#secSel"), {target: {value: key}}); await settle(1); }
@@ -334,18 +357,19 @@ test("the app's inspector shows what the vanilla page showed, for every section 
       await pickSection(s);
       const k = "inspector|" + t + "|section|" + s, want = BASELINE[k];
       assert.ok(want, "the baseline has no state " + k);
-      const [got, main] = decarded(withoutStrip(s === "prompt" ? withoutStart(snapshot(document)) : snapshot(document)),
+      const [got, main] = decarded(unread(withoutStrip(s === "prompt" ? withoutStart(snapshot(document)) : snapshot(document))),
         reheaded(withoutOps(withoutChip(want).main!)));
       assert.deepEqual(got, {...restyled(want), main}, k);
       seen.push(k);
     }
     await click($('[data-view="full"]'));
     const k = "inspector|" + t + "|full", want = BASELINE[k];
-    const [got, main] = decarded(withoutStrip(snapshot(document)), reheaded(withoutOps(withoutChip(want).main!)));
+    const [got, main] = decarded(unread(withoutStrip(snapshot(document))), reheaded(withoutOps(withoutChip(want).main!)));
     assert.deepEqual(got, {...restyled(want), main}, k);
     seen.push(k);
   }
   assert.deepEqual(seen, keys);
+  assert.ok(readSeen.runin > 0 && readSeen.meta > 0, "the walk met no run-in heading or no footer");
 }, 120000);
 
 test("the Packs drawer shows what the vanilla resume pack screen showed, for every pack and ticket", async () => {
@@ -2683,7 +2707,7 @@ test("a finding renders as a card, and its status pill reads the ledger, not the
   assert.match(cards[1], /^rail-open"/);
   assert.match(cards[1], /<i>severity<\/i>nit/);
   assert.match(cards[1], /<i>status<\/i>OPEN/);
-  assert.match(html, /<h4>Findings<\/h4><div class="md"><div class="dl-cards">/);
+  assert.match(html, /<h4>Findings<\/h4><div class="md adp-prose"><div class="dl-cards">/);
 });
 
 test("Review Target, Review Verdict, and Prior Findings render as grids, and a stray line keeps markdown", () => {
@@ -2697,7 +2721,7 @@ test("Review Target, Review Verdict, and Prior Findings render as grids, and a s
   assert.deepEqual([...html.matchAll(/<div class="doc"><h4>([^<]*)<\/h4>/g)].map(x => x[1]),
     ["Review Target", "Inspected", "Findings", "Prior Findings", "Review Verdict"]);
   assert.doesNotMatch(html, /PR Review — PR #7/);
-  assert.equal(html.split('<div class="doc"><h4>').length - 1, html.split('</h4><div class="md">').length - 1);
+  assert.equal(html.split('<div class="doc"><h4>').length - 1, html.split('</h4><div class="md adp-prose">').length - 1);
   cleanup();
   const stray = bodyHtml(text.replace("## Prior Findings\n", "## Prior Findings\nA note that is not a ledger line.\n"), {});
   assert.equal(stray.split("dl-card revcard").length - 1, 2);
@@ -2973,6 +2997,42 @@ test("a section opens its first decision card, folds the rest, and a head click 
   assert.equal(second.head.querySelector(".adp-dl__caret")!.textContent, "▾");
   await click(first.head);
   assert.deepEqual([first.head.getAttribute("aria-expanded"), first.body.style.display], ["false", "none"]);
+});
+
+// ---- the Reading rules ----
+
+// R7: in the shell, a run-in label is an eyebrow heading and the metadata
+// lines are one footer line. The parser's default render stays as it was.
+test("a run-in label renders as an eyebrow heading and the metadata lines as one footer, in the shell only", async () => {
+  const ps = "**What the problem is:** demo.\n\n**What the problem is not:**\n- a list item\n\n"
+    + "**Confirmed by:** russbeye   **Date:** 2026-01-01\n**Revision history:** none";
+  const log = LOG.replace("**What the problem is:** demo.", ps);
+  await boot({hash: "#t=AA1&s=sec-problem-statement", fetch: liveCorpus(LISTING_I, {...TEXTS_I, "20260101-AA1-alpha/audit-log.md": log}).fetch});
+  const prose = $("#scrInspector .adp-prose");
+  assert.deepEqual([...prose.querySelectorAll("h3[data-runin]")].map(h => h.textContent), ["What the problem is", "What the problem is not"]);
+  assert.equal(prose.querySelector("h3 + p")!.textContent, "demo.");
+  assert.equal(prose.querySelector("h3 + p + h3 + ul li")!.textContent, "a list item");
+  // A list item's content sits in one span, so the item's flex row never
+  // splits text from its inline code.
+  assert.equal(prose.querySelector("h3 + p + h3 + ul li")!.children.length, 1);
+  assert.equal(prose.querySelector("h3 + p + h3 + ul li")!.firstElementChild!.tagName, "SPAN");
+  assert.equal(prose.querySelector("footer")!.textContent, "Confirmed by: russbeye · Date: 2026-01-01 · Revision history: none");
+  assert.equal(prose.querySelectorAll("footer").length, 1);
+  const plain = P.renderSectionBody(ps);
+  assert.ok(!/<h3|<footer/.test(plain), "the default render changed");
+  assert.match(plain, /<strong>What the problem is:<\/strong> demo\./);
+});
+
+// The template writes its fields on consecutive lines, metadata included.
+// A bold sentence that does not end in a colon is not a run-in label, and a
+// metadata line that does not close the section stays prose.
+test("the Reading rules read the template's consecutive fields and leave other bold text as prose", () => {
+  const html = P.renderProse("**What the problem is:** a.\n**What the problem is not:** b.\n**Confirmed by:** x   **Date:** 2026-01-01");
+  assert.equal(html, '<h3 data-runin="">What the problem is</h3><p>a.</p><h3 data-runin="">What the problem is not</h3><p>b.</p>'
+    + '<footer data-meta=""><span>Confirmed by:</span> x<span aria-hidden="true"> · </span><span>Date:</span> 2026-01-01</footer>');
+  assert.match(P.renderProse("- one `code` two"), /<li><span>one <code[^>]*>code<\/code> two<\/span><\/li>/);
+  const plain = P.renderProse("**Gate 4 confirmation (solo).** Done.\n\n**Date:** 2026-01-01\n\nMore text.");
+  assert.ok(!/<h3|<footer/.test(plain), plain);
 });
 
 // ---- the rail's fold, filter, and narrow overlay ----

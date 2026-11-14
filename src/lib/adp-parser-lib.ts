@@ -446,6 +446,62 @@ function renderDSCard(id: string, title: string, confidence: string, status: str
     + (rows?`<dl class="adp-dl__body"${shut}>${rows}</dl>`:'')+trail+`</div>` as EscapedHtml;
 }
 
+/* The Reading rules of the design system's Prose component, which
+   mission control draws by the same option as its cards. A line that opens
+   with a bold run-in label, such as "**What the problem is:**", becomes an
+   eyebrow heading, and the line's text follows it as a paragraph. The
+   template writes these fields on consecutive lines, so a label starts a new
+   heading even with no blank line above it. The run metadata lines that
+   close a section (confirmed by, date, revision history, and authorized by)
+   collapse into one footer line, each label and value as the log wrote it,
+   joined with " · ". A metadata line anywhere else stays prose. The heading
+   and the footer carry marker attributes, so a test can map them back to
+   the text the log holds. */
+const META_LABELS=['confirmed by','date','revision history','authorized by'];
+const RE_RUNIN=/^\*\*([^*\n]+?):\*\*\s*(.*)$/;
+function metaPairs(line: string): DLField[] | null{
+  const t=line.trim();
+  if(!t.startsWith('**')) return null;
+  const pairs: DLField[]=[]; const re=/\*\*([^*\n]+?):\*\*/g; let m: RegExpExecArray | null; let last=-1; let label='';
+  while((m=re.exec(t))){
+    if(last>=0) pairs.push({label, value:t.slice(last, m.index).trim()});
+    label=m[1].trim(); last=re.lastIndex;
+  }
+  if(last<0) return null;
+  pairs.push({label, value:t.slice(last).trim()});
+  return pairs.every(f=>META_LABELS.includes(f.label.toLowerCase()))?pairs:null;
+}
+function renderProse(md: unknown): EscapedHtml{
+  const lines=String(md).replace(/\r\n/g,'\n').split('\n');
+  let end=lines.length;
+  while(end>0 && !lines[end-1].trim()) end--;
+  let start=end; const meta: DLField[]=[];
+  while(start>0){ const m=metaPairs(lines[start-1]); if(!m) break; meta.unshift(...m); start--; }
+  let html=''; let chunk: string[]=[]; let inFence=false;
+  // A Prose list item lays its marker and its content out as a flex row, so
+  // we wrap the content in one span. Bare, each text run and code span would
+  // become a flex item of its own and break the line apart.
+  const items=(h: string)=>h.replace(/<li([^>]*)>/g,'<li$1><span>').replace(/<\/li>/g,'</span></li>');
+  const flush=()=>{ if(chunk.join('').trim()) html+=items(renderMarkdown(chunk.join('\n'))); chunk=[]; };
+  for(let i=0;i<start;i++){
+    const line=lines[i];
+    if(/^\s*```/.test(line)) inFence=!inFence;
+    const m=!inFence ? line.match(RE_RUNIN) : null;
+    if(m && !metaPairs(line)){
+      flush();
+      html+=`<h3 data-runin="">${decorate(inline(m[1].trim()))}</h3>`;
+      if(m[2].trim()) chunk.push(m[2]);
+      continue;
+    }
+    chunk.push(line);
+  }
+  flush();
+  if(meta.length) html+=`<footer data-meta="">`+meta.map((f,i)=>(i?'<span aria-hidden="true"> · </span>':'')
+    +`<span>${esc(f.label)}:</span> ${decorate(inline(f.value))}`).join('')+`</footer>`;
+  return html as EscapedHtml;
+}
+const proseHtml=(md: unknown, opts?: DLRenderOpts): EscapedHtml=>opts&&opts.ds?renderProse(md):renderMarkdown(md);
+
 // open sets whether a design system card starts with its fields shown. It
 // defaults to shown, and the section renderers show the first card alone.
 type DLRenderOpts = {ds?: boolean; open?: boolean};
@@ -544,7 +600,7 @@ function renderSectionBody(body: unknown, opts?: DLRenderOpts): EscapedHtml{
   const flushProse=()=>{
     const t=prose.join('\n'); prose=[];
     if(!t.trim()) return;
-    flushCards(); out.push(renderMarkdown(t));
+    flushCards(); out.push(proseHtml(t,opts));
   };
   let i=0;
   while(i<lines.length){
@@ -566,7 +622,7 @@ function renderSectionBody(body: unknown, opts?: DLRenderOpts): EscapedHtml{
     if(/^\s*```/.test(line)) inFence=!inFence;
     prose.push(line); i++;
   }
-  if(!any) return renderMarkdown(body);
+  if(!any) return proseHtml(body,opts);
   flushProse(); flushCards();
   return out.join('') as EscapedHtml;
 }
@@ -574,8 +630,8 @@ function renderDecisionLog(body: unknown, opts?: DLRenderOpts): EscapedHtml{
   const {pre,entries}=parseDLEntries(body);
   // A Decision Log written as prose has no ### entries. Those sections fall
   // back to the generic renderer instead of showing an empty deck of cards.
-  if(!entries.length) return renderMarkdown(body);
-  return ((pre?`<div class="md">${renderMarkdown(pre)}</div>`:'')
+  if(!entries.length) return proseHtml(body,opts);
+  return ((pre?`<div class="md">${proseHtml(pre,opts)}</div>`:'')
     + `${cardList(opts,!!pre)}${entries.map((e,i)=>renderDLCard(e,opts&&{...opts, open:i===0})).join('')}</div>`) as EscapedHtml;
 }
 
@@ -583,7 +639,7 @@ export {esc, escAttr, safeLinkUrl, inline, decorate, TOK, renderMarkdown, ART, S
   metaFor, splitFrontMatter, parseSections, slug, sectionKeys, isTableStart, splitRow,
   parseDLFields, dlSplitBody, dlChipSplit, dlConfKind, dlConfPill, dlStatusPill, dlStatusKind,
   dlRail, parseDLEntries, dlEntryStatus, dlStatusCounts, renderDLCard, renderSectionBody,
-  renderDecisionLog};
+  renderDecisionLog, renderProse};
 export type {EscapedHtml, SectionKind, SectionMeta, ArtEntry, FrontMatterSplit, Section, ParsedSections,
   DLField, DLChipSplit, DLChip, DLConfKind, DLStatusKind, DLBodySplit, DLEntry, DLEntries, DLStatusCounts, DLRenderOpts};
 

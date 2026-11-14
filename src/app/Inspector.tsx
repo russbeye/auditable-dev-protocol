@@ -149,20 +149,20 @@ function Scalar({v, at}: {v: unknown; at: string}){
 const NONE = <span className="pcard-none">none</span>;
 
 function Value({v, at}: {v: YamlValue; at: string}): ReactNode {
-  if (typeof v === "string" && v.includes("\n")) return <Html as="div" className="md" html={P.renderMarkdown(v)}/>;
+  if (typeof v === "string" && v.includes("\n")) return <Html as="div" className="md adp-prose" html={P.renderMarkdown(v)}/>;
   if (Array.isArray(v)){
     if (!v.length) return NONE;
     if (v.every(S.isFlat)){
       const cols: string[] = [];
       v.forEach(r => Object.keys(r).forEach(k => { if (!cols.includes(k)) cols.push(k); }));
-      return <div className="md"><div className="tbl-wrap"><table className="md-tbl">
+      return <div className="md adp-prose"><div className="tbl-wrap"><table className="md-tbl">
         <thead><tr>{cols.map(c => <th key={c}>{S.keyLabel(c)}</th>)}</tr></thead>
         <tbody>{v.map((r, i) => <tr key={i}>{cols.map(c => S.isLine(r[c])
           ? <td key={c}><Scalar v={r[c]} at={at + "[]." + c}/></td>
           : <Html key={c} as="td" html={P.renderMarkdown(r[c])}/>)}</tr>)}</tbody>
       </table></div></div>;
     }
-    return <div className="md"><ul className="md-list">{v.map((x, i) =>
+    return <div className="md adp-prose"><ul className="md-list">{v.map((x, i) =>
       <li key={i}>{S.isLine(x) ? <Scalar v={x} at={at + "[]"}/> : <Value v={x} at={at + "[]"}/>}</li>)}</ul></div>;
   }
   if (S.isMap(v)){
@@ -214,7 +214,7 @@ function PromptBody({pr}: {pr: PromptView}){
 // Mission control draws the design system's decision card.
 const DS = {ds: true};
 function SectionBody({sec, body}: {sec: Section | null; body: string}){
-  return sec ? <Html as="div" className="md" onClick={foldCard}
+  return sec ? <Html as="div" className="md adp-prose" onClick={foldCard}
     html={P.metaFor(sec.title).spine ? P.renderDecisionLog(body, DS) : P.renderSectionBody(body, DS)}/> : null;
 }
 
@@ -547,7 +547,7 @@ function Inspector({corpus, today, t, tokenOf, notice, sel, view, dlFilter, miss
     const card = pd.cards[sel.item];
     pane = <DocPane back={en ? en.title : "sections"} onBack={act.onBack} heading={"[" + sel.item + "]"}
       notice={card ? null : "this entry is cited here but not present in the loaded text."}>
-      {card ? <Html as="div" className="md" onClick={foldCard} html={P.renderDLCard(card, DS)}/> : null}
+      {card ? <Html as="div" className="md adp-prose" onClick={foldCard} html={P.renderDLCard(card, DS)}/> : null}
     </DocPane>;
   } else if (sel.s === PROMPT_KEY){
     // A prompt that did not parse still gets the action, so New task can

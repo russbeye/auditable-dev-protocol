@@ -94,7 +94,7 @@ function FindingCard({entry, ctx}: {entry: DLEntry; ctx: BodyCtx}){
   return <div className={"dl-card " + rail}><div className="dl-head"><span className="dl-id">{id || "—"}</span>
     <Html as="span" className="dl-title" html={revText(title)}/><span className="dl-pills">{pills}</span></div>
     {rows.length ? <div className="dl-grid revgrid">{rows}</div> : null}
-    {split.trailing ? <Html as="div" className="md dl-trail" html={P.renderMarkdown(split.trailing)}/> : null}
+    {split.trailing ? <Html as="div" className="md adp-prose dl-trail" html={P.renderMarkdown(split.trailing)}/> : null}
   </div>;
 }
 
@@ -120,7 +120,7 @@ function ledgerGrid(lines: string[]): ReactNode | null {
 // a card takes the same style as one in prose.
 const Panel = ({title, md, children}: {title: string; md?: string; children?: ReactNode}) =>
   <div className="doc">{title ? <h4>{title}</h4> : null}
-    {md != null ? <Html as="div" className="md" html={P.renderMarkdown(md)}/> : <div className="md">{children}</div>}</div>;
+    {md != null ? <Html as="div" className="md adp-prose" html={P.renderMarkdown(md)}/> : <div className="md adp-prose">{children}</div>}</div>;
 const Md = ({text}: {text: string}) => <Html html={P.renderMarkdown(text)}/>;
 
 /* The round body renders section by section, one doc panel each, the way

@@ -36,7 +36,7 @@ body,.console,.con-head,.toolbar,.paste-drawer,.paste-drawer textarea,
 .toc,.toc-head,.art,.art-head,.art-icon,.art-toggle,.art-permalink,.panel-card,.panel-card-head,
 .panel-card-toggle,.compact-terminal,.compact-terminal-head,.dl-card,.dl-head,
 .dl-grid,.dl-k,.dl-v,input,textarea,select,.btn,.status,
-table.md-tbl th,table.md-tbl td,.md code,.md pre.cb,.md blockquote,.empty-state{
+table.md-tbl th,table.md-tbl td,.md pre.cb,.md blockquote,.empty-state{
   transition:background-color .28s ease,color .28s ease,border-color .28s ease;
 }
 
@@ -330,28 +330,23 @@ select option{background:var(--panel-2);color:var(--ink)}
 .md,.dl-v{overflow-wrap:break-word}
 .md > *:first-child{margin-top:0}
 .md > *:last-child{margin-bottom:0}
-.md p{margin:0 0 12px;color:var(--ink)}
 .md strong{color:var(--ink);font-weight:700}
 .md em{color:var(--dim);font-style:italic}
 .md a{color:var(--blue-bright)}
-.md h3,.md h4,.md h5,.md h6{font-family:var(--disp);letter-spacing:.02em;color:var(--ink);margin:20px 0 10px;line-height:1.25}
-.md h3{font-size:15px}
+.md h4,.md h5,.md h6{font-family:var(--disp);letter-spacing:.02em;color:var(--ink);margin:20px 0 10px;line-height:1.25}
 .md h4{font-size:13.5px}
 .md h5,.md h6{font-size:12.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
 .md h3.sub, .md h4.sub{display:flex;align-items:center;gap:9px;flex-wrap:wrap;
   border-left:2px solid var(--blue-bright);padding:4px 0 4px 12px;margin-left:-2px;background:rgba(0,41,222,.03)}
 .idbadge{font-family:var(--mono);font-size:11px;color:var(--blue-bright);border:1px solid var(--line-bright);background:var(--inset);padding:2px 8px;letter-spacing:.04em;flex:0 0 auto}
 .md hr{border:none;border-top:1px solid var(--line);margin:18px 0}
-.md code{font-family:var(--mono);font-size:12px;color:var(--code-fg);background:var(--code-bg);border:1px solid var(--line-bright);padding:1px 6px}
 .md pre.cb{margin:0 0 14px;padding:14px 16px;background:var(--inset);border:1px solid var(--line-bright);overflow:auto}
 .md pre.cb code{border:none;background:none;padding:0;color:var(--ink);font-size:12.5px;line-height:1.6;white-space:pre}
 .md blockquote{margin:0 0 14px;padding:8px 16px;border-left:2px solid var(--line-bright);background:rgba(0,41,222,.03);color:var(--dim)}
 .md blockquote > *:last-child{margin-bottom:0}
 
 /* lists */
-.md ul.md-list,.md ol.md-list{margin:0 0 14px;padding-left:4px;list-style:none;display:flex;flex-direction:column;gap:6px}
-.md ul.md-list > li{position:relative;padding-left:20px;color:var(--ink)}
-.md ul.md-list > li::before{content:"▸";position:absolute;left:2px;color:var(--blue-bright);font-size:11px;top:1px}
+.md ol.md-list{margin:0 0 14px;padding-left:4px;list-style:none;display:flex;flex-direction:column;gap:6px}
 .md ol.md-list{counter-reset:li}
 .md ol.md-list > li{position:relative;padding-left:26px;color:var(--ink);counter-increment:li}
 .md ol.md-list > li::before{content:counter(li);position:absolute;left:0;top:0;color:var(--blue-bright);font-size:11px;border:1px solid var(--line-bright);background:var(--inset);width:18px;height:18px;display:flex;align-items:center;justify-content:center}
