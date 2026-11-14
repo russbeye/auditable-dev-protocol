@@ -189,7 +189,7 @@ test("the app's watchboard state shows what the vanilla page showed, region for 
   await boot({fetch: diskFetch(), now: BASELINE_NOW});
   await click(tabFor("watchboard"));
   const want = restyled(BASELINE["watchboard"]);
-  assert.deepEqual(snapshot(document), {...want, rail: null, main: rewatched(BASELINE["watchboard"].main!)});
+  assert.deepEqual(snapshot(document), {...want, main: rewatched(BASELINE["watchboard"].main!)});
 });
 
 /* The vanilla inspector's ops row held four controls that loaded a file
@@ -603,7 +603,7 @@ test("the app's reviews and Ledger screens show what the vanilla reviews, calibr
   await tabTo("ledgers");
   const cal = BASELINE["calibration"], led = restyled(BASELINE["ledgers"]);
   restyled(cal);
-  assert.deepEqual(snapshot(document), {...led, rail: null, main: reledgered(cal.main!, led.main!)});
+  assert.deepEqual(snapshot(document), {...led, main: reledgered(cal.main!, led.main!)});
 });
 
 /* The Ledger follows its board, with calibration under its title (G1, G3,
@@ -843,12 +843,11 @@ test("the rail collapses a group and a ticket click selects it", async () => {
   assert.equal($$("#rail [data-key]").length, n - inGroup);
   await click(sec());
   assert.equal($$("#rail [data-key]").length, n);
+  await click(tabFor("watchboard"));
   await click(entry("AA1"));
   assert.equal(entry("AA1").getAttribute("aria-current") === "true", true);
+  // A rail pick from the board opens the ticket in the inspector.
   assert.equal(isOn("scrInspector"), true);
-  // The Watches board draws no rail, so the rail leaves with the Tickets view.
-  await click(tabFor("watchboard"));
-  assert.equal($("#rail"), null);
 });
 
 test("a rail selection keeps the keyboard on its entry", async () => {
@@ -1072,10 +1071,8 @@ test("a served page waiting for its corpus carries the ticket link through its h
   await act(async () => { feed.onopen!(); });
   await settle();
   // The link's ticket lands, and the screen the reader chose meanwhile stays.
-  // The rail shows with the Tickets view, so we read the selection there.
-  assert.equal(isOn("scrWatch"), true);
-  await click(tabFor("inspector"));
   assert.equal(entry("AA1").getAttribute("aria-current") === "true", true);
+  assert.equal(isOn("scrWatch"), true);
 });
 
 test("a dead ticket link takes no default selection", async () => {
@@ -1188,7 +1185,6 @@ test("a boot that failed honors the screen token at once and the ticket token wh
   await act(async () => { feed.onopen!(); });
   await settle();
   assert.equal($("#scrWatch").classList.contains("is-on"), true);
-  await click(tabFor("inspector"));
   assert.deepEqual(marked(), ["AA1"]);
 });
 
@@ -3729,8 +3725,7 @@ test("the app's new task screen shows what the vanilla page showed, less the fou
   await baselineBoot();
   await click($("#newTaskBtn"));
   const want = BASELINE["new task"];
-  // The New task board draws no rail, so the rail leaves this screen.
-  assert.deepEqual(snapshot(document), {...restyled(want), rail: null, main: withoutOps(want.main!, REMOVED_NT_OPS)});
+  assert.deepEqual(snapshot(document), {...restyled(want), main: withoutOps(want.main!, REMOVED_NT_OPS)});
 });
 
 test("the new task screen carries the standalone's field set and boots with today's date", async () => {
@@ -4722,8 +4717,6 @@ async function everyScreen(look: () => void){
   look();
   await click($('[aria-label="Close packs"]'));
   let reviewed = 0;
-  // The rail shows with the Tickets view alone, so we list its tickets there.
-  await tabTo("inspector");
   for (const t of rentries()){
     await tabTo("inspector");
     // A rail pick keeps the view the last ticket used, so we choose the
@@ -4761,9 +4754,7 @@ test("no screen offers a file input, a paste field, or a drop target", async () 
       }
   });
   // The boot, each view, the drawer, two views of each ticket, each ticket's
-  // reviews, and New task. The walk ends on New task, which draws no rail,
-  // so we count the rail's tickets from the Tickets view.
-  await tabTo("inspector");
+  // reviews, and New task.
   const tickets = rentries().length;
   assert.ok(tickets > 1, "the fixture corpus holds more than one ticket");
   assert.equal(screens, 1 + S.VIEWS.length + 1 + 2 * tickets + reviewed + 1, "the walk reached every ticket");
