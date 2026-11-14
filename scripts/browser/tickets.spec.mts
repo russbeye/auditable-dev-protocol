@@ -49,6 +49,64 @@ test("a section heading renders in the system's section type", async ({page, ser
   expect(type).toEqual(["Space Grotesk", "20px", "28px", "600", "none"]);
 });
 
+/* No old rule reaches the system's text (DL-062). We copy the ticket view
+   into a frame that loads the system's two sheets alone, and compare every
+   element that belongs to the system with its copy: anything with an adp-
+   class, anything inside Prose, a decision card, the prompt view, or a
+   numbered list. A difference means a rule from an old sheet reached it. The
+   decisions and watches panels convert in stage 3, so the walk skips them. */
+test("no old stylesheet rule reaches the ticket view's system text", async ({page, server}) => {
+  test.setTimeout(120_000);
+  await open(page, server.url);
+  const faults = await page.evaluate(async () => {
+    const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+    const f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;left:-5000px;top:0;width:1200px;height:800px";
+    f.srcdoc = '<!doctype html><html data-theme="' + (document.documentElement.getAttribute("data-theme") || "dark") + '"><head>'
+      + '<link rel="stylesheet" href="adp-tokens.css"><link rel="stylesheet" href="adp-bundle.css"></head><body><div id="box" style="width:1000px"></div></body></html>';
+    const loaded = new Promise(r => { f.onload = r; });
+    document.body.append(f);
+    await loaded;
+    await wait(300);
+    const PROPS = ["fontFamily", "fontSize", "lineHeight", "fontWeight", "letterSpacing", "textTransform", "color", "backgroundColor",
+      "marginTop", "marginBottom", "paddingTop", "paddingBottom", "paddingLeft", "paddingRight"] as const;
+    const out: string[] = [];
+    let checked = 0;
+    const strict = (where: string) => {
+      const root = document.getElementById("scrInspector")!;
+      const box = f.contentDocument!.getElementById("box")!;
+      box.replaceChildren(root.cloneNode(true));
+      const a = [...root.querySelectorAll<HTMLElement>("*")], b = [...(box.firstChild as HTMLElement).querySelectorAll<HTMLElement>("*")];
+      a.forEach((el, i) => {
+        if (!el.checkVisibility() || el.closest(".ipanel")) return;
+        if (!([...el.classList].some(c => c.startsWith("adp-")) || el.closest(".adp-prose, .adp-dl, [data-p], [role=list]"))) return;
+        checked++;
+        const ca = getComputedStyle(el), cb = f.contentWindow!.getComputedStyle(b[i]);
+        for (const p of PROPS){
+          const x = p === "fontFamily" ? ca[p].split(",")[0].replace(/"/g, "").trim() : ca[p];
+          const y = p === "fontFamily" ? cb[p].split(",")[0].replace(/"/g, "").trim() : cb[p];
+          if (x !== y) out.push(`${where}: ${el.tagName.toLowerCase()}.${el.className} ${p} ${x}, the system gives ${y}`);
+        }
+      });
+    };
+    for (const g of document.querySelectorAll<HTMLElement>('#rail [data-sec][aria-expanded="false"]')) g.click();
+    await wait(200);
+    const keys = [...document.querySelectorAll("#rail [data-key]")].map(r => r.getAttribute("data-key")!);
+    for (const k of keys){
+      document.querySelector<HTMLElement>(`#rail [data-key="${CSS.escape(k)}"]`)!.click(); await wait(150);
+      for (const v of ["section", "full"]){
+        document.querySelector<HTMLElement>(`[data-view="${v}"]`)!.click(); await wait(150);
+        strict(k + " " + v);
+      }
+    }
+    f.remove();
+    return {out: [...new Set(out)].slice(0, 20), checked, tickets: keys.length};
+  });
+  expect(faults.tickets).toBeGreaterThan(3);
+  expect(faults.checked).toBeGreaterThan(100);
+  expect(faults.out).toEqual([]);
+});
+
 // OT-MC012-10. The launcher's server always binds a free port, so only a
 // test can bring one back on the port an open page still watches.
 test("the live word returns from CACHED to WATCHING when the server restarts on its port", async ({page}) => {

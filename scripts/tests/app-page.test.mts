@@ -338,6 +338,15 @@ function unread(got: Snapshot): Snapshot {
     text.splice(i, run.length, ...back);
     from = i + back.length;
   }
+  // A numbered list shows its numbers as text (DL-062), where the vanilla
+  // page drew them with a counter. We take each number run out in page order.
+  from = 0;
+  for (const el of $$("#scrInspector [data-num]")){
+    const i = text.indexOf(el.textContent!, from);
+    assert.ok(i >= 0, "the render lacks list number " + el.textContent);
+    text.splice(i, 1);
+    from = i;
+  }
   return {...got, main: {...got.main!, text}};
 }
 const rentries = () => $$("#rail [data-key]").map(r => r.getAttribute("data-key")!);
@@ -3055,13 +3064,14 @@ test("prose blocks take the Table and Pre components and on-grid values, and the
     "- [x] done", "", "### Sub head"].join("\n");
   const html = P.renderProse(md);
   assert.match(html, /<div style="overflow-x:auto;margin:0 0 16px"><table class="adp-table">/);
-  assert.match(html, /<blockquote style="margin:0 0 16px;padding:8px 16px;/);
+  assert.match(html, /<blockquote style="margin:0 0 16px;padding:8px 16px;[^"]*"><p style="margin:0">quoted<\/p><\/blockquote>/);
   assert.match(html, /<pre class="adp-pre" style="margin:0 0 16px"><code style="font:inherit;color:inherit;background:none;padding:0">let a = 1;<\/code><\/pre>/);
-  assert.match(html, /<ol class="md-list" style="margin:0 0 16px;gap:12px"><li><span>one<\/span><\/li><\/ol>/);
+  assert.match(html, /<div role="list" style="margin:0 0 16px;[^"]*"><div role="listitem" style="display:grid;grid-template-columns:24px minmax\(0,1fr\);gap:8px"><span data-num="" style="font:400 12px\/24px var\(--font-mono\);color:var\(--blue-bright\)">1<\/span><span>one<\/span><\/div><\/div>/);
+  assert.match(P.renderProse("3. three\n4. four"), />3<\/span><span>three<\/span>[\s\S]*>4<\/span><span>four<\/span>/);
   assert.match(html, /<hr style="margin:24px 0;/);
-  assert.match(html, /<li class="task"><span class="cbx on" style="width:16px;height:16px;margin:4px 0 0">✓<\/span><span>done<\/span><\/li>/);
+  assert.match(html, /<li class="task"><span style="display:inline-flex;[^"]*width:16px;height:16px;[^"]*">✓<\/span><span>done<\/span><\/li>/);
   assert.match(html, /<h3 style="margin:32px 0 8px;font:500 11px\/24px var\(--font-mono\);[^"]*color:var\(--blue-bright\)">Sub head<\/h3>/);
-  assert.doesNotMatch(html, /md-tbl|tbl-wrap|class="cb"|class="sub"/);
+  assert.doesNotMatch(html, /md-tbl|tbl-wrap|class="cb"|class="sub"|cbx|<ol/);
   const plain = P.renderMarkdown(md);
   assert.match(plain, /<table class="md-tbl">/);
   assert.match(plain, /<pre class="cb">/);

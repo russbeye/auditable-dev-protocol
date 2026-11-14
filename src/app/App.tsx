@@ -1,6 +1,6 @@
 /* Mission control as one React tree: the top bar, the rail, the screens,
    and the Packs drawer. */
-import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties} from "react";
 import * as B from "../lib/adp-index-builder-lib.ts";
 import * as D from "../lib/adp-derive-lib.ts";
 import * as I from "../lib/adp-index-lib.ts";
@@ -28,6 +28,13 @@ type Sel = {dir: string | null; s: string | null; item: string | null};
 // Calibration and the resume pack are no longer screens. Calibration heads
 // the Ledger, and the packs open as a drawer over any view.
 const SHOWN: Screen[] = ["inspector", "reviews", "watchboard", "ledgers", "new task"];
+/* A converted screen starts from the system's body type. The old theme sets
+   the page body to 15px at a 1.55 line height, and every element without a
+   type of its own inherited that. The other screens keep the old body type
+   until their stage converts them. */
+const SYSTEM_TYPE: Partial<Record<Screen, CSSProperties>> = {
+  "inspector": {font: "400 16px/24px var(--font-sans)", color: "var(--ink)"},
+  "reviews": {font: "400 16px/24px var(--font-sans)", color: "var(--ink)"}};
 const SCREEN_IDS: Record<Screen, string> = {"inspector": "scrInspector", "reviews": "scrReviews", "watchboard": "scrWatch",
   "ledgers": "scrLedgers", "calibration": "scrLedgers", "resume pack": "scrInspector", "new task": "scrNew"};
 const SHORTCUTS: [string, string][] = [["[", "Show or hide tickets"], ["← →", "Previous or next phase"], ["/", "Filter tickets"],
@@ -452,7 +459,7 @@ function App({fetchFn, openFeed}: AppProps){
         onPick={k => { pick(k); if (narrow) setRailOver(false); }} onToggle={toggleRail} onFilter={setRailFilter} onFold={foldRail}/>
       <main className="stage">
         {SHOWN.map(s => <section key={s} className={"screen" + (s === "new task" ? " nt-wide" : "") + (s === screen ? " is-on" : "")}
-          data-s={s} id={SCREEN_IDS[s]}>
+          data-s={s} id={SCREEN_IDS[s]} style={SYSTEM_TYPE[s]}>
           {s !== screen ? null
             : s === "inspector" ? <Inspector corpus={corpus} today={today} t={selTicket} tokenOf={tokenOf} notice={bootNotice}
               sel={sel} view={view} dlFilter={dlFilter} missNotice={missNotice} fullClosed={fullClosed}

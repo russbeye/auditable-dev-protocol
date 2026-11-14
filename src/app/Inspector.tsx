@@ -338,7 +338,7 @@ function SecNav({entries, states, selKey, onPick, onStep}: {entries: Entry[]; st
   const i = entries.findIndex(en => en.key === selKey);
   return <div className="secnav" style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "12px 0 16px"}}>
     <button type="button" className="adp-btn" data-secstep="-1" disabled={i <= 0} onClick={() => onStep(-1)}>‹ prev</button>
-    <select id="secSel" className="adp-select" aria-label="section" style={{flex: "0 1 440px", minWidth: 220}}
+    <select id="secSel" className="adp-select" aria-label="section" style={{flex: "0 1 440px", minWidth: 220, lineHeight: "normal"}}
       value={i >= 0 ? entries[i].key : ""} onChange={e => onPick(e.target.value)}>
       {entries.map(en => {
         const st = states[en.key];

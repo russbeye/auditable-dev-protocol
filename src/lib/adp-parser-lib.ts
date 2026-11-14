@@ -504,7 +504,11 @@ function renderProse(md: unknown): EscapedHtml{
    A plain list item lays its marker and its content out as a flex row, so we
    wrap the content in one span. Bare, each text run and code span would
    become a flex item of its own and break the line apart. A task item keeps
-   its own row of box and text. */
+   its own row of box and text. A numbered list becomes a list of divs with
+   the number as text in a blue mono column, as the TicketPrompt board draws
+   it, because the Prose rule gives every li a ▸ marker that no inline style
+   can remove. Its numbers carry data-num, so a test can tell them from the
+   log's text. */
 /* A token pill becomes a small chip of the design system. Color means status
    alone (R4), so a confidence word is a neutral Tag, and a status word takes
    the StatusChip of its meaning. The word itself never changes. */
@@ -515,16 +519,32 @@ function dsTokens(h: string): string{
   return h.replace(/<span class="pill p-[a-z]+">([^<]*)<\/span>/g,(_,w: string)=>`<span class="adp-chip adp-chip--s${DS_TOKEN[w]||''}">${w}</span>`);
 }
 const SUB_HEAD='margin:32px 0 8px;font:500 11px/24px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--blue-bright)';
+const CBX='display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:16px;height:16px;margin:4px 0 0;padding:0;border:0;'
+  +'box-shadow:inset 0 0 0 1px var(--line-bright);background:var(--inset);font:400 11px/16px var(--font-mono);color:var(--ok)';
+function numbered(h: string): string{
+  return h.replace(/<ol class="md-list"(?: style="counter-reset:li (\d+)")?>([\s\S]*?)<\/ol>/g,(_,skip: string | undefined,body: string)=>{
+    let n=skip?+skip:0;
+    const items=body.replace(/<li>([\s\S]*?)<\/li>/g,(__,c: string)=>`<div role="listitem" style="display:grid;grid-template-columns:24px minmax(0,1fr);gap:8px">`
+      +`<span data-num="" style="font:400 12px/24px var(--font-mono);color:var(--blue-bright)">${++n}</span><span>${c}</span></div>`);
+    return `<div role="list" style="margin:0 0 16px;display:flex;flex-direction:column;gap:12px">${items}</div>`;
+  });
+}
+// A quote's last block sits flush on the quote's own bottom padding.
+function quoteEnds(h: string): string{
+  return h.replace(/<blockquote([^>]*)>([\s\S]*?)<\/blockquote>/g,(_,attrs: string,body: string)=>{
+    const i=body.lastIndexOf('<p>');
+    return `<blockquote${attrs}>${i<0?body:body.slice(0,i)+'<p style="margin:0">'+body.slice(i+3)}</blockquote>`;
+  });
+}
 function proseBlocks(h: string): string{
-  return dsTokens(h)
+  return quoteEnds(numbered(dsTokens(h)))
     .replace(/<li>/g,'<li><span>').replace(/<li class="task">([\s\S]*?)<\/li>/g,'<li class="task">$1</LI>')
     .replace(/<\/li>/g,'</span></li>').replace(/<\/LI>/g,'</li>')
     .replace(/<div class="tbl-wrap"><table class="md-tbl">/g,'<div style="overflow-x:auto;margin:0 0 16px"><table class="adp-table">')
     .replace(/<blockquote>/g,'<blockquote style="margin:0 0 16px;padding:8px 16px;border:0;box-shadow:inset 2px 0 0 var(--line-bright);background:none;color:var(--ink-2)">')
     .replace(/<pre class="cb"><code>/g,'<pre class="adp-pre" style="margin:0 0 16px"><code style="font:inherit;color:inherit;background:none;padding:0">')
-    .replace(/<ol class="md-list"/g,'<ol class="md-list" style="margin:0 0 16px;gap:12px"')
     .replace(/<hr>/g,'<hr style="margin:24px 0;height:1px;border:0;background:none;box-shadow:inset 0 1px 0 var(--line)">')
-    .replace(/<span class="cbx( on)? ?">/g,(_,on)=>`<span class="cbx${on||''}" style="width:16px;height:16px;margin:4px 0 0">`)
+    .replace(/<span class="cbx( on)? ?">/g,()=>`<span style="${CBX}">`)
     .replace(/<h([3-6]) class="sub">/g,(_,n)=>`<h${n} style="${SUB_HEAD}">`);
 }
 // Markdown with the design system's blocks and chips, for a value that is not
