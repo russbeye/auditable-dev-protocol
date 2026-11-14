@@ -3664,14 +3664,19 @@ const STANDALONE = JSON.parse(readFixture("standalone-exports.json")) as {form: 
 // so the inspector opens on the prompt pane.
 const PFILE = "20260618-GROW6687-email-validation/prompt.yaml";
 const stamped = (d: PL.PromptDocument) => { d.schema_version = "1.0"; return d; };
-const ntField = (nf: string) => $$("#scrNew .nt-in").find(el => el.getAttribute("data-nf") === nf) as HTMLInputElement;
-const ntOp = (name: string) => click($$("#scrNew .op").find(o => o.getAttribute("data-op") === name)!);
+const ntField = (nf: string) => $$("#scrNew [data-nf]").find(el => el.getAttribute("data-nf") === nf) as HTMLInputElement;
+// The preview drawer sits outside the screen, so an op button is found page-wide.
+const ntOp = (name: string) => click($$("[data-op]").find(o => o.getAttribute("data-op") === name)!);
 const ntType = async (el: Element, value: string) => { fireEvent.change(el, {target: {value}}); await settle(1); };
 const ntSet = (nf: string, value: string) => ntType(ntField(nf), value);
 const ntOps = () => $("#ntOps").textContent!;
 const ntSide = () => $("#ntSide");
-const ntChecks = () => $$("#ntSide code").map(c => c.textContent!);
-const ntAdd = (list: string) => click($$(".nt-add").find(b => b.getAttribute("data-nadd") === list)!);
+// The checklist's directory line, less its lead words.
+const ntDir = () => $("#ntDir").textContent!.replace(/^Saves to /, "");
+// Every unmet check in the validator's order, from both columns of the checklist.
+const ntChecks = () => $$("#checklist [data-issue]").sort((a, b) => Number(a.getAttribute("data-at")) - Number(b.getAttribute("data-at")))
+  .map(li => li.getAttribute("data-issue")!);
+const ntAdd = (list: string) => click($$("[data-nadd]").find(b => b.getAttribute("data-nadd") === list)!);
 const ntChip = (a: string) => $$("#scrNew input").find(i => i.getAttribute("data-nart") === a) as HTMLInputElement;
 const ntSwitch = (k: string) => $$("#scrNew input").find(i => i.getAttribute("data-nf") === "protocol." + k) as HTMLInputElement;
 const ticked = () => $$("#scrNew input").filter(i => (i as HTMLInputElement).checked && i.getAttribute("data-nart")).map(i => i.getAttribute("data-nart"));
@@ -3706,7 +3711,7 @@ async function bootPrompt(text = GOLDEN, opts: BootOpts = {}){
   return {...b, live};
 }
 type PromptBoot = Awaited<ReturnType<typeof bootPrompt>>;
-async function startFrom(ctx: PromptBoot, text?: string, answer: "replace" | "keep" | null = "replace"){
+async function startFrom(ctx: PromptBoot, text?: string, answer: "replace" | "keep" | null = "replace", keepIdentity = true){
   if (text != null){
     ctx.live.texts[PFILE] = text;
     await act(async () => { ctx.feed.onmessage!(); });
@@ -3716,16 +3721,74 @@ async function startFrom(ctx: PromptBoot, text?: string, answer: "replace" | "ke
   await click(op("data-op", "startfrom"));
   if (answer === "replace" && document.getElementById("ntReplace")) await click($("#ntReplace"));
   if (answer === "keep" && document.getElementById("ntKeep")) await click($("#ntKeep"));
+  /* A start blanks the ID and takes today's date (F3), which the test
+     "a start from a prompt blanks the ID and the slug and takes today's
+     date" pins. The fidelity tests check every other field against the
+     source, so we type the source's ID and date back through the form. */
+  if (!keepIdentity || answer === "keep" || document.getElementById("ntReplace") || !isOn("scrNew")) return;
+  let src: unknown = null;
+  try { src = PL.parseYAML(ctx.live.texts[PFILE] ?? GOLDEN, []); } catch { src = null; }
+  if (!src || typeof src !== "object") return;
+  const task = (src as {task?: unknown}).task;
+  const {id, date} = (task && typeof task === "object" ? task : {}) as {id?: unknown; date?: unknown};
+  await ntSet("task.id", id == null ? "" : String(id));
+  await ntSet("task.date", date == null ? "" : String(date));
+  // The draft saves on a pause, so we flush it the way a closing tab does.
+  fireEvent(window, new Event("pagehide"));
 }
 
 // R8, the write half. The vanilla ops row held four controls that loaded a
 // prompt from outside .adp, and the app has none of them.
 const REMOVED_NT_OPS = {text: ["↑ open yaml", "⌨ paste", "load example", "drag & drop .yaml anywhere"], attrs: ["title=open a prompt.yaml"]};
+/* New task follows its board (F1, F2, F4), and its baseline holds chrome
+   only, since a blank form shows no audit text. So the comparison walks the
+   baseline's runs in order through this table. Each run maps to the words
+   the new screen shows for it, or to null where the run left with a named
+   reason, and every mapped run must show on the new screen. A run the table
+   does not expect fails the test, so nothing leaves unnamed.
+   - Labels and headings take sentence case, and the eyebrows read in
+     capitals by their style, not their text.
+   - The side card's badge, its "— required" rows, and its heading become
+     the bar's count and the checklist's Required column, which names each
+     check in plain words.
+   - The fold hint "id + statement + how to verify" leaves with the folds,
+     and the requirements' column heads show once a row exists. */
+const NT_RUNS: [string, string | null][] = [["new task", "New task"], ["clear", "Discard draft"], ["task", "Task"], ["id", "ID"],
+  ["title", "Title"], ["author", "Author"], ["date", "Date"], ["slug · directory name only, not in the yaml", "Slug"], ["preamble", "Preamble"],
+  ["prompt", "Prompt"], ["role", "Role"], ["lens", "Lens"], ["priorities · what wins when goals conflict", "Priorities"], ["+ add", "+ Add priority"],
+  ["context", "Context"], ["background", "Background"], ["out of scope · named exclusions", "Out of scope"], ["+ add", "+ Add"],
+  ["must not · hard prohibitions", "Must not"], ["+ add", "+ Add"], ["references · path, lines, note", "References"], ["+ add reference", "+ Add reference"],
+  ["links", "Links"], ["+ add", "+ Add link"], ["lessons learned", "Lessons learned"], ["+ add lesson", "+ Add lesson"], ["requirements", "Requirements"],
+  ["id + statement + how to verify", null], ["+ add requirement", "+ Add requirement"], ["output", "Output"], ["destination", "Destination"],
+  ["format", "Format"], ["choose…", "Choose…"], ...PL.FORMATS.map(f => [f, f] as [string, string]), ["structure", "Structure"],
+  ["protocol", "Protocol"], ["apply protocol", "Apply protocol"], ["stake recommendation", "Stake a recommendation"],
+  ["log assumptions", "Log assumptions"], ["flag low confidence", "Flag low confidence"], ["artifacts · which to produce", "Artifacts to produce"],
+  ["problem_statement", "Problem statement"], ["knowledge_gap", "Knowledge gap"], ["recommendation_brief", "Recommendation brief"],
+  ["premortem", "Pre-mortem"], ["decision_log", "Decision log"], ["test_adversary", "Test adversary"], ["pr_summary", "PR summary"],
+  ["deployment_risk", "Deployment risk"], ["obligation_tickets", "Obligation tickets"],
+  ["defers · phases this task defers, with a reason each", "+ Defer a phase, with a reason"], ["+ add deferral", null], ["export", null],
+  ["⚠ 7 protocol checks unmet", "7 to go"], ["task.id", "Task ID"], ["— required", null], ["task.title", "Title"], ["— required", null],
+  ["task.author", "Author"], ["— required", null], ["prompt", "Prompt"], ["— required", null], ["output.format", "Output format"], ["— required", null],
+  ["output.destination", "Output destination"], ["— required", null], ["requirements", "At least one requirement"], ["— required", null]];
 test("the app's new task screen shows what the vanilla page showed, less the four load controls", async () => {
   await baselineBoot();
   await click($("#newTaskBtn"));
-  const want = BASELINE["new task"];
-  assert.deepEqual(snapshot(document), {...restyled(want), main: withoutOps(want.main!, REMOVED_NT_OPS)});
+  const want = BASELINE["new task"], got = snapshot(document);
+  assert.deepEqual({...got, main: null}, {...restyled(want), main: null});
+  const old = withoutOps(want.main!, REMOVED_NT_OPS).text;
+  const text = got.main!.text;
+  const tail = [old.length - 5, old.length];
+  assert.deepEqual(old.slice(0, tail[0]), NT_RUNS.map(([o]) => o), "the baseline's runs are not the vanilla form's");
+  for (const [o, n] of NT_RUNS) if (n != null) assert.ok(text.includes(n), `"${o}" shows as "${n}"`);
+  // The last five runs: the directory line, the three export buttons, and the autosave line.
+  const [dir, copy, dl, view, auto] = old.slice(tail[0]);
+  assert.match(dir, /^\.adp\/\d{8}-<TASKID>-<slug>\/prompt\.yaml$/);
+  assert.equal($("#ntDir").textContent, "Saves to " + dir);
+  assert.deepEqual([copy, dl, view, auto], ["⧉ copy yaml", "↓ download", "view yaml", "draft autosaves locally · restored on return"]);
+  for (const n of ["Copy YAML", "Download", "Preview YAML", "for a new run. The draft saves as you type."]) assert.ok(text.includes(n), n);
+  // Every placeholder stays but the preamble's, which waits behind its add control.
+  const placeholders = withoutOps(want.main!, REMOVED_NT_OPS).attrs.filter(a => a.startsWith("placeholder=") && !a.includes("Instructions about how"));
+  for (const a of placeholders) assert.ok(got.main!.attrs.includes(a), a);
 });
 
 test("the new task screen carries the standalone's field set and boots with today's date", async () => {
@@ -3733,7 +3796,7 @@ test("the new task screen carries the standalone's field set and boots with toda
   assert.equal(isOn("scrNew"), true);
   assert.equal($("#newTaskBtn").getAttribute("aria-pressed"), "true");
   await startFrom(ctx);
-  const nfs = $$("#scrNew .nt-in").map(el => el.getAttribute("data-nf")).filter(Boolean) as string[];
+  const nfs = $$("#scrNew [data-nf]").map(el => el.getAttribute("data-nf")).filter(Boolean) as string[];
   for (const k of ["task.id", "task.title", "task.author", "task.date", "preamble", "role.lens",
     "role.priorities.0", "prompt", "constraints.out_of_scope.0", "constraints.must_not.0",
     "context.background", "context.references.0.path", "context.references.0.lines",
@@ -3753,27 +3816,43 @@ test("the new task screen carries the standalone's field set and boots with toda
   await click($("#newTaskBtn"));
   assert.equal(ntField("task.date").value, today());
   assert.equal(ntField("task.id").value, "");
-  assert.match(ntSide().textContent!, /7 protocol checks unmet/);
+  assert.match(ntSide().textContent!, /7 to go/);
   assert.equal(ntChecks()[0], "task.id");
-  assert.match(ntSide().textContent!, /— required/);
+  assert.match($("#checklist").textContent!, /Required · 7/);
   assert.match(last(hashes), /^#v=new%20task/);
 });
 
 // The ticket's prompt.yaml becomes the draft, field for field.
-test("start from this prompt loads the ticket's prompt.yaml into a new draft equal to its parsed fields", async () => {
+// F3: a new task needs its own ID and starts today, so the copy leaves the
+// ID and the slug blank and takes today's date. Every other field is the
+// source's, and the banner links the ticket the prompt came from.
+test("start from this prompt loads the ticket's prompt.yaml into a new draft equal to its parsed fields, less the ID and the date", async () => {
   const ctx = await bootPrompt();
   assert.equal(isOn("scrInspector"), true);
-  await startFrom(ctx, undefined, null);
+  await startFrom(ctx, undefined, null, false);
   assert.equal(isOn("scrNew"), true);
   const want = stamped(PL.normalize(PL.parseYAML(GOLDEN)));
+  want.task.id = "";
+  want.task.date = today();
   assert.deepEqual(draft().doc, want);
   assert.equal(draft().slug, "");
   assert.match(ntOps(), new RegExp(`imported ${PFILE} — all recognized fields\\.`));
-  assert.equal(ntField("task.id").value, "GROW-6687-email-validation");
+  assert.match(ntOps(), /Started from GROW6687’s prompt\. Everything but the ID and slug was copied, and the date is today’s\./);
+  assert.equal($("#ntOps a").getAttribute("href"), "#t=GROW6687");
+  assert.equal(ntField("task.id").value, "");
+  assert.equal(ntField("task.date").value, today());
   assert.equal(ntField("protocol.defers.1.reason").value, "Follow-up obligations ride the GROW-6688 cleanup ticket");
-  assert.equal(await preview(), GOLDEN);
   assert.equal(await preview(), PL.buildYaml(want));
-  assert.match(ntSide().textContent!, /valid · schema 1\.0/);
+  assert.deepEqual(ntChecks(), ["task.id"]);
+  // Start blank drops the copy at once, and the banner goes with it.
+  await ntOp("ntblank");
+  assert.equal(ntField("task.title").value, "");
+  assert.ok(!/Started from/.test(ntOps()));
+  assert.equal(localStorage.getItem("adp-mc-draft"), null);
+  // Typing the source's ID and date back gives the source's bytes.
+  await startFrom(ctx);
+  assert.equal(await preview(), GOLDEN);
+  assert.match(ntSide().textContent!, /Valid · schema 1\.0/);
 });
 
 test("the start action sits on the prompt pane alone, and an unreadable prompt has none", async () => {
@@ -3814,15 +3893,15 @@ test("copy, download, and the directory line carry the export bytes and the conv
   await boot();
   await click($("#newTaskBtn"));
   const day = today().replace(/-/g, "");
-  assert.equal($("#ntDir").textContent, `.adp/${day}-<TASKID>-<slug>/prompt.yaml`);
+  assert.equal(ntDir(), `.adp/${day}-<TASKID>-<slug>/prompt.yaml`);
   await ntSet("task.title", "Shared shell chrome, extracted!");
   await ntSet("task.id", "AV-016");
   assert.equal(($("#ntSlug") as HTMLInputElement).value, "");
-  assert.equal($("#ntDir").textContent, `.adp/${day}-AV016-shared-shell-chrome-extracted/prompt.yaml`);
+  assert.equal(ntDir(), `.adp/${day}-AV016-shared-shell-chrome-extracted/prompt.yaml`);
   await ntType($("#ntSlug"), "custom");
-  assert.equal($("#ntDir").textContent, `.adp/${day}-AV016-custom/prompt.yaml`);
+  assert.equal(ntDir(), `.adp/${day}-AV016-custom/prompt.yaml`);
   await ntType($("#ntSlug"), "");
-  assert.equal($("#ntDir").textContent, `.adp/${day}-AV016-shared-shell-chrome-extracted/prompt.yaml`);
+  assert.equal(ntDir(), `.adp/${day}-AV016-shared-shell-chrome-extracted/prompt.yaml`);
   // The slug never reaches the yaml.
   assert.ok(!/slug/.test(await preview()));
   // Copy writes the preview's bytes and reports, then rests.
@@ -3832,7 +3911,7 @@ test("copy, download, and the directory line carry the export bytes and the conv
   assert.equal(got.at(-1), await preview());
   assert.equal(op("data-op", "ntcopy").textContent, "copied");
   await advance(1200);
-  assert.equal(op("data-op", "ntcopy").textContent, "⧉ copy yaml");
+  assert.equal(op("data-op", "ntcopy").textContent, "Copy YAML");
   // Download hands the export bytes to an anchor named for the task id.
   const blobs: Blob[] = [], clicked: string[] = [];
   URL.createObjectURL = (b: Blob) => { blobs.push(b); return "blob:nt"; };
@@ -3850,8 +3929,10 @@ test("a denied clipboard write says so and opens the yaml it sends the reader to
   await click($("#newTaskBtn"));
   await click(op("data-op", "ntcopy"));
   assert.match(op("data-op", "ntcopy").textContent!, /copy failed — select the text/);
+  // The preview opens as the PreviewYaml board's modal drawer.
   assert.ok(document.getElementById("ntYamlPre"));
-  assert.ok(scrolled.includes($("#ntYaml")));
+  assert.equal($("#ntYaml").getAttribute("role"), "dialog");
+  assert.deepEqual(scrolled, []);
   assert.deepEqual(got, []);
 });
 
@@ -3867,7 +3948,7 @@ test("rows add and remove by path, an emptied defers editor drops the key, and c
   await ntSet("protocol.defers.0.phase", "analysis");
   await ntSet("protocol.defers.0.reason", "manual pass");
   assert.match(await preview(), /defers:\n    - phase: "analysis"\n      reason: "manual pass"/);
-  await click($$(".nt-del").find(b => b.getAttribute("data-ndel") === "protocol.defers.0")!);
+  await click($$("[data-ndel]").find(b => b.getAttribute("data-ndel") === "protocol.defers.0")!);
   assert.ok(!/defers/.test(await preview()));
   assert.match(await preview(), /- id: "R1"\n    statement: "it works"\n    verify: "run it"/);
   // Artifacts tick in any order and export in the lib's.
@@ -3900,14 +3981,14 @@ test("a draft saves on a pause, flushes on pagehide, restores on the next boot, 
   await click($("#newTaskBtn"));
   assert.equal(ntField("task.id").value, "AV-016");
   assert.equal(($("#ntSlug") as HTMLInputElement).value, "own-slug");
-  assert.equal($("#ntDir").textContent, `.adp/${today().replace(/-/g, "")}-AV016-own-slug/prompt.yaml`);
+  assert.equal(ntDir(), `.adp/${today().replace(/-/g, "")}-AV016-own-slug/prompt.yaml`);
   // One click arms, the timer disarms, and two clicks wipe and drop the key.
   ntTimers();
   await ntOp("ntclear");
-  assert.match(ntOps(), /confirm clear/);
+  assert.equal(op("data-op", "ntclear").textContent, "Confirm discard");
   assert.equal(ntField("task.id").value, "AV-016");
   await advance(1200);
-  assert.ok(!/confirm clear/.test(ntOps()));
+  assert.equal(op("data-op", "ntclear").textContent, "Discard draft");
   await ntOp("ntclear");
   await ntOp("ntclear");
   assert.equal(ntField("task.id").value, "");
@@ -3942,9 +4023,12 @@ test("a blocked storage and an unreadable draft both boot the blank form", async
 test("the builder renders the full form with no corpus", async () => {
   await boot({hash: "#v=new%20task"});
   assert.equal(isOn("scrNew"), true);
-  // The blank form's twelve scalar fields. The lists start empty.
-  assert.equal($$("#scrNew .nt-in").length, 12);
-  assert.match(ntSide().textContent!, /7 protocol checks unmet/);
+  // The blank form's eleven scalar fields. The preamble waits behind its add
+  // control, and the lists start empty.
+  assert.equal($$("#scrNew input[type=text], #scrNew textarea, #scrNew select").length, 11);
+  await ntOp("ntpreamble");
+  assert.equal($$("#scrNew input[type=text], #scrNew textarea, #scrNew select").length, 12);
+  assert.match(ntSide().textContent!, /7 to go/);
   assert.equal(ntField("task.date").value, today());
 });
 
@@ -3973,13 +4057,13 @@ test("a switch or chip toggles in place and keeps the keyboard", async () => {
   await click(sw);
   same(document.activeElement, sw, "the switch lost focus");
   same(ntSwitch("apply"), sw, "the switch was rebuilt");
-  assert.equal(sw.parentElement!.classList.contains("is-on"), false);
+  assert.equal(sw.checked, false);
   assert.match(await preview(), /apply: false/);
   const chip = ntChip("premortem");
   chip.focus();
   await click(chip);
   same(document.activeElement, chip, "the chip lost focus");
-  assert.equal(chip.parentElement!.classList.contains("is-on"), true);
+  assert.equal(chip.checked, true);
   assert.match(await preview(), /- premortem\n/);
 });
 
@@ -3987,9 +4071,9 @@ test("a select drops its placeholder color on a pick and takes it back on a clea
   await boot();
   await click($("#newTaskBtn"));
   await ntSet("output.format", "patch");
-  assert.equal(ntField("output.format").classList.contains("is-unset"), false);
+  assert.equal(ntField("output.format").style.color, "");
   await ntSet("output.format", "");
-  assert.equal(ntField("output.format").classList.contains("is-unset"), true);
+  assert.equal(ntField("output.format").style.color, "var(--faint)");
 });
 
 test("an imported format or phase the form cannot show is cleared and named, so the bytes match the form", async () => {
@@ -4039,7 +4123,7 @@ test("the pending question stands alone", async () => {
   assert.match(ntOps(), /with 1 issue: foo/);
   await startFrom(ctx, GOLDEN, null);
   assert.match(ntOps(), /replace it with/);
-  assert.equal($$("#ntOps .nt-report").length, 1);
+  assert.equal($$("#ntOps [role=status]").length, 1);
   await click($("#ntKeep"));
   assert.equal(ntField("task.id").value, "A-1");
 });
@@ -4059,31 +4143,35 @@ test("a restored draft of a blank form takes a prompt at once", async () => {
   assert.equal(ntField("task.id").value, "GROW-6687-email-validation");
 });
 
-test("the yaml panel sits in the form column under the sticky card and scrolls into view on show", async () => {
-  const scrolled = recordScrolls();
+// F4: Preview YAML is the PreviewYaml board's modal drawer. The page behind
+// it goes inert, and Escape or × closes it.
+test("Preview YAML opens a modal drawer over an inert page, and Escape or × closes it", async () => {
   await boot();
   await click($("#newTaskBtn"));
   await ntOp("ntyaml");
-  assert.ok($("#ntYamlPre").closest(".nt-form"));
-  assert.equal(scrolled.filter(e => e.id === "ntYaml").length, 1);
+  assert.equal($("#ntYaml").getAttribute("aria-modal"), "true");
+  assert.ok(!$("#ntYamlPre").closest("#scrNew"));
+  assert.ok($(".main").hasAttribute("inert"));
+  assert.match($("#ntYaml").textContent!, /7 TO GOschema 1\.0 · 7 findings/);
+  await click($('[aria-label="Close preview"]'));
+  assert.equal(document.getElementById("ntYaml"), null);
+  assert.ok(!$(".main").hasAttribute("inert"));
   await ntOp("ntyaml");
-  assert.equal(document.getElementById("ntYamlPre"), null);
-  await ntOp("ntyaml");
-  assert.equal(scrolled.filter(e => e.id === "ntYaml").length, 2);
+  await key(document.activeElement!, "Escape");
+  assert.equal(document.getElementById("ntYaml"), null);
 });
 
 test("the output path prints once, in the export card, under its own heading", async () => {
   const ctx = await bootPrompt();
   await startFrom(ctx);
-  const dir = $("#ntDir").textContent!;
+  const dir = ntDir()!;
   assert.match(dir, /prompt\.yaml$/);
   assert.equal($("#scrNew").textContent!.split(dir).length - 1, 1);
-  assert.equal($("#scrNew").firstElementChild!.outerHTML, "<h2>new task</h2>");
-  // The card and the document block cannot share a heading, or the unmet
-  // list's output.format key reads as a line about the card.
-  assert.equal(ntSide().firstElementChild!.outerHTML, "<h2>export</h2>");
+  assert.equal($("#scrNew h1").textContent, "New task");
+  // The path prints in the export checklist, apart from the form's fields.
+  assert.ok($("#ntDir").closest('[aria-label="Export checklist"]'));
   await ntSet("task.id", "AV-099");
-  assert.match($("#ntDir").textContent!, /AV099/);
+  assert.match(ntDir()!, /AV099/);
 });
 
 test("a deferral item that is not a mapping is dropped and named on import, and a draft holding one boots the form", async () => {
@@ -4221,7 +4309,7 @@ test("a multiline value in a single-line field is flattened, named, and the byte
   assert.equal(ntField("task.title").value, "line one line two");
   const y = await preview();
   assert.match(y, /  title: "line one line two"\n/);
-  assert.match(ntSide().textContent!, /valid · schema 1\.0/);
+  assert.match(ntSide().textContent!, /Valid · schema 1\.0/);
   const skipped: string[] = [];
   assert.equal((PL.parseYAML(y, skipped) as {task: {title: string}}).task.title, "line one line two");
   assert.deepEqual(skipped, []);
@@ -4246,7 +4334,7 @@ test("a map or a list where a block's own field belongs is dropped and named", a
   assert.ok(!/\[object Object\]/.test(y));
   assert.ok(!/lens|destination|format:/.test(y));
   assert.match(y, /  apply: true\n/);
-  assert.match($("#ntDir").textContent!, /-<slug>\/prompt\.yaml$/);
+  assert.match(ntDir()!, /-<slug>\/prompt\.yaml$/);
 });
 
 test("the export image trims every value and drops a blank row from a list of plain values", async () => {
@@ -4287,7 +4375,7 @@ test("a draft nobody has typed into takes today's date, and one with content kee
   await boot({draft: JSON.stringify({doc: {task: {date: "2026-09-28"}}})});
   await click($("#newTaskBtn"));
   assert.equal(ntField("task.date").value, today());
-  assert.match($("#ntDir").textContent!, new RegExp("^\\.adp/" + today().replace(/-/g, "") + "-"));
+  assert.match(ntDir()!, new RegExp("^\\.adp/" + today().replace(/-/g, "") + "-"));
   reboot();
   await boot({draft: JSON.stringify({doc: {task: {id: "ZUP-1", date: "2026-09-28"}}})});
   await click($("#newTaskBtn"));
@@ -4328,7 +4416,7 @@ test("a number or a boolean in a field reads as its text, and a block scalar tak
   assert.match(ntOps(), /— all recognized fields/);
   assert.equal(ntField("task.title").value, "true");
   assert.equal(ntField("context.background").value, "5");
-  assert.match(ntSide().textContent!, /valid · schema 1\.0/);
+  assert.match(ntSide().textContent!, /Valid · schema 1\.0/);
   const y = await preview();
   assert.match(y, /  title: "true"\n/);
   assert.match(y, /  background: \|\n    5\n/);
@@ -4386,7 +4474,7 @@ test("the badge numbers a requirement row the way the form does", async () => {
 // The checks a blank form fails, in the order the side card lists them.
 const BLANK_KEYS = ["task.id", "task.title", "task.author", "prompt",
   "output.format", "output.destination", "requirements"];
-const ntRows = (list: string) => $$(`#scrNew .nt-in[data-nf^="${list}."]`);
+const ntRows = (list: string) => $$(`#scrNew [data-nf^="${list}."]`);
 
 test("the blank form pins its exact issue keys, and one defers row adds its phase and reason", async () => {
   await boot();
@@ -4394,10 +4482,11 @@ test("the blank form pins its exact issue keys, and one defers row adds its phas
   assert.deepEqual(ntChecks(), BLANK_KEYS);
   await ntAdd("protocol.defers");
   assert.deepEqual(ntChecks(), BLANK_KEYS.concat(["protocol.defers[0].phase", "protocol.defers[0].reason"]));
-  // Each check row prints its key and the fixed word required.
-  const rows = $$("#ntSide .nt-checks li").map(li => li.innerHTML);
-  assert.equal(rows.length, 9);
-  for (const row of rows) assert.match(row, /^<code>[^<]+<\/code> — required$/);
+  // A blank form's checks are the Required column's, and a defers row's two
+  // checks go under Also fix with the validator's message.
+  assert.equal($("#checklist").textContent!.match(/Required · \d+/)![0], "Required · 7");
+  assert.deepEqual($$("#checklist li[data-issue]:not([data-req]) div:last-child").map(d => d.textContent),
+    ["pick one of " + PL.PHASES.join("|"), "required within item"]);
 });
 
 test("the phase select offers exactly the nine phases, and a phase with no reason adds one check", async () => {
@@ -4414,15 +4503,15 @@ test("the phase select offers exactly the nine phases, and a phase with no reaso
 test("the defers controls carry accessible names and button semantics", async () => {
   await boot();
   await click($("#newTaskBtn"));
-  const add = $$(".nt-add").find(b => b.getAttribute("data-nadd") === "protocol.defers")!;
+  const add = $$("[data-nadd]").find(b => b.getAttribute("data-nadd") === "protocol.defers")!;
   assert.equal(add.tagName, "BUTTON");
-  assert.equal(add.textContent, "+ add deferral");
+  assert.equal(add.textContent, "+ Defer a phase, with a reason");
   await ntAdd("protocol.defers");
-  assert.equal(ntField("protocol.defers.0.phase").getAttribute("aria-label"), "phase");
-  assert.equal(ntField("protocol.defers.0.reason").getAttribute("aria-label"), "Why this phase does not run");
-  const rm = $$(".nt-del").find(b => b.getAttribute("data-ndel") === "protocol.defers.0")!;
+  assert.equal(ntField("protocol.defers.0.phase").getAttribute("aria-label"), "Deferred phase 1");
+  assert.equal(ntField("protocol.defers.0.reason").getAttribute("aria-label"), "Deferred phase 1 reason");
+  const rm = $$("[data-ndel]").find(b => b.getAttribute("data-ndel") === "protocol.defers.0")!;
   assert.equal(rm.tagName, "BUTTON");
-  assert.equal(rm.getAttribute("aria-label"), "remove row");
+  assert.equal(rm.getAttribute("aria-label"), "Remove deferred phase 1");
 });
 
 test("defers rows ride the draft across a reload, and a draft with no defers restores none", async () => {
@@ -4479,7 +4568,7 @@ test("the golden prompt starts VALID with no checks", async () => {
   const ctx = await bootPrompt();
   await startFrom(ctx);
   assert.deepEqual(ntChecks(), []);
-  assert.match(ntSide().textContent!, /valid · schema 1\.0/);
+  assert.match(ntSide().textContent!, /Valid · schema 1\.0/);
 });
 
 test("a priorities row without a lens adds exactly the role.lens check", async () => {
@@ -4533,15 +4622,15 @@ test("the slug input holds the slug a person typed, and the directory line holds
   await ntSet("task.title", "First title");
   await ntAdd("context.links");
   assert.equal(($("#ntSlug") as HTMLInputElement).value, "");
-  assert.match($("#ntDir").textContent!, /-first-title\/prompt\.yaml$/);
+  assert.match(ntDir()!, /-first-title\/prompt\.yaml$/);
   await ntSet("task.title", "Second title");
   assert.equal(($("#ntSlug") as HTMLInputElement).value, "");
-  assert.match($("#ntDir").textContent!, /-second-title\/prompt\.yaml$/);
+  assert.match(ntDir()!, /-second-title\/prompt\.yaml$/);
   // A typed slug owns the line, and clearing it hands the line back.
   await ntType($("#ntSlug"), "mine");
-  assert.match($("#ntDir").textContent!, /-mine\/prompt\.yaml$/);
+  assert.match(ntDir()!, /-mine\/prompt\.yaml$/);
   await ntType($("#ntSlug"), "");
-  assert.match($("#ntDir").textContent!, /-second-title\/prompt\.yaml$/);
+  assert.match(ntDir()!, /-second-title\/prompt\.yaml$/);
 });
 
 test("a blur on a text field leaves the export card's buttons in the document", async () => {
@@ -4564,9 +4653,9 @@ test("a typed slug reaches the directory line in the convention's kebab case", a
   await ntType($("#ntSlug"), "My Slug!");
   // The input keeps what the person typed, so the caret stays where it is.
   assert.equal(($("#ntSlug") as HTMLInputElement).value, "My Slug!");
-  assert.match($("#ntDir").textContent!, /-my-slug\/prompt\.yaml$/);
+  assert.match(ntDir()!, /-my-slug\/prompt\.yaml$/);
   await ntSet("task.id", "AV-016");
-  assert.equal(Bld.parseDirName($("#ntDir").textContent!.split("/")[1])!.slug, "my-slug");
+  assert.equal(Bld.parseDirName(ntDir()!.split("/")[1])!.slug, "my-slug");
 });
 
 test("a confirmed clear takes its disarm timer with it, and a re-armed clear holds its full window", async () => {
@@ -4576,12 +4665,12 @@ test("a confirmed clear takes its disarm timer with it, and a re-armed clear hol
   await ntOp("ntclear");
   await ntOp("ntclear");
   await ntOp("ntclear");
-  assert.match(ntOps(), /confirm clear/);
+  assert.equal(op("data-op", "ntclear").textContent, "Confirm discard");
   // The pending timer is the new arm's own, so it holds the window the
   // button promises instead of the leftover from the arm before it.
   assert.equal(vi.getTimerCount(), 1);
   await advance(1200);
-  assert.ok(!/confirm clear/.test(ntOps()));
+  assert.equal(op("data-op", "ntclear").textContent, "Discard draft");
 });
 
 test("a second copy inside the window takes the label timer with it", async () => {
@@ -4599,7 +4688,7 @@ test("a second copy inside the window takes the label timer with it", async () =
   await advance(600);
   assert.equal(op("data-op", "ntcopy").textContent, "copied");
   await advance(600);
-  assert.equal(op("data-op", "ntcopy").textContent, "⧉ copy yaml");
+  assert.equal(op("data-op", "ntcopy").textContent, "Copy YAML");
 });
 
 test("a confirmed clear takes a pending question with the form", async () => {
@@ -4648,30 +4737,6 @@ test("the live region speaks the verdict after an edit or a start that flips it,
   assert.equal(live().textContent, "Valid");
 });
 
-// Each form section folds by its heading, and the fold survives a tab
-// switch and leaves the section's values in place.
-test("a form section collapses and reopens by its heading", async () => {
-  const ctx = await bootPrompt();
-  await startFrom(ctx);
-  const head = (name: string) => $$(".nt-sechead").find(b => b.textContent === name)!;
-  assert.deepEqual($$(".nt-sechead").map(b => b.textContent),
-    ["task", "role", "context", "lessons learned", "requirements id + statement + how to verify", "output", "protocol"]);
-  const role = head("role");
-  assert.equal(role.getAttribute("aria-expanded"), "true");
-  const body = document.getElementById(role.getAttribute("aria-controls")!)!;
-  assert.equal(body.hidden, false);
-  await click(role);
-  assert.equal(role.getAttribute("aria-expanded"), "false");
-  assert.equal(body.hidden, true);
-  assert.equal(ntField("role.lens").value, "Staff engineer accountable for data integrity");
-  await tabTo("watchboard");
-  await click($("#newTaskBtn"));
-  assert.equal(head("role").getAttribute("aria-expanded"), "false");
-  await click(head("role"));
-  assert.equal(document.getElementById(head("role").getAttribute("aria-controls")!)!.hidden, false);
-  assert.match(await preview(), /lens: "Staff engineer accountable for data integrity"/);
-});
-
 // New task has no open, paste, or example control, and no drop hint. The
 // one way in for a written prompt is the start action on a ticket.
 test("new task offers no open, paste, or example control and no drop hint", async () => {
@@ -4683,21 +4748,20 @@ test("new task offers no open, paste, or example control and no drop hint", asyn
   assert.ok(!$("#scrNew").textContent!.includes("drag & drop"));
 });
 
-// A focus request and a yaml scroll each serve the click that made them. A
-// later return to the screen mounts it again and must replay neither.
-test("a return to New task replays neither the last row's focus nor the yaml scroll", async () => {
-  const scrolled = recordScrolls();
+// A focus request serves the click that made it. A later return to the
+// screen mounts it again and must not replay it.
+test("a return to New task replays neither the last row's focus nor the preview", async () => {
   await boot();
   await click($("#newTaskBtn"));
   await ntAdd("requirements");
   same(document.activeElement, ntField("requirements.0.id"), "the new row did not take focus");
   ntField("task.title").focus();
   await ntOp("ntyaml");
-  assert.equal(scrolled.length, 1);
+  await click($('[aria-label="Close preview"]'));
   await tabTo("watchboard");
   await click($("#newTaskBtn"));
   assert.ok(document.activeElement !== ntField("requirements.0.id"), "the return replayed the row's focus");
-  assert.equal(scrolled.length, 1, "the return replayed the yaml scroll");
+  assert.equal(document.getElementById("ntYaml"), null, "the return reopened the preview");
   // The next request still acts once.
   await ntAdd("requirements");
   same(document.activeElement, ntField("requirements.1.id"), "a new request after the return did not take focus");

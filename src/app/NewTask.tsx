@@ -3,11 +3,12 @@
    lives in useNewTask, which the app holds, so a tab switch never drops a
    half-written prompt. The one way in for a written prompt is the
    inspector's "start from this prompt". */
-import {useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode} from "react";
+import {useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode} from "react";
 import * as PL from "../lib/adp-prompt-lib.ts";
 import * as S from "../lib/adp-shell-lib.ts";
 import type {PromptDocument} from "../lib/adp-prompt-lib.ts";
 import type {BuilderReport} from "../lib/adp-shell-lib.ts";
+import {SELECT} from "./Inspector.tsx";
 
 const NT_DRAFT_KEY = "adp-mc-draft", NT_DRAFT_MS = 400;
 // A label that reports an outcome rests after this long, and an armed clear
@@ -19,6 +20,8 @@ const NT_ANNOUNCE_MS = 800;
 
 type Draft = {doc: PromptDocument; slug: string; slugEdited: boolean};
 type Pending = {label: string; go(): void};
+// The ticket a prompt came from, by its rail token and the name it shows.
+type Origin = {tok: string; label: string};
 type Imported = {doc: PromptDocument | null; report: BuilderReport};
 
 const blankDoc = (): PromptDocument => { const d = PL.blankDocument(); d.task.date = S.localDate(); return d; };
@@ -158,15 +161,16 @@ function useNewTask(){
   const [pending, setPending] = useState<Pending | null>(null);
   const [copyLabel, setCopyLabel] = useState<string | null>(null);
   const [clearLabel, setClearLabel] = useState<string | null>(null);
-  const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set());
+  const [origin, setOrigin] = useState<Origin | null>(null);
+  // The checklist starts closed, so the bar never covers the form on a short window.
+  const [checklist, setChecklist] = useState(false);
   const [spoken, setSpoken] = useState("");
-  // A focus target and a scroll request for the screen to serve after its
-  // next render. The sequence number lets the same request repeat.
+  // A focus target for the screen to serve after its next render. The
+  // sequence number lets the same request repeat.
   const [focusTo, setFocusTo] = useState<{path: string; seq: number} | null>(null);
-  const [yamlJump, setYamlJump] = useState(0);
-  // The last focus and yaml requests the screen served. The screen mounts
-  // again on each return, so it reads these to act on a request only once.
-  const served = useRef({focus: 0, yaml: 0});
+  // The last focus request the screen served. The screen mounts again on
+  // each return, so it reads this to act on a request only once.
+  const served = useRef({focus: 0});
   // The draft timer fires after the render that follows the edit, so it
   // reads the latest values here and never a stale closure.
   const latest = useRef<Draft>(first);
@@ -210,14 +214,18 @@ function useNewTask(){
   /* A form in progress is not replaced without a word. The question waits
      in the ops row with a replace and a keep button, and the old draft
      stands until the reader answers. A blank form takes the prompt at once,
-     and the draft saves at once. */
-  const startFrom = (text: string, source: string) => {
+     and the draft saves at once. A new task needs its own id and starts
+     today, so the copy leaves the id and the slug blank and takes today's
+     date, as the NewTaskFromPrompt board draws it. */
+  const startFrom = (text: string, source: string, from: Origin | null = null) => {
     const r = readPrompt(text, source);
     if (!r.doc){ setReport(r.report); return; }
     const next = r.doc;
+    next.task.id = "";
+    next.task.date = S.localDate();
     const go = () => {
       clearTimeout(timers.current.draft); timers.current.draft = undefined;
-      setDoc(next); setSlug(""); setSlugEdited(false); setReport(r.report); setPending(null);
+      setDoc(next); setSlug(""); setSlugEdited(false); setReport(r.report); setPending(null); setOrigin(from);
       saveDraft({doc: next, slug: "", slugEdited: false});
     };
     if (!dirty(doc, slugEdited)){ go(); return; }
@@ -231,30 +239,33 @@ function useNewTask(){
     setPending(null);
   };
 
-  // Clear needs a second click inside the window. The first click arms the
+  const blank = () => {
+    clearTimeout(timers.current.arm); timers.current.arm = undefined;
+    clearTimeout(timers.current.draft); timers.current.draft = undefined;
+    dropDraft();
+    setDoc(blankDoc()); setSlug(""); setSlugEdited(false); setShowYaml(false);
+    setReport(null); setPending(null); setCopyLabel(null); setClearLabel(null); setOrigin(null);
+  };
+  // Discard needs a second click inside the window. The first click arms the
   // button in place and the timer disarms it. A modal would block the page.
+  // "Start blank" on a form just started from a prompt drops it at once,
+  // because the reader has typed nothing into it yet.
   const clear = () => {
     clearTimeout(timers.current.arm); timers.current.arm = undefined;
-    if (clearLabel){
-      clearTimeout(timers.current.draft); timers.current.draft = undefined;
-      dropDraft();
-      setDoc(blankDoc()); setSlug(""); setSlugEdited(false); setShowYaml(false);
-      setReport(null); setPending(null); setCopyLabel(null); setClearLabel(null);
-      return;
-    }
-    setClearLabel("confirm clear");
+    if (clearLabel){ blank(); return; }
+    setClearLabel("Confirm discard");
     timers.current.arm = setTimeout(() => { timers.current.arm = undefined; setClearLabel(null); }, NT_LABEL_MS);
   };
 
   // The label reports what the clipboard did, because a "copied" that
   // assumes success would hide a denied write. A denied write opens the
-  // yaml panel, since the label sends the reader to that text.
+  // preview, since the label sends the reader to that text.
   const copy = () => {
     let write: Promise<void>;
     try { write = navigator.clipboard.writeText(yaml); } catch (e) { write = Promise.reject(e); }
     Promise.resolve(write).then(() => setCopyLabel("copied"), () => {
       setCopyLabel("copy failed — select the text");
-      setShowYaml(true); setYamlJump(n => n + 1);
+      setShowYaml(true);
     });
     clearTimeout(timers.current.copy);
     timers.current.copy = setTimeout(() => { timers.current.copy = undefined; setCopyLabel(null); }, NT_LABEL_MS);
@@ -267,10 +278,7 @@ function useNewTask(){
     a.click();
     URL.revokeObjectURL(a.href);
   };
-  const toggleYaml = () => {
-    setShowYaml(v => !v);
-    if (!showYaml) setYamlJump(n => n + 1);
-  };
+  const toggleYaml = () => setShowYaml(v => !v);
 
   const addRow = (list: string) => {
     const next = clone(doc);
@@ -295,16 +303,11 @@ function useNewTask(){
     if (on) set.add(a); else set.delete(a);
     edit(setPath(doc, "protocol.artifacts", PL.ARTIFACTS.filter(x => set.has(x))));
   };
-  const toggleSection = (name: string) => setClosed(prev => {
-    const next = new Set(prev);
-    if (!next.delete(name)) next.add(name);
-    return next;
-  });
-
-  return {doc, slug, issues, yaml, dir, showYaml, report, pending, copyLabel, clearLabel, closed, spoken, focusTo, yamlJump, served,
+  return {doc, slug, issues, yaml, dir, showYaml, report, pending, copyLabel, clearLabel, origin, checklist, spoken, focusTo, served,
     setField: (path: string, v: unknown) => edit(setPath(doc, path, v)),
     setSlug: (v: string) => { setSlug(v); setSlugEdited(!!v); draftSoon(); },
-    startFrom, keep, clear, copy, download, toggleYaml, addRow, delRow, tickArtifact, toggleSection};
+    startFrom, keep, clear, startBlank: blank, copy, download, toggleYaml, closeYaml: () => setShowYaml(false),
+    toggleChecklist: () => setChecklist(v => !v), addRow, delRow, tickArtifact};
 }
 type NewTaskState = ReturnType<typeof useNewTask>;
 
@@ -312,177 +315,303 @@ type NewTaskState = ReturnType<typeof useNewTask>;
 
 type Act = Pick<NewTaskState, "setField" | "addRow" | "delRow">;
 
-function Label({text, htmlFor}: {text: string; htmlFor?: string}){
-  return <label className="nt-lbl" htmlFor={htmlFor}>{text}</label>;
+const FULL: CSSProperties = {width: "100%"};
+type TextProps = {path: string; v: string; ph?: string; id?: string; aria?: string; prose?: boolean; sm?: boolean; act: Act};
+function Text({path, v, ph, id, aria, prose, sm, act}: TextProps){
+  return <input type="text" className={"adp-input" + (sm ? " adp-input--sm" : "") + (prose ? " adp-input--prose" : "")} id={id} data-nf={path}
+    value={v || ""} placeholder={ph || ""} aria-label={aria} style={FULL} onChange={e => act.setField(path, e.target.value)}/>;
 }
-function Text({path, v, ph, id, act}: {path: string; v: string; ph?: string; id?: string; act: Act}){
-  return <input type="text" className="nt-in" id={id} data-nf={path} value={v || ""} placeholder={ph || ""}
-    aria-label={ph || path} onChange={e => act.setField(path, e.target.value)}/>;
+function Area({path, v, ph, id, aria, rows, act}: {path: string; v: string; ph?: string; id?: string; aria?: string; rows: number; act: Act}){
+  return <textarea className="adp-textarea" id={id} data-nf={path} rows={rows} value={v || ""} placeholder={ph || ""} aria-label={aria}
+    style={{...FULL, display: "block"}} onChange={e => act.setField(path, e.target.value)}/>;
 }
-function Area({path, v, ph, id, cls, act}: {path: string; v: string; ph: string; id?: string; cls?: string; act: Act}){
-  return <textarea className={"nt-in" + (cls ? " " + cls : "")} id={id} data-nf={path} value={v || ""} placeholder={ph}
-    aria-label={ph || path} onChange={e => act.setField(path, e.target.value)}/>;
+/* The Field component: the label above its control, and an optional hint at
+   the right end of the label line. */
+function Field({label, hint, children}: {label: string; hint?: string; children: ReactNode}){
+  return <label className="adp-field" style={{minWidth: 0}}>
+    <span style={{display: "flex", justifyContent: "space-between", gap: 12}}><span>{label}</span>{hint ? <span style={{color: "var(--faint)"}}>{hint}</span> : null}</span>
+    {children}</label>;
 }
-function Del({path, act}: {path: string; act: Act}){
-  return <button type="button" className="nt-del" data-ndel={path} aria-label="remove row" onClick={() => act.delRow(path)}>×</button>;
+const PAIR: CSSProperties = {display: "grid", gridTemplateColumns: "160px minmax(0, 1fr)", gap: 16};
+const STACK: CSSProperties = {display: "flex", flexDirection: "column", gap: 16};
+const TWO: CSSProperties = {display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px 16px"};
+const COUNT: CSSProperties = {font: "400 11px/24px var(--font-mono)", color: "var(--faint)"};
+
+// A form section opens under a mono eyebrow, as the NewTask board draws it.
+function Head({name, count}: {name: string; count?: number}){
+  return <div style={{margin: "40px 0 12px", display: "flex", alignItems: "baseline", gap: 12}}>
+    <h3 className="adp-label">{name}</h3>{count == null ? null : <span style={COUNT}>{count}</span>}</div>;
+}
+// A repeatable list opens under its name, a hint, and its row count.
+function SubHead({name, hint, count}: {name: string; hint?: string; count: number}){
+  return <div style={{margin: "24px 0 4px", display: "flex", alignItems: "baseline", gap: 12}}>
+    <h4 style={{margin: 0, font: "600 15px/24px var(--font-sans)", color: "var(--ink-2)"}}>{name}</h4>
+    {hint ? <span style={{font: "400 13px/24px var(--font-sans)", color: "var(--faint)"}}>{hint}</span> : null}
+    <span style={{marginLeft: "auto", font: "400 13px/24px var(--font-sans)", color: "var(--faint)"}}>{count}</span></div>;
+}
+function Del({path, label, act}: {path: string; label: string; act: Act}){
+  return <button type="button" className="adp-btn adp-btn--icon" data-ndel={path} aria-label={label} onClick={() => act.delRow(path)}>×</button>;
 }
 function Add({list, text, act}: {list: string; text: string; act: Act}){
-  return <button type="button" className="nt-add" data-nadd={list} onClick={() => act.addRow(list)}>+ {text}</button>;
+  return <div style={{marginTop: 4}}><button type="button" className="adp-btn adp-btn--text" data-nadd={list} onClick={() => act.addRow(list)}>+ {text}</button></div>;
 }
-// A list of plain strings: one input and a remove button per row.
-function List({list, items, label, ph, act}: {list: string; items: string[]; label: string; ph: string; act: Act}){
-  return <><div className="nt-sub">{label}</div>
-    {items.map((v, i) => <div key={i} className="nt-row nt-row1"><Text path={`${list}.${i}`} v={v} ph={ph} act={act}/><Del path={`${list}.${i}`} act={act}/></div>)}
-    <Add list={list} text="add" act={act}/></>;
+// A row number sits in the first column, so a reader can name a row.
+const Num = ({n}: {n: number}) => <span style={{font: "400 12px/24px var(--font-mono)", color: "var(--blue-bright)"}}>{n}</span>;
+const row = (cols: string): CSSProperties => ({marginTop: 8, display: "grid", gridTemplateColumns: cols, gap: 8, alignItems: "center"});
+
+// A list of plain strings: a numbered input and a remove button per row.
+function List({list, items, name, hint, noun, add, act}: {list: string; items: string[]; name: string; hint?: string; noun: string; add: string; act: Act}){
+  return <><SubHead name={name} hint={hint} count={items.length}/>
+    {items.map((v, i) => <div key={i} style={row("24px minmax(0, 1fr) 28px")}><Num n={i + 1}/>
+      <Text path={`${list}.${i}`} v={v} aria={`${noun} ${i + 1}`} prose sm act={act}/><Del path={`${list}.${i}`} label={`Remove ${noun} ${i + 1}`} act={act}/></div>)}
+    <Add list={list} text={add} act={act}/></>;
 }
 
-/* A form section that collapses by its heading. The heading holds a real
-   button, so Enter and Space work and a screen reader hears the state. The
-   body stays in the document while hidden, so its fields keep their
-   values and their place. */
-function Section({name, sub, nt, children}: {name: string; sub?: string; nt: NewTaskState; children: ReactNode}){
-  const open = !nt.closed.has(name);
-  const id = "ntsec-" + name.replace(/ /g, "-");
-  return <div className="ipanel nt-sec">
-    <h2><button type="button" className="nt-sechead" aria-expanded={open} aria-controls={id} onClick={() => nt.toggleSection(name)}>
-      {name}{sub ? <>{" "}<span className="isub">{sub}</span></> : null}</button></h2>
-    <div id={id} hidden={!open}>{children}</div>
-  </div>;
+// The four protocol switches and the nine artifacts by the names the board gives them.
+const SWITCH_LABELS: Record<string, string> = {apply: "Apply protocol", stake_single_recommendation: "Stake a recommendation",
+  log_assumptions: "Log assumptions", flag_low_confidence: "Flag low confidence"};
+const ARTIFACT_LABELS: Record<string, string> = {premortem: "Pre-mortem", pr_summary: "PR summary"};
+const artifactLabel = (a: string) => ARTIFACT_LABELS[a] || (a[0].toUpperCase() + a.slice(1)).replace(/_/g, " ");
+
+/* The checklist's Required column names the checks a blank form fails, by
+   plain name. Every other unmet check goes under Also fix by its key and
+   the validator's own message, so the two columns hold every finding once. */
+const REQUIRED: [string, string][] = [["task.id", "Task ID"], ["task.title", "Title"], ["task.author", "Author"], ["prompt", "Prompt"],
+  ["output.format", "Output format"], ["output.destination", "Output destination"], ["requirements", "At least one requirement"]];
+
+// The directory line marks each part the form has not filled yet.
+function DirLine({dir}: {dir: string}){
+  return <>{dir.split(/(<[^>]+>)/).map((x, i) => x.startsWith("<") ? <span key={i} style={{color: "var(--faint)"}}>{x}</span> : x)}</>;
 }
 
-function Ops({nt}: {nt: NewTaskState}){
-  return <><div className="mops"><span className="mgap"></span>
-    <button type="button" className={"op" + (nt.clearLabel ? " is-armed" : "")} data-op="ntclear" onClick={nt.clear}>{nt.clearLabel || "clear"}</button></div>
-    {nt.pending ? <p className="nt-report is-warn" role="status">a form is in progress — replace it with {nt.pending.label}?{" "}
-      <button type="button" className="op" id="ntReplace" onClick={nt.pending.go}>replace the form</button>{" "}
-      <button type="button" className="op" id="ntKeep" onClick={nt.keep}>keep the form</button></p> : null}
-    {nt.report ? <p className={"nt-report is-" + nt.report.tone} role="status">{nt.report.text}</p> : null}</>;
+function Checklist({nt}: {nt: NewTaskState}){
+  const keys = new Set(nt.issues.map(([k]) => k));
+  const req = new Set(REQUIRED.map(([k]) => k));
+  const other = nt.issues.filter(([k]) => !req.has(k));
+  const unmet = REQUIRED.filter(([k]) => keys.has(k)).length;
+  const label: CSSProperties = {font: "500 11px/24px var(--font-mono)", letterSpacing: ".14em", textTransform: "uppercase", color: "var(--dim)"};
+  const list: CSSProperties = {margin: "8px 0 0", padding: 0, listStyle: "none", display: "flex", flexDirection: "column"};
+  // An unmet check carries its key and its place in the validator's list, so
+  // a reader of the page can name each finding in the validator's order.
+  const at = (k: string) => nt.issues.findIndex(([x]) => x === k);
+  // The checklist stays in the document while closed, so the toggle's
+  // aria-controls always names an element.
+  return <section id="checklist" aria-label="Export checklist" style={{marginBottom: 8, padding: 20, background: "var(--panel)",
+    boxShadow: "inset 0 0 0 1px var(--line-bright), var(--shadow)", display: nt.checklist ? "grid" : "none", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 16}}>
+    <div><div style={label}>Required · {unmet}</div><ul style={{...list, gap: 4}}>{REQUIRED.map(([k, name]) => {
+      const done = !keys.has(k);
+      return <li key={k} data-req={k} data-issue={done ? undefined : k} data-at={done ? undefined : at(k)} style={{display: "flex", gap: 12, font: "400 15px/24px var(--font-sans)", color: done ? "var(--dim)" : "var(--ink-2)"}}>
+        <span aria-hidden="true" style={{color: done ? "var(--ok)" : "var(--faint)"}}>{done ? "●" : "○"}</span>{name}{done ? <span className="sr-live"> done</span> : null}</li>;
+    })}</ul></div>
+    <div><div style={label}>Also fix · {other.length}</div><ul style={{...list, gap: 8}}>{other.map(([k, msg], i) => <li key={i} data-issue={k} data-at={nt.issues.findIndex(x => x[0] === k && x[1] === msg)}>
+      <div style={{font: "400 12px/24px var(--font-mono)", color: "var(--blue-bright)"}}>{k}</div>
+      <div style={{font: "400 15px/24px var(--font-sans)", color: "var(--ink-2)"}}>{msg}</div></li>)}</ul></div>
+    <div id="ntDir" style={{gridColumn: "1 / -1", paddingTop: 12, boxShadow: "inset 0 1px 0 var(--line)", font: "400 12px/24px var(--font-mono)",
+      color: "var(--dim)", wordBreak: "break-all"}}>Saves to <DirLine dir={nt.dir}/></div>
+  </section>;
 }
 
-/* The side card: the badge, the unmet checks by key, the directory line,
-   and the export controls. Every row prints its key and the fixed word
-   required, so no message can outgrow the card. */
-function Side({nt}: {nt: NewTaskState}){
+/* The bottom bar stays in view at the foot of the stage while the form
+   scrolls. It counts what is left to fix, opens the checklist, and holds the
+   export. Copy YAML works on any draft, because a reader may want a draft
+   that is not done yet, and the count says what is missing. */
+function Bar({nt}: {nt: NewTaskState}){
   const n = nt.issues.length;
-  return <div className="ipanel nt-side" id="ntSide"><h2>export</h2>
-    {n ? <span className="nt-vchit is-bad">⚠ {n} protocol check{n === 1 ? "" : "s"} unmet</span> : <span className="nt-vchit">valid · schema 1.0</span>}
-    {n ? <ul className="nt-checks">{nt.issues.map(([k], i) => <li key={i}><code>{k}</code> — required</li>)}</ul> : null}
-    <div className="nt-dir" id="ntDir">{nt.dir}</div>
-    <div className="nt-sidebtns">
-      <button type="button" className="op op-acc" data-op="ntcopy" onClick={nt.copy}>{nt.copyLabel || "⧉ copy yaml"}</button>
-      <button type="button" className="op" data-op="ntdl" onClick={nt.download}>↓ download</button>
-      <button type="button" className={"op tgl" + (nt.showYaml ? " is-on" : "")} data-op="ntyaml" onClick={nt.toggleYaml}>{nt.showYaml ? "hide yaml" : "view yaml"}</button>
-    </div><div className="nt-autosave">draft autosaves locally · restored on return</div>
-    <div className="sr-live" id="ntLive" role="status" aria-live="polite">{nt.spoken}</div>
+  // A sticky box measures its offset inside the stage's padding, so the bar
+  // sits 80px lower to reach the window's foot past the page's bottom pad.
+  return <div style={{position: "sticky", bottom: -80, marginTop: 40, zIndex: 1}}>
+    <Checklist nt={nt}/>
+    <div id="ntSide" style={{height: 56, padding: "0 16px", background: "var(--panel)", border: "1px solid var(--line-bright)", display: "flex", alignItems: "center", gap: 16}}>
+      <span style={{font: "400 11px/24px var(--font-mono)", letterSpacing: ".08em", textTransform: "uppercase", color: n ? "var(--warn)" : "var(--ok)"}}>
+        {n ? `${n} to go` : "Valid · schema 1.0"}</span>
+      <button type="button" className="adp-btn adp-btn--text" aria-expanded={nt.checklist} aria-controls="checklist" onClick={nt.toggleChecklist}>
+        Checklist {nt.checklist ? "▾" : "▸"}</button>
+      <span style={{marginLeft: "auto"}}></span>
+      <button type="button" className="adp-btn adp-btn--text" data-op="ntdl" onClick={nt.download}>Download</button>
+      <button type="button" className="adp-btn adp-btn--text" data-op="ntyaml" onClick={nt.toggleYaml}>Preview YAML</button>
+      <button type="button" className="adp-btn" data-op="ntcopy" onClick={nt.copy}>{nt.copyLabel || "Copy YAML"}</button>
+      <div className="sr-live" id="ntLive" role="status" aria-live="polite">{nt.spoken}</div>
+    </div>
   </div>;
 }
 
-function NewTask({nt}: {nt: NewTaskState}){
+/* What sits under the title: the question before a start replaces a form in
+   progress, the banner after a start from a prompt, and the import report
+   in its own words, so a reader still sees every key an import skipped. */
+function Ops({nt, onOpenTicket}: {nt: NewTaskState; onOpenTicket(tok: string): void}){
+  const report = nt.report ? <div className="adp-notice" role="status" style={{marginTop: 16}}><span className="adp-notice__text"
+    style={{color: nt.report.tone === "warn" ? "var(--warn)" : undefined}}>{nt.report.text}</span></div> : null;
+  return <>
+    {nt.pending ? <div className="adp-notice" role="status" style={{marginTop: 16}}><span className="adp-notice__text">
+      a form is in progress — replace it with {nt.pending.label}?{" "}
+      <button type="button" className="adp-btn adp-btn--text" id="ntReplace" onClick={nt.pending.go}>replace the form</button>{" "}
+      <button type="button" className="adp-btn adp-btn--text" id="ntKeep" onClick={nt.keep}>keep the form</button></span></div> : null}
+    {!nt.pending && nt.origin ? <p style={{margin: "16px 0 0", font: "400 15px/24px var(--font-sans)", color: "var(--dim)"}}>
+      Started from <a href={S.hashWrite({t: nt.origin.tok})} onClick={e => { e.preventDefault(); onOpenTicket(nt.origin!.tok); }}>{nt.origin.label}</a>’s prompt.
+      {" "}Everything but the ID and slug was copied, and the date is today’s.{" "}
+      <button type="button" className="adp-btn adp-btn--text" data-op="ntblank" onClick={nt.startBlank}>Start blank</button></p> : null}
+    {report}
+  </>;
+}
+
+const FOCUSABLE = "button:not([disabled]), a[href], textarea, select";
+
+/* Preview YAML, as the PreviewYaml board draws it: a modal drawer with the
+   verdict, the text, and the export. Focus starts inside and stays inside.
+   Escape, the scrim, and × close it, and focus goes back to the control
+   that opened it once the page behind stops being inert. */
+function YamlPreview({nt}: {nt: NewTaskState}){
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const el = ref.current;
+    el?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape"){ e.preventDefault(); nt.closeYaml(); return; }
+      if (e.key !== "Tab" || !el) return;
+      const all = [...el.querySelectorAll<HTMLElement>(FOCUSABLE)];
+      const first = all[0], last = all[all.length - 1];
+      if (e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("keydown", key); if (opener && opener.isConnected) opener.focus(); };
+    // The drawer reads its close action once, when it opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const n = nt.issues.length;
+  return <div style={{position: "fixed", inset: 0, zIndex: 20}}>
+    <div className="adp-scrim" onClick={nt.closeYaml}></div>
+    <section ref={ref} className="adp-drawer" id="ntYaml" role="dialog" aria-modal="true" aria-labelledby="ntYamlTitle"
+      style={{position: "absolute", top: 0, right: 0, bottom: 0}}>
+      <div className="adp-drawer__head">
+        <h2 className="adp-drawer__title" id="ntYamlTitle">prompt.yaml</h2>
+        <div className="adp-drawer__sub">Preview of this draft · read-only</div>
+        <button type="button" className="adp-btn adp-btn--icon adp-drawer__close" aria-label="Close preview" onClick={nt.closeYaml}>×</button>
+      </div>
+      <div className="adp-drawer__body" style={{flex: "1 1 auto", minHeight: 0}}>
+        <div style={{display: "flex", alignItems: "center", gap: 12, font: "400 13px/24px var(--font-sans)", color: "var(--dim)"}}>
+          <span style={{font: "400 11px/24px var(--font-mono)", letterSpacing: ".08em", color: n ? "var(--warn)" : "var(--ok)"}}>{n ? `${n} TO GO` : "VALID"}</span>
+          schema 1.0 · {n ? `${n} finding${n === 1 ? "" : "s"}` : "no findings"}</div>
+        <pre className="adp-pre" id="ntYamlPre" style={{flex: "1 1 0px", minHeight: 160}}>{nt.yaml}</pre>
+        <div style={{display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap"}}>
+          <button type="button" className="adp-btn adp-btn--primary" data-op="pvcopy" onClick={nt.copy}>{nt.copyLabel || "Copy YAML"}</button>
+          <button type="button" className="adp-btn adp-btn--text" data-op="pvdl" onClick={nt.download}>Download</button>
+          <span style={{marginLeft: "auto", font: "400 11.5px/20px var(--font-mono)", color: "var(--faint)", overflowWrap: "anywhere"}}>{nt.dir}</span>
+        </div>
+      </div>
+    </section>
+  </div>;
+}
+
+function NewTask({nt, onOpenTicket}: {nt: NewTaskState; onOpenTicket(tok: string): void}){
   const {doc} = nt, t = doc.task, r = doc.role, c = doc.context, o = doc.output, p = doc.protocol;
   const defers = Array.isArray(p.defers) ? p.defers : [];
   const artifacts = Array.isArray(p.artifacts) ? p.artifacts : [];
   const act: Act = nt;
+  // The preamble is optional, so it waits behind its add control until the
+  // reader asks for it or a prompt brings one.
+  const [preamble, setPreamble] = useState(false);
+  const showPreamble = preamble || !!doc.preamble;
   // The keyboard lands in the row it asked for.
   useLayoutEffect(() => {
     if (!nt.focusTo || nt.focusTo.seq === nt.served.current.focus) return;
     nt.served.current.focus = nt.focusTo.seq;
-    const row = nt.focusTo.path;
-    const el = [...document.querySelectorAll<HTMLElement>("#scrNew .nt-in")].find(x => {
+    const at = nt.focusTo.path;
+    const el = [...document.querySelectorAll<HTMLElement>("#scrNew [data-nf]")].find(x => {
       const f = x.getAttribute("data-nf") || "";
-      return f === row || f.startsWith(row + ".");
+      return f === at || f.startsWith(at + ".");
     });
     el?.focus();
   }, [nt.focusTo, nt.served]);
-  useLayoutEffect(() => {
-    if (!nt.yamlJump || nt.yamlJump === nt.served.current.yaml) return;
-    nt.served.current.yaml = nt.yamlJump;
-    document.getElementById("ntYaml")?.scrollIntoView?.();
-  }, [nt.yamlJump, nt.served]);
-  return <><h2>new task</h2>
-    <div id="ntOps"><Ops nt={nt}/></div>
-    <div className="nt-grid"><div className="nt-form">
-      <Section name="task" nt={nt}>
-        <div className="nt-row nt-row4">
-          <div><Label text="id" htmlFor="nt_id"/><Text path="task.id" v={t.id} ph="AV-016" id="nt_id" act={act}/></div>
-          <div><Label text="title" htmlFor="nt_title"/><Text path="task.title" v={t.title} ph="One line naming the task" id="nt_title" act={act}/></div>
-          <div><Label text="author" htmlFor="nt_author"/><Text path="task.author" v={t.author} ph="Who wrote this" id="nt_author" act={act}/></div>
-          <div><Label text="date" htmlFor="nt_date"/><Text path="task.date" v={t.date} ph="YYYY-MM-DD" id="nt_date" act={act}/></div>
+  return <div style={{maxWidth: "72ch", margin: "0 auto"}}>
+    <h1 style={{margin: 0, font: "600 24px/32px var(--font-sans)", letterSpacing: "normal", textTransform: "none", color: "var(--ink)"}}>New task</h1>
+    <p style={{margin: "8px 0 0", font: "400 15px/24px var(--font-sans)", color: "var(--dim)"}}>Writes <code className="adp-code">prompt.yaml</code> for a new run. The draft saves as you type.</p>
+    <div id="ntOps"><Ops nt={nt} onOpenTicket={onOpenTicket}/></div>
+    <form aria-label="New task" onSubmit={e => e.preventDefault()}>
+      <Head name="Task"/>
+      <div style={STACK}>
+        <div style={PAIR}>
+          <Field label="ID"><Text path="task.id" v={t.id} ph="AV-016" id="nt_id" act={act}/></Field>
+          <Field label="Title"><Text path="task.title" v={t.title} ph="One line naming the task" id="nt_title" prose act={act}/></Field>
         </div>
-        <Label text="slug · directory name only, not in the yaml" htmlFor="ntSlug"/>
-        <input type="text" className="nt-in" id="ntSlug" value={nt.slug} placeholder="kebab-case-slug" aria-label="slug" onChange={e => nt.setSlug(e.target.value)}/>
-        <Label text="preamble" htmlFor="nt_preamble"/>
-        <Area path="preamble" v={doc.preamble} ph="Instructions about how to read this prompt, before the task itself" id="nt_preamble" cls="nt-short" act={act}/>
-        <Label text="prompt" htmlFor="nt_prompt"/>
-        <Area path="prompt" v={doc.prompt} ph="What to do, and the outcome a person should see when it works" id="nt_prompt" act={act}/>
-      </Section>
-      <Section name="role" nt={nt}>
-        <Label text="lens" htmlFor="nt_lens"/><Text path="role.lens" v={r.lens} ph="The seniority and specialty to reason from" id="nt_lens" act={act}/>
-        <List list="role.priorities" items={r.priorities} label="priorities · what wins when goals conflict" ph="e.g. testability" act={act}/>
-      </Section>
-      <Section name="context" nt={nt}>
-        <Label text="background" htmlFor="nt_bg"/>
-        <Area path="context.background" v={c.background} ph="System history, intent, org constraints" id="nt_bg" cls="nt-short" act={act}/>
-        <List list="constraints.out_of_scope" items={doc.constraints.out_of_scope} label="out of scope · named exclusions" ph="What this task is not" act={act}/>
-        <List list="constraints.must_not" items={doc.constraints.must_not} label="must not · hard prohibitions" ph="The line not to cross" act={act}/>
-        <div className="nt-sub">references · path, lines, note</div>
-        {c.references.map((x, i) => <div key={i} className="nt-row nt-row3">
-          <Text path={`context.references.${i}.path`} v={x.path} ph="src/path/to/file.ts" act={act}/>
-          <Text path={`context.references.${i}.lines`} v={x.lines} ph="42-88" act={act}/>
-          <Text path={`context.references.${i}.note`} v={x.note} ph="Why this location matters" act={act}/>
-          <Del path={`context.references.${i}`} act={act}/></div>)}
-        <Add list="context.references" text="add reference" act={act}/>
-        <List list="context.links" items={c.links} label="links" ph="https://…" act={act}/>
-      </Section>
-      <Section name="lessons learned" nt={nt}>
-        {doc.lessons_learned.map((x, i) => <div key={i} className="nt-row nt-row2">
-          <Text path={`lessons_learned.${i}.context`} v={x.context} ph="What a prior session tried or surfaced" act={act}/>
-          <Text path={`lessons_learned.${i}.takeaway`} v={x.takeaway} ph="The dead end to avoid, or the fact now known" act={act}/>
-          <Del path={`lessons_learned.${i}`} act={act}/></div>)}
-        <Add list="lessons_learned" text="add lesson" act={act}/>
-      </Section>
-      <Section name="requirements" sub="id + statement + how to verify" nt={nt}>
-        {doc.requirements.map((x, i) => <div key={i} className="nt-row nt-rowr">
-          <Text path={`requirements.${i}.id`} v={x.id} ph="R1" act={act}/>
-          <Text path={`requirements.${i}.statement`} v={x.statement} ph="Requirement" act={act}/>
-          <Text path={`requirements.${i}.verify`} v={x.verify} ph="How to verify" act={act}/>
-          <Del path={`requirements.${i}`} act={act}/></div>)}
-        <Add list="requirements" text="add requirement" act={act}/>
-      </Section>
-      <Section name="output" nt={nt}>
-        <div className="nt-row nt-rowo">
-          <div><Label text="destination" htmlFor="nt_dest"/><Text path="output.destination" v={o.destination} ph="Where the work lands" id="nt_dest" act={act}/></div>
-          <div><Label text="format" htmlFor="nt_fmt"/>
-            <select className={"nt-in" + (o.format ? "" : " is-unset")} id="nt_fmt" data-nf="output.format" aria-label="format"
-              value={o.format} onChange={e => nt.setField("output.format", e.target.value)}>
-              {["", ...PL.FORMATS].map(f => <option key={f} value={f}>{f || "choose…"}</option>)}</select></div>
+        <div style={PAIR}>
+          <Field label="Date"><Text path="task.date" v={t.date} ph="YYYY-MM-DD" id="nt_date" act={act}/></Field>
+          <Field label="Author"><Text path="task.author" v={t.author} ph="Who wrote this" id="nt_author" act={act}/></Field>
         </div>
-        <Label text="structure" htmlFor="nt_struct"/>
-        <Area path="output.structure" v={o.structure} ph="How the output is organized" id="nt_struct" cls="nt-short" act={act}/>
-      </Section>
-      <Section name="protocol" nt={nt}>
-        <div className="nt-togs">{S.NT_SWITCHES.map(([k, text]) =>
-          <label key={k} className={"nt-tog" + (p[k] ? " is-on" : "")}><input type="checkbox" data-nf={"protocol." + k} checked={!!p[k]}
-            onChange={e => nt.setField("protocol." + k, e.target.checked)}/> {text}</label>)}</div>
-        <div className="nt-sub">artifacts · which to produce</div>
-        <div className="nt-chips">{PL.ARTIFACTS.map(a =>
-          <label key={a} className={"nt-chip" + (artifacts.includes(a) ? " is-on" : "")}><input type="checkbox" data-nart={a} checked={artifacts.includes(a)}
-            onChange={e => nt.tickArtifact(a, e.target.checked)}/> {a}</label>)}</div>
-        <div className="nt-sub">defers · phases this task defers, with a reason each</div>
-        {defers.map((d, i) => <div key={i} className="nt-row nt-rowd">
-          <select className={"nt-in" + (d.phase ? "" : " is-unset")} data-nf={`protocol.defers.${i}.phase`} aria-label="phase"
-            value={d.phase} onChange={e => nt.setField(`protocol.defers.${i}.phase`, e.target.value)}>
-            {["", ...PL.PHASES].map(ph => <option key={ph} value={ph}>{ph ? ph.replace(/_/g, " ") : "phase…"}</option>)}</select>
-          <Text path={`protocol.defers.${i}.reason`} v={d.reason} ph="Why this phase does not run" act={act}/>
-          <Del path={`protocol.defers.${i}`} act={act}/></div>)}
-        <Add list="protocol.defers" text="add deferral" act={act}/>
-      </Section>
-      {/* The yaml panel sits in the form column. The card sticks over the
-          whole grid, so a panel in a row of its own would slide under it. */}
-      {nt.showYaml ? <div className="ipanel" id="ntYaml"><h2>prompt.yaml</h2><pre className="packpre" id="ntYamlPre">{nt.yaml}</pre></div> : null}
-    </div>
-    <Side nt={nt}/></div>
-  </>;
+        <Field label="Slug" hint="directory name only"><input type="text" className="adp-input" id="ntSlug" value={nt.slug} placeholder="kebab-case-slug"
+          style={FULL} onChange={e => nt.setSlug(e.target.value)}/></Field>
+      </div>
+      <Head name="Preamble"/>
+      {showPreamble ? <Area path="preamble" v={doc.preamble} ph="Instructions about how to read this prompt, before the task itself" id="nt_preamble" aria="Preamble" rows={3} act={act}/>
+        : <><p style={{margin: 0, font: "400 13px/24px var(--font-sans)", color: "var(--faint)"}}>Optional. Standing instructions read before the prompt.</p>
+          <div style={{marginTop: 4}}><button type="button" className="adp-btn adp-btn--text" data-op="ntpreamble" onClick={() => setPreamble(true)}>+ Add a preamble</button></div></>}
+      <Head name="Prompt"/>
+      <Area path="prompt" v={doc.prompt} ph="What to do, and the outcome a person should see when it works" id="nt_prompt" aria="Prompt" rows={5} act={act}/>
+      <Head name="Role"/>
+      <Field label="Lens"><Text path="role.lens" v={r.lens} ph="The seniority and specialty to reason from" id="nt_lens" prose act={act}/></Field>
+      <List list="role.priorities" items={r.priorities} name="Priorities" hint="what wins when goals conflict" noun="priority" add="Add priority" act={act}/>
+      <Head name="Context"/>
+      <Field label="Background"><Area path="context.background" v={c.background} ph="System history, intent, org constraints" id="nt_bg" rows={3} act={act}/></Field>
+      <List list="constraints.out_of_scope" items={doc.constraints.out_of_scope} name="Out of scope" noun="out of scope" add="Add" act={act}/>
+      <List list="constraints.must_not" items={doc.constraints.must_not} name="Must not" noun="must not" add="Add" act={act}/>
+      <SubHead name="References" hint="path, lines, note" count={c.references.length}/>
+      {c.references.map((x, i) => <div key={i} style={row("24px minmax(0, 1fr) 88px minmax(0, 1fr) 28px")}><Num n={i + 1}/>
+        <Text path={`context.references.${i}.path`} v={x.path} ph="src/path/to/file.ts" aria={`Reference ${i + 1} path`} sm act={act}/>
+        <Text path={`context.references.${i}.lines`} v={x.lines} ph="42-88" aria={`Reference ${i + 1} lines`} sm act={act}/>
+        <Text path={`context.references.${i}.note`} v={x.note} ph="Why this location matters" aria={`Reference ${i + 1} note`} prose sm act={act}/>
+        <Del path={`context.references.${i}`} label={`Remove reference ${i + 1}`} act={act}/></div>)}
+      <Add list="context.references" text="Add reference" act={act}/>
+      <List list="context.links" items={c.links} name="Links" noun="link" add="Add link" act={act}/>
+      <SubHead name="Lessons learned" hint="context and takeaway" count={doc.lessons_learned.length}/>
+      {doc.lessons_learned.map((x, i) => <div key={i} style={row("24px minmax(0, 1fr) minmax(0, 1fr) 28px")}><Num n={i + 1}/>
+        <Text path={`lessons_learned.${i}.context`} v={x.context} ph="What a prior session tried or surfaced" aria={`Lesson ${i + 1} context`} prose sm act={act}/>
+        <Text path={`lessons_learned.${i}.takeaway`} v={x.takeaway} ph="The dead end to avoid, or the fact now known" aria={`Lesson ${i + 1} takeaway`} prose sm act={act}/>
+        <Del path={`lessons_learned.${i}`} label={`Remove lesson ${i + 1}`} act={act}/></div>)}
+      <Add list="lessons_learned" text="Add lesson" act={act}/>
+      <Head name="Requirements" count={doc.requirements.length}/>
+      {doc.requirements.length ? <div style={{display: "grid", gridTemplateColumns: "56px minmax(0, 1fr) minmax(0, 1fr) 28px", gap: 8, paddingBottom: 8,
+        boxShadow: "inset 0 -1px 0 var(--line-bright)", font: "500 10.5px/24px var(--font-mono)", letterSpacing: ".12em", textTransform: "uppercase", color: "var(--dim)"}}>
+        <span>ID</span><span>Statement</span><span>Verify</span><span></span></div> : null}
+      {doc.requirements.map((x, i) => <div key={i} style={row("56px minmax(0, 1fr) minmax(0, 1fr) 28px")}>
+        <Text path={`requirements.${i}.id`} v={x.id} ph="R1" aria={`Requirement ${i + 1} ID`} sm act={act}/>
+        <Text path={`requirements.${i}.statement`} v={x.statement} ph="Statement" aria={`Requirement ${i + 1} statement`} prose sm act={act}/>
+        <Text path={`requirements.${i}.verify`} v={x.verify} ph="How to verify" aria={`Requirement ${i + 1} verify`} prose sm act={act}/>
+        <Del path={`requirements.${i}`} label={`Remove ${x.id || "requirement " + (i + 1)}`} act={act}/></div>)}
+      <Add list="requirements" text="Add requirement" act={act}/>
+      <Head name="Output"/>
+      <div style={STACK}>
+        <div style={PAIR}>
+          <Field label="Format"><select className="adp-select" id="nt_fmt" data-nf="output.format" value={o.format}
+            style={{...SELECT, ...FULL, color: o.format ? undefined : "var(--faint)"}} onChange={e => nt.setField("output.format", e.target.value)}>
+            {["", ...PL.FORMATS].map(f => <option key={f} value={f}>{f || "Choose…"}</option>)}</select></Field>
+          <Field label="Destination"><Text path="output.destination" v={o.destination} ph="Where the work lands" id="nt_dest" act={act}/></Field>
+        </div>
+        {/* Structure keeps a text area, because a written prompt can hold a structure of several lines. */}
+        <Field label="Structure"><Area path="output.structure" v={o.structure} ph="How the output is organized" id="nt_struct" rows={3} act={act}/></Field>
+      </div>
+      <Head name="Protocol"/>
+      <div style={TWO}>{S.NT_SWITCHES.map(([k]) => <label key={k} className="adp-check"><input type="checkbox" data-nf={"protocol." + k} checked={!!p[k]}
+        onChange={e => nt.setField("protocol." + k, e.target.checked)}/>{SWITCH_LABELS[k]}</label>)}</div>
+      <SubHead name="Artifacts to produce" count={artifacts.length}/>
+      <div style={{...TWO, marginTop: 8}}>{PL.ARTIFACTS.map(a => <label key={a} className="adp-check"><input type="checkbox" data-nart={a}
+        checked={artifacts.includes(a)} onChange={e => nt.tickArtifact(a, e.target.checked)}/>{artifactLabel(a)}</label>)}</div>
+      {defers.length ? <SubHead name="Deferred phases" hint="each with a reason" count={defers.length}/> : null}
+      {defers.map((d, i) => <div key={i} style={row("160px minmax(0, 1fr) 28px")}>
+        <select className="adp-select" data-nf={`protocol.defers.${i}.phase`} aria-label={`Deferred phase ${i + 1}`} value={d.phase}
+          style={{...SELECT, ...FULL, height: 32, color: d.phase ? undefined : "var(--faint)"}} onChange={e => nt.setField(`protocol.defers.${i}.phase`, e.target.value)}>
+          {["", ...PL.PHASES].map(ph => <option key={ph} value={ph}>{ph ? ph.replace(/_/g, " ") : "Phase…"}</option>)}</select>
+        <Text path={`protocol.defers.${i}.reason`} v={d.reason} ph="Why this phase does not run" aria={`Deferred phase ${i + 1} reason`} prose sm act={act}/>
+        <Del path={`protocol.defers.${i}`} label={`Remove deferred phase ${i + 1}`} act={act}/></div>)}
+      <div style={{marginTop: 12}}><button type="button" className="adp-btn adp-btn--text" data-nadd="protocol.defers" onClick={() => act.addRow("protocol.defers")}>
+        + Defer a phase, with a reason</button></div>
+      <div style={{marginTop: 40, paddingTop: 12, boxShadow: "inset 0 1px 0 var(--line)"}}>
+        <button type="button" className="adp-btn adp-btn--text" data-op="ntclear" style={{color: nt.clearLabel ? "var(--warn)" : "var(--dim)"}}
+          onClick={nt.clear}>{nt.clearLabel || "Discard draft"}</button></div>
+    </form>
+    <Bar nt={nt}/>
+  </div>;
 }
 
-export {NewTask, useNewTask, readPrompt, NT_DRAFT_KEY};
+export {NewTask, YamlPreview, useNewTask, readPrompt, NT_DRAFT_KEY};
 export type {NewTaskState};

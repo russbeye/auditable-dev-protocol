@@ -123,7 +123,8 @@ for (const [name, opener, panel] of [["⋯ menu", "#menuBtn", "#hdrMenu"], ["Pac
 
 // OT-MC012-19 needs a screen reader. This test proves the text reaches the
 // region, which is what a reader would announce.
-test("New task's live region speaks the verdict after a start and after the task id is blanked", async ({page, server}) => {
+// A start leaves the task id blank (F3), so typing one flips the verdict.
+test("New task's live region speaks the verdict after a start and after the task id is typed", async ({page, server}) => {
   await open(page, server.url + "#t=FX091");
   await page.click('[data-op="startfrom"]');
   await expect(page.locator(".screen.is-on")).toHaveAttribute("data-s", "new task");
@@ -131,7 +132,7 @@ test("New task's live region speaks the verdict after a start and after the task
   await expect(live).toHaveAttribute("aria-live", "polite");
   await expect(live).not.toHaveText("");
   const first = await live.textContent();
-  await page.fill('#scrNew .nt-in[data-nf="task.id"]', "");
+  await page.fill('#scrNew [data-nf="task.id"]', "FX-091");
   await expect(live).not.toHaveText(first!);
   await expect(live).not.toHaveText("");
 });
