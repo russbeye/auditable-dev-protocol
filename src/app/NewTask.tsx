@@ -439,8 +439,13 @@ function Bar({nt}: {nt: NewTaskState}){
    progress, the banner after a start from a prompt, and the import report
    in its own words, so a reader still sees every key an import skipped. */
 function Ops({nt, onOpenTicket}: {nt: NewTaskState; onOpenTicket(tok: string): void}){
-  const report = nt.report ? <div className="adp-notice" role="status" style={{marginTop: 16}}><span className="adp-notice__text"
-    style={{color: nt.report.tone === "warn" ? "var(--warn)" : undefined}}>{nt.report.text}</span></div> : null;
+  // Under the banner a clean import's report is a quiet line, since the
+  // banner already says what was copied. Any other report is a Notice.
+  const quiet = !!nt.origin && !nt.pending && nt.report?.tone === "ok";
+  const report = !nt.report ? null : quiet
+    ? <p role="status" style={{margin: "4px 0 0", font: "400 13px/24px var(--font-sans)", color: "var(--faint)"}}>{nt.report.text}</p>
+    : <div className="adp-notice" role="status" style={{marginTop: 16}}><span className="adp-notice__text"
+      style={{color: nt.report.tone === "warn" ? "var(--warn)" : undefined}}>{nt.report.text}</span></div>;
   return <>
     {nt.pending ? <div className="adp-notice" role="status" style={{marginTop: 16}}><span className="adp-notice__text">
       a form is in progress — replace it with {nt.pending.label}?{" "}

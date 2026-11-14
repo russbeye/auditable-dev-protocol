@@ -6,7 +6,7 @@ import * as D from "../lib/adp-derive-lib.ts";
 import * as P from "../lib/adp-parser-lib.ts";
 import * as S from "../lib/adp-shell-lib.ts";
 import type {Corpus, SortState} from "../lib/adp-shell-lib.ts";
-import {Filters, NW, PAGE_HEAD, PAGE_ROWS, PAGE_SUB, PAGE_TITLE, SEARCH, ShowMore, StatusChip, Th, WatchCell, liveFilter, matches} from "./panels.tsx";
+import {Coded, Filters, NW, PAGE_HEAD, PAGE_ROWS, PAGE_SUB, PAGE_TITLE, SEARCH, ShowMore, StatusChip, Th, WatchCell, liveFilter, matches} from "./panels.tsx";
 import {Empty, NoMatch} from "./Watchboard.tsx";
 import {SELECT} from "./Inspector.tsx";
 
@@ -63,8 +63,9 @@ function Ledgers({corpus, today, sort, status, conf, calibration, narrow, onSort
     // null-age rows last instead of letting a NaN land them mid-table.
     age: r => r.age == null ? Infinity : r.age
   });
-  const link = (tid: string, item: string | null, title?: string) => <a className="wbl" href={S.hashWrite(item ? {t: tid, item} : {t: tid})}
-    data-t={tid} data-item={item || undefined} title={title}
+  // The Entry cell dims the entry beside its ticket, as the Ledger board draws it.
+  const link = (tid: string, item: string | null, title?: string, dim?: boolean) => <a className="wbl" href={S.hashWrite(item ? {t: tid, item} : {t: tid})}
+    data-t={tid} data-item={item || undefined} title={title} style={dim ? {color: "var(--dim)"} : undefined}
     onClick={(e: MouseEvent) => { e.preventDefault(); onOpen(tid, item); }}>{item || tid}</a>;
   const tickets = corpus.index.tickets.length;
   const head = <div style={PAGE_HEAD}>{title}<p style={PAGE_SUB}>{lg.decisions.length} decisions across {tickets} tickets, settled rulings included</p></div>;
@@ -99,19 +100,19 @@ function Ledgers({corpus, today, sort, status, conf, calibration, narrow, onSort
       const w = watch(d), hasWatch = !!(d.watch || d.settled || d.kind === "open");
       return <li key={d.dir + "\n" + d.id} className="lgrow" data-t={d.tid} data-dl={d.id} style={{padding: "12px 0", boxShadow: "inset 0 -1px 0 var(--line)"}}>
         <div style={{display: "flex", alignItems: "center", gap: 12, minHeight: 24, flexWrap: "wrap"}}>
-          <span className="adp-col-id" style={{font: "400 12px/24px var(--font-mono)"}}>{link(d.tid, null)} {link(d.tid, d.id)}</span>
+          <span className="adp-col-id" style={{font: "400 12px/24px var(--font-mono)"}}>{link(d.tid, null)} {link(d.tid, d.id, undefined, true)}</span>
           <span style={{font: "400 11px/24px var(--font-mono)", letterSpacing: ".08em", color: "var(--ink-2)"}}>{P.dlChipSplit(d.confidence).word}</span>
           <StatusChip kind={d.kind}/>
           <span style={{marginLeft: "auto", font: "400 13px/24px var(--font-sans)", color: "var(--dim)"}}>{d.age == null ? "—" : d.age + "d"}</span>
         </div>
-        <div style={{font: "400 15px/24px var(--font-sans)"}}>{d.title}</div>
+        <div style={{font: "400 15px/24px var(--font-sans)"}}><Coded text={d.title}/></div>
         {hasWatch ? <div style={{font: "400 13px/24px var(--font-sans)", color: "var(--dim)"}}>watch <span style={{font: "400 12px/24px var(--font-mono)"}}>{w}</span></div> : null}
       </li>;
     })}</ul>{more}</>;
   return <>{top}<div style={{overflowX: "auto"}}><table className="adp-table" style={{marginTop: 16}}>{thead}<tbody>
     {rows.slice(0, limit).map(d => <tr key={d.dir + "\n" + d.id} className="lgrow" data-t={d.tid} data-dl={d.id}>
-      <td className="adp-col-id">{link(d.tid, null)} {link(d.tid, d.id)}</td>
-      <td>{d.title}</td>
+      <td className="adp-col-id">{link(d.tid, null)} {link(d.tid, d.id, undefined, true)}</td>
+      <td><Coded text={d.title}/></td>
       <td className="adp-col-conf" style={NW}>{P.dlChipSplit(d.confidence).word}</td>
       <td><StatusChip kind={d.kind}/></td>
       <td className="adp-col-id">{watch(d)}</td>
@@ -137,9 +138,10 @@ type CalibrationProps = {corpus: Corpus | null; today: string; narrow: boolean; 
 function Calibration({corpus, today, narrow, onCell}: CalibrationProps){
   if (!corpus) return null;
   const {tiles, buckets} = D.calibrationModel(corpus.index.tickets, today);
-  const head = <div style={{display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24}}>
-    <h2 style={{margin: 0, font: "600 20px/28px var(--font-sans)", letterSpacing: "normal", textTransform: "none", color: "var(--ink)"}}>Does stated confidence predict outcomes?</h2>
-    <span style={{font: "400 13px/24px var(--font-sans)", color: "var(--dim)"}}>Share of ruled decisions that held</span></div>;
+  // The question and its subtitle share one line, as the Ledger board draws them.
+  const head = <div style={{display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 20}}>
+    <h2 style={{margin: 0, font: "600 16px/24px var(--font-sans)", letterSpacing: "normal", textTransform: "none", color: "var(--ink)"}}>Does stated confidence predict outcomes?</h2>
+    <span style={{font: "400 14px/24px var(--font-sans)", color: "var(--dim)"}}>Share of ruled decisions that held</span></div>;
   if (!tiles.decisions) return <section className="adp-cal" aria-label="Calibration" style={{marginTop: 40}}>{head}
     <div role="status" style={{color: "var(--dim)"}}>no decisions on record — no ticket in this corpus has logged an entry.</div></section>;
   const small = buckets.filter(b => b.kind !== "other" && b.total && b.total < SMALL_TIER);

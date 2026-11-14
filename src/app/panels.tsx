@@ -6,7 +6,7 @@ import {Fragment, type CSSProperties, type KeyboardEvent, type MouseEvent, type 
 import type {DueState} from "../lib/adp-derive-lib.ts";
 import type {CitationChip, CoverageRow, DecisionPanelRow, SortState, WatchPanelRow} from "../lib/adp-shell-lib.ts";
 
-type ThProps = {sort: SortState; t: string; k: string; label: string; num?: boolean; onSort(k: string): void};
+type ThProps = {sort: SortState; t: string; k: string; label: string; num?: boolean; w?: number; onSort(k: string): void};
 
 /* A sortable column header. A th turns neither Enter nor Space into a click
    the way a button does, so the key handler fires the same sort the click
@@ -14,18 +14,26 @@ type ThProps = {sort: SortState; t: string; k: string; label: string; num?: bool
    the eye, so the arrow stays out of the accessibility tree. The arrow
    follows the label after a space, as the Table boards draw "Due ↑". A
    numeric column aligns right under its right-aligned numbers. */
-function Th({sort, t, k, label, num, onSort}: ThProps){
+function Th({sort, t, k, label, num, w, onSort}: ThProps){
   const on = sort.k === k;
   const key = (e: KeyboardEvent) => {
     if (e.key !== "Enter" && e.key !== " ") return;
     e.preventDefault();
     onSort(k);
   };
-  return <th className="sth" scope="col" tabIndex={0} data-t={t} data-k={k} style={{cursor: "pointer", whiteSpace: "nowrap", ...(num ? {textAlign: "right"} : null)}}
+  return <th className="sth" scope="col" tabIndex={0} data-t={t} data-k={k} style={{cursor: "pointer", whiteSpace: "nowrap", ...(num ? {textAlign: "right"} : null), ...(w ? {width: w} : null)}}
     aria-sort={on ? (sort.d > 0 ? "ascending" : "descending") : undefined}
     onClick={() => onSort(k)} onKeyDown={key}>
     {label}{on ? <span aria-hidden="true">{sort.d > 0 ? " ↑" : " ↓"}</span> : null}
   </th>;
+}
+
+/* A harvested title or watch text keeps the log's backticks, and the Table
+   boards set each backticked run as inline code. We split on the pairs and
+   leave a lone backtick as text, so the words stay exactly as written. */
+function Coded({text}: {text: string}){
+  const parts = text.split(/`([^`]+)`/);
+  return <>{parts.map((p, i) => i % 2 ? <code key={i} className="adp-code">{p}</code> : p)}</>;
 }
 
 /* The Watches and Ledger pages, as their boards draw them: a 1120px page
@@ -159,7 +167,7 @@ function DecisionsPanel({sort, count, filters, rows, onSort, onRow, onWatch, onC
     <div style={{overflowX: "auto"}}><table className="adp-table" style={TABLE}>
       <thead><tr>{th("id", "Entry")}{th("title", "Decision")}{th("conf", "Conf")}{th("status", "Status")}{th("watch", "Watch")}{th("age", "Age", true)}{th("cited", "Cited in")}</tr></thead>
       <tbody>{rows.map(d => <tr key={d.id} className={"dlrow" + (d.hl ? " is-hl" : "")} data-dl={d.id} style={{...PTR, ...(d.hl ? HL : null)}} onClick={() => onRow(d.id)}>
-        <td className="adp-col-id">{d.id}</td><td>{d.title}</td>
+        <td className="adp-col-id">{d.id}</td><td><Coded text={d.title}/></td>
         <td className="adp-col-conf" style={NW}>{d.conf}</td>
         <td><StatusChip kind={d.statusKind}/></td>
         <td className="adp-col-id"><WatchCell d={d} link={wl}/></td>
@@ -180,7 +188,7 @@ function WatchesPanel({sort, rows, onSort, onWatch, onChip}: WatchesPanelProps){
     <div style={{overflowX: "auto"}}><table className="adp-table" style={TABLE}>
       <thead><tr>{th("wid", "Watch")}{th("what", "What to check")}{th("dl", "Entry")}{th("due", "Due")}{th("state", "Status")}{th("left", "Left", true)}{th("cited", "Cited in")}</tr></thead>
       <tbody>{rows.map(w => <tr key={w.wid} className={"wrow" + (w.hl ? " is-hl" : "")} data-item={w.wid} style={w.hl ? HL : undefined}>
-        <td className="adp-col-id">{w.wid}</td><td>{w.what}</td>
+        <td className="adp-col-id">{w.wid}</td><td><Coded text={w.what}/></td>
         <td className="adp-col-id">{w.dls.map((d, i) => <Fragment key={d}>{i ? " " : null}<a className="wl" data-item={d} style={PTR} onClick={only(() => onWatch(d))}>{d}</a></Fragment>)}</td>
         {/* A date holds one line, and an unanchored watch's window prose wraps in its place. */}
         <td style={{...MONO, ...(w.dueDated ? NW : null)}}>{w.dueText}</td>
@@ -191,6 +199,6 @@ function WatchesPanel({sort, rows, onSort, onWatch, onChip}: WatchesPanelProps){
     </table></div></section>;
 }
 
-export {Th, Filters, liveFilter, DueChip, StatusChip, leftText, WatchCell, DecisionsPanel, WatchesPanel, ShowMore, matches,
+export {Th, Coded, Filters, liveFilter, DueChip, StatusChip, leftText, WatchCell, DecisionsPanel, WatchesPanel, ShowMore, matches,
   PAGE_HEAD, PAGE_TITLE, PAGE_SUB, SEARCH, PAGE_ROWS, PTR, NW, MONO};
 export type {PanelActions};

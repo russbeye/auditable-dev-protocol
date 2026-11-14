@@ -3,7 +3,7 @@ import * as D from "../lib/adp-derive-lib.ts";
 import * as S from "../lib/adp-shell-lib.ts";
 import type {DueState} from "../lib/adp-derive-lib.ts";
 import type {Corpus, SortState} from "../lib/adp-shell-lib.ts";
-import {DueChip, MONO, NW, PAGE_HEAD, PAGE_ROWS, PAGE_SUB, PAGE_TITLE, SEARCH, ShowMore, StatusChip, Th, leftText, matches} from "./panels.tsx";
+import {Coded, DueChip, MONO, NW, PAGE_HEAD, PAGE_ROWS, PAGE_SUB, PAGE_TITLE, SEARCH, ShowMore, StatusChip, Th, leftText, matches} from "./panels.tsx";
 
 const WATCH_STATES: DueState[] = ["overdue", "soon", "upcoming", "unanchored", "closed"];
 
@@ -50,8 +50,9 @@ function Watchboard({corpus, today, sort, show, onSort, onToggleState, onOpen}: 
       {WATCH_STATES.filter(s => wb.counts[s]).map(s => <button key={s} type="button" className="adp-filter"
         aria-pressed={show.has(s)} data-ws={s} onClick={() => onToggleState(s)}>{s.toUpperCase()} <span>{counts[s]}</span></button>)}
     </div></div>;
-  const th = (k: string, label: string, num?: boolean) => <Th sort={sort} t="wb" k={k} label={label} num={num} onSort={onSort}/>;
-  const thead = <thead><tr>{th("wid", "Watch")}{th("what", "What to check")}{th("tid", "Ticket")}{th("due", "Due")}{th("state", "Status")}{th("left", "Left", true)}</tr></thead>;
+  // The Watches board fixes the widths of the short columns, so the text to check takes the rest.
+  const th = (k: string, label: string, w?: number, num?: boolean) => <Th sort={sort} t="wb" k={k} label={label} w={w} num={num} onSort={onSort}/>;
+  const thead = <thead><tr>{th("wid", "Watch", 128)}{th("what", "What to check")}{th("tid", "Ticket", 88)}{th("due", "Due", 96)}{th("state", "Status")}{th("left", "Left", 48, true)}</tr></thead>;
   // An empty table has three truths: a search that matched nothing, filters
   // that hide real rows, and a corpus that never opened a watch. We say which
   // one is happening, in the table's own body, as the no-results board draws it.
@@ -65,7 +66,7 @@ function Watchboard({corpus, today, sort, show, onSort, onToggleState, onOpen}: 
   return <>{head}{bar}<div style={{overflowX: "auto"}}><table className="adp-table" style={{marginTop: 16}}>{thead}<tbody>
     {rows.slice(0, limit).map(r => <tr className="wbrow" data-wid={r.wid} key={r.dir + "\n" + r.wid}>
       <td className="adp-col-id"><a className="wbl" href={S.hashWrite({t: r.tid, item: r.wid})} data-t={r.tid} data-item={r.wid} onClick={go(r.tid, r.wid)}>{r.wid}</a></td>
-      <td>{r.what}</td>
+      <td><Coded text={r.what}/></td>
       <td style={{...MONO, ...NW}}><a className="wbl" href={S.hashWrite({t: r.tid})} data-t={r.tid} onClick={go(r.tid, null)}>{r.tid}</a></td>
       {/* An unanchored row shows its window prose where a date would sit, so the flag explains itself. */}
       <td style={{...MONO, ...(r.anchored ? NW : null)}}>{r.anchored ? r.due : (r.window || "relative")}</td>

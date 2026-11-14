@@ -182,7 +182,7 @@ function rewatched(main: Region): Region {
     rows.push(wid, wht, tid, due, ...st);
   }
   const none = (k: string) => (counts[k] || "none") + " " + k;
-  return {text: ["Watches", t[3] + " " + none("overdue") + " · " + none("unanchored"), ...filters, ...order, ...rows],
+  return {text: ["Watches", t[3] + " " + none("overdue") + " · " + none("unanchored"), ...filters, ...order, ...coded(rows)],
     attrs: ["aria-label=Search watches", "placeholder=Search watches", "aria-label=Filter watches", ...main.attrs]};
 }
 test("the app's watchboard state shows what the vanilla page showed, region for region", async () => {
@@ -440,6 +440,9 @@ function unread(snap: Snapshot): Snapshot {
      from the card's Created date.
    - On a Decision Log section the filter sits above the cards and counts
      the cards, so its old run leaves the panel and its own tests pin it. */
+// A table sets each backticked run of a title or a watch's text as inline
+// code, so the run splits into its words around the code, as the page reads.
+const coded = (runs: string[]) => runs.flatMap(r => r.split(/`([^`]+)`/).map(x => x.trim()).filter(Boolean));
 const HEADS: Record<string, string> = {entry: "Entry", decision: "Decision", conf: "Conf", status: "Status", watch: "Watch",
   "cited in": "Cited in", id: "Watch", "what to check": "What to check", decisions: "Entry", due: "Due"};
 const ARROWS: Record<string, string> = {"▲": "↑", "▼": "↓"};
@@ -509,7 +512,7 @@ function withoutPanels(got: Snapshot, want: Region): [Snapshot, Region] {
   const from = want.text.findIndex(x => /^(decisions|watches) cited by /.test(x));
   const oldRuns = from < 0 ? [] : want.text.slice(from);
   const ages = $$("#scrInspector tr.dlrow td.adp-col-num").map(td => td.textContent!);
-  assert.deepEqual(recs.flatMap(r => r.text), retabled(oldRuns, !!bar, ages), "the panels");
+  assert.deepEqual(recs.flatMap(r => r.text), coded(retabled(oldRuns, !!bar, ages)), "the panels");
   const GROUPS = ["aria-label=Decisions cited", "aria-label=Watches cited", "aria-label=Filter by status"];
   const newAttrs = recs.flatMap(r => r.attrs).filter(x => !GROUPS.includes(x));
   const keep = want.attrs.length - newAttrs.length;
@@ -660,7 +663,7 @@ function reledgered(cal: Region, led: Region): Region {
   }
   return {text: ["Ledger", `${c[6]} decisions across ${c[2]} tickets, settled rulings included`,
     "Does stated confidence predict outcomes?", "Share of ruled decisions that held", ...tiers, ...legend,
-    "Bars are each tier’s own total" + small.join(""), ...filters, "Confidence", ...options, ...heads, ...rows],
+    "Bars are each tier’s own total" + small.join(""), ...filters, "Confidence", ...options, ...heads, ...coded(rows)],
     attrs: ["aria-label=Calibration", ...cal.attrs, "aria-label=Search decisions", "placeholder=Search decisions", "aria-label=Status", ...led.attrs]};
 }
 
@@ -3572,6 +3575,14 @@ test("the rail renders hostile harvested fields as text", () => {
   assert.ok(container.textContent!.includes(hostile));
 });
 
+// The Table boards set a backticked run as inline code. The words stay as
+// the log wrote them, and a lone backtick stays text.
+test("a table sets a backticked run of a title as inline code and keeps a lone backtick", () => {
+  const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [{id: "DL-001", title: "The seam returns `{index, texts}`; a ` stays",
+    conf: "HIGH", confKind: "high", statusKind: "open", watch: null, settled: null, chips: [], hl: false, age: null}]}));
+  assert.ok(container.innerHTML.includes('<td>The seam returns <code class="adp-code">{index, texts}</code>; a ` stays</td>'));
+});
+
 test("the decisions panel renders hostile harvested fields as text", () => {
   const hostile = "<img src=x onerror=alert(1)>";
   const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [{id: hostile, title: hostile, conf: hostile,
@@ -3640,7 +3651,7 @@ test("the decisions panel and the ledger hold every id, label, and age on one li
   await boot({fetch: liveCorpus({root: "demo", files: ["20260101-A1-one/audit-log.md"]}, {"20260101-A1-one/audit-log.md": log}).fetch});
   await click(tabFor("ledgers"));
   const ledger = $("#scrLedgers").innerHTML;
-  assert.match(ledger, /<td class="adp-col-id"><a class="wbl"[^>]*>A1<\/a> <a class="wbl"[^>]*data-item="DL-104">DL-104<\/a><\/td>/);
+  assert.match(ledger, /<td class="adp-col-id"><a class="wbl"[^>]*>A1<\/a> <a class="wbl"[^>]*data-item="DL-104"[^>]*>DL-104<\/a><\/td>/);
   assert.ok(ledger.includes('<td class="adp-col-conf" style="white-space: nowrap;">MEDIUM</td>'));
   assert.ok(ledger.includes('<span class="adp-chip adp-chip--s adp-chip--open">OPEN</span>'));
   assert.ok(ledger.includes('<td class="adp-col-num">12d</td>'));
