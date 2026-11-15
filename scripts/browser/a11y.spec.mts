@@ -107,20 +107,42 @@ test("Tab reaches every control in document order and shows a ring on each", asy
 
 // PM5. Each overlay opens from the keyboard, Escape closes it, and focus
 // returns to the control that opened it, with its ring showing. FX004's
-// Decision Log draws a chip that stands for several citing sections.
-for (const [name, opener, panel, hash] of [["⋯ menu", "#menuBtn", "#hdrMenu", ""], ["Packs drawer", "#packsBtn", "#packDrawer", ""],
-  ["cited-in chip menu", "button.adp-chip[aria-haspopup]", "[role=menu]", "#t=FX004&s=sec-decision-log"]])
+// Decision Log draws a chip that stands for several citing sections. A
+// reader moves inside the chip menu with the arrow keys, because Tab closes it.
+for (const [name, opener, panel, hash, move] of [["⋯ menu", "#menuBtn", "#hdrMenu", "", "Tab"], ["Packs drawer", "#packsBtn", "#packDrawer", "", "Tab"],
+  ["cited-in chip menu", "button.adp-chip[aria-haspopup]", "[role=menu]", "#t=FX004&s=sec-decision-log", "ArrowDown"]])
   test(`the ${name} closes on Escape and hands focus back to its opener`, async ({page, server}) => {
     await open(page, server.url + hash);
     await page.focus(opener);
     await page.keyboard.press("Enter");
     await expect(page.locator(panel)).toBeVisible();
-    await page.keyboard.press("Tab");
+    await page.keyboard.press(move);
     expect(await page.evaluate(sel => !!document.activeElement?.closest(sel), panel)).toBe(true);
     await page.keyboard.press("Escape");
     await expect(page.locator(panel)).toHaveCount(0);
     await expect(page.locator(opener)).toBeFocused();
     expect(await ringOf(page)).toBeNull();
+  });
+
+// The chip menu sits on the body, after the whole app in tab order. Tab and
+// Shift+Tab close it and move on from the chip, so a reader keeps their place.
+for (const [key, step] of [["Tab", 1], ["Shift+Tab", -1]] as const)
+  test(`${key} closes an open chip menu and moves focus on from its chip`, async ({page, server}) => {
+    await open(page, server.url + "#t=FX004&s=sec-decision-log");
+    const chip = "button.adp-chip[aria-haspopup]";
+    const want = await page.evaluate(([sel, step]) => {
+      const all = [...document.querySelectorAll<HTMLElement>("#root a[href], #root button:not([disabled]), #root select, #root input, #root textarea, #root [tabindex]:not([tabindex='-1'])")]
+        .filter(e => e.checkVisibility());
+      const i = all.indexOf(document.querySelector<HTMLElement>(sel as string)!);
+      // FX004's chip is the last control in the app, so Tab from it leaves for the body.
+      return all[i + (step as number)]?.outerHTML.slice(0, 80) ?? "BODY";
+    }, [chip, step] as const);
+    await page.focus(chip);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("[role=menu]")).toBeVisible();
+    await page.keyboard.press(key);
+    await expect(page.locator("[role=menu]")).toHaveCount(0);
+    expect(await page.evaluate(() => document.activeElement === document.body ? "BODY" : document.activeElement!.outerHTML.slice(0, 80))).toBe(want);
   });
 
 // OT-MC012-19 needs a screen reader. This test proves the text reaches the

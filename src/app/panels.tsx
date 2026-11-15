@@ -184,6 +184,9 @@ function ChipMenu({chip, onChip}: {chip: CitationChip; onChip(key: string): void
     const items = [...menu.current!.querySelectorAll<HTMLElement>("[role=menuitem]")];
     const i = items.indexOf(document.activeElement as HTMLElement);
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(true); }
+    // The menu sits after the whole app in tab order. So on Tab we put focus
+    // back on the chip and let the browser's own Tab move on from there.
+    else if (e.key === "Tab") close(true);
     else if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length].focus(); }
     else if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
   };
@@ -194,6 +197,7 @@ function ChipMenu({chip, onChip}: {chip: CitationChip; onChip(key: string): void
       {chip.label}<span style={{color: "var(--faint)"}}>{chip.all.length}</span></button>
     {/* React bubbles a portal's events through the row, so the menu stops a click before the row opens its entry. */}
     {open ? createPortal(<div className="adp-menu" id={id} ref={menu} role="menu" aria-label={`Cited in ${chip.all.length} sections`} onKeyDown={key}
+      onBlur={e => { if (e.relatedTarget && !menu.current?.contains(e.relatedTarget as Node)) setOpen(false); }}
       onClick={e => e.stopPropagation()}
       style={{position: "fixed", top: 0, left: 0, zIndex: 10, maxWidth: "calc(100vw - 16px)"}}>
       <div className="adp-menu__section" style={{display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8}}>
