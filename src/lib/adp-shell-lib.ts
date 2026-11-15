@@ -37,7 +37,9 @@ type RailEntry = {key: string; id: string; date: string | null; slug: string | n
 type RailModelGroup = [name: string, list: RailEntry[]];
 type ViewMode = "section" | "full";
 type SortState = {k: string; d: number};
-type CitationChip = {key: string; label: string; title: string};
+// A chip that stands for several sections lists them all in order, so its
+// menu can jump to each one. The key and the title belong to the first.
+type CitationChip = {key: string; label: string; title: string; all: {key: string; title: string}[]};
 type CoverageRow = {watch: string | null; settled: SettledWatch | null; statusKind: DLStatusKind};
 type DecisionPanelRow = CoverageRow & {
   id: string; title: string; conf: string; confKind: DLConfKind; chips: CitationChip[]; hl: boolean; age: number | null;

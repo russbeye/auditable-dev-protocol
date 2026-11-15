@@ -11,7 +11,7 @@ import type {SectionEntry, SectionState} from "../lib/adp-derive-lib.ts";
 import type {Ticket} from "../lib/adp-index-lib.ts";
 import type {DLEntry, EscapedHtml, Section} from "../lib/adp-parser-lib.ts";
 import type {YamlMap, YamlValue} from "../lib/adp-prompt-lib.ts";
-import type {Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPanelRow} from "../lib/adp-shell-lib.ts";
+import type {CitationChip, Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPanelRow} from "../lib/adp-shell-lib.ts";
 import {DecisionsPanel, Filters, WatchesPanel, liveFilter, type PanelActions} from "./panels.tsx";
 import {PhaseStrip, gapNote, stripModel, type StripReviews} from "./PhaseStrip.tsx";
 
@@ -433,14 +433,17 @@ function chipModel(t: Ticket, key: string){
   const meta = s ? P.metaFor(s.title) : null;
   return {key, label: !s ? "§" : s.phase != null ? "P" + s.phase : meta!.tag || meta!.kind, title: s ? s.title : key};
 }
-/* A row shows one chip per phase. Phase 7 alone holds four sections, so an
-   entry cited in two of them would read "P7 P7". The merged chip jumps to the
-   first citing section and names every citing section in its tooltip. */
+/* A row shows one chip per label. Phase 7 alone holds four sections, and a
+   ticket can hold many review rounds or post-merge notes, so an entry cited
+   in several of them would repeat one word along the row. The merged chip
+   lists every citing section, opens a menu that jumps to each, and names
+   them all in its tooltip. */
 function citeChips(t: Ticket, keys: string[]){
-  const out: ReturnType<typeof chipModel>[] = [];
+  const out: CitationChip[] = [];
   for (const k of keys){
-    const c = chipModel(t, k), prev = /^P\d+$/.test(c.label) ? out.find(x => x.label === c.label) : undefined;
-    if (prev) prev.title += " · " + c.title; else out.push(c);
+    const c = chipModel(t, k), prev = out.find(x => x.label === c.label);
+    if (prev) { prev.all.push({key: c.key, title: c.title}); prev.title += " · " + c.title; }
+    else out.push({...c, all: [{key: c.key, title: c.title}]});
   }
   return out;
 }

@@ -2,7 +2,7 @@
    decisions and watches a section or a review round cites, the coverage
    cell, and the status filters. Every value is a React text child, so none
    of these pieces handles HTML. */
-import {Fragment, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode} from "react";
+import {Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode} from "react";
 import type {DueState} from "../lib/adp-derive-lib.ts";
 import type {CitationChip, CoverageRow, DecisionPanelRow, SortState, WatchPanelRow} from "../lib/adp-shell-lib.ts";
 
@@ -131,8 +131,55 @@ const NW: CSSProperties = {whiteSpace: "nowrap"};
 const MONO: CSSProperties = {fontFamily: "var(--font-mono)", fontSize: 12};
 
 function Chips({list, onChip}: {list: CitationChip[]; onChip(key: string): void}){
-  return <span style={{display: "inline-flex", flexWrap: "wrap", gap: 4}}>{list.map(c => <a key={c.key} className="adp-chip adp-chip--s" data-key={c.key}
-    title={c.title} style={PTR} onClick={only(() => onChip(c.key))}>{c.label}</a>)}</span>;
+  return <span style={{display: "inline-flex", flexWrap: "wrap", gap: 4}}>{list.map(c => c.all.length > 1
+    ? <ChipMenu key={c.key} chip={c} onChip={onChip}/>
+    : <a key={c.key} className="adp-chip adp-chip--s" data-key={c.key}
+      title={c.title} style={PTR} onClick={only(() => onChip(c.key))}>{c.label}</a>)}</span>;
+}
+
+/* A chip that stands for several citing sections shows its count and opens a
+   menu of those sections, so every one stays a jump away. It is a button, so
+   the keyboard reaches it. The menu works as the ⋯ menu does: it opens on the
+   first section, the arrow keys move through it, and Escape closes it and
+   hands focus back to the chip. A click outside closes it too. */
+const CHIP_BTN: CSSProperties = {cursor: "pointer", background: "transparent", gap: 6};
+function ChipMenu({chip, onChip}: {chip: CitationChip; onChip(key: string): void}){
+  const [open, setOpen] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null), menu = useRef<HTMLDivElement>(null);
+  const close = (refocus: boolean) => { setOpen(false); if (refocus) btn.current?.focus(); };
+  useEffect(() => {
+    if (!open) return;
+    menu.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
+    const click = (e: globalThis.MouseEvent) => {
+      const t = e.target as Node | null;
+      if (t && !menu.current?.contains(t) && !btn.current?.contains(t)) setOpen(false);
+    };
+    document.addEventListener("click", click);
+    return () => document.removeEventListener("click", click);
+  }, [open]);
+  const key = (e: KeyboardEvent) => {
+    const items = [...menu.current!.querySelectorAll<HTMLElement>("[role=menuitem]")];
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(true); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+  };
+  const id = "cite-" + chip.key;
+  return <span style={{position: "relative", display: "inline-flex"}}>
+    <button type="button" ref={btn} className="adp-chip adp-chip--s" data-key={chip.key} title={chip.title} style={CHIP_BTN}
+      aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
+      onClick={only(() => open ? close(false) : setOpen(true))}>
+      {chip.label}<span style={{color: "var(--faint)"}}>{chip.all.length}</span></button>
+    {open ? <div className="adp-menu" id={id} ref={menu} role="menu" aria-label={`Cited in ${chip.all.length} sections`} onKeyDown={key}
+      onClick={e => e.stopPropagation()}
+      style={{position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 10, maxWidth: "calc(100vw - 48px)"}}>
+      <div className="adp-menu__section" style={{display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8}}>
+        <p className="adp-label">Cited in {chip.all.length} sections</p>
+        {chip.all.map(s => <button key={s.key} type="button" role="menuitem" className="adp-btn adp-btn--text" data-key={s.key}
+          style={{textAlign: "left", whiteSpace: "normal"}} onClick={() => { setOpen(false); onChip(s.key); }}>{s.title}</button>)}
+      </div>
+    </div> : null}
+  </span>;
 }
 
 /* A panel's head, as the Main board draws it: a mono eyebrow and its row

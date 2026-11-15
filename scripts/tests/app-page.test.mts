@@ -441,10 +441,14 @@ function unread(snap: Snapshot): Snapshot {
      from the card's Created date.
    - On a Decision Log section the filter sits above the cards and counts
      the cards, so its old run leaves the panel and its own tests pin it.
-   - A row's cited-in chips show one chip per phase. A repeated phase chip
-     leaves, and the first one's tooltip joins every citing section's title
-     with " · ", so the comparison splits that tooltip back into its titles. */
-const onePerPhase = (chips: string[]) => chips.filter((c, k) => !/^P\d+$/.test(c) || chips.indexOf(c) === k);
+   - A row's cited-in chips show one chip per label. A repeated chip
+     leaves, the first one gains the count of sections it stands for, and its
+     tooltip joins every citing section's title with " · ", so the comparison
+     splits that tooltip back into its titles. */
+const onePerLabel = (chips: string[]) => chips.flatMap((c, k) => {
+  const n = chips.filter(x => x === c).length;
+  return chips.indexOf(c) !== k ? [] : n > 1 ? [c, String(n)] : [c];
+});
 // A table sets each backticked run of a title or a watch's text as inline
 // code, so the run splits into its words around the code, as the page reads.
 const coded = (runs: string[]) => runs.flatMap(r => r.split(/`([^`]+)`/).map(x => x.trim()).filter(Boolean));
@@ -481,13 +485,13 @@ function retabled(old: string[], spine: boolean, ages: string[]): string[] {
       if (dec){
         let j = 4;
         while (j < r.length && /^(no watch|OT-.+)$/.test(r[j])) j++;
-        out.push(r[0], r[1], r[2], r[3].toUpperCase(), ...r.slice(4, j), ages[a++], ...onePerPhase(r.slice(j)));
+        out.push(r[0], r[1], r[2], r[3].toUpperCase(), ...r.slice(4, j), ages[a++], ...onePerLabel(r.slice(j)));
       } else {
         const j = r.findIndex((x, k) => k > 1 && DUE_LABEL.test(x));
         assert.ok(j > 0, "the baseline watch row has no due label: " + r.join(" | "));
         const m = r[j].match(DUE_LABEL)!;
         const due = m[1] ? ["OVERDUE", "-" + m[1] + "d"] : m[2] ? [Number(m[2]) <= 14 ? "SOON" : "UPCOMING", m[2] + "d"] : [r[j], "—"];
-        out.push(...r.slice(0, j), ...due, ...onePerPhase(r.slice(j + 1)));
+        out.push(...r.slice(0, j), ...due, ...onePerLabel(r.slice(j + 1)));
       }
     }
   }
@@ -519,7 +523,7 @@ function withoutPanels(got: Snapshot, want: Region): [Snapshot, Region] {
   const ages = $$("#scrInspector tr.dlrow td.adp-col-num").map(td => td.textContent!);
   assert.deepEqual(recs.flatMap(r => r.text), coded(retabled(oldRuns, !!bar, ages)), "the panels");
   const GROUPS = ["aria-label=Decisions cited", "aria-label=Watches cited", "aria-label=Filter by status"];
-  const merged = new Set($$("#scrInspector a.adp-chip--s[data-key]").map(c => c.getAttribute("title")!).filter(t => t.includes(" · ")));
+  const merged = new Set($$("#scrInspector .adp-chip--s[data-key]").map(c => c.getAttribute("title")!).filter(t => t.includes(" · ")));
   const newAttrs = recs.flatMap(r => r.attrs).filter(x => !GROUPS.includes(x))
     .flatMap(x => merged.has(x.slice(6)) && x.startsWith("title=") ? x.slice(6).split(" · ").map(t => "title=" + t) : [x]);
   const keep = want.attrs.length - newAttrs.length;
@@ -2533,19 +2537,36 @@ test("calibration counts a ruled entry by its ruling, never its card", async () 
   assert.equal($$('#scrCalib [data-calk="open"]').length, 0);
 });
 
-// A phase that holds several citing sections shows one chip, which jumps to
-// the first of them and names every one in its tooltip.
-test("an entry cited by two sections of one phase shows one chip for that phase", async () => {
+// A phase that holds several citing sections shows one chip with their
+// count. The chip opens a menu that jumps to each of them.
+test("an entry cited by two sections of one phase shows one chip for that phase, whose menu jumps to each", async () => {
   await boot({hash: "#t=CC3&s=sec-decision-log", fetch: oneLog(["# Audit Log — CC3 gamma", "", "## Decision Log", "",
     "### [DL-001] Cited twice in Phase 7", "- **Decision:** pick d", "- **Confidence:** HIGH", "- **Status:** OPEN", "",
     "## PR Summary", "", "Cites DL-001.", "", "## Residual Risk", "", "DL-001 again.", "",
     "## Obligation Ticket List", "", "DL-001 once more.", ""].join("\n"))});
   await click($('[data-view="full"]'));
   await click($('[data-view="section"]'));
-  const chips = $$('a.adp-chip--s[data-key]').filter(a => a.closest("tr")?.textContent!.includes("DL-001"));
-  assert.deepEqual(chips.map(a => a.textContent), ["P5", "P7", "P9"]);
-  assert.equal(chips[1].getAttribute("data-key"), "sec-pr-summary");
-  assert.equal(chips[1].getAttribute("title"), "PR Summary · Residual Risk");
+  const chips = () => $$('.adp-chip--s[data-key]').filter(a => a.closest("tr")?.textContent!.includes("DL-001"));
+  assert.deepEqual(chips().map(a => a.textContent), ["P5", "P72", "P9"]);
+  const p7 = chips()[1];
+  assert.equal(p7.tagName, "BUTTON");
+  assert.equal(p7.getAttribute("title"), "PR Summary · Residual Risk");
+  assert.equal(p7.getAttribute("aria-expanded"), "false");
+  // The chip opens a menu of its sections, and each one jumps there.
+  await click(p7);
+  assert.equal(chips()[1].getAttribute("aria-expanded"), "true");
+  const items = $$('[role="menu"] [role="menuitem"]');
+  assert.deepEqual(items.map(b => [b.textContent, b.getAttribute("data-key")]), [["PR Summary", "sec-pr-summary"], ["Residual Risk", "sec-residual-risk"]]);
+  assert.ok(document.activeElement === items[0], "the menu opens on its first section");
+  fireEvent.keyDown(items[0], {key: "ArrowDown"});
+  assert.ok(document.activeElement === items[1], "the down arrow moves to the next section");
+  fireEvent.keyDown(items[1], {key: "Escape"});
+  await settle(1);
+  assert.equal($$('[role="menu"]').length, 0);
+  assert.ok(document.activeElement === chips()[1], "Escape hands focus back to the chip");
+  await click(chips()[1]);
+  await click($$('[role="menu"] [role="menuitem"]')[1]);
+  assert.equal(($("#secSel") as HTMLSelectElement).value, "sec-residual-risk");
 });
 
 // DL-007: calibration heads the Ledger, so its old link lands there.
@@ -3612,7 +3633,9 @@ test("a table sets a backticked run of a title as inline code and keeps a lone b
 test("the decisions panel renders hostile harvested fields as text", () => {
   const hostile = "<img src=x onerror=alert(1)>";
   const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [{id: hostile, title: hostile, conf: hostile,
-    confKind: "other", statusKind: "open", watch: hostile, settled: null, chips: [{key: hostile, label: hostile, title: hostile}], hl: false, age: null}]}));
+    confKind: "other", statusKind: "open", watch: hostile, settled: null, chips: [{key: hostile, label: hostile, title: hostile, all: [{key: hostile, title: hostile}]},
+      {key: hostile + "1", label: hostile, title: hostile, all: [{key: hostile + "1", title: hostile}, {key: hostile + "2", title: hostile}]}],
+    hl: false, age: null}]}));
   assert.ok(!container.innerHTML.includes("<img"));
   assert.ok(container.textContent!.includes(hostile));
 });

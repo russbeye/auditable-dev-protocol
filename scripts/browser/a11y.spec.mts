@@ -106,10 +106,12 @@ test("Tab reaches every control in document order and shows a ring on each", asy
 });
 
 // PM5. Each overlay opens from the keyboard, Escape closes it, and focus
-// returns to the control that opened it, with its ring showing.
-for (const [name, opener, panel] of [["⋯ menu", "#menuBtn", "#hdrMenu"], ["Packs drawer", "#packsBtn", "#packDrawer"]])
+// returns to the control that opened it, with its ring showing. FX004's
+// Decision Log draws a chip that stands for several citing sections.
+for (const [name, opener, panel, hash] of [["⋯ menu", "#menuBtn", "#hdrMenu", ""], ["Packs drawer", "#packsBtn", "#packDrawer", ""],
+  ["cited-in chip menu", "button.adp-chip[aria-haspopup]", "[role=menu]", "#t=FX004&s=sec-decision-log"]])
   test(`the ${name} closes on Escape and hands focus back to its opener`, async ({page, server}) => {
-    await open(page, server.url);
+    await open(page, server.url + hash);
     await page.focus(opener);
     await page.keyboard.press("Enter");
     await expect(page.locator(panel)).toBeVisible();
