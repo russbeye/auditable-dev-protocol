@@ -1,7 +1,9 @@
 /* R11 in a real layout engine: at 720px nothing scrolls sideways, and at
    1290px a watch's window prose wraps while its ids and status words hold on
    one line. jsdom has no layout, so these checks live here. */
-import {everyScreen, expect, go, open, test} from "./fixture.mts";
+import fs from "node:fs";
+import path from "node:path";
+import {everyScreen, expect, fixtureRoot, go, open, startServer, test} from "./fixture.mts";
 
 test.describe("at 720px", () => {
   test.use({viewport: {width: 720, height: 900}});
@@ -30,6 +32,43 @@ test.describe("at 720px", () => {
     expect(box!.x).toBeGreaterThanOrEqual(0);
     expect(box!.x + box!.width).toBeLessThanOrEqual(720);
     expect(await bar.evaluate(h => h.scrollWidth - h.clientWidth)).toBe(0);
+  });
+
+  // The narrow Ledger prints "watch" inline before the watch cell. An open
+  // entry whose watch closed stacks its cell, and the stack must start on
+  // the label's line rather than break below it.
+  test("the narrow Ledger keeps the word watch on the line of an open entry's closed-watch stack", async ({page}) => {
+    // The shared corpus has no such entry, so we serve a one-log corpus that
+    // holds an open decision whose only watch closed.
+    const root = fs.mkdtempSync(path.join(path.dirname(fixtureRoot()), "adp-browser-settled-"));
+    const dir = path.join(root, ".adp", "20261115-BX002-settled-watch");
+    fs.mkdirSync(dir, {recursive: true});
+    fs.writeFileSync(path.join(dir, "audit-log.md"), [
+      "# BX002", "", "## Decision Log", "",
+      "### [DL-001] An open decision whose only watch closed",
+      "- **Decision:** Keep the entry open.", "- **Confidence:** MEDIUM", "- **Status:** OPEN", "",
+      "## Obligation Ticket List",
+      "| Ticket ID | Decision Log ref | Assumption to validate | Priority | Exit condition | Observation window |",
+      "|-----------|------------------|------------------------|----------|----------------|--------------------|",
+      "| OT-BX002-1 | DL-001 | The entry holds | MED | Quiet through the window → VALIDATED | 2026-12-01 |", "",
+      "## Ledger — closure (2026-11-15)",
+      "- **OT-BX002-1 CLOSED 2026-11-15 → VALIDATED.** The window ran quiet.", ""].join("\n"));
+    const server = await startServer(root);
+    try {
+      await open(page, server.url);
+      await go(page, "ledgers");
+      await expect(page.locator("li.lgrow").first()).toBeVisible();
+      const rows = await page.evaluate(() => [...document.querySelectorAll("li.lgrow")].flatMap(li => {
+        const line = li.lastElementChild!, chip = line.querySelector(".adp-chip--open");
+        if (!chip || !line.querySelector("a")) return [];
+        const r = document.createRange();
+        r.selectNodeContents(line.firstChild!);
+        const label = r.getBoundingClientRect(), c = chip.getBoundingClientRect();
+        return [{dl: (li as HTMLElement).dataset.dl, overlap: Math.min(label.bottom, c.bottom) - Math.max(label.top, c.top)}];
+      }));
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) expect(row.overlap, row.dl).toBeGreaterThan(0);
+    } finally { await server.stop(); fs.rmSync(root, {recursive: true, force: true}); }
   });
 });
 

@@ -117,8 +117,9 @@ type WatchLink = (wid: string, title?: string) => ReactNode;
    watch never reads as a live one. A ruled decision already shows its state
    in the status column, so its cell keeps to the id and the ruling rides the
    hover title. Each part takes its own line, so the column is as wide as one
-   id and the text columns keep their room. */
-const STACK: CSSProperties = {display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4};
+   id and the text columns keep their room. The stack is inline so the
+   narrow Ledger's "watch" label stays on the line of its first part. */
+const STACK: CSSProperties = {display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 4};
 const SETTLED: CSSProperties = {font: "400 11px/16px var(--font-mono)", color: "var(--dim)"};
 function WatchCell({d, link}: {d: CoverageRow; link: WatchLink}){
   if (d.watch) return <>{link(d.watch)}</>;
