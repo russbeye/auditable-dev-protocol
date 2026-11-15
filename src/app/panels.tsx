@@ -2,7 +2,8 @@
    decisions and watches a section or a review round cites, the coverage
    cell, and the status filters. Every value is a React text child, so none
    of these pieces handles HTML. */
-import {Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode} from "react";
+import {Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode} from "react";
+import {createPortal} from "react-dom";
 import type {DueState} from "../lib/adp-derive-lib.ts";
 import type {CitationChip, CoverageRow, DecisionPanelRow, SortState, WatchPanelRow} from "../lib/adp-shell-lib.ts";
 
@@ -141,21 +142,43 @@ function Chips({list, onChip}: {list: CitationChip[]; onChip(key: string): void}
    menu of those sections, so every one stays a jump away. It is a button, so
    the keyboard reaches it. The menu works as the ⋯ menu does: it opens on the
    first section, the arrow keys move through it, and Escape closes it and
-   hands focus back to the chip. A click outside closes it too. */
+   hands focus back to the chip. A click anywhere outside closes it too. */
 const CHIP_BTN: CSSProperties = {cursor: "pointer", background: "transparent", gap: 6};
 function ChipMenu({chip, onChip}: {chip: CitationChip; onChip(key: string): void}){
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement>(null), menu = useRef<HTMLDivElement>(null);
+  const id = useId();
   const close = (refocus: boolean) => { setOpen(false); if (refocus) btn.current?.focus(); };
+  /* The table sits in a box that scrolls sideways, and that box would clip a
+     menu hung below its last row. So we render the menu on the body at a
+     fixed position under the chip's right edge. The menu flips above the chip
+     when the window has no room below. A fixed menu would drift from its chip
+     on a scroll or a resize, so we place it again on each one. */
+  const place = () => {
+    const m = menu.current, b = btn.current;
+    if (!m || !b) return;
+    const r = b.getBoundingClientRect(), h = m.offsetHeight, w = m.offsetWidth, vw = document.documentElement.clientWidth;
+    m.style.top = (r.bottom + 4 + h <= window.innerHeight ? r.bottom + 4 : Math.max(8, r.top - 4 - h)) + "px";
+    m.style.left = Math.max(8, Math.min(r.right, vw - 8) - w) + "px";
+  };
+  useLayoutEffect(() => { if (open) place(); }, [open]);
   useEffect(() => {
     if (!open) return;
     menu.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
+    // We listen in the capture phase, because every chip and link in the
+    // panels stops its own click before it reaches the document.
     const click = (e: globalThis.MouseEvent) => {
       const t = e.target as Node | null;
       if (t && !menu.current?.contains(t) && !btn.current?.contains(t)) setOpen(false);
     };
-    document.addEventListener("click", click);
-    return () => document.removeEventListener("click", click);
+    document.addEventListener("click", click, true);
+    document.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      document.removeEventListener("click", click, true);
+      document.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
   }, [open]);
   const key = (e: KeyboardEvent) => {
     const items = [...menu.current!.querySelectorAll<HTMLElement>("[role=menuitem]")];
@@ -164,22 +187,22 @@ function ChipMenu({chip, onChip}: {chip: CitationChip; onChip(key: string): void
     else if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length].focus(); }
     else if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
   };
-  const id = "cite-" + chip.key;
-  return <span style={{position: "relative", display: "inline-flex"}}>
+  return <>
     <button type="button" ref={btn} className="adp-chip adp-chip--s" data-key={chip.key} title={chip.title} style={CHIP_BTN}
       aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
       onClick={only(() => open ? close(false) : setOpen(true))}>
       {chip.label}<span style={{color: "var(--faint)"}}>{chip.all.length}</span></button>
-    {open ? <div className="adp-menu" id={id} ref={menu} role="menu" aria-label={`Cited in ${chip.all.length} sections`} onKeyDown={key}
+    {/* React bubbles a portal's events through the row, so the menu stops a click before the row opens its entry. */}
+    {open ? createPortal(<div className="adp-menu" id={id} ref={menu} role="menu" aria-label={`Cited in ${chip.all.length} sections`} onKeyDown={key}
       onClick={e => e.stopPropagation()}
-      style={{position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 10, maxWidth: "calc(100vw - 48px)"}}>
+      style={{position: "fixed", top: 0, left: 0, zIndex: 10, maxWidth: "calc(100vw - 16px)"}}>
       <div className="adp-menu__section" style={{display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8}}>
         <p className="adp-label">Cited in {chip.all.length} sections</p>
         {chip.all.map(s => <button key={s.key} type="button" role="menuitem" className="adp-btn adp-btn--text" data-key={s.key}
           style={{textAlign: "left", whiteSpace: "normal"}} onClick={() => { setOpen(false); onChip(s.key); }}>{s.title}</button>)}
       </div>
-    </div> : null}
-  </span>;
+    </div>, document.body) : null}
+  </>;
 }
 
 /* A panel's head, as the Main board draws it: a mono eyebrow and its row

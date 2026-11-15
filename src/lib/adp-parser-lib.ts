@@ -546,8 +546,19 @@ function quoteEnds(h: string): string{
     return `<blockquote${attrs}>${i<0?body:body.slice(0,i)+'<p style="margin:0">'+body.slice(i+3)}</blockquote>`;
   });
 }
+/* A task item is a div, so the Prose marker on every li cannot sit beside its
+   box. A ul may hold only li, so a list that holds a task item becomes a div
+   list with the Prose ul's spacing. Its plain items draw the ▸ marker inline.
+   We leave a list that nests another list as it is. */
+function taskLists(h: string): string{
+  return h.replace(/<ul class="md-list">((?:(?!<ul)[\s\S])*?)<\/ul>/g,(all,body: string)=>!body.includes('<li class="task">')?all:
+    '<div role="list" style="margin:0 0 16px;display:flex;flex-direction:column;gap:12px;font-size:15px;line-height:24px">'
+    +body.replace(/<li class="task">([\s\S]*?)<\/li>/g,'<div role="listitem" class="task" style="'+TASK+'">$1</div>')
+      .replace(/<li>([\s\S]*?)<\/li>/g,'<div role="listitem" style="display:flex;gap:12px"><span aria-hidden="true" style="color:var(--blue-bright);font-size:11px;flex:0 0 auto">▸</span><span>$1</span></div>')
+    +'</div>');
+}
 function proseBlocks(h: string): string{
-  return quoteEnds(numbered(dsTokens(h)))
+  return quoteEnds(taskLists(numbered(dsTokens(h))))
     .replace(/<li>/g,'<li><span>').replace(/<li class="task">([\s\S]*?)<\/li>/g,'<div role="listitem" class="task" style="'+TASK+'">$1</LI>')
     .replace(/<\/li>/g,'</span></li>').replace(/<\/LI>/g,'</div>')
     .replace(/<div class="tbl-wrap"><table class="md-tbl">/g,'<div style="overflow-x:auto;margin:0 0 16px"><table class="adp-table">')

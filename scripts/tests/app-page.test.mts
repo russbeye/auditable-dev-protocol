@@ -2569,6 +2569,29 @@ test("an entry cited by two sections of one phase shows one chip for that phase,
   assert.equal(($("#secSel") as HTMLSelectElement).value, "sec-residual-risk");
 });
 
+// One chip menu is open at a time. A click on any other chip closes the open
+// menu, even though a chip's own click stops at the chip.
+test("a click on another cited-in chip closes an open chip menu", async () => {
+  await boot({hash: "#t=CC3&s=sec-decision-log", fetch: oneLog(["# Audit Log — CC3 gamma", "", "## Decision Log", "",
+    "### [DL-001] First", "- **Decision:** pick d", "- **Confidence:** HIGH", "- **Status:** OPEN", "",
+    "### [DL-002] Second", "- **Decision:** pick e", "- **Confidence:** HIGH", "- **Status:** OPEN", "",
+    "## PR Summary", "", "Cites DL-001 and DL-002.", "", "## Residual Risk", "", "DL-001 and DL-002 again.", "",
+    "## Obligation Ticket List", "", "DL-002 once more.", ""].join("\n"))});
+  await click($('[data-view="full"]'));
+  await click($('[data-view="section"]'));
+  const chips = (dl: string) => $$('.adp-chip--s[data-key]').filter(a => a.closest("tr")?.textContent!.includes(dl));
+  await click(chips("DL-001")[1]);
+  await click(chips("DL-002")[1]);
+  const menus = $$('[role="menu"]');
+  assert.equal(menus.length, 1);
+  assert.equal(chips("DL-001")[1].getAttribute("aria-expanded"), "false");
+  assert.equal(chips("DL-002")[1].getAttribute("aria-controls"), menus[0].id);
+  assert.equal(document.querySelectorAll(`[id="${menus[0].id}"]`).length, 1);
+  // A one-section chip jumps, and the jump closes the open menu too.
+  await click(chips("DL-002")[2]);
+  assert.equal($$('[role="menu"]').length, 0);
+});
+
 // DL-007: calibration heads the Ledger, so its old link lands there.
 test("a calibration deep link boots to the Ledger with calibration under its title, and the Ledger writes its own token", async () => {
   const {hashes} = await bootBoard({hash: "#v=calibration"});
@@ -3465,6 +3488,12 @@ test("prose blocks take the Table and Pre components and on-grid values, and the
   // that no inline style can hide, and a task item shows its box instead.
   assert.match(html, /<div role="listitem" class="task" style="display:flex;gap:12px;align-items:flex-start"><span style="display:inline-flex;[^"]*width:16px;height:16px;[^"]*">✓<\/span><span>done<\/span><\/div>/);
   assert.doesNotMatch(html, /<li class="task"/);
+  // A ul holds only li, so a list with a task item becomes a div list, and a
+  // plain item in it draws the ▸ marker itself.
+  const mixed = P.renderProse("- plain\n- [ ] todo");
+  assert.doesNotMatch(mixed, /<ul|<li/);
+  assert.match(mixed, /^<div role="list" style="margin:0 0 16px;[^"]*"><div role="listitem" style="display:flex;gap:12px"><span aria-hidden="true" [^>]*>▸<\/span><span>plain<\/span><\/div><div role="listitem" class="task"/);
+  assert.match(P.renderProse("- a\n- b"), /^<ul class="md-list"><li><span>a<\/span><\/li>/);
   assert.match(html, /<h3 style="margin:32px 0 8px;font:500 11px\/24px var\(--font-mono\);[^"]*color:var\(--blue-bright\)">Sub head<\/h3>/);
   assert.doesNotMatch(html, /md-tbl|tbl-wrap|class="cb"|class="sub"|cbx|<ol/);
   const plain = P.renderMarkdown(md);

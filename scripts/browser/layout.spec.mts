@@ -71,6 +71,35 @@ test.describe("at 1290px", () => {
   });
 });
 
+/* A chip menu opens inside a table whose box scrolls sideways, and that box
+   would clip anything that hangs below its last row. Each menu item must be
+   the element a reader hits at its center, and the table's box must not
+   grow a vertical scroll. FX004's Decision Log has one row with a merged chip. */
+for (const width of [1440, 720]) test.describe(`at ${width}px`, () => {
+  test.use({viewport: {width, height: 900}});
+
+  test("a cited-in chip menu shows every item, unclipped by the table's scroll box", async ({page, server}) => {
+    await open(page, server.url + "#t=FX004&s=sec-decision-log");
+    const chips = page.locator("button.adp-chip[aria-haspopup]");
+    expect(await chips.count()).toBeGreaterThan(0);
+    for (const chip of await chips.all()){
+      await chip.click();
+      await expect(page.locator("[role=menu]")).toBeVisible();
+      const got = await page.evaluate(() => {
+        const items = [...document.querySelectorAll<HTMLElement>("[role=menu] [role=menuitem]")];
+        const hidden = items.filter(b => { const r = b.getBoundingClientRect();
+          return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest("[role=menuitem]") !== b; }).map(b => b.textContent);
+        const box = document.querySelector("[role=menu]")!.closest("tr")?.closest("div");
+        return {items: items.length, hidden, scrollY: box ? box.scrollHeight - box.clientHeight : 0};
+      });
+      expect(got.items).toBeGreaterThan(1);
+      expect(got).toEqual({items: got.items, hidden: [], scrollY: 0});
+      await page.keyboard.press("Escape");
+      await expect(page.locator("[role=menu]")).toHaveCount(0);
+    }
+  });
+});
+
 /* PM2. An old element rule, such as one on select or on input[type=text],
    can outrank a single adp- class. Every adp- control must render square,
    in one of the system's two faces, at the height its rule fixes. */
