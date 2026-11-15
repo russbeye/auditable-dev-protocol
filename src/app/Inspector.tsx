@@ -433,6 +433,17 @@ function chipModel(t: Ticket, key: string){
   const meta = s ? P.metaFor(s.title) : null;
   return {key, label: !s ? "§" : s.phase != null ? "P" + s.phase : meta!.tag || meta!.kind, title: s ? s.title : key};
 }
+/* A row shows one chip per phase. Phase 7 alone holds four sections, so an
+   entry cited in two of them would read "P7 P7". The merged chip jumps to the
+   first citing section and names every citing section in its tooltip. */
+function citeChips(t: Ticket, keys: string[]){
+  const out: ReturnType<typeof chipModel>[] = [];
+  for (const k of keys){
+    const c = chipModel(t, k), prev = /^P\d+$/.test(c.label) ? out.find(x => x.label === c.label) : undefined;
+    if (prev) prev.title += " · " + c.title; else out.push(c);
+  }
+  return out;
+}
 
 /* The decisions and watches panels build their rows here, so the inspector
    and the reviews screen sort, chip, and highlight a cited entry the same
@@ -452,7 +463,7 @@ function decisionRows(t: Ticket, shown: Ticket["decisions"], sort: SortState, it
     return {id: d.id, title: d.title, conf: P.dlChipSplit(d.confidence).word, confKind: P.dlConfKind(d.confidence),
       statusKind: D.decisionKind(d), watch: (D.coveringWatch(t, d.id) || {wid: null}).wid,
       settled: sw && {wid: sw.wid, outcome: sw.outcome, closed: sw.closed},
-      chips: D.citingSections(t, d.id).map(k => chipModel(t, k)), hl: item === d.id,
+      chips: citeChips(t, D.citingSections(t, d.id)), hl: item === d.id,
       age: d.created ? -D.daysUntil(d.created, today) : null};
   });
 }
@@ -465,7 +476,7 @@ function watchRows(t: Ticket, list: Ticket["watches"], sort: SortState, item: st
   }).map(w => ({wid: w.wid, what: w.what, dls: w.dl || [],
     dueText: w.anchored ? w.due : (w.window || "relative"), dueDated: !!w.anchored,
     state: D.dueState(w, today), stateLabel: D.dueLabel(w, today),
-    chips: D.citingSections(t, w.wid).map(k => chipModel(t, k)), hl: item === w.wid,
+    chips: citeChips(t, D.citingSections(t, w.wid)), hl: item === w.wid,
     left: w.anchored && !w.closed ? D.daysUntil(w.due!, today) : null}));
 }
 

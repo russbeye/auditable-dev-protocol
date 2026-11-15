@@ -440,7 +440,11 @@ function unread(snap: Snapshot): Snapshot {
    - A decision gains its age after its watch cell, which the app reads
      from the card's Created date.
    - On a Decision Log section the filter sits above the cards and counts
-     the cards, so its old run leaves the panel and its own tests pin it. */
+     the cards, so its old run leaves the panel and its own tests pin it.
+   - A row's cited-in chips show one chip per phase. A repeated phase chip
+     leaves, and the first one's tooltip joins every citing section's title
+     with " · ", so the comparison splits that tooltip back into its titles. */
+const onePerPhase = (chips: string[]) => chips.filter((c, k) => !/^P\d+$/.test(c) || chips.indexOf(c) === k);
 // A table sets each backticked run of a title or a watch's text as inline
 // code, so the run splits into its words around the code, as the page reads.
 const coded = (runs: string[]) => runs.flatMap(r => r.split(/`([^`]+)`/).map(x => x.trim()).filter(Boolean));
@@ -477,13 +481,13 @@ function retabled(old: string[], spine: boolean, ages: string[]): string[] {
       if (dec){
         let j = 4;
         while (j < r.length && /^(no watch|OT-.+)$/.test(r[j])) j++;
-        out.push(r[0], r[1], r[2], r[3].toUpperCase(), ...r.slice(4, j), ages[a++], ...r.slice(j));
+        out.push(r[0], r[1], r[2], r[3].toUpperCase(), ...r.slice(4, j), ages[a++], ...onePerPhase(r.slice(j)));
       } else {
         const j = r.findIndex((x, k) => k > 1 && DUE_LABEL.test(x));
         assert.ok(j > 0, "the baseline watch row has no due label: " + r.join(" | "));
         const m = r[j].match(DUE_LABEL)!;
         const due = m[1] ? ["OVERDUE", "-" + m[1] + "d"] : m[2] ? [Number(m[2]) <= 14 ? "SOON" : "UPCOMING", m[2] + "d"] : [r[j], "—"];
-        out.push(...r.slice(0, j), ...due, ...r.slice(j + 1));
+        out.push(...r.slice(0, j), ...due, ...onePerPhase(r.slice(j + 1)));
       }
     }
   }
@@ -515,7 +519,9 @@ function withoutPanels(got: Snapshot, want: Region): [Snapshot, Region] {
   const ages = $$("#scrInspector tr.dlrow td.adp-col-num").map(td => td.textContent!);
   assert.deepEqual(recs.flatMap(r => r.text), coded(retabled(oldRuns, !!bar, ages)), "the panels");
   const GROUPS = ["aria-label=Decisions cited", "aria-label=Watches cited", "aria-label=Filter by status"];
-  const newAttrs = recs.flatMap(r => r.attrs).filter(x => !GROUPS.includes(x));
+  const merged = new Set($$("#scrInspector a.adp-chip--s[data-key]").map(c => c.getAttribute("title")!).filter(t => t.includes(" · ")));
+  const newAttrs = recs.flatMap(r => r.attrs).filter(x => !GROUPS.includes(x))
+    .flatMap(x => merged.has(x.slice(6)) && x.startsWith("title=") ? x.slice(6).split(" · ").map(t => "title=" + t) : [x]);
   const keep = want.attrs.length - newAttrs.length;
   assert.deepEqual(want.attrs.slice(keep), newAttrs, "the panels' attributes");
   return [{...got, main}, {text: from < 0 ? want.text : want.text.slice(0, from), attrs: want.attrs.slice(0, keep)}];
@@ -2525,6 +2531,21 @@ test("calibration counts a ruled entry by its ruling, never its card", async () 
   assert.match(scr, /1 validated/);
   assert.match(scr, /1 of 1 ruled validated/);
   assert.equal($$('#scrCalib [data-calk="open"]').length, 0);
+});
+
+// A phase that holds several citing sections shows one chip, which jumps to
+// the first of them and names every one in its tooltip.
+test("an entry cited by two sections of one phase shows one chip for that phase", async () => {
+  await boot({hash: "#t=CC3&s=sec-decision-log", fetch: oneLog(["# Audit Log — CC3 gamma", "", "## Decision Log", "",
+    "### [DL-001] Cited twice in Phase 7", "- **Decision:** pick d", "- **Confidence:** HIGH", "- **Status:** OPEN", "",
+    "## PR Summary", "", "Cites DL-001.", "", "## Residual Risk", "", "DL-001 again.", "",
+    "## Obligation Ticket List", "", "DL-001 once more.", ""].join("\n"))});
+  await click($('[data-view="full"]'));
+  await click($('[data-view="section"]'));
+  const chips = $$('a.adp-chip--s[data-key]').filter(a => a.closest("tr")?.textContent!.includes("DL-001"));
+  assert.deepEqual(chips.map(a => a.textContent), ["P5", "P7", "P9"]);
+  assert.equal(chips[1].getAttribute("data-key"), "sec-pr-summary");
+  assert.equal(chips[1].getAttribute("title"), "PR Summary · Residual Risk");
 });
 
 // DL-007: calibration heads the Ledger, so its old link lands there.
