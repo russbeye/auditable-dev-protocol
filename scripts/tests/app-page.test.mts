@@ -2028,10 +2028,14 @@ test("a settled decision's watch cell keeps the id and puts the ruling on hover"
   assert.ok(!container.innerHTML.includes(`adp-chip--closed`));
 });
 
-test("an open decision with only a settled watch leads with the marker", () => {
+// The marker, the closed watch's id, and how it ended each take their own line,
+// so a closed watch never reads as a live one and the column stays one id wide.
+test("an open decision with only a settled watch leads with the marker and names how the watch ended", () => {
   const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [panelRow("open")]}));
-  assert.ok(container.innerHTML.includes(`<span class="adp-chip adp-chip--s adp-chip--open">no watch</span> <a class="wl"`));
-  assert.ok(container.innerHTML.includes(`title="closed VALIDATED 2026-09-01"`));
+  const cell = container.querySelector("td.adp-col-id:nth-of-type(5) > span")!;
+  assert.match(cell.getAttribute("style")!, /flex-direction: column/);
+  assert.deepEqual([...cell.children].map(e => [e.tagName, e.textContent]), [["SPAN", "no watch"], ["A", "OT-1"], ["SPAN", "VALIDATED"]]);
+  assert.equal(cell.children[1].getAttribute("title"), "closed VALIDATED 2026-09-01");
 });
 
 // ---- the inspector under live updates ----

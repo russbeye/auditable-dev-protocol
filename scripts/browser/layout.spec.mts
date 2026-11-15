@@ -48,6 +48,39 @@ test.describe("at 1920px", () => {
 test.describe("at 1290px", () => {
   test.use({viewport: {width: 1290, height: 900}});
 
+  /* A cell of chips or ids wraps at 176px, and a settled watch stacks its
+     parts, so these columns grow a row taller, never wider, and leave the
+     room to the text columns. A table at full width hands spare room to every
+     column, so we measure each cell's content, not its column. */
+  test("the Watch, Cited in, and Entry cells of every section's panels hold their content within 176px", async ({page, server}) => {
+    test.setTimeout(240_000);
+    await open(page, server.url);
+    for (const g of await page.locator("#rail [data-sec][aria-expanded=false]").all()) await g.click();
+    const keys = await page.locator("#rail [data-key]").evaluateAll(r => r.map(x => x.getAttribute("data-key")!));
+    const wide: string[] = [];
+    let seen = 0;
+    for (const k of keys){
+      await page.click(`#rail [data-key="${k}"]`);
+      await page.click('[data-view="section"]');
+      for (const v of await page.locator("#secSel option").evaluateAll(o => o.map(x => (x as HTMLOptionElement).value))){
+        await page.selectOption("#secSel", v);
+        for (const [h, w] of await page.evaluate(() => [...document.querySelectorAll("#scrInspector section[aria-label] table")].flatMap(t => {
+          const heads = [...t.querySelectorAll("thead th")].map(th => th.textContent!.replace(/[↑↓]/g, "").trim());
+          return [...t.querySelectorAll("tbody tr")].flatMap(tr => [...tr.children].map((td, i) => {
+            const r = document.createRange();
+            r.selectNodeContents(td);
+            return [heads[i], r.getBoundingClientRect().width] as [string, number];
+          }));
+        }).filter(([h]) => h === "Watch" || h === "Cited in" || h === "Entry"))){
+          seen++;
+          if (w > 176.5) wide.push(`${k} ${v}: a ${h} cell is ${Math.round(w)}px`);
+        }
+      }
+    }
+    expect(seen).toBeGreaterThan(20);
+    expect(wide).toEqual([]);
+  });
+
   // The MC-010 wrap. A line count comes from the client rects of the cell's
   // text, so we count lines the same way in every engine.
   test("a watch's window prose wraps while its ids and status stay on one line", async ({page, server}) => {

@@ -113,14 +113,24 @@ type WatchLink = (wid: string, title?: string) => ReactNode;
 
 /* A decision's coverage cell, shared by the inspector and the ledger. An
    open decision whose watch has closed is unwatched again, so the marker
-   leads. A settled watch keeps its cell to the id, and how coverage ended
-   rides the link's hover title. */
+   leads, and under the watch's id we name how the watch ended, so a closed
+   watch never reads as a live one. A ruled decision already shows its state
+   in the status column, so its cell keeps to the id and the ruling rides the
+   hover title. Each part takes its own line, so the column is as wide as one
+   id and the text columns keep their room. */
+const STACK: CSSProperties = {display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4};
+const SETTLED: CSSProperties = {font: "400 11px/16px var(--font-mono)", color: "var(--dim)"};
 function WatchCell({d, link}: {d: CoverageRow; link: WatchLink}){
   if (d.watch) return <>{link(d.watch)}</>;
   const mark = <span className="adp-chip adp-chip--s adp-chip--open">no watch</span>;
-  if (d.settled) return <>{d.statusKind === "open" ? <>{mark}{" "}</> : null}{link(d.settled.wid, "closed " + d.settled.outcome + " " + d.settled.closed)}</>;
+  const closed = d.settled && link(d.settled.wid, "closed " + d.settled.outcome + " " + d.settled.closed);
+  if (d.settled && d.statusKind === "open") return <span style={STACK}>{mark}{closed}<span style={SETTLED}>{d.settled.outcome}</span></span>;
+  if (d.settled) return <>{closed}</>;
   return d.statusKind === "open" ? mark : null;
 }
+
+// A cell of chips or ids wraps at this width, so a row with many of them grows taller, not wider.
+const WRAP: CSSProperties = {display: "inline-flex", flexWrap: "wrap", gap: 4, maxWidth: 176};
 
 // A click inside a row goes to the control it hit and stops there, so the
 // row's own open action does not run as well.
@@ -132,7 +142,7 @@ const NW: CSSProperties = {whiteSpace: "nowrap"};
 const MONO: CSSProperties = {fontFamily: "var(--font-mono)", fontSize: 12};
 
 function Chips({list, onChip}: {list: CitationChip[]; onChip(key: string): void}){
-  return <span style={{display: "inline-flex", flexWrap: "wrap", gap: 4}}>{list.map(c => c.all.length > 1
+  return <span style={WRAP}>{list.map(c => c.all.length > 1
     ? <ChipMenu key={c.key} chip={c} onChip={onChip}/>
     : <a key={c.key} className="adp-chip adp-chip--s" data-key={c.key}
       title={c.title} style={PTR} onClick={only(() => onChip(c.key))}>{c.label}</a>)}</span>;
@@ -267,7 +277,7 @@ function WatchesPanel({sort, rows, onSort, onWatch, onChip}: WatchesPanelProps){
       <thead><tr>{th("wid", "Watch")}{th("what", "What to check")}{th("dl", "Entry")}{th("due", "Due")}{th("state", "Status")}{th("left", "Left", true)}{th("cited", "Cited in")}</tr></thead>
       <tbody>{rows.map(w => <tr key={w.wid} className={"wrow" + (w.hl ? " is-hl" : "")} data-item={w.wid} style={w.hl ? HL : undefined}>
         <td className="adp-col-id">{w.wid}</td><td><Coded text={w.what}/></td>
-        <td className="adp-col-id">{w.dls.map((d, i) => <Fragment key={d}>{i ? " " : null}<a className="wl" data-item={d} style={PTR} onClick={only(() => onWatch(d))}>{d}</a></Fragment>)}</td>
+        <td className="adp-col-id"><span style={{...WRAP, columnGap: 8}}>{w.dls.map((d, i) => <Fragment key={d}>{i ? " " : null}<a className="wl" data-item={d} style={PTR} onClick={only(() => onWatch(d))}>{d}</a></Fragment>)}</span></td>
         {/* A date holds one line, and an unanchored watch's window prose wraps in its place. */}
         <td style={{...MONO, ...(w.dueDated ? NW : null)}}>{w.dueText}</td>
         <td><DueChip state={w.state}/></td>
