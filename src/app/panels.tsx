@@ -197,7 +197,11 @@ function ChipMenu({chip, onChip}: {chip: CitationChip; onChip(key: string): void
       {chip.label}<span style={{color: "var(--faint)"}}>{chip.all.length}</span></button>
     {/* React bubbles a portal's events through the row, so the menu stops a click before the row opens its entry. */}
     {open ? createPortal(<div className="adp-menu" id={id} ref={menu} role="menu" aria-label={`Cited in ${chip.all.length} sections`} onKeyDown={key}
-      onBlur={e => { if (e.relatedTarget && !menu.current?.contains(e.relatedTarget as Node)) setOpen(false); }}
+      onBlur={e => {
+        // A press on the menu's own chip moves focus there first, and the chip's click then closes the menu.
+        const to = e.relatedTarget as Node | null;
+        if (to && !menu.current?.contains(to) && !btn.current?.contains(to)) setOpen(false);
+      }}
       onClick={e => e.stopPropagation()}
       style={{position: "fixed", top: 0, left: 0, zIndex: 10, maxWidth: "calc(100vw - 16px)"}}>
       <div className="adp-menu__section" style={{display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8}}>

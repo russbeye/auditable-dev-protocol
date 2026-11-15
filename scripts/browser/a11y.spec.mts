@@ -145,6 +145,18 @@ for (const [key, step] of [["Tab", 1], ["Shift+Tab", -1]] as const)
     expect(await page.evaluate(() => document.activeElement === document.body ? "BODY" : document.activeElement!.outerHTML.slice(0, 80))).toBe(want);
   });
 
+// A second click on the chip of an open menu closes the menu and leaves it closed.
+test("a second click on a chip closes its open menu", async ({page, server}) => {
+  await open(page, server.url + "#t=FX004&s=sec-decision-log");
+  const chip = page.locator("button.adp-chip[aria-haspopup]");
+  await chip.click();
+  await expect(page.locator("[role=menu]")).toHaveCount(1);
+  await chip.click();
+  await page.waitForTimeout(300);
+  await expect(page.locator("[role=menu]")).toHaveCount(0);
+  await expect(chip).toHaveAttribute("aria-expanded", "false");
+});
+
 // OT-MC012-19 needs a screen reader. This test proves the text reaches the
 // region, which is what a reader would announce.
 // A start leaves the task id blank, so typing one flips the verdict.
