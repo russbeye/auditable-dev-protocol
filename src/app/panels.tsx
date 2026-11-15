@@ -118,8 +118,10 @@ type WatchLink = (wid: string, title?: string) => ReactNode;
    in the status column, so its cell keeps to the id and the ruling rides the
    hover title. Each part takes its own line, so the column is as wide as one
    id and the text columns keep their room. The stack is inline so the
-   narrow Ledger's "watch" label stays on the line of its first part. */
-const STACK: CSSProperties = {display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 4};
+   narrow Ledger's "watch" label stays on the line of its first part. We pin
+   it to the line's top, because on the text baseline the line's strut
+   pushes it 3px down and takes the row off the 4px grid. */
+const STACK: CSSProperties = {display: "inline-flex", verticalAlign: "top", flexDirection: "column", alignItems: "flex-start", gap: 4};
 const SETTLED: CSSProperties = {font: "400 11px/16px var(--font-mono)", color: "var(--dim)"};
 function WatchCell({d, link}: {d: CoverageRow; link: WatchLink}){
   if (d.watch) return <>{link(d.watch)}</>;

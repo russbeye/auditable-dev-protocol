@@ -34,12 +34,12 @@ test.describe("at 720px", () => {
     expect(await bar.evaluate(h => h.scrollWidth - h.clientWidth)).toBe(0);
   });
 
-  // The narrow Ledger prints "watch" inline before the watch cell. An open
-  // entry whose watch closed stacks its cell, and the stack must start on
-  // the label's line rather than break below it.
-  test("the narrow Ledger keeps the word watch on the line of an open entry's closed-watch stack", async ({page}) => {
-    // The shared corpus has no such entry, so we serve a one-log corpus that
-    // holds an open decision whose only watch closed.
+  /* An open entry whose only watch closed stacks its watch cell on three
+     lines. The narrow Ledger prints "watch" inline before that cell, so the
+     stack must start on the label's line, and in a table the stack must sit
+     at the cell's top padding so the row stays 92px, on the 4px grid. The
+     shared corpus has no such entry, so we serve a one-log corpus. */
+  test("an open entry's closed-watch stack keeps the narrow Ledger's label on its line and its table rows at 92px", async ({page}) => {
     const root = fs.mkdtempSync(path.join(path.dirname(fixtureRoot()), "adp-browser-settled-"));
     const dir = path.join(root, ".adp", "20261115-BX002-settled-watch");
     fs.mkdirSync(dir, {recursive: true});
@@ -54,20 +54,37 @@ test.describe("at 720px", () => {
       "## Ledger — closure (2026-11-15)",
       "- **OT-BX002-1 CLOSED 2026-11-15 → VALIDATED.** The window ran quiet.", ""].join("\n"));
     const server = await startServer(root);
+    // Each stack is the parent of a `no watch` chip that also holds a link.
+    type Stack = {at: string; h: number; top?: number; overlap?: number};
+    const stacks = () => page.evaluate(() => [...document.querySelectorAll(".adp-chip--open")].flatMap((chip): Stack[] => {
+      const stack = chip.parentElement!;
+      if (chip.textContent !== "no watch" || !stack.querySelector("a")) return [];
+      const s = stack.getBoundingClientRect(), td = stack.closest("td");
+      if (td) return [{at: "row", h: td.parentElement!.getBoundingClientRect().height, top: s.top - td.getBoundingClientRect().top}];
+      const line = stack.closest("div")!, r = document.createRange();
+      r.selectNodeContents(line.firstChild!);
+      const label = r.getBoundingClientRect(), c = chip.getBoundingClientRect();
+      return [{at: "line", h: line.getBoundingClientRect().height, overlap: Math.min(label.bottom, c.bottom) - Math.max(label.top, c.top)}];
+    }));
     try {
       await open(page, server.url);
       await go(page, "ledgers");
       await expect(page.locator("li.lgrow").first()).toBeVisible();
-      const rows = await page.evaluate(() => [...document.querySelectorAll("li.lgrow")].flatMap(li => {
-        const line = li.lastElementChild!, chip = line.querySelector(".adp-chip--open");
-        if (!chip || !line.querySelector("a")) return [];
-        const r = document.createRange();
-        r.selectNodeContents(line.firstChild!);
-        const label = r.getBoundingClientRect(), c = chip.getBoundingClientRect();
-        return [{dl: (li as HTMLElement).dataset.dl, overlap: Math.min(label.bottom, c.bottom) - Math.max(label.top, c.top)}];
-      }));
-      expect(rows.length).toBeGreaterThan(0);
-      for (const row of rows) expect(row.overlap, row.dl).toBeGreaterThan(0);
+      const narrow = await stacks();
+      expect(narrow.map(s => s.at)).toEqual(["line"]);
+      expect(narrow[0].overlap!).toBeGreaterThan(0);
+      expect(narrow[0].h % 4).toBe(0);
+      await page.setViewportSize({width: 1440, height: 900});
+      await expect(page.locator("#scrLedgers table tbody tr").first()).toBeVisible();
+      const rows = await stacks();
+      await open(page, server.url + "#t=BX002");
+      await page.click('[data-view="section"]');
+      for (const v of await page.locator("#secSel option").evaluateAll(o => o.map(x => (x as HTMLOptionElement).value))){
+        await page.selectOption("#secSel", v);
+        rows.push(...await stacks());
+      }
+      expect(rows.length).toBeGreaterThan(1);
+      for (const row of rows) expect([row.at, Math.round(row.h * 2) / 2, row.top]).toEqual(["row", 92, 12]);
     } finally { await server.stop(); fs.rmSync(root, {recursive: true, force: true}); }
   });
 });
