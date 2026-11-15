@@ -130,7 +130,9 @@ for (const [key, step] of [["Tab", 1], ["Shift+Tab", -1]] as const)
   test(`${key} closes an open chip menu and moves focus on from its chip`, async ({page, server}) => {
     await open(page, server.url + "#t=FX004&s=sec-decision-log");
     const chip = "button.adp-chip[aria-haspopup]";
-    const want = await page.evaluate(([sel, step]) => {
+    // The live word can read WATCHING before the section draws its chip, so we wait for the chip.
+    await expect(page.locator(chip)).toBeVisible();
+    const want =await page.evaluate(([sel, step]) => {
       const all = [...document.querySelectorAll<HTMLElement>("#root a[href], #root button:not([disabled]), #root select, #root input, #root textarea, #root [tabindex]:not([tabindex='-1'])")]
         .filter(e => e.checkVisibility());
       const i = all.indexOf(document.querySelector<HTMLElement>(sel as string)!);

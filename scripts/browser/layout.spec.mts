@@ -81,7 +81,8 @@ for (const width of [1440, 720]) test.describe(`at ${width}px`, () => {
   test("a cited-in chip menu shows every item, unclipped by the table's scroll box", async ({page, server}) => {
     await open(page, server.url + "#t=FX004&s=sec-decision-log");
     const chips = page.locator("button.adp-chip[aria-haspopup]");
-    expect(await chips.count()).toBeGreaterThan(0);
+    // The live word can read WATCHING before the section draws its chip, so we wait for the chip.
+    await expect(chips.first()).toBeVisible();
     for (const chip of await chips.all()){
       await chip.click();
       await expect(page.locator("[role=menu]")).toBeVisible();
