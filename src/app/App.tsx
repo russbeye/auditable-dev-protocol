@@ -29,18 +29,17 @@ type Sel = {dir: string | null; s: string | null; item: string | null};
 // the Ledger, and the packs open as a drawer over any view.
 const SHOWN: Screen[] = ["inspector", "reviews", "watchboard", "ledgers", "new task"];
 /* Each screen states its body type, because the Watches and Ledger boards set
-   their tables in 15px while the ticket view reads at the system's 16px. A
-   ticket screen stops at 1020px, and the page screens stop at the page width. */
+   their tables in 15px while the ticket view reads at the system's 16px. Every
+   screen stops at the page width and centers in the stage. */
+const PAGE: CSSProperties = {color: "var(--ink)", maxWidth: "var(--page-max)", margin: "0 auto"};
 const SYSTEM_TYPE: Partial<Record<Screen, CSSProperties>> = {
-  "inspector": {font: "400 16px/24px var(--font-sans)", color: "var(--ink)", maxWidth: 1020},
-  "reviews": {font: "400 16px/24px var(--font-sans)", color: "var(--ink)", maxWidth: 1020},
-  "watchboard": {font: "400 15px/24px var(--font-sans)", color: "var(--ink)", maxWidth: "var(--page-max)", margin: "0 auto"},
-  "ledgers": {font: "400 15px/24px var(--font-sans)", color: "var(--ink)", maxWidth: "var(--page-max)", margin: "0 auto"},
-  "new task": {font: "400 16px/24px var(--font-sans)", color: "var(--ink)", maxWidth: "var(--page-max)", margin: "0 auto"}};
-/* The Watches, Ledger, and New task pages pad the stage as their boards pad
-   the page, and a narrow window pads it as the NarrowLedger board does. The
-   rail stays beside them, as on every screen. */
-const PAGE_SCREENS: ReadonlySet<Screen> = new Set(["watchboard", "ledgers", "new task"]);
+  "inspector": {...PAGE, font: "400 16px/24px var(--font-sans)"},
+  "reviews": {...PAGE, font: "400 16px/24px var(--font-sans)"},
+  "watchboard": {...PAGE, font: "400 15px/24px var(--font-sans)"},
+  "ledgers": {...PAGE, font: "400 15px/24px var(--font-sans)"},
+  "new task": {...PAGE, font: "400 16px/24px var(--font-sans)"}};
+/* Every screen pads the stage as the Watches and Ledger boards pad the page,
+   and a narrow window pads it as the NarrowLedger board does. */
 const PAGE_PAD = "40px 48px 80px", NARROW_PAD = "32px 24px 80px";
 const SCREEN_IDS: Record<Screen, string> = {"inspector": "scrInspector", "reviews": "scrReviews", "watchboard": "scrWatch",
   "ledgers": "scrLedgers", "calibration": "scrLedgers", "resume pack": "scrInspector", "new task": "scrNew"};
@@ -472,7 +471,7 @@ function App({fetchFn, openFeed}: AppProps){
       <Rail groups={railShown} total={tickets.length} selKey={selKey} collapsed={railCollapsed} filter={railFilter} folded={railFolded}
         narrow={narrow} attention={attention} selId={selTicket ? selTicket.id || selTicket.dir : null} focusFilter={railFocus}
         onPick={k => { pick(k); if (narrow) setRailOver(false); }} onToggle={toggleRail} onFilter={setRailFilter} onFold={foldRail}/>
-      <main className="stage" style={{overflowY: "auto", padding: PAGE_SCREENS.has(screen) ? (narrow ? NARROW_PAD : PAGE_PAD) : "20px 24px"}}>
+      <main className="stage" style={{overflowY: "auto", padding: narrow ? NARROW_PAD : PAGE_PAD}}>
         {SHOWN.map(s => <section key={s} className={"screen" + (s === screen ? " is-on" : "")}
           data-s={s} id={SCREEN_IDS[s]} style={{...SYSTEM_TYPE[s], display: s === screen ? "block" : "none"}}>
           {s !== screen ? null

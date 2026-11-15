@@ -105,6 +105,24 @@ test.describe("at 1440px", () => {
     expect(faults).toEqual([]);
   });
 
+  // Every screen takes the Watches page's margins, so a ticket's text starts
+  // where a watch table starts.
+  test("the ticket view and reviews sit in the stage at the same offset as Watches and the Ledger", async ({page, server}) => {
+    await open(page, server.url + "#t=BX001");
+    const at = (id: string) => page.evaluate(id => {
+      const s = document.querySelector(".stage")!.getBoundingClientRect(), r = document.getElementById(id)!.getBoundingClientRect();
+      return [Math.round(r.left - s.left), Math.round(r.top - s.top), Math.round(s.right - r.right)];
+    }, id);
+    const ticket = await at("scrInspector");
+    await go(page, "reviews");
+    const reviews = await at("scrReviews");
+    await go(page, "watchboard");
+    const watches = await at("scrWatch");
+    await go(page, "ledgers");
+    expect([ticket, reviews, await at("scrLedgers")]).toEqual([watches, watches, watches]);
+    expect(watches.slice(0, 2)).toEqual([48, 40]);
+  });
+
   /* R15. A hairline is an inset shadow, so it adds no height, and every box
      the reader scans stays on the 4px grid. We render a five-row table on
      the live page to pin the Table's rhythm, then measure every notice,
