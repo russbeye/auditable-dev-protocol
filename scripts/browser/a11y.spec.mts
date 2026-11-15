@@ -206,8 +206,12 @@ function textPairs(){
 }
 test("every text pair on every screen reaches 4.5:1 in both themes, apart from the named faint pairs", async ({page, server}) => {
   test.setTimeout(240_000);
+  // A control fades its color over 120ms when its state changes. For example,
+  // the prev button fades from faint to ink as it enables. We turn motion off
+  // so that we measure each color where it settles, never a blend partway.
+  await page.emulateMedia({reducedMotion: "reduce"});
   const pairs: Record<string, {ratio: number; at: string}> = {};
-  const take = async () => { for (const [k, v] of Object.entries(await page.evaluate(textPairs))) if (!pairs[k] || pairs[k].ratio > v.ratio) pairs[k] = v; };
+  const take =async () => { for (const [k, v] of Object.entries(await page.evaluate(textPairs))) if (!pairs[k] || pairs[k].ratio > v.ratio) pairs[k] = v; };
   for (const theme of ["dark", "light"]){
     await page.addInitScript(t => localStorage.setItem("adp-theme", t), theme);
     await everyScreen(page, server.url, take);
