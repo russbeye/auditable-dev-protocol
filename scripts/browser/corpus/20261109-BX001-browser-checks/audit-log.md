@@ -36,6 +36,23 @@ We hold this paragraph long enough that the full log runs taller than the stage,
 
 We hold this paragraph long enough that the full log runs taller than the stage, so the scroll spy has sections to pass. The words carry no meaning for the checks beyond their height. We hold this paragraph long enough that the full log runs taller than the stage, so the scroll spy has sections to pass. The words carry no meaning for the checks beyond their height. We hold this paragraph long enough that the full log runs taller than the stage, so the scroll spy has sections to pass. The words carry no meaning for the checks beyond their height. We hold this paragraph long enough that the full log runs taller than the stage, so the scroll spy has sections to pass. The words carry no meaning for the checks beyond their height. 
 
+The blocks below give the block style check one of each kind.
+
+> A quoted gate confirmation.
+
+```
+let blocks = 4;
+```
+
+1. The first numbered step.
+2. The second numbered step.
+
+| Gap | Risk |
+|-----|------|
+| A gap | A risk |
+
+- [ ] A task that is not done.
+
 ## PR Summary
 
 We hold this paragraph long enough that the full log runs taller than the stage, so the scroll spy has sections to pass. The words carry no meaning for the checks beyond their height. We hold this paragraph long enough that the full log runs taller than the stage, so the scroll spy has sections to pass. The words carry no meaning for the checks beyond their height. We hold this paragraph long enough that the full log runs taller than the stage, so the scroll spy has sections to pass. The words carry no meaning for the checks beyond their height. We hold this paragraph long enough that the full log runs taller than the stage, so the scroll spy has sections to pass. The words carry no meaning for the checks beyond their height. 

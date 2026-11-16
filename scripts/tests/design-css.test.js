@@ -10,7 +10,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const {readFixture} = require("./helpers.js");
-const {generate, PLAIN} = require("../gen-adp-tokens.mts");
+const {generate, OVERRIDES, PLAIN} = require("../gen-adp-tokens.mts");
 
 const SCRIPTS = path.join(__dirname, "..");
 const read = name => fs.readFileSync(path.join(SCRIPTS, name), "utf8");
@@ -36,10 +36,37 @@ function rules(css){
 }
 const props = r => Object.fromEntries(r.decls.map(d => [d.prop, d.value]));
 
+// ---- R1: the app loads the two system sheets and nothing else ----
+
+const linked = () => [...read("app.html").matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(m => m[1]);
+
+test("the app loads exactly adp-tokens.css and adp-bundle.css, in that order", () => {
+  assert.deepEqual(linked(), ["adp-tokens.css", "adp-bundle.css"]);
+  assert.equal([...read("app.html").matchAll(/<link\b|<style\b|@import/g)].length, 2);
+  for (const gone of ["adp-theme.css", "adp-shell.css"]) assert.ok(!fs.existsSync(path.join(SCRIPTS, gone)), gone);
+});
+
+/* A clip on the page root hides content that runs past the window instead
+   of letting the reader scroll to it, so no sheet the app loads sets one.
+   A :root selector, with or without an attribute suffix, selects html. */
+test("no page root in a sheet the app loads clips horizontal overflow", () => {
+  for (const name of linked()) for (const r of rules(read(name))){
+    const roots = r.sel.split(",").map(s => s.trim()).filter(s => s === "html" || s === "body" || /^:root(\[[^\]]*\])*$/.test(s));
+    if (!roots.length) continue;
+    assert.deepEqual(r.decls.map(d => d.prop).filter(p => p === "overflow" || p === "overflow-x"), [], name + " " + r.sel);
+  }
+});
+
 // ---- R2: adp-tokens.css is tokens.json, both themes, nothing else ----
 
 test("adp-tokens.css is what the generator writes from the checked-in tokens.json", () => {
   assert.equal(tokensCss, generate(TOKENS));
+});
+
+// The two contrast overrides of DL-096 are the only values that differ from
+// tokens.json, so a third needs a logged entry and an edit here.
+test("the generator overrides exactly two color values, dark blue-bright and light bad", () => {
+  assert.deepEqual(OVERRIDES, {"blue-bright": {dark: "#647eff"}, "bad": {light: "#c21b1b"}});
 });
 
 test("adp-tokens.css declares every token in tokens.json for both themes, and nothing else", () => {
@@ -50,7 +77,7 @@ test("adp-tokens.css declares every token in tokens.json for both themes, and no
   for (const id of themes){
     const sel = id === themes[0] ? `:root, :root[data-theme="${id}"]` : `:root[data-theme="${id}"]`;
     const want = Object.fromEntries(TOKENS.color.tokens.map(t =>
-      ["--" + t.name, typeof t.value === "string" ? t.value : t.value[id] ?? t.value[themes[0]]]));
+      ["--" + t.name, OVERRIDES[t.name]?.[id] ?? (typeof t.value === "string" ? t.value : t.value[id] ?? t.value[themes[0]])]));
     assert.deepEqual(blocks[sel], want, id);
   }
   const plain = {};
@@ -96,7 +123,8 @@ const px = v => /^-?[\d.]+(px)?$/.test(v) ? parseFloat(v) : null;
 function verticals({prop, value}){
   const parts = value.split(/\s+/);
   if (/^(height|min-height|max-height)$/.test(prop)) return [[px(value), true]];
-  if (prop === "line-height") return [[px(value), true]];
+  // A unitless line height is a multiple of the font size, not a length.
+  if (prop === "line-height") return /px$/.test(value) ? [[px(value), true]] : [];
   if (prop === "font"){ const m = value.match(/\/([\d.]+)px/); return m ? [[parseFloat(m[1]), true]] : []; }
   if (/^(margin|padding)-(top|bottom)$/.test(prop) || /^(top|bottom|row-gap)$/.test(prop)) return [[px(value), false]];
   if (prop === "margin" || prop === "padding") return [[px(parts[0]), false], [px(parts[2] ?? parts[0]), false]];
@@ -172,7 +200,65 @@ test("card labels and prose eyebrows take blue-bright, and card fields keep the 
   assert.equal(at(".adp-prose h3").color, "var(--blue-bright)");
   // The header is the comment that names the source version.
   const head = bundleCss.match(/\/\*[^*]*Copied from[\s\S]*?\*\//)[0].replace(/\s+/g, " ");
-  assert.match(head, /Two rules depart from the source\. A decision card's field labels take blue-bright, not dim\./);
+  assert.match(head, /Four changes depart from the source\. A decision card's field labels take blue-bright, not dim\./);
   assert.match(head, /A prose eyebrow heading takes blue-bright, not dim\./);
   assert.doesNotMatch(head, /24px/);
+});
+
+// The two grid departures (DL-094). A mono run in a sans line, and Firefox's
+// bullet font on a disclosure marker, each grow a line box past its 24px
+// unless the run sets line-height 1. The header comment names both.
+test("inline code and a summary's marker set line-height 1, so neither grows a line box off the grid", () => {
+  const at = sel => props(rules(bundleCss).find(r => r.sel === sel));
+  for (const sel of [".adp-code", ".adp-prose code", ".adp-dl__body code", ".adp-table code", "summary::marker"])
+    assert.equal(at(sel)["line-height"], "1", sel);
+  const head = bundleCss.match(/\/\*[^*]*Copied from[\s\S]*?\*\//)[0].replace(/\s+/g, " ");
+  assert.match(head, /Inline code sets line-height 1/);
+  assert.match(head, /A summary's marker sets line-height 1 too/);
+});
+
+// ---- R9: text reaches 4.5:1 and controls 3:1, apart from faint ----
+
+/* A control's marks are tokens on known grounds, so we check them here. The
+   rendered text pairs are measured in a11y.spec.mts. Faint is the one
+   exception, kept for non-essential text, and every faint pair is named. A
+   placeholder is faint on an input's inset ground. */
+const themeTokens = id => {
+  const blocks = Object.fromEntries(rules(tokensCss).map(r => [r.sel, props(r)]));
+  return blocks[Object.keys(blocks).find(s => s.includes(`[data-theme="${id}"]`))];
+};
+const lum = hex => {
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map(x => x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4);
+  return .2126 * r + .7152 * g + .0722 * b;
+};
+const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+const GROUNDS = ["bg", "panel", "panel-2", "inset"];
+// A filled button is named by its label, not by its fill, so its fill is no
+// mark of its own. The white label on the blue fill is text, checked below.
+const CONTROL_MARKS = [["the focus ring, a pressed filter's border, and a checked box", "blue-bright", GROUNDS]];
+const FAINT_PAIRS = {dark: {"placeholder on inset": 3.08, "quiet text on bg": 3.12, "quiet text on panel": 2.97, "quiet text on panel-2": 2.76},
+  light: {"placeholder on inset": 3.62, "quiet text on bg": 3.62, "quiet text on panel": 4.00, "quiet text on panel-2": 3.39}};
+
+test("every control mark reaches 3:1 on every ground it sits on, in both themes", () => {
+  for (const id of ["dark", "light"]){
+    const t = n => themeTokens(id)["--" + n];
+    for (const [what, mark, grounds] of CONTROL_MARKS) for (const g of grounds)
+      assert.ok(contrast(t(mark), t(g)) >= 3, `${id}: ${what} on ${g} reads ${contrast(t(mark), t(g)).toFixed(2)}:1`);
+    // The live dot is accent in dark and blue in light, on the top bar's bg.
+    const dot = id === "dark" ? t("accent") : t("blue");
+    assert.ok(contrast(dot, t("bg")) >= 3, `${id}: the live dot`);
+  }
+});
+
+test("every text token reaches 4.5:1 on every ground, and faint is the one named exception", () => {
+  for (const id of ["dark", "light"]){
+    const t = n => themeTokens(id)["--" + n];
+    for (const fg of ["ink", "ink-2", "dim", "blue-bright", "warn", "ok", "bad", "unk"]) for (const g of GROUNDS)
+      assert.ok(contrast(t(fg), t(g)) >= 4.5, `${id}: ${fg} on ${g} reads ${contrast(t(fg), t(g)).toFixed(2)}:1`);
+    assert.ok(contrast(t("code-fg"), t("code-bg")) >= 4.5, `${id}: code`);
+    assert.ok(contrast("#ffffff", t("blue")) >= 4.5, `${id}: the primary button's label`);
+    const faint = Object.fromEntries(GROUNDS.map(g => [(g === "inset" ? "placeholder on " : "quiet text on ") + g, +contrast(t("faint"), t(g)).toFixed(2)]));
+    assert.deepEqual(faint, FAINT_PAIRS[id]);
+  }
 });

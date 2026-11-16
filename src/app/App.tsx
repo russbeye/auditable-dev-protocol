@@ -28,20 +28,18 @@ type Sel = {dir: string | null; s: string | null; item: string | null};
 // Calibration and the resume pack are no longer screens. Calibration heads
 // the Ledger, and the packs open as a drawer over any view.
 const SHOWN: Screen[] = ["inspector", "reviews", "watchboard", "ledgers", "new task"];
-/* A converted screen starts from the system's body type. The old theme sets
-   the page body to 15px at a 1.55 line height, and every element without a
-   type of its own inherited that. The other screens keep the old body type
-   until their stage converts them. */
+/* Each screen states its body type, because the Watches and Ledger boards set
+   their tables in 15px while the ticket view reads at the system's 16px. Every
+   screen stops at the page width and centers in the stage. */
+const PAGE: CSSProperties = {color: "var(--ink)", maxWidth: "var(--page-max)", margin: "0 auto"};
 const SYSTEM_TYPE: Partial<Record<Screen, CSSProperties>> = {
-  "inspector": {font: "400 16px/24px var(--font-sans)", color: "var(--ink)"},
-  "reviews": {font: "400 16px/24px var(--font-sans)", color: "var(--ink)"},
-  "watchboard": {font: "400 15px/24px var(--font-sans)", color: "var(--ink)", maxWidth: "var(--page-max)", margin: "0 auto"},
-  "ledgers": {font: "400 15px/24px var(--font-sans)", color: "var(--ink)", maxWidth: "var(--page-max)", margin: "0 auto"},
-  "new task": {font: "400 16px/24px var(--font-sans)", color: "var(--ink)", maxWidth: "var(--page-max)", margin: "0 auto"}};
-/* The Watches, Ledger, and New task pages pad the stage as their boards pad
-   the page, and a narrow window pads it as the NarrowLedger board does. The
-   rail stays beside them, as on every screen. */
-const PAGE_SCREENS: ReadonlySet<Screen> = new Set(["watchboard", "ledgers", "new task"]);
+  "inspector": {...PAGE, font: "400 16px/24px var(--font-sans)"},
+  "reviews": {...PAGE, font: "400 16px/24px var(--font-sans)"},
+  "watchboard": {...PAGE, font: "400 15px/24px var(--font-sans)"},
+  "ledgers": {...PAGE, font: "400 15px/24px var(--font-sans)"},
+  "new task": {...PAGE, font: "400 16px/24px var(--font-sans)"}};
+/* Every screen pads the stage as the Watches and Ledger boards pad the page,
+   and a narrow window pads it as the NarrowLedger board does. */
 const PAGE_PAD = "40px 48px 80px", NARROW_PAD = "32px 24px 80px";
 const SCREEN_IDS: Record<Screen, string> = {"inspector": "scrInspector", "reviews": "scrReviews", "watchboard": "scrWatch",
   "ledgers": "scrLedgers", "calibration": "scrLedgers", "resume pack": "scrInspector", "new task": "scrNew"};
@@ -464,8 +462,8 @@ function App({fetchFn, openFeed}: AppProps){
       about={about} shortcuts={SHORTCUTS} onView={go} onPacks={o => openPacks(o)} onNewTask={() => go("new task")} onTheme={setTheme}
       inert={modal}/>
     {/* The drawer is modal, so the page behind it takes no focus or clicks while it is open. */}
-    <div className="main" inert={modal} style={screen === "inspector" && status ? {display: "flex", flexDirection: "column", overflowY: "auto"}
-      : {position: "relative", gridTemplateColumns: (railFolded || narrow ? "var(--rail-collapsed)" : "var(--rail-width)") + " minmax(0, 1fr)"}}>
+    <div className="main" inert={modal} style={screen === "inspector" && status ? {display: "flex", flexDirection: "column", overflowY: "auto", minHeight: 0}
+      : {display: "grid", minHeight: 0, position: "relative", gridTemplateColumns: (railFolded || narrow ? "var(--rail-collapsed)" : "var(--rail-width)") + " minmax(0, 1fr)"}}>
       {screen === "inspector" && status
         ? <StatusPage kind={status} root={root} host={location.host} onRetry={retry} onNewTask={() => go("new task")}
           onBootstrap={o => openPacks(o, "bootstrap-project")}/>
@@ -473,9 +471,9 @@ function App({fetchFn, openFeed}: AppProps){
       <Rail groups={railShown} total={tickets.length} selKey={selKey} collapsed={railCollapsed} filter={railFilter} folded={railFolded}
         narrow={narrow} attention={attention} selId={selTicket ? selTicket.id || selTicket.dir : null} focusFilter={railFocus}
         onPick={k => { pick(k); if (narrow) setRailOver(false); }} onToggle={toggleRail} onFilter={setRailFilter} onFold={foldRail}/>
-      <main className="stage" style={PAGE_SCREENS.has(screen) ? {padding: narrow ? NARROW_PAD : PAGE_PAD} : undefined}>
+      <main className="stage" style={{overflowY: "auto", padding: narrow ? NARROW_PAD : PAGE_PAD}}>
         {SHOWN.map(s => <section key={s} className={"screen" + (s === screen ? " is-on" : "")}
-          data-s={s} id={SCREEN_IDS[s]} style={SYSTEM_TYPE[s]}>
+          data-s={s} id={SCREEN_IDS[s]} style={{...SYSTEM_TYPE[s], display: s === screen ? "block" : "none"}}>
           {s !== screen ? null
             : s === "inspector" ? <Inspector corpus={corpus} today={today} t={selTicket} tokenOf={tokenOf} notice={bootNotice}
               sel={sel} view={view} dlFilter={dlFilter} missNotice={missNotice} fullClosed={fullClosed}

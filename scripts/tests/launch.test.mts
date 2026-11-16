@@ -82,7 +82,7 @@ test("the launcher prints the mission control URL and nothing else", () => {
   assert.match(firstStdout, /^http:\/\/127\.0\.0\.1:\d+\/app\.html\n$/);
 });
 
-for (const route of ["/adp-shell.css", "/app.html", "/adp-app.js", "/corpus.json",
+for (const route of ["/adp-bundle.css", "/app.html", "/adp-app.js", "/corpus.json",
     "/corpus/T-001/audit-log.md", "/packs.json", "/packs/resume-ticket.pack.md", "/health"]){
   test(`${route} answers no-store with a UTF-8 charset`, async () => {
     const res = await fetch(base + route);

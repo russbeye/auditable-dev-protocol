@@ -75,6 +75,42 @@ test("a section heading renders in the system's section type", async ({page, ser
   expect(type).toEqual(["Space Grotesk", "20px", "28px", "600", "none"]);
 });
 
+/* Each markdown block in a log keeps a style of its own now that only the
+   system's two sheets load. BX001's Test Adversary Document holds one of
+   each. A quote draws its 2px rule, a code block sits on its ground, a
+   numbered list shows its numbers, a table head draws its rule, and a task
+   row shows its box with no Prose marker beside it. */
+for (const theme of ["dark", "light"]) test(`a log's quote, code block, numbered list, table, and task row keep their styles in ${theme}`, async ({page, server}) => {
+  await page.addInitScript(t => localStorage.setItem("adp-theme", t), theme);
+  await open(page, server.url + "#t=BX001&s=sec-test-adversary-document");
+  const prose = page.locator("#scrInspector .adp-prose", {hasText: "The blocks below"});
+  await expect(prose).toBeVisible();
+  const got = await prose.evaluate(root => {
+    const one = (sel: string) => root.querySelector<HTMLElement>(sel)!;
+    const quote = getComputedStyle(one("blockquote"));
+    const pre = getComputedStyle(one("pre.adp-pre"));
+    const nums = [...root.querySelectorAll<HTMLElement>("[role=list] [data-num]")];
+    const th = getComputedStyle(one("table.adp-table th"));
+    const task = one(".task");
+    return {
+      quote: quote.boxShadow, quoteText: quote.color,
+      pre: pre.backgroundColor, preEdge: pre.boxShadow,
+      nums: nums.map(n => [n.textContent, n.checkVisibility() && n.getBoundingClientRect().height > 0]),
+      th: th.boxShadow,
+      taskMarker: getComputedStyle(task, "::before").content, taskBox: Math.round((task.firstElementChild as HTMLElement).getBoundingClientRect().height),
+      ground: getComputedStyle(root.closest<HTMLElement>(".doc")!).backgroundColor,
+    };
+  });
+  expect(got.quote).toMatch(/2px 0px 0px 0px inset|inset 2px 0px 0px 0px/);
+  expect(got.pre).not.toBe("rgba(0, 0, 0, 0)");
+  expect(got.pre).not.toBe(got.ground);
+  expect(got.preEdge).toMatch(/inset/);
+  expect(got.nums).toEqual([["1", true], ["2", true]]);
+  expect(got.th).toMatch(/0px -1px 0px 0px inset|inset 0px -1px 0px 0px/);
+  expect(got.taskMarker).toBe("none");
+  expect(got.taskBox).toBe(16);
+});
+
 /* No old rule reaches the system's text (DL-062, DL-065). We copy the ticket
    view, and each review round with its cards open, into a frame that loads
    the system's two sheets alone, and compare every element that belongs to
@@ -244,12 +280,11 @@ test("the scroll spy names the full-log section at the stage's top", async ({pag
 /* OT-MC012-22. The jsdom walk reads the fixture corpus. This walk reads
    the corpus at ADP_LIVE_ROOT when it is set, so a developer can run it on
    a real repo. CI has no live corpus, so there it walks the fixture. */
-const THEME_CLASSES = new Set(["md", "sr-live"]);
-const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow", "dlrow", "wbl", "wl", "is-hl", "fsec", "fsum", "rvl"]);
-test("every class painted outside a rendered document comes from adp-bundle.css or adp-shell.css", async ({page}) => {
+const HOOK_CLASSES = new Set(["shell", "main", "stage", "screen", "is-on", "doc", "secnav", "md", "sth", "wbrow", "wrow", "lgrow", "dlrow", "wbl", "wl", "is-hl", "fsec", "fsum", "rvl"]);
+test("every class painted outside a rendered document comes from adp-bundle.css", async ({page}) => {
   test.setTimeout(300_000);
   const shell = new Set<string>();
-  for (const sheet of ["adp-bundle.css", "adp-shell.css"]){
+  for (const sheet of ["adp-bundle.css"]){
     const css = fs.readFileSync(path.join(SCRIPTS_DIR, sheet), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
     for (const seg of css.split(/\{[^{}]*\}/)) for (const m of seg.matchAll(/\.([A-Za-z_-][A-Za-z0-9_-]*)/g)) shell.add(m[1]);
   }
@@ -269,6 +304,6 @@ test("every class painted outside a rendered document comes from adp-bundle.css 
     const tickets = new Set(files.filter(f => f.includes("/")).map(f => f.split("/")[0])).size;
     expect(walked).toBe(1 + VIEW_SCREENS.length + 1 + 2 * tickets + reviewed + 1);
   } finally { await s.stop(); }
-  const orphans = [...used].filter(c => !shell.has(c) && !THEME_CLASSES.has(c) && !HOOK_CLASSES.has(c)).sort();
+  const orphans = [...used].filter(c => !shell.has(c) && !HOOK_CLASSES.has(c)).sort();
   expect(orphans).toEqual([]);
 });

@@ -507,11 +507,13 @@ function renderProse(md: unknown): EscapedHtml{
    where the system has none, on-grid values from its tokens. A table is the
    Table component and a code block the Pre component. A blockquote, a
    numbered list, a rule, a task box, and a fourth to sixth level heading take
-   inline values, so the old theme's rules for them no longer reach a ticket.
+   inline values. A rule draws its line as an outer shadow on a box of no
+   height, so the line adds no pixel to the 4px rhythm.
    A plain list item lays its marker and its content out as a flex row, so we
    wrap the content in one span. Bare, each text run and code span would
-   become a flex item of its own and break the line apart. A task item keeps
-   its own row of box and text. A numbered list becomes a list of divs with
+   become a flex item of its own and break the line apart. A task item
+   becomes a div with its own row of box and text, because the Prose rule's
+   ▸ marker on an li would sit beside the box. A numbered list becomes a list of divs with
    the number as text in a blue mono column, as the TicketPrompt board draws
    it, because the Prose rule gives every li a ▸ marker that no inline style
    can remove. Its numbers carry data-num, so a test can tell them from the
@@ -526,6 +528,7 @@ function dsTokens(h: string): string{
   return h.replace(/<span class="pill p-[a-z]+">([^<]*)<\/span>/g,(_,w: string)=>`<span class="adp-chip adp-chip--s${DS_TOKEN[w]||''}">${w}</span>`);
 }
 const SUB_HEAD='margin:32px 0 8px;font:500 11px/24px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--blue-bright)';
+const TASK='display:flex;gap:12px;align-items:flex-start';
 const CBX='display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:16px;height:16px;margin:4px 0 0;padding:0;border:0;'
   +'box-shadow:inset 0 0 0 1px var(--line-bright);background:var(--inset);font:400 11px/16px var(--font-mono);color:var(--ok)';
 function numbered(h: string): string{
@@ -543,14 +546,25 @@ function quoteEnds(h: string): string{
     return `<blockquote${attrs}>${i<0?body:body.slice(0,i)+'<p style="margin:0">'+body.slice(i+3)}</blockquote>`;
   });
 }
+/* A task item is a div, so the Prose marker on every li cannot sit beside its
+   box. A ul may hold only li, so a list that holds a task item becomes a div
+   list with the Prose ul's spacing. Its plain items draw the ▸ marker inline.
+   We leave a list that nests another list as it is. */
+function taskLists(h: string): string{
+  return h.replace(/<ul class="md-list">((?:(?!<ul)[\s\S])*?)<\/ul>/g,(all,body: string)=>!body.includes('<li class="task">')?all:
+    '<div role="list" style="margin:0 0 16px;display:flex;flex-direction:column;gap:12px;font-size:15px;line-height:24px">'
+    +body.replace(/<li class="task">([\s\S]*?)<\/li>/g,'<div role="listitem" class="task" style="'+TASK+'">$1</div>')
+      .replace(/<li>([\s\S]*?)<\/li>/g,'<div role="listitem" style="display:flex;gap:12px"><span aria-hidden="true" style="color:var(--blue-bright);font-size:11px;flex:0 0 auto">▸</span><span>$1</span></div>')
+    +'</div>');
+}
 function proseBlocks(h: string): string{
-  return quoteEnds(numbered(dsTokens(h)))
-    .replace(/<li>/g,'<li><span>').replace(/<li class="task">([\s\S]*?)<\/li>/g,'<li class="task">$1</LI>')
-    .replace(/<\/li>/g,'</span></li>').replace(/<\/LI>/g,'</li>')
+  return quoteEnds(taskLists(numbered(dsTokens(h))))
+    .replace(/<li>/g,'<li><span>').replace(/<li class="task">([\s\S]*?)<\/li>/g,'<div role="listitem" class="task" style="'+TASK+'">$1</LI>')
+    .replace(/<\/li>/g,'</span></li>').replace(/<\/LI>/g,'</div>')
     .replace(/<div class="tbl-wrap"><table class="md-tbl">/g,'<div style="overflow-x:auto;margin:0 0 16px"><table class="adp-table">')
     .replace(/<blockquote>/g,'<blockquote style="margin:0 0 16px;padding:8px 16px;border:0;box-shadow:inset 2px 0 0 var(--line-bright);background:none;color:var(--ink-2)">')
     .replace(/<pre class="cb"><code>/g,'<pre class="adp-pre" style="margin:0 0 16px"><code style="font:inherit;color:inherit;background:none;padding:0">')
-    .replace(/<hr>/g,'<hr style="margin:24px 0;height:1px;border:0;background:none;box-shadow:inset 0 1px 0 var(--line)">')
+    .replace(/<hr>/g,'<hr style="margin:24px 0;height:0;border:0;background:none;box-shadow:0 1px 0 var(--line)">')
     .replace(/<span class="cbx( on)? ?">/g,()=>`<span style="${CBX}">`)
     .replace(/<h([3-6]) class="sub">/g,(_,n)=>`<h${n} style="${SUB_HEAD}">`);
 }

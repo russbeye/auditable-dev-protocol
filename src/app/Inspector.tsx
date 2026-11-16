@@ -11,7 +11,7 @@ import type {SectionEntry, SectionState} from "../lib/adp-derive-lib.ts";
 import type {Ticket} from "../lib/adp-index-lib.ts";
 import type {DLEntry, EscapedHtml, Section} from "../lib/adp-parser-lib.ts";
 import type {YamlMap, YamlValue} from "../lib/adp-prompt-lib.ts";
-import type {Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPanelRow} from "../lib/adp-shell-lib.ts";
+import type {CitationChip, Corpus, DecisionPanelRow, FetchedText, SortState, ViewMode, WatchPanelRow} from "../lib/adp-shell-lib.ts";
 import {DecisionsPanel, Filters, WatchesPanel, liveFilter, type PanelActions} from "./panels.tsx";
 import {PhaseStrip, gapNote, stripModel, type StripReviews} from "./PhaseStrip.tsx";
 
@@ -46,8 +46,10 @@ function foldCard(e: ReactMouseEvent<HTMLElement>){
 /* A Prose container in the ticket view fills its pane. The Prose component
    caps its column at 72ch, which left a long card and its prose in a narrow
    band with the rest of the pane empty, so the reader asked for the full
-   width. The pane's own padding keeps the text off its edges. */
-const FILL: CSSProperties = {maxWidth: "none"};
+   width. The pane's own padding keeps the text off its edges. A log carries
+   long unbroken runs, such as a bare URL or an identifier in code, so we
+   break those mid-token rather than let one widen the pane. */
+const FILL: CSSProperties = {maxWidth: "none", overflowWrap: "break-word"};
 
 // ---- the ticket's text, parsed once per text ----
 
@@ -159,8 +161,7 @@ function resolveSection(t: Ticket, prompt: PromptView | null, s: string | null, 
    Every value shows, so the board's "Show more" folds are left out. The
    YAML key name sits in the title's tooltip, not beside it, because a second
    name for every key read as a second header. The
-   parts carry data-p hooks, not the old pcard classes, which the old sheet
-   still styles for the vanilla builder. */
+   parts carry data-p hooks, which the tests select by. */
 const P_NONE: CSSProperties = {color: "var(--faint)", fontStyle: "italic"};
 const P_GRID: CSSProperties = {display: "grid", gridTemplateColumns: "minmax(96px, 160px) minmax(0, 1fr)", columnGap: 16};
 const P_CELL: CSSProperties = {padding: "8px 0", minWidth: 0, overflowWrap: "anywhere"};
@@ -213,8 +214,10 @@ function PromptCards({obj}: {obj: YamlMap}){
   const keys = known.concat(Object.keys(obj).filter(k => !known.includes(k)));
   return <div>{keys.map(k => {
     const v = obj[k];
+    // We center a title on its value. On a shared baseline, the 20px title
+    // and the 16px value make a 30px row, which is off the 4px grid.
     return <section key={k} data-p="card" className="doc" style={PANE}>
-      <div style={{display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: S.isLine(v) ? 0 : 16}}>
+      <div style={{display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: S.isLine(v) ? 0 : 16}}>
         <h2 data-p="title" title={k} className="adp-section" style={SECTION_HEAD}>{S.keyTitle(k)}</h2>
         {S.isLine(v) ? <span data-p="val" style={P_VAL}><Scalar v={v} at={k}/></span> : null}</div>
       {S.isLine(v) ? null : <Value v={v} at={k}/>}
@@ -281,12 +284,9 @@ function Notice({text, label}: {text: string; label?: string}){
 }
 
 // A pane takes the DecisionCard's surface, the panel ground under an inset
-// line, on the 4px grid. The design system has no pane of its own, and the
-// old pane class's border and ground no longer reach it.
+// line, on the 4px grid. The design system has no pane of its own.
 const PANE: CSSProperties = {padding: "16px 24px", margin: "0 0 16px", border: 0, background: "var(--panel)",
   boxShadow: "inset 0 0 0 1px var(--line)"};
-// The old sheet's ".screen h2" outranks the system's section class and sets a
-// mono uppercase face, so the section heading states the system's values.
 const SECTION_HEAD: CSSProperties = {margin: 0, font: "600 20px/28px var(--font-sans)", letterSpacing: "normal", textTransform: "none"};
 const FSEC: CSSProperties = {boxShadow: "inset 0 1px 0 var(--line)"};
 const FSUM: CSSProperties = {padding: "12px 0", cursor: "pointer", font: "600 16px/24px var(--font-sans)", color: "var(--ink)"};
@@ -433,6 +433,20 @@ function chipModel(t: Ticket, key: string){
   const meta = s ? P.metaFor(s.title) : null;
   return {key, label: !s ? "§" : s.phase != null ? "P" + s.phase : meta!.tag || meta!.kind, title: s ? s.title : key};
 }
+/* A row shows one chip per label. Phase 7 alone holds four sections, and a
+   ticket can hold many review rounds or post-merge notes, so an entry cited
+   in several of them would repeat one word along the row. The merged chip
+   lists every citing section, opens a menu that jumps to each, and names
+   them all in its tooltip. */
+function citeChips(t: Ticket, keys: string[]){
+  const out: CitationChip[] = [];
+  for (const k of keys){
+    const c = chipModel(t, k), prev = out.find(x => x.label === c.label);
+    if (prev) { prev.all.push({key: c.key, title: c.title}); prev.title += " · " + c.title; }
+    else out.push({...c, all: [{key: c.key, title: c.title}]});
+  }
+  return out;
+}
 
 /* The decisions and watches panels build their rows here, so the inspector
    and the reviews screen sort, chip, and highlight a cited entry the same
@@ -452,7 +466,7 @@ function decisionRows(t: Ticket, shown: Ticket["decisions"], sort: SortState, it
     return {id: d.id, title: d.title, conf: P.dlChipSplit(d.confidence).word, confKind: P.dlConfKind(d.confidence),
       statusKind: D.decisionKind(d), watch: (D.coveringWatch(t, d.id) || {wid: null}).wid,
       settled: sw && {wid: sw.wid, outcome: sw.outcome, closed: sw.closed},
-      chips: D.citingSections(t, d.id).map(k => chipModel(t, k)), hl: item === d.id,
+      chips: citeChips(t, D.citingSections(t, d.id)), hl: item === d.id,
       age: d.created ? -D.daysUntil(d.created, today) : null};
   });
 }
@@ -465,7 +479,7 @@ function watchRows(t: Ticket, list: Ticket["watches"], sort: SortState, item: st
   }).map(w => ({wid: w.wid, what: w.what, dls: w.dl || [],
     dueText: w.anchored ? w.due : (w.window || "relative"), dueDated: !!w.anchored,
     state: D.dueState(w, today), stateLabel: D.dueLabel(w, today),
-    chips: D.citingSections(t, w.wid).map(k => chipModel(t, k)), hl: item === w.wid,
+    chips: citeChips(t, D.citingSections(t, w.wid)), hl: item === w.wid,
     left: w.anchored && !w.closed ? D.daysUntil(w.due!, today) : null}));
 }
 

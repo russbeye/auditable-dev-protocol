@@ -440,7 +440,15 @@ function unread(snap: Snapshot): Snapshot {
    - A decision gains its age after its watch cell, which the app reads
      from the card's Created date.
    - On a Decision Log section the filter sits above the cards and counts
-     the cards, so its old run leaves the panel and its own tests pin it. */
+     the cards, so its old run leaves the panel and its own tests pin it.
+   - A row's cited-in chips show one chip per label. A repeated chip
+     leaves, the first one gains the count of sections it stands for, and its
+     tooltip joins every citing section's title with " · ", so the comparison
+     splits that tooltip back into its titles. */
+const onePerLabel = (chips: string[]) => chips.flatMap((c, k) => {
+  const n = chips.filter(x => x === c).length;
+  return chips.indexOf(c) !== k ? [] : n > 1 ? [c, String(n)] : [c];
+});
 // A table sets each backticked run of a title or a watch's text as inline
 // code, so the run splits into its words around the code, as the page reads.
 const coded = (runs: string[]) => runs.flatMap(r => r.split(/`([^`]+)`/).map(x => x.trim()).filter(Boolean));
@@ -477,13 +485,13 @@ function retabled(old: string[], spine: boolean, ages: string[]): string[] {
       if (dec){
         let j = 4;
         while (j < r.length && /^(no watch|OT-.+)$/.test(r[j])) j++;
-        out.push(r[0], r[1], r[2], r[3].toUpperCase(), ...r.slice(4, j), ages[a++], ...r.slice(j));
+        out.push(r[0], r[1], r[2], r[3].toUpperCase(), ...r.slice(4, j), ages[a++], ...onePerLabel(r.slice(j)));
       } else {
         const j = r.findIndex((x, k) => k > 1 && DUE_LABEL.test(x));
         assert.ok(j > 0, "the baseline watch row has no due label: " + r.join(" | "));
         const m = r[j].match(DUE_LABEL)!;
         const due = m[1] ? ["OVERDUE", "-" + m[1] + "d"] : m[2] ? [Number(m[2]) <= 14 ? "SOON" : "UPCOMING", m[2] + "d"] : [r[j], "—"];
-        out.push(...r.slice(0, j), ...due, ...r.slice(j + 1));
+        out.push(...r.slice(0, j), ...due, ...onePerLabel(r.slice(j + 1)));
       }
     }
   }
@@ -515,7 +523,9 @@ function withoutPanels(got: Snapshot, want: Region): [Snapshot, Region] {
   const ages = $$("#scrInspector tr.dlrow td.adp-col-num").map(td => td.textContent!);
   assert.deepEqual(recs.flatMap(r => r.text), coded(retabled(oldRuns, !!bar, ages)), "the panels");
   const GROUPS = ["aria-label=Decisions cited", "aria-label=Watches cited", "aria-label=Filter by status"];
-  const newAttrs = recs.flatMap(r => r.attrs).filter(x => !GROUPS.includes(x));
+  const merged = new Set($$("#scrInspector .adp-chip--s[data-key]").map(c => c.getAttribute("title")!).filter(t => t.includes(" · ")));
+  const newAttrs = recs.flatMap(r => r.attrs).filter(x => !GROUPS.includes(x))
+    .flatMap(x => merged.has(x.slice(6)) && x.startsWith("title=") ? x.slice(6).split(" · ").map(t => "title=" + t) : [x]);
   const keep = want.attrs.length - newAttrs.length;
   assert.deepEqual(want.attrs.slice(keep), newAttrs, "the panels' attributes");
   return [{...got, main}, {text: from < 0 ? want.text : want.text.slice(0, from), attrs: want.attrs.slice(0, keep)}];
@@ -2018,10 +2028,14 @@ test("a settled decision's watch cell keeps the id and puts the ruling on hover"
   assert.ok(!container.innerHTML.includes(`adp-chip--closed`));
 });
 
-test("an open decision with only a settled watch leads with the marker", () => {
+// The marker, the closed watch's id, and how it ended each take their own line,
+// so a closed watch never reads as a live one and the column stays one id wide.
+test("an open decision with only a settled watch leads with the marker and names how the watch ended", () => {
   const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [panelRow("open")]}));
-  assert.ok(container.innerHTML.includes(`<span class="adp-chip adp-chip--s adp-chip--open">no watch</span> <a class="wl"`));
-  assert.ok(container.innerHTML.includes(`title="closed VALIDATED 2026-09-01"`));
+  const cell = container.querySelector("td.adp-col-id:nth-of-type(5) > span")!;
+  assert.match(cell.getAttribute("style")!, /flex-direction: column/);
+  assert.deepEqual([...cell.children].map(e => [e.tagName, e.textContent]), [["SPAN", "no watch"], ["A", "OT-1"], ["SPAN", "VALIDATED"]]);
+  assert.equal(cell.children[1].getAttribute("title"), "closed VALIDATED 2026-09-01");
 });
 
 // ---- the inspector under live updates ----
@@ -2525,6 +2539,61 @@ test("calibration counts a ruled entry by its ruling, never its card", async () 
   assert.match(scr, /1 validated/);
   assert.match(scr, /1 of 1 ruled validated/);
   assert.equal($$('#scrCalib [data-calk="open"]').length, 0);
+});
+
+// A phase that holds several citing sections shows one chip with their
+// count. The chip opens a menu that jumps to each of them.
+test("an entry cited by two sections of one phase shows one chip for that phase, whose menu jumps to each", async () => {
+  await boot({hash: "#t=CC3&s=sec-decision-log", fetch: oneLog(["# Audit Log — CC3 gamma", "", "## Decision Log", "",
+    "### [DL-001] Cited twice in Phase 7", "- **Decision:** pick d", "- **Confidence:** HIGH", "- **Status:** OPEN", "",
+    "## PR Summary", "", "Cites DL-001.", "", "## Residual Risk", "", "DL-001 again.", "",
+    "## Obligation Ticket List", "", "DL-001 once more.", ""].join("\n"))});
+  await click($('[data-view="full"]'));
+  await click($('[data-view="section"]'));
+  const chips = () => $$('.adp-chip--s[data-key]').filter(a => a.closest("tr")?.textContent!.includes("DL-001"));
+  assert.deepEqual(chips().map(a => a.textContent), ["P5", "P72", "P9"]);
+  const p7 = chips()[1];
+  assert.equal(p7.tagName, "BUTTON");
+  assert.equal(p7.getAttribute("title"), "PR Summary · Residual Risk");
+  assert.equal(p7.getAttribute("aria-expanded"), "false");
+  // The chip opens a menu of its sections, and each one jumps there.
+  await click(p7);
+  assert.equal(chips()[1].getAttribute("aria-expanded"), "true");
+  const items = $$('[role="menu"] [role="menuitem"]');
+  assert.deepEqual(items.map(b => [b.textContent, b.getAttribute("data-key")]), [["PR Summary", "sec-pr-summary"], ["Residual Risk", "sec-residual-risk"]]);
+  assert.ok(document.activeElement === items[0], "the menu opens on its first section");
+  fireEvent.keyDown(items[0], {key: "ArrowDown"});
+  assert.ok(document.activeElement === items[1], "the down arrow moves to the next section");
+  fireEvent.keyDown(items[1], {key: "Escape"});
+  await settle(1);
+  assert.equal($$('[role="menu"]').length, 0);
+  assert.ok(document.activeElement === chips()[1], "Escape hands focus back to the chip");
+  await click(chips()[1]);
+  await click($$('[role="menu"] [role="menuitem"]')[1]);
+  assert.equal(($("#secSel") as HTMLSelectElement).value, "sec-residual-risk");
+});
+
+// One chip menu is open at a time. A click on any other chip closes the open
+// menu, even though a chip's own click stops at the chip.
+test("a click on another cited-in chip closes an open chip menu", async () => {
+  await boot({hash: "#t=CC3&s=sec-decision-log", fetch: oneLog(["# Audit Log — CC3 gamma", "", "## Decision Log", "",
+    "### [DL-001] First", "- **Decision:** pick d", "- **Confidence:** HIGH", "- **Status:** OPEN", "",
+    "### [DL-002] Second", "- **Decision:** pick e", "- **Confidence:** HIGH", "- **Status:** OPEN", "",
+    "## PR Summary", "", "Cites DL-001 and DL-002.", "", "## Residual Risk", "", "DL-001 and DL-002 again.", "",
+    "## Obligation Ticket List", "", "DL-002 once more.", ""].join("\n"))});
+  await click($('[data-view="full"]'));
+  await click($('[data-view="section"]'));
+  const chips = (dl: string) => $$('.adp-chip--s[data-key]').filter(a => a.closest("tr")?.textContent!.includes(dl));
+  await click(chips("DL-001")[1]);
+  await click(chips("DL-002")[1]);
+  const menus = $$('[role="menu"]');
+  assert.equal(menus.length, 1);
+  assert.equal(chips("DL-001")[1].getAttribute("aria-expanded"), "false");
+  assert.equal(chips("DL-002")[1].getAttribute("aria-controls"), menus[0].id);
+  assert.equal(document.querySelectorAll(`[id="${menus[0].id}"]`).length, 1);
+  // A one-section chip jumps, and the jump closes the open menu too.
+  await click(chips("DL-002")[2]);
+  assert.equal($$('[role="menu"]').length, 0);
 });
 
 // DL-007: calibration heads the Ledger, so its old link lands there.
@@ -3419,7 +3488,16 @@ test("prose blocks take the Table and Pre components and on-grid values, and the
   assert.match(html, /<div role="list" style="margin:0 0 16px;[^"]*"><div role="listitem" style="display:grid;grid-template-columns:24px minmax\(0,1fr\);gap:8px"><span data-num="" style="font:400 12px\/24px var\(--font-mono\);color:var\(--blue-bright\)">1<\/span><span>one<\/span><\/div><\/div>/);
   assert.match(P.renderProse("3. three\n4. four"), />3<\/span><span>three<\/span>[\s\S]*>4<\/span><span>four<\/span>/);
   assert.match(html, /<hr style="margin:24px 0;/);
-  assert.match(html, /<li class="task"><span style="display:inline-flex;[^"]*width:16px;height:16px;[^"]*">✓<\/span><span>done<\/span><\/li>/);
+  // A task item is a div, because the Prose rule gives every li a ▸ marker
+  // that no inline style can hide, and a task item shows its box instead.
+  assert.match(html, /<div role="listitem" class="task" style="display:flex;gap:12px;align-items:flex-start"><span style="display:inline-flex;[^"]*width:16px;height:16px;[^"]*">✓<\/span><span>done<\/span><\/div>/);
+  assert.doesNotMatch(html, /<li class="task"/);
+  // A ul holds only li, so a list with a task item becomes a div list, and a
+  // plain item in it draws the ▸ marker itself.
+  const mixed = P.renderProse("- plain\n- [ ] todo");
+  assert.doesNotMatch(mixed, /<ul|<li/);
+  assert.match(mixed, /^<div role="list" style="margin:0 0 16px;[^"]*"><div role="listitem" style="display:flex;gap:12px"><span aria-hidden="true" [^>]*>▸<\/span><span>plain<\/span><\/div><div role="listitem" class="task"/);
+  assert.match(P.renderProse("- a\n- b"), /^<ul class="md-list"><li><span>a<\/span><\/li>/);
   assert.match(html, /<h3 style="margin:32px 0 8px;font:500 11px\/24px var\(--font-mono\);[^"]*color:var\(--blue-bright\)">Sub head<\/h3>/);
   assert.doesNotMatch(html, /md-tbl|tbl-wrap|class="cb"|class="sub"|cbx|<ol/);
   const plain = P.renderMarkdown(md);
@@ -3588,7 +3666,9 @@ test("a table sets a backticked run of a title as inline code and keeps a lone b
 test("the decisions panel renders hostile harvested fields as text", () => {
   const hostile = "<img src=x onerror=alert(1)>";
   const {container} = render(createElement(DecisionsPanel, {...panelProps, rows: [{id: hostile, title: hostile, conf: hostile,
-    confKind: "other", statusKind: "open", watch: hostile, settled: null, chips: [{key: hostile, label: hostile, title: hostile}], hl: false, age: null}]}));
+    confKind: "other", statusKind: "open", watch: hostile, settled: null, chips: [{key: hostile, label: hostile, title: hostile, all: [{key: hostile, title: hostile}]},
+      {key: hostile + "1", label: hostile, title: hostile, all: [{key: hostile + "1", title: hostile}, {key: hostile + "2", title: hostile}]}],
+    hl: false, age: null}]}));
   assert.ok(!container.innerHTML.includes("<img"));
   assert.ok(container.textContent!.includes(hostile));
 });
@@ -4762,6 +4842,11 @@ test("the live region speaks the verdict after an edit or a start that flips it,
   await click($("#newTaskBtn"));
   const live = () => $("#ntLive");
   assert.equal(live().getAttribute("aria-live"), "polite");
+  // The region stays rendered but clipped to one pixel, so a sighted reader
+  // never sees the spoken words. The browser test measures the same box.
+  const st = live().style;
+  assert.deepEqual([st.position, st.width, st.height, st.overflow], ["absolute", "1px", "1px", "hidden"]);
+  assert.match(st.clip, /^rect\(0/);
   await advance(1000);
   assert.equal(live().textContent, "");
   // A start on a blank form loads a valid prompt, and the region says so
@@ -4876,26 +4961,55 @@ test("no screen offers a file input, a paste field, or a drop target", async () 
 // ---- the sheets own the app's classes ----
 
 /* Everything the app paints outside a rendered document takes its classes
-   from adp-bundle.css, or from adp-shell.css on a screen not yet moved onto
-   the design system. Rendered documents sit in .md, where the theme's
-   document styles apply. Two theme classes are deliberate: .md itself, and
-   .sr-live, which hides New task's spoken verdict. The hook classes carry no
+   from adp-bundle.css, the one sheet with class rules. Rendered documents sit
+   in .md, which carries the parser's own classes. The hook classes carry no
    style at all, because the handlers and the tests select by them. The
-   shell's grid sits in its own style attribute. */
-const THEME_CLASSES = new Set(["md", "sr-live"]);
-const HOOK_CLASSES = new Set(["shell", "sth", "wbrow", "wrow", "lgrow", "dlrow", "wbl", "wl", "fsec", "fsum"]);
-test("the app's screens use only adp-bundle.css and adp-shell.css classes outside rendered documents", async () => {
+   shell's layout sits in style attributes. */
+const HOOK_CLASSES = new Set(["shell", "main", "stage", "screen", "is-on", "doc", "secnav", "md", "sth", "wbrow", "wrow", "lgrow",
+  "dlrow", "wbl", "wl", "fsec", "fsum"]);
+test("the app's screens use only adp-bundle.css classes outside rendered documents", async () => {
+  const css = fs.readFileSync(path.join(import.meta.dirname, "..", "adp-bundle.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   const shell = new Set<string>();
-  for (const sheet of ["adp-bundle.css", "adp-shell.css"]){
-    const css = fs.readFileSync(path.join(import.meta.dirname, "..", sheet), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-    for (const seg of css.split(/\{[^{}]*\}/)) for (const m of seg.matchAll(/\.([A-Za-z_-][A-Za-z0-9_-]*)/g)) shell.add(m[1]);
-  }
+  for (const seg of css.split(/\{[^{}]*\}/)) for (const m of seg.matchAll(/\.([A-Za-z_-][A-Za-z0-9_-]*)/g)) shell.add(m[1]);
   const used = new Set<string>();
   const take = () => { for (const el of $$("[class]")) if (!el.parentElement?.closest(".md"))
     for (const c of el.getAttribute("class")!.split(/\s+/)) if (c) used.add(c); };
   await everyScreen(take);
-  const orphans = [...used].filter(c => !shell.has(c) && !THEME_CLASSES.has(c) && !HOOK_CLASSES.has(c)).sort();
+  const orphans = [...used].filter(c => !shell.has(c) && !HOOK_CLASSES.has(c)).sort();
   assert.deepEqual(orphans, []);
   // A hook that gains a rule belongs in the sheet's set, not in this list.
   for (const c of HOOK_CLASSES) assert.ok(used.has(c) && !shell.has(c), c);
+});
+
+/* R3. A chip is a Status chip, a Tag, or a Filter chip, and nothing else
+   draws one. A Status chip carries one status modifier and a Tag carries
+   none. The small size is the one modifier that picks 20px over 24px. We
+   walk rendered documents too, because the parser writes chips into them,
+   and we catch any old pill, chit, or badge class that would draw its own. */
+const CHIP_STATUS = ["open", "validated", "invalidated", "unknown", "closed"];
+const CHIP_MODS = new Set(["adp-chip--s", "adp-chip--id", ...CHIP_STATUS.map(s => "adp-chip--" + s)]);
+test("every chip on every screen is one Status, Tag, or Filter chip at one size", async () => {
+  const faults = new Set<string>();
+  let chips = 0;
+  const take = () => {
+    for (const el of $$("[class]")){
+      const cls = el.getAttribute("class")!.split(/\s+/).filter(Boolean);
+      const chipish = cls.some(c => /^(adp-chip|adp-filter)$|pill|chit|badge|^p-|tag$/.test(c));
+      if (!chipish) continue;
+      chips++;
+      const name = el.outerHTML.slice(0, 90);
+      if (cls.includes("adp-filter")){
+        if (cls.length !== 1) faults.add(`${name} adds a class to the Filter chip`);
+        continue;
+      }
+      if (!cls.includes("adp-chip")){ faults.add(`${name} is not a system chip`); continue; }
+      const extra = cls.filter(c => c !== "adp-chip" && !CHIP_MODS.has(c));
+      const status = cls.filter(c => CHIP_STATUS.some(s => c === "adp-chip--" + s));
+      if (extra.length) faults.add(`${name} carries ${extra.join(" ")}`);
+      if (status.length > 1) faults.add(`${name} carries two statuses`);
+    }
+  };
+  await everyScreen(take);
+  assert.ok(chips > 50, `walked ${chips} chips`);
+  assert.deepEqual([...faults], []);
 });
