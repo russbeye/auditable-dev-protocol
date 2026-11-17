@@ -63,6 +63,8 @@ You need Claude Code, `git`, and Node.js 22.18 or later.
 
 The skill is ready in the next Claude Code session you start. To update it, run `git -C ~/.claude/skills/auditable-dev-protocol pull`.
 
+The commands in this README use the user-level path. For a per-project install, run them from the project root and replace `~/.claude/skills/` with `.claude/skills/`. For example, `git -C .claude/skills/auditable-dev-protocol pull`.
+
 **Optional:** install [prreview](https://github.com/russbeye/prreview), the sister skill that reviews a pull request and files the review beside the task. Mission control's Reviews screen shows what it writes.
 
 ## Use it
@@ -123,7 +125,7 @@ A **ticket** is one task: one folder under `.adp/`, one audit log. The left rail
 
 - **Start your day at the top of the rail.** "Needs attention" collects the tickets that owe you something, and each one says what: a watch past its date, a decision with no watch behind it, or a phase that was never written.
 - **Before you change old code, read its ticket.** The Decision Log tells you which constraints were real and which were guesses. A guess marked LOW is a place to look first.
-- **Hand a reviewer the ticket, not just the diff.** The phase strip jumps to the Recommendation Brief or the Pre-Mortem in one click, and the Reviews tab shows every review round beside it.
+- **Hand a reviewer the ticket, not just the diff.** The phase strip jumps to the Recommendation Brief or the Pre-Mortem in one click. Once a review round exists, a **Reviews** box at the end of the strip opens the Reviews screen for the ticket.
 
 ### Watches: every promise to check back
 
