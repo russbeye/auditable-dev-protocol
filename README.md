@@ -174,7 +174,10 @@ The Ledger lists every decision on record across every ticket: its confidence, i
 
 ## What's inside
 
-- `SKILL.md`: the full protocol, its gates, and the artifact each phase produces.
+- `SKILL.md`: the rules that hold for the whole run, and a table that names each phase's two files.
+- `references/phases/`: one file per phase, with what the phase does and the gate that ends it.
+- `references/artifacts/`: one file per artifact, with the template the audit log copies.
+- `references/sections.md`: the section kinds an audit log uses, and the order they take.
 - `prompts/prompt-template.yaml`: the YAML template for framing a request.
 - `references/prompt-template-annotated.yaml`: the same template with every field and option documented.
 - `references/failure-modes.md`: maps a symptom to the artifact to open first when something breaks.

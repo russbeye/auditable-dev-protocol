@@ -45,6 +45,23 @@ test("SKILL.md launches mission control and validates through the Node scripts",
   for (const retired of ["adp-serve.py", "validate-prompt.py", ...RETIRED_PAGES]) assert.ok(!skill.includes(retired), retired);
 });
 
+// The harness loads only SKILL.md, so a phase file that SKILL.md does not name
+// never reaches the model, and a name with no file behind it sends the model
+// to a failed Read.
+test("SKILL.md names a phase file and an artifact file for every phase, and every file it names exists", () => {
+  const skill = fs.readFileSync(path.join(ROOT, "SKILL.md"), "utf8");
+  const named = new Set([...skill.matchAll(/<skill-dir>\/(references\/(?:(?:phases|artifacts)\/[\w-]+|sections)\.md)/g)].map(m => m[1]));
+  for (const rel of named) assert.ok(fs.existsSync(path.join(ROOT, rel)), rel);
+  for (const dir of ["phases", "artifacts"]){
+    for (const f of fs.readdirSync(path.join(ROOT, "references", dir))) assert.ok(named.has(`references/${dir}/${f}`), `${dir}/${f} is not named`);
+  }
+  assert.ok(named.has("references/sections.md"), "references/sections.md is not named");
+  for (let n = 1; n <= 9; n++){
+    const row = skill.split("\n").find(l => l.startsWith(`| ${n} | `));
+    assert.ok(row?.includes(`/references/phases/phase-${n}-`) && row.includes("/references/artifacts/"), `phase ${n} has no loading row`);
+  }
+});
+
 /* The vanilla pages and the browser-globals bundle are gone, so no tracked
    file may send a reader to one. Two kinds of file keep the names: the
    frozen parity prompts, which are data the validator reads byte for byte,

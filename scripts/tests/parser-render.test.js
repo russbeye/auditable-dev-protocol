@@ -106,11 +106,11 @@ test("companion headings resolve to their kind with no phase tag, and near misse
   }
 });
 
-test("SKILL.md's section vocabulary names every kind the registry knows", () => {
-  const skill = fs.readFileSync(path.join(__dirname, "..", "..", "SKILL.md"), "utf8");
-  const at = skill.indexOf("### Section vocabulary");
-  assert.ok(at > -1, "SKILL.md lacks the Section vocabulary subsection");
-  const sub = skill.slice(at, skill.indexOf("**Persist everything", at));
+test("references/sections.md's section vocabulary names every kind the registry knows", () => {
+  const sections = fs.readFileSync(path.join(__dirname, "..", "..", "references", "sections.md"), "utf8");
+  const at = sections.indexOf("### Section vocabulary");
+  assert.ok(at > -1, "references/sections.md lacks the Section vocabulary subsection");
+  const sub = sections.slice(at, sections.indexOf("### Section order", at));
   for (const kind of SECTION_KINDS) assert.ok(sub.includes("| `" + kind + "` |"), kind);
 });
 

@@ -217,7 +217,7 @@ test("packGapKind reads the gap off the signal's leading token", () => {
   assert.equal(S.packGapKind("An UNOBSERVABLE assumption elsewhere in the sentence"), null);
 });
 
-/* The third signal form SKILL.md fixes: the card points at a Pre-Mortem row
+/* The third signal form the Decision Log template fixes: the card points at a Pre-Mortem row
    and the row owns the signal. The quoted mode is matched verbatim, escapes
    undone, against the ticket's own rows. */
 const PM_ROWS = [
