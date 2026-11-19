@@ -178,7 +178,10 @@ offset of the byte. The advisory never fails a check and never enters an index d
 Each phase keeps its rules in a phase file and its template in an artifact file, both under
 `<skill-dir>/references/`. When a phase starts, read both files before you do anything else in
 that phase. Read a file again when its text is no longer in context. Phase 1 starts when this
-skill loads, so read the two Phase 1 files before your first reply.
+skill loads, so read the two Phase 1 files before your first reply. A later phase starts only when
+the gate before it is confirmed: by the developer, or in a solo or one-shot run by the gate
+confirmation you write out. Before you write an artifact heading, read that phase's phase file and
+artifact file if you have not read them in this session.
 
 | Phase | Phase file | Artifact file |
 |-------|------------|---------------|
