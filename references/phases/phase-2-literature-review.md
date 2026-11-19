@@ -5,6 +5,3 @@ conventions, operational and organizational constraints, system history and inte
 situational awareness a senior engineer carries and no file records, so ask for it. Second, directed
 code reading by you: targeted examination that answers questions the Problem Statement raised,
 directed by hypotheses rather than curiosity. Then build the three-column knowledge inventory.
-
-**Gate:** Every "Cannot Determine" item is resolved by the developer or logged as an accepted unknown
-before Phase 3.
