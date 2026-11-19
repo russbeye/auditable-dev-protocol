@@ -195,54 +195,6 @@ artifact file if you have not read them in this session.
 | 8 | `<skill-dir>/references/phases/phase-8-communication.md` | `<skill-dir>/references/artifacts/deployment-risk.md` |
 | 9 | `<skill-dir>/references/phases/phase-9-obligations.md` | `<skill-dir>/references/artifacts/obligation-ticket-list.md` |
 
-Each phase's gate sits here, not in its phase file, so every stop in the chain is in context from the
-skill load.
-
-Phase 1: Observation
-
-**Gate:** The developer must confirm the restatement. Loop on corrections until confirmed, then treat
-it as locked; it does not change without a logged reason.
-
-Phase 2: Literature Review
-
-**Gate:** Every "Cannot Determine" item is resolved by the developer or logged as an accepted unknown
-before Phase 3.
-
-Phase 3: Hypothesis
-
-**Gate:** The developer interrogates the recommendation and you defend it. If it changes under
-interrogation, the new recommendation restarts this phase.
-
-Phase 4: Research Design
-
-**Gate:** Every HIGH-likelihood failure mode must be rebutted with reasoning or mitigated with a
-design change before Phase 5. Medium and low items are logged. Open HIGH items block implementation.
-
-Phase 5: Implementation
-
-**Gate:** "Done" is not "compiles" or "tests pass." Done means every decision in the implementation
-has a corresponding Decision Log entry.
-
-Phase 6: Analysis
-
-**Gate:** The Test Adversary Document exists before the PR is opened. A PR without it is missing its
-analysis phase.
-
-Phase 7: Synthesis
-
-**Gate:** Every LOW-confidence DL entry appears in the PR summary as a flagged review item that
-reviewers must respond to.
-
-Phase 8: Communication
-
-**Gate:** Rollback trigger conditions are defined before deployment. "We'll know if something is
-wrong" is not a trigger condition; name the observable signal and threshold.
-
-Phase 9: Obligations
-
-**Gate:** The Decision Log is marked CLOSED only when every entry is VALIDATED, INVALIDATED, or
-ticketed. No entry stays OPEN without a ticket.
-
 Three writes need a file of their own, at any phase:
 
 - Before you write an H2 heading that no artifact file gives, read `<skill-dir>/references/sections.md`.
