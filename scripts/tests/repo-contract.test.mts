@@ -62,6 +62,39 @@ test("SKILL.md names a phase file and an artifact file for every phase, and ever
   }
 });
 
+const SKILL_FILES = ["SKILL.md", "references/sections.md",
+  ...["phases", "artifacts"].flatMap(d => fs.readdirSync(path.join(ROOT, "references", d)).map(f => `references/${d}/${f}`))];
+
+// Each phase rule and each template has one owner file. A second copy would
+// drift from the first, and SKILL.md would load it into every run.
+test("each phase rule and template sits in one file, and SKILL.md holds none of them", () => {
+  const text = Object.fromEntries(SKILL_FILES.map(f => [f, fs.readFileSync(path.join(ROOT, f), "utf8")]));
+  const owned: string[] = [];
+  for (const f of SKILL_FILES.filter(f => f.startsWith("references/phases/")))
+    owned.push(...text[f].split("\n").filter(l => /^## Phase \d+:|^\*\*(Do|Gate):\*\*/.test(l)));
+  for (const f of SKILL_FILES.filter(f => f.startsWith("references/artifacts/")))
+    owned.push(...(text[f].match(/^```[^\n]*\n[\s\S]*?^```$/gm) ?? []));
+  assert.ok(owned.length >= 27 + 12, `only ${owned.length} owned blocks found`);
+  for (const block of owned){
+    const copies = SKILL_FILES.reduce((n, f) => n + text[f].split(block).length - 1, 0);
+    assert.equal(copies, 1, `${copies} copies of: ${block.split("\n").find(l => !l.startsWith("```"))?.slice(0, 60)}`);
+  }
+});
+
+// The phase rules and templates left SKILL.md, so a citation that pairs
+// SKILL.md with one of their names sends a maintainer to the wrong file. We
+// skip this file, because its own patterns name both.
+const MOVED = /section (vocabulary|order)|phase \d|template|obligation|closure|re-anchor|\bgate\b/i;
+test("no citation of SKILL.md names text that moved to references/", () => {
+  const hits: string[] = [];
+  for (const f of tracked().filter(f => /^(src|scripts|references)\/|^README\.md$/.test(f) && f !== "scripts/tests/repo-contract.test.mts")){
+    fs.readFileSync(path.join(ROOT, f), "utf8").split("\n").forEach((line, i) => {
+      if (line.includes("SKILL.md") && MOVED.test(line)) hits.push(`${f}:${i + 1}: ${line.trim()}`);
+    });
+  }
+  assert.deepEqual(hits, []);
+});
+
 /* The vanilla pages and the browser-globals bundle are gone, so no tracked
    file may send a reader to one. Two kinds of file keep the names: the
    frozen parity prompts, which are data the validator reads byte for byte,
