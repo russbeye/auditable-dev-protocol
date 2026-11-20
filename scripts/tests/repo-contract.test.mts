@@ -65,20 +65,24 @@ test("SKILL.md names a phase file and an artifact file for every phase, and ever
 const SKILL_FILES = ["SKILL.md", "references/sections.md",
   ...["phases", "artifacts"].flatMap(d => fs.readdirSync(path.join(ROOT, "references", d)).map(f => `references/${d}/${f}`))];
 
-// Each phase rule and each template has one owner file. A second copy would
-// drift from the first, and SKILL.md would load it into every run.
+// Each line under references/ has one owner file. A second copy would drift
+// from the first, and a copy in SKILL.md would load into every run. We check
+// lines and not paragraphs, so a pasted part of a paragraph counts too. A line
+// may repeat inside its own file, as the ticket table header does in the
+// Phase 9 worked example, and bare fence markers repeat everywhere.
 test("each phase rule and template sits in one file, and SKILL.md holds none of them", () => {
-  const text = Object.fromEntries(SKILL_FILES.map(f => [f, fs.readFileSync(path.join(ROOT, f), "utf8")]));
-  const owned: string[] = [];
-  for (const f of SKILL_FILES.filter(f => f.startsWith("references/phases/")))
-    owned.push(...text[f].split("\n").filter(l => /^## Phase \d+:|^\*\*(Do|Gate):\*\*/.test(l)));
-  for (const f of SKILL_FILES.filter(f => f.startsWith("references/artifacts/")))
-    owned.push(...(text[f].match(/^```[^\n]*\n[\s\S]*?^```$/gm) ?? []));
-  assert.ok(owned.length >= 27 + 12, `only ${owned.length} owned blocks found`);
-  for (const block of owned){
-    const copies = SKILL_FILES.reduce((n, f) => n + text[f].split(block).length - 1, 0);
-    assert.equal(copies, 1, `${copies} copies of: ${block.split("\n").find(l => !l.startsWith("```"))?.slice(0, 60)}`);
+  const lines = Object.fromEntries(SKILL_FILES.map(f => [f, fs.readFileSync(path.join(ROOT, f), "utf8").split("\n")]));
+  const total = new Map<string, number>();
+  for (const f of SKILL_FILES) for (const l of lines[f]) total.set(l, (total.get(l) ?? 0) + 1);
+  const copied: string[] = [];
+  for (const f of SKILL_FILES.filter(f => f !== "SKILL.md")){
+    for (const l of new Set(lines[f])){
+      if (!l.trim() || /^```\w*$/.test(l)) continue;
+      const own = lines[f].filter(x => x === l).length;
+      if (total.get(l) !== own) copied.push(`${f}: ${l.slice(0, 60)}`);
+    }
   }
+  assert.deepEqual(copied, []);
 });
 
 // The phase rules and templates left SKILL.md, so a citation that pairs
