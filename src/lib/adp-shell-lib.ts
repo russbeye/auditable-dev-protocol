@@ -357,7 +357,7 @@ function packBasisKind(basis: string | null | undefined): PackBasisKind{
    names an observable is not a gap however it is worded.
 
    A card may also point at a Pre-Mortem row instead of stating a signal of
-   its own. SKILL.md's Phase 5 template fixes that third form, and the row
+   its own. The Decision Log template fixes that third form, and the row
    it names owns the signal, so the pointer resolves against the ticket's
    own Pre-Mortem rows before the kind is read. The pointer quotes the
    failure mode verbatim, and a mode that quotes something carries its
@@ -373,7 +373,7 @@ function packGapKind(signal: string | null | undefined, rows: readonly Premortem
   const s = String(signal || "").trim();
   /* A field holding only a dash is the record's own no-value marker, which
      the templates write wherever a cell has nothing in it, so it reads the
-     same as an absent field. SKILL.md fixes three signal forms and the dash
+     same as an absent field. The Decision Log template fixes three signal forms and the dash
      is none of them. Em, en, and plain hyphen all count, because a reader
      takes any of them for the same marker. */
   if (!s || /^[—–-]+$/.test(s)) return "no signal";

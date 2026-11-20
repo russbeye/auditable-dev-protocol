@@ -570,7 +570,7 @@ function lintCorpus(files: readonly IndexFile[]): Advisory[]{
     for (const w of hw.watches){
       if (!I.RE_OT.test(w.wid)) add(w.wid, "wid-shape");
     }
-    /* SKILL.md's section order convention owns this rule. Amendments,
+    /* The section order convention in references/sections.md owns this rule. Amendments,
        reviews, status notes, and ledgers follow the Obligation Ticket List,
        and evidence follows the Decision Log. A companion ahead of its pivot
        is named with the key it should follow. A log that has no ticket
@@ -603,8 +603,8 @@ function lintCorpus(files: readonly IndexFile[]): Advisory[]{
       findings.push({dir: dir, id: dir + "/audit-log.md", finding: "control-byte", offset: byteOffset(text, m.index)});
     }
     /* We read a due date from the window alone, so a dash beside a dated
-       exit condition hides that date from every board. SKILL.md's Phase 9
-       window rule forbids the shape. A closed row is frozen, and a landed
+       exit condition hides that date from every board. The window rule in
+       references/artifacts/obligation-ticket-list.md forbids the shape. A closed row is frozen, and a landed
        re-anchor already supplied the date, so we skip both. */
     for (const [id, exit] of hw.dashedExits){
       if (led.closures.has(id) || led.anchors.has(id)) continue;
