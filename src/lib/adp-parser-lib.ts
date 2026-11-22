@@ -269,7 +269,7 @@ const ART: ArtEntry[]=[
   // ad hoc.
   {re:/^(sweep|post-run) amendment\b/i,                        icon:'✎', tag:'', kind:'amendment'},
   {re:/^review (response|findings?|addendum)\b/i,              icon:'↩', tag:'', kind:'review'},
-  {re:/^(run status\b|stage\s*\d+\b)/i,                         icon:'◔', tag:'', kind:'status'},
+  {re:/^(run status\b|stage\s*\d+[a-z]?\b)/i,                   icon:'◔', tag:'', kind:'status'},
   {re:/^(requirement coverage|verification record|differential corpus render|browser acceptance|files changed)\b/i,
                                                                icon:'▣', tag:'', kind:'evidence'},
   {re:/^(ledger|post-merge note|ticket dispositions|post-run resolutions|closure)\b/i,
