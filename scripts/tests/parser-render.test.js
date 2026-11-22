@@ -106,6 +106,18 @@ test("companion headings resolve to their kind with no phase tag, and near misse
   }
 });
 
+test("a sub-stage marker with one letter after the stage number is status, and two letters stay ad hoc", () => {
+  const kinds = {
+    "Stage 4a — React shell, rail, board, and live updates (run start 2026-11-07)": "status",
+    "Stage 6b — Browser tests (run start 2026-11-09)": "status",
+    "Stage 4ab — notes": "ad-hoc"
+  };
+  for (const [title, kind] of Object.entries(kinds)){
+    assert.equal(metaFor(title).kind, kind, title);
+    assert.equal(metaFor(title).tag, "", title);
+  }
+});
+
 test("references/sections.md's section vocabulary names every kind the registry knows", () => {
   const sections = fs.readFileSync(path.join(__dirname, "..", "..", "references", "sections.md"), "utf8");
   const at = sections.indexOf("### Section vocabulary");
