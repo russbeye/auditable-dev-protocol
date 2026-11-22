@@ -279,7 +279,7 @@ const ART: ArtEntry[]=[
 // kind, never an error, and a run should need one or two at most.
 function metaFor(title: string): SectionMeta{ for(const a of ART) if(a.re.test(title)) return a; return {icon:'§',tag:'',kind:'ad-hoc'}; }
 // We derive the vocabulary from the registry, ad hoc last, so the tests and
-// SKILL.md's parity check never read a second copy of it.
+// the parity check on references/sections.md never read a second copy of it.
 const SECTION_KINDS: SectionKind[]=ART.map(a=>a.kind).filter((k,i,all)=>all.indexOf(k)===i).concat(['ad-hoc']);
 
 /* A declared lifecycle block is YAML front matter at byte 0. We only strip

@@ -130,7 +130,7 @@ column or the row leaves the cell unfilled. The source is every table whose head
 names both a failure mode column and an Implemented at column, wherever the table sits; columns
 resolve by header name, as watch columns do, and both must be found, so a log that renames one
 harvests nothing rather than a wrong cell. A row whose failure mode cell is empty harvests
-nothing. Every other row is a record, whatever its anchor cell says: SKILL.md's Phase 4 fixes
+nothing. Every other row is a record, whatever its anchor cell says: `references/artifacts/pre-mortem.md` fixes
 `—` as the rebuttal marker and `PENDING` as promised work, and the index reports the cell rather
 than classifying it, so a consumer that wants one kind of row filters for it. The rows carry no
 ticket id and map to no watch, because a Pre-Mortem table is a run-level artifact. The row's
@@ -152,8 +152,8 @@ true exactly when `phase` is non-null. Attribution follows the alias table below
 canonical heading demotes to non-canonical rather than overwriting the first (its `phase` is
 null and its `key` carries the dedupe suffix); two headings matching the same alias row are
 duplicates, whatever their exact text. Non-canonical sections pass through verbatim — they are
-never filtered, renamed, or dropped. A section's kind (the companion vocabulary SKILL.md
-defines beside the artifact chain) is a viewer-side classification that adp-parser-lib's
+never filtered, renamed, or dropped. A section's kind (the companion vocabulary
+`references/sections.md` defines) is a viewer-side classification that adp-parser-lib's
 `metaFor` computes from `title`; it is not an index field.
 
 The alias table. adp-parser-lib's `ART` registry is the single owner of title matching; this
@@ -268,7 +268,7 @@ a date. New logs record an absolute due date at creation, per the MC-001 constra
 Additive since 2026-08-31: two optional keys, `closed` (the closure date) and `outcome` (the
 disposition token, verbatim), trailing the core keys per the unknown-key rule and emitted
 together exactly when the log records a closure. The source is the closure ledger, the
-append-only record form SKILL.md's Phase 9 documents: a line outside fences in the section
+append-only record form `references/artifacts/obligation-ticket-list.md` documents: a line outside fences in the section
 that holds the ticket's first watch table, or any section after it — a record above the ticket
 list is prose. The form reads `<wid> CLOSED <date> → <token>` after an optional `-` or `*`
 list bullet and an optional `**` bold marker, with the date calendar-true and free prose
@@ -292,14 +292,14 @@ the ledger's silent failures: a landed record naming no row or card (phantom), a
 record (contradiction), a landed anchor record that cannot honestly move its watch — the row
 already anchors it, or a closure record above it has ended it (dead-anchor), closure intent on a known
 id that never landed (near-miss), a watch id the ledger grammar cannot address
-(wid-shape), and a companion section written ahead of the place SKILL.md's section order
-convention gives it (misplaced, carrying `after`, the key of the section it should follow; a
+(wid-shape), and a companion section written ahead of the place the section order
+convention in `references/sections.md` gives it (misplaced, carrying `after`, the key of the section it should follow; a
 review section is held after the chain only when its heading names a PR in the form `PR #N`, and
 one that names no PR answers a phase gate and is not governed),
 a raw control byte in a log, which SKILL.md's Encoding subsection forbids (control-byte,
 naming the log in `id` and carrying `offset`, the UTF-8 byte offset of the byte), and a live
-watch whose window is the dash while its exit condition names a calendar date, which SKILL.md's
-Phase 9 window rule forbids (undated-window, naming the watch id; a landed re-anchor, a dated
+watch whose window is the dash while its exit condition names a calendar date, which the window
+rule in `references/artifacts/obligation-ticket-list.md` forbids (undated-window, naming the watch id; a landed re-anchor, a dated
 window, or a closure keeps it quiet).
 A landed record makes its id's near-misses moot, so a swept corpus lints clean
 while its old prose stays in place. Advisories are not contract findings and never enter an

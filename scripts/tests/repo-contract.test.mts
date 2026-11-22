@@ -45,6 +45,60 @@ test("SKILL.md launches mission control and validates through the Node scripts",
   for (const retired of ["adp-serve.py", "validate-prompt.py", ...RETIRED_PAGES]) assert.ok(!skill.includes(retired), retired);
 });
 
+// The harness loads only SKILL.md, so a phase file that SKILL.md does not name
+// never reaches the model, and a name with no file behind it sends the model
+// to a failed Read.
+test("SKILL.md names a phase file and an artifact file for every phase, and every file it names exists", () => {
+  const skill = fs.readFileSync(path.join(ROOT, "SKILL.md"), "utf8");
+  const named = new Set([...skill.matchAll(/<skill-dir>\/(references\/(?:(?:phases|artifacts)\/[\w-]+|sections)\.md)/g)].map(m => m[1]));
+  for (const rel of named) assert.ok(fs.existsSync(path.join(ROOT, rel)), rel);
+  for (const dir of ["phases", "artifacts"]){
+    for (const f of fs.readdirSync(path.join(ROOT, "references", dir))) assert.ok(named.has(`references/${dir}/${f}`), `${dir}/${f} is not named`);
+  }
+  assert.ok(named.has("references/sections.md"), "references/sections.md is not named");
+  for (let n = 1; n <= 9; n++){
+    const row = skill.split("\n").find(l => l.startsWith(`| ${n} | `));
+    assert.ok(row?.includes(`/references/phases/phase-${n}-`) && row.includes("/references/artifacts/"), `phase ${n} has no loading row`);
+  }
+});
+
+const SKILL_FILES = ["SKILL.md", "references/sections.md",
+  ...["phases", "artifacts"].flatMap(d => fs.readdirSync(path.join(ROOT, "references", d)).map(f => `references/${d}/${f}`))];
+
+// Each line under references/ has one owner file. A second copy would drift
+// from the first, and a copy in SKILL.md would load into every run. We check
+// lines and not paragraphs, so a pasted part of a paragraph counts too. A line
+// may repeat inside its own file, as the ticket table header does in the
+// Phase 9 worked example, and bare fence markers repeat everywhere.
+test("each phase rule and template sits in one file, and SKILL.md holds none of them", () => {
+  const lines = Object.fromEntries(SKILL_FILES.map(f => [f, fs.readFileSync(path.join(ROOT, f), "utf8").split("\n")]));
+  const total = new Map<string, number>();
+  for (const f of SKILL_FILES) for (const l of lines[f]) total.set(l, (total.get(l) ?? 0) + 1);
+  const copied: string[] = [];
+  for (const f of SKILL_FILES.filter(f => f !== "SKILL.md")){
+    for (const l of new Set(lines[f])){
+      if (!l.trim() || /^```\w*$/.test(l)) continue;
+      const own = lines[f].filter(x => x === l).length;
+      if (total.get(l) !== own) copied.push(`${f}: ${l.slice(0, 60)}`);
+    }
+  }
+  assert.deepEqual(copied, []);
+});
+
+// The phase rules and templates left SKILL.md, so a citation that pairs
+// SKILL.md with one of their names sends a maintainer to the wrong file. We
+// skip this file, because its own patterns name both.
+const MOVED = /section (vocabulary|order)|phase \d|template|obligation|closure|re-anchor|\bgate\b/i;
+test("no citation of SKILL.md names text that moved to references/", () => {
+  const hits: string[] = [];
+  for (const f of tracked().filter(f => /^(src|scripts|references)\/|^README\.md$/.test(f) && f !== "scripts/tests/repo-contract.test.mts")){
+    fs.readFileSync(path.join(ROOT, f), "utf8").split("\n").forEach((line, i) => {
+      if (line.includes("SKILL.md") && MOVED.test(line)) hits.push(`${f}:${i + 1}: ${line.trim()}`);
+    });
+  }
+  assert.deepEqual(hits, []);
+});
+
 /* The vanilla pages and the browser-globals bundle are gone, so no tracked
    file may send a reader to one. Two kinds of file keep the names: the
    frozen parity prompts, which are data the validator reads byte for byte,

@@ -382,7 +382,7 @@ test("without a ticket list the chain ends at the last canonical section, and a 
     "Obligation Ticket List — Stage 2", "Ledger — round 2"
   ])), []);
   // A second stage that resumes a chain left short of Phase 9 grows the
-  // chain past the first stage's companions, which SKILL.md says take the
+  // chain past the first stage's companions, which references/sections.md says take the
   // advisory and stay put.
   assert.deepEqual(builder.lintCorpus(orderLog([
     "Problem Statement", "Decision Log", "Stage 2 — more (run start 2026-09-01)",
@@ -391,11 +391,11 @@ test("without a ticket list the chain ends at the last canonical section, and a 
          after: "sec-obligation-ticket-list-stage-2"}]);
 });
 
-test("SKILL.md's section order convention names the lint kind that enforces it", () => {
-  const skill = fs.readFileSync(path.join(__dirname, "..", "..", "SKILL.md"), "utf8");
-  const at = skill.indexOf("### Section order");
-  assert.ok(at > -1, "SKILL.md lacks the Section order subsection");
-  const sub = skill.slice(at, skill.indexOf("**Persist everything", at));
+test("references/sections.md's section order convention names the lint kind that enforces it", () => {
+  const sections = fs.readFileSync(path.join(__dirname, "..", "..", "references", "sections.md"), "utf8");
+  const at = sections.indexOf("### Section order");
+  assert.ok(at > -1, "references/sections.md lacks the Section order subsection");
+  const sub = sections.slice(at);
   assert.ok(sub.includes("`misplaced`") && sub.includes("`after`"), "the subsection must name the finding and its field");
   assert.ok(sub.includes("`PR #N`"), "the subsection must name the PR form that puts a review after the chain");
 });
@@ -740,11 +740,8 @@ test("a re-anchor on a dash row fills its due and leaves the index shape alone",
   assert.deepEqual(Object.keys(w), ["wid", "dl", "what", "due", "anchored", "window"]);
 });
 
-test("SKILL.md's Phase 9 text names the re-review window form and the lint kind", () => {
-  const skill = fs.readFileSync(path.join(__dirname, "..", "..", "SKILL.md"), "utf8");
-  const at = skill.indexOf("## Phase 9: Obligations");
-  assert.ok(at > -1, "SKILL.md lacks the Phase 9 section");
-  const sub = skill.slice(at, skill.indexOf("## Enforcement rules", at));
+test("the Obligation Ticket List artifact file names the re-review window form and the lint kind", () => {
+  const sub = fs.readFileSync(path.join(__dirname, "..", "..", "references", "artifacts", "obligation-ticket-list.md"), "utf8");
   assert.ok(sub.includes("re-review 2026-12-14") && sub.includes("`undated-window`"),
-    "the Phase 9 text must name the re-review window form and the finding");
+    "the Obligation Ticket List artifact file must name the re-review window form and the finding");
 });
