@@ -162,7 +162,7 @@ test("the evidence mix groups open entries by basis kind and counts them", () =>
   assert.deepEqual(ctx.basis_counts, {direct: 0, inference: 1, assertion: 1, other: 0, none: 1});
 });
 
-// Eight kinds over three tickets, deliberately out of order, so the grouping
+// Nine kinds over three tickets, deliberately out of order, so the grouping
 // and both tiebreaks are pinned without a corpus that stages every kind.
 const STAGED = [
   {dir: "misc-notes", id: "misc-notes/audit-log.md", finding: "control-byte", offset: 49},
@@ -173,7 +173,8 @@ const STAGED = [
   {dir: "20260815-FX001-declared-lifecycle", id: "OT-x y", finding: "wid-shape"},
   {dir: "20260827-FX003-closed-watches", id: "DL-009", finding: "phantom"},
   {dir: "20260827-FX003-closed-watches", id: "OT-FX003-3", finding: "dead-anchor"},
-  {dir: "20260827-FX003-closed-watches", id: "OT-FX003-1", finding: "near-miss"}];
+  {dir: "20260827-FX003-closed-watches", id: "OT-FX003-1", finding: "near-miss"},
+  {dir: "20260827-FX003-closed-watches", id: "20260827-FX003-closed-watches/audit-log.md", finding: "ad-hoc-excess"}];
 
 test("advisories group by the contract's kind order, then by ticket and id", () => {
   const ctx = S.packContext(idx, null, idx.generated, STAGED);
@@ -186,9 +187,10 @@ test("advisories group by the contract's kind order, then by ticket and id", () 
     ["wid-shape", "FX001", "OT-x y", ""],
     ["misplaced", "FX001", "sec-naming-note", "after sec-obligation-ticket-list"],
     ["control-byte", "misc-notes", "misc-notes/audit-log.md", "byte 49"],
-    ["undated-window", "FX001", "OT-FX001-1", ""]]);
+    ["undated-window", "FX001", "OT-FX001-1", ""],
+    ["ad-hoc-excess", "FX003", "20260827-FX003-closed-watches/audit-log.md", ""]]);
   assert.deepEqual(ctx.advisory_counts, {phantom: 2, contradiction: 1, dead_anchor: 1,
-    near_miss: 1, wid_shape: 1, misplaced: 1, control_byte: 1, undated_window: 1, total: 9});
+    near_miss: 1, wid_shape: 1, misplaced: 1, control_byte: 1, undated_window: 1, ad_hoc_excess: 1, total: 10});
 });
 
 test("a caller that passes no advisories gets the lists a clean sweep gives", () => {

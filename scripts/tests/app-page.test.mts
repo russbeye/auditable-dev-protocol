@@ -326,6 +326,28 @@ function withoutChip(want: Snapshot): Snapshot {
    (DL-014). We drop the old screen's chrome and the drawer's chrome by exact
    string, then every remaining entry must match in order: the pack names,
    the filled text, and the guide to writing a pack. */
+/* The baseline records the ledger-integrity pack with eight advisory kinds,
+   and the pack now lists nine. We write the ninth kind into the baseline's
+   count line, prose, and slot list, so the rest of the record still compares
+   as frozen. Each old phrase must be present, so a baseline that drifts
+   fails here instead of passing by accident. */
+const PACK_LIFT: [string, string][] = [
+  [" · undated-window 0 LEDGER", " · undated-window 0 · ad-hoc-excess 0 LEDGER"],
+  ["date it. Fix each by appending", "date it. An ad-hoc-excess is a log with more than the two ad hoc sections a run " +
+    "may write, named by the log. Its sections stay where they landed: either the run passed the limit, or a heading " +
+    "is a companion the section registry does not know yet. Fix every other kind by appending"],
+  ["{{advisory_counts.undated_window}} {{#advisories}}", "{{advisory_counts.undated_window}} {{advisory_counts.ad_hoc_excess}} {{#advisories}}"]
+];
+function repacked(main: Region, pack: string): Region {
+  if (pack !== "ledger-integrity") return main;
+  const text = main.text.slice();
+  for (const [was, now] of PACK_LIFT){
+    const i = text.findIndex(x => x.includes(was));
+    assert.ok(i >= 0, "the baseline pack lacks " + was);
+    text[i] = text[i].replace(was, now);
+  }
+  return {...main, text};
+}
 function packChrome(old: Region, drawer: Region){
   const drop = (list: string[], gone: (string | RegExp)[]) => {
     const out = list.slice();
@@ -579,7 +601,7 @@ test("the Packs drawer shows what the vanilla resume pack screen showed, for eve
       const k = "resume pack|" + t + "|" + pk, want = BASELINE[k], got = snapshot(document);
       assert.deepEqual(got.header, restyled(want).header, k);
       assert.deepEqual(got.rail, restyled(want).rail, k);
-      packChrome(want.main!, got.drawer!);
+      packChrome(repacked(want.main!, pk), got.drawer!);
       seen.push(k);
     }
   }

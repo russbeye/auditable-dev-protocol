@@ -300,7 +300,10 @@ a raw control byte in a log, which SKILL.md's Encoding subsection forbids (contr
 naming the log in `id` and carrying `offset`, the UTF-8 byte offset of the byte), and a live
 watch whose window is the dash while its exit condition names a calendar date, which the window
 rule in `references/artifacts/obligation-ticket-list.md` forbids (undated-window, naming the watch id; a landed re-anchor, a dated
-window, or a closure keeps it quiet).
+window, or a closure keeps it quiet), and a log with more than two sections that the section registry reads as ad hoc,
+past the limit of one or two per run that `references/sections.md` states (ad-hoc-excess, naming the log in `id`
+as `<dir>/audit-log.md`; one log is one run, so the count covers every stage it holds, companion kinds and canonical
+repeats never count, and a log with no canonical section is not a run and raises nothing).
 A landed record makes its id's near-misses moot, so a swept corpus lints clean
 while its old prose stays in place. Advisories are not contract findings and never enter an
 index document.

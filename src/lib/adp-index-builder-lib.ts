@@ -517,7 +517,9 @@ function byteOffset(text: string, at: number): number{
    documents them. Exported so a consumer that groups or counts findings
    adds a new kind here once instead of growing a second list. */
 const ADVISORY_KINDS: AdvisoryKind[] = ["phantom", "contradiction", "dead-anchor", "near-miss",
-  "wid-shape", "misplaced", "control-byte", "undated-window"];
+  "wid-shape", "misplaced", "control-byte", "undated-window", "ad-hoc-excess"];
+// references/sections.md allows a run one or two ad hoc sections at most.
+const AD_HOC_LIMIT = 2;
 
 function lintCorpus(files: readonly IndexFile[]): Advisory[]{
   const findings: Advisory[] = [];
@@ -597,6 +599,13 @@ function lintCorpus(files: readonly IndexFile[]): Advisory[]{
         const zone = kind === "evidence" ? dl : chainEnd;
         if (zone !== -1 && i < zone) findings.push({dir: dir, id: s.key, finding: "misplaced", after: rows[zone].key});
       });
+      /* A log is one run, so we count its ad hoc sections across every
+         stage it holds. We classify with metaFor, the same call the section
+         pills make, so the lint and the pills always agree on what is ad
+         hoc. A log with no canonical section is not a run and never gets
+         here. */
+      const adHoc = rows.filter(s => P.metaFor(s.title).kind === "ad-hoc").length;
+      if (adHoc > AD_HOC_LIMIT) add(dir + "/audit-log.md", "ad-hoc-excess");
     }
     // A control-byte is a raw control byte, which SKILL.md's Encoding subsection rules out.
     for (const m of text.matchAll(RE_CONTROL)){
@@ -621,7 +630,7 @@ export type {IndexFile, BuildIndexOptions, AdvisoryKind, Advisory};
 interface IndexFile {path: string; text?: string}
 interface BuildIndexOptions {project?: string | null; generated?: string | null; source?: I.Source | null}
 type AdvisoryKind = "phantom" | "contradiction" | "dead-anchor" | "near-miss" | "wid-shape" | "misplaced" |
-  "control-byte" | "undated-window";
+  "control-byte" | "undated-window" | "ad-hoc-excess";
 type Advisory =
   | {dir: string, id: string, finding: Exclude<AdvisoryKind, "misplaced" | "control-byte">}
   | {dir: string, id: string, finding: "misplaced", after: string}
