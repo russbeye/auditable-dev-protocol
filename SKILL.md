@@ -1,17 +1,16 @@
 ---
 name: auditable-dev-protocol
 description: >-
-  A binding 9-phase protocol for rigorous, auditable AI-assisted development: it makes the model stake
-  one defensible recommendation instead of hedging, log every non-trivial decision and assumption
-  (with confidence) as it's made, and produce traceable artifacts — Problem Statement, Recommendation
-  Brief, Pre-Mortem, live Decision Log, Test Adversary doc, confidence-weighted PR summary, deployment
-  risk statement. Trigger when the user asks to apply this protocol or to produce these artifacts for a
-  code change, AND proactively before high-stakes, hard-to-reverse work: schema/data migrations,
-  auth/session/permissions, payments or billing, destructive/irreversible ops, public API/contract
-  changes, concurrency/locking. Do NOT trigger for trivial edits (renames, one-liners), routine
-  reversible work (dependency bumps, mechanical refactors, UI/CSS fixes), read-only "how does X work"
-  questions, security reviews of existing code, or casual non-software uses (a "decision log" for
-  standup, a "pre-mortem" for an event).
+  A binding 9-phase protocol for auditable AI-assisted development. It stakes one defended
+  recommendation, logs each non-trivial decision and assumption with its confidence as it is made,
+  and writes traceable artifacts: Problem Statement, Recommendation Brief, Pre-Mortem, live Decision
+  Log, Test Adversary doc, confidence-weighted PR summary, deployment risk statement. Trigger when the
+  user asks for this protocol, or for its artifacts on a code change. Also trigger proactively before
+  hard-to-reverse work: schema/data migrations, auth/session/permissions, payments/billing,
+  destructive ops, public API/contract changes, concurrency/locking. Do NOT trigger for trivial edits
+  (renames, one-liners), routine reversible work (dependency bumps, mechanical refactors, UI/CSS
+  fixes), read-only "how does X work" questions, security reviews of existing code, or casual
+  non-software uses (a "decision log" for standup, a "pre-mortem" for an event).
 license: MIT
 ---
 
