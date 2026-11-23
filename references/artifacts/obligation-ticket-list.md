@@ -22,9 +22,10 @@ observable reopens the entry with a signal.
 **Decision Log status:** CLOSED   **Closed by:** [developer]   **Date:** [date]
 ```
 
-**Closing or re-anchoring a ticket, on the record.** A watch closes or re-anchors by appending
-one ledger line to the log — under the ticket list or any later section — never by rewriting
-the row that opened it. The same line shape rules a Decision Log entry. The forms, exactly:
+**Closing or re-anchoring a ticket, on the record.** A watch closes or re-anchors when you append
+one ledger line to the audit log. The line goes under the ticket list or under any later section.
+Never rewrite the row that opened the watch. A Decision Log entry closes with the same line shape.
+The forms, exactly:
 
 ```
 - **OT-XXX-1 CLOSED 2026-10-12 → VALIDATED.** The window ended with the signal wired and quiet.
@@ -32,41 +33,46 @@ the row that opened it. The same line shape rules a Decision Log entry. The form
 - **DL-002 CLOSED 2026-10-12 → VALIDATED.** The ruling that settles the entry, on the record.
 ```
 
-The disposition after CLOSED is the outcome — VALIDATED, INVALIDATED, or UNKNOWN — and the
-free prose after the bold form carries the closing note. The date after CLOSED is the day of
-the ruling. RE-ANCHORED carries the day of the ruling, then the absolute due date it grants a
-watch that had only a relative window. A ruled entry's card keeps its own Status line verbatim;
-the recorded ruling is what the index and every board prefer, and a closed watch never settles
-its entries by itself — only a recorded ruling does. The corpus index reads these lines
-(`adp-index/1` harvests the first record per id), so write them character-exact: a near-miss
-line is prose, and the ticket stays live on the board until the line is fixed. A mis-recorded
-line is corrected by fixing it in place, never by appending a second ruling. A re-anchor never
-moves a date the ticket list already set — a window that must move closes with a disposition,
-and a successor ticket opens — and a closed ticket takes no re-anchor at all. A ruling line
-may sit anywhere from the Decision Log section onward, so an entry invalidated in review
+The disposition after CLOSED is the outcome: VALIDATED, INVALIDATED, or UNKNOWN. The free prose
+after the bold form carries the closing note. The date after CLOSED is the day of the ruling.
+RE-ANCHORED carries the day of the ruling, then the absolute due date it grants a watch that had
+only a relative window.
+
+A ruled entry's card keeps its own Status line verbatim. The index and every board prefer the
+recorded ruling to that Status line. A closed watch never settles its entries by itself. Only a
+recorded ruling settles them.
+
+The corpus index reads these lines, and `adp-index/1` harvests the first record per id. So write
+each line character-exact. The index reads a near-miss line as prose, and the ticket stays live on
+the board until someone fixes the line. To correct a mis-recorded line, fix that line in place.
+Never append a second ruling.
+
+A re-anchor never moves a date that the ticket list already set. A window that must move closes with
+a disposition, and a successor ticket opens. A closed ticket takes no re-anchor at all. A ruling
+line may sit anywhere from the Decision Log section onward. So an entry that review invalidates
 closes on the record even before a ticket list exists.
 
-A live watch whose window is the dash while its exit condition names a calendar date is the shape
-the window rule above forbids: the harvest reads a due date from the window alone, so the ticket
-sits on every board as unanchored and its date is invisible. `lintCorpus` reports it as an
-`undated-window` advisory naming the watch id. A RE-ANCHORED line granting the date silences it
-for a row already on record; a new row writes the date in its window. The advisory never fails a
-check and never enters an index document.
+The window rule above forbids one shape: a live watch whose window is the dash while its exit
+condition names a calendar date. The harvest reads a due date from the window alone. So that ticket
+sits on every board as unanchored, and its date is invisible. `lintCorpus` reports that shape as an
+`undated-window` advisory that names the watch id. For a row already on record, a RE-ANCHORED line
+that grants the date silences the advisory. A new row writes the date in its window. The advisory
+never fails a check and never enters an index document.
 
-Obligation ticket ids take the `OT-` shape — `OT-<TASKID>-<n>`, like `OT-MC001-3` — and the
-ledger addresses only that shape and `DL-` entry ids. An id outside those shapes cannot close
-on the record, so hold every new ticket list to it.
+Obligation ticket ids take the `OT-` shape, `OT-<TASKID>-<n>`, for example `OT-MC001-3`. The
+ledger addresses only that shape and `DL-` entry ids. An id outside those shapes cannot close on the
+record. Hold every new ticket list to the `OT-` shape.
 
-Copy a line from the block above and replace the values rather than retyping the form — the
-arrow especially. The bare templates:
+Copy a line from the block above, and replace its values. Do not retype the form, and above all
+do not retype the arrow. The bare templates:
 
 ```
 - **<ID> CLOSED <YYYY-MM-DD> → <OUTCOME>.** <closing note>
 - **<OT-ID> RE-ANCHORED <YYYY-MM-DD> → <YYYY-MM-DD>.** <why this date>
 ```
 
-A window that must move closes and succeeds. The worked motion — one closing line, one
-successor row:
+A window that must move closes, and a successor takes its place. The worked motion is one closing
+line and one successor row:
 
 ```
 - **OT-XXX-2 CLOSED 2026-11-01 → UNKNOWN.** The window must move; the signal was never wired.
