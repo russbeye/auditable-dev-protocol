@@ -745,3 +745,71 @@ test("the Obligation Ticket List artifact file names the re-review window form a
   assert.ok(sub.includes("re-review 2026-12-14") && sub.includes("`undated-window`"),
     "the Obligation Ticket List artifact file must name the re-review window form and the finding");
 });
+
+// references/sections.md allows one or two ad hoc sections per run, and a
+// log is one run. The finding names the log, because the log as a whole
+// breaks the limit, not its third section.
+const AD_HOC_EXCESS = [{dir: "T-1-x", id: "T-1-x/audit-log.md", finding: "ad-hoc-excess"}];
+
+test("a log with more ad hoc sections than the limit is one ad-hoc-excess advisory naming the log", () => {
+  assert.deepEqual(builder.lintCorpus(orderLog([
+    "Problem Statement", "Context", "Naming note", "Compatibility statement", "Obligation Ticket List"
+  ])), AD_HOC_EXCESS);
+  assert.deepEqual(builder.lintCorpus(orderLog([
+    "Problem Statement", "One", "Two", "Three", "Four", "Five", "Obligation Ticket List"
+  ])), AD_HOC_EXCESS);
+});
+
+test("a log at the limit raises nothing, however many stages it holds", () => {
+  assert.deepEqual(builder.lintCorpus(orderLog([
+    "Problem Statement", "Context", "Obligation Ticket List", "Compatibility statement"
+  ])), []);
+  // The MC-001 shape: nine stages, two ad hoc sections across them in total.
+  const stages = [];
+  for (let n = 2; n <= 9; n++) stages.push("Stage " + n + " — more (run start 2026-09-01)",
+    "Decision Log — Stage " + n, "Obligation Ticket List — Stage " + n);
+  assert.deepEqual(builder.lintCorpus(orderLog([
+    "Problem Statement", "Decision Log", "Obligation Ticket List",
+    "Ruling on the fifth finding (2026-08-27)", ...stages,
+    "Sweep tickets opened — SWEEP-004 and SWEEP-005 (2026-09-08)"
+  ])), []);
+});
+
+test("companion sections and canonical repeats never count toward the ad hoc limit", () => {
+  assert.deepEqual(builder.lintCorpus(orderLog([
+    "Problem Statement", "Problem Statement", "Decision Log", "Decision Log", "Context", "Obligation Ticket List",
+    "Run status", "Review Response — PR #1", "Post-merge note", "Sweep amendment — 2026-09-14",
+    "Ledger — round 2", "Naming note"
+  ])), []);
+});
+
+test("headings inside a fence are not sections, so they never count as ad hoc", () => {
+  const text = "# T\n\n## Problem Statement\n\nbody\n\n```\n## One\n## Two\n## Three\n```\n\n" +
+    "## Obligation Ticket List\n\nbody\n";
+  assert.deepEqual(builder.lintCorpus([{path: "T-1-x/audit-log.md", text: text}]), []);
+});
+
+test("a log with no canonical section is not a run, so its ad hoc sections raise nothing", () => {
+  assert.deepEqual(builder.lintCorpus(orderLog(["Context", "Scratch", "Notes"])), []);
+  // The control: one canonical section makes the same log a run.
+  assert.deepEqual(builder.lintCorpus(orderLog(["Problem Statement", "Context", "Scratch", "Notes"])),
+    AD_HOC_EXCESS);
+});
+
+test("the contract's advisory paragraph and the ledger-integrity pack name the ad-hoc-excess kind", () => {
+  assert.equal(builder.ADVISORY_KINDS.at(-1), "ad-hoc-excess");
+  const spec = fs.readFileSync(path.join(__dirname, "..", "..", "references", "adp-index-1.md"), "utf8");
+  assert.ok(spec.includes("(ad-hoc-excess,"), "adp-index-1.md lacks the ad-hoc-excess advisory");
+  const pack = fs.readFileSync(path.join(__dirname, "..", "..", "packs", "ledger-integrity.pack.md"), "utf8");
+  assert.ok(pack.includes("ad-hoc-excess {{advisory_counts.ad_hoc_excess}}"), "the pack lacks the count");
+  assert.ok(pack.includes("An ad-hoc-excess"), "the pack does not say what the kind means");
+});
+
+// A live log may pass the limit and be accepted as written, so this sweep
+// only reports, the same way the phantom sweep does.
+test("own corpus: the live .adp reports its ad-hoc-excess advisories", t => {
+  const root = path.join(__dirname, "..", "..", ".adp");
+  if (!fs.existsSync(root)) return t.skip(".adp is not present in this checkout");
+  const over = builder.lintCorpus(readCorpus(root)).filter(f => f.finding === "ad-hoc-excess");
+  t.annotate("ad-hoc-excess logs: " + over.length + (over.length ? " (" + over.map(f => f.id).join("; ") + ")" : ""));
+});
