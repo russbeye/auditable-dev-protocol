@@ -1,10 +1,10 @@
 ### Section vocabulary
 
 An audit log's H2 headings are its sections, and every section has a kind. The kinds below come
-from a census of the logs on record: thirty-two logs wrote the same fourteen canonical headings and
-a small recurring set of companions. The registry in `src/lib/adp-parser-lib.ts` tags each kind,
-and mission control labels a section with it. The set is defined, not closed: a section the set does
-not cover is `ad-hoc`, which is a named kind and never an error.
+from a census of the logs on record. Thirty-two logs wrote the same fourteen canonical headings and a
+small recurring set of companions. The registry in `src/lib/adp-parser-lib.ts` tags each kind, and
+mission control labels a section with its kind. The set is defined, not closed. A section that the
+set does not cover is `ad-hoc`, which is a named kind and never an error.
 
 | Kind | What it is for | When a run writes it | Heading forms on record |
 |------|----------------|----------------------|-------------------------|
@@ -16,16 +16,19 @@ not cover is `ad-hoc`, which is a named kind and never an error.
 | `ledger` | Closure records: the dated CLOSED and RE-ANCHORED lines of Phase 9, merge facts, and ticket dispositions that settle what the run left open. | After merge, or at a review round that closes a watch. Per Phase 9 a ruling line lands anywhere from the Decision Log onward. | `Ledger — <what>`, `Post-merge note — PR #N merged (<date>)`, `Ticket Dispositions (<date>, …)`, `Post-run resolutions (<date>)`, `Closure` |
 | `ad-hoc` | Anything the set above does not cover. | Rarely, one or two per run at most. The heading says what the section is, and it must not start with another kind's lead word. | Whatever the section is, in plain words |
 
-A companion section never counts toward a phase: only the artifact heading, or its `Phase N:`
-form, clears a phase from `missing` in the index. Where sections sit in the log is the section order convention below, not part of this vocabulary.
+A companion section never counts toward a phase. Only the artifact heading, or its `Phase N:`
+form, clears a phase from `missing` in the index. The section order convention below says where
+sections sit in the log. That convention is not part of this vocabulary.
 
 ### Section order
 
 A log is the canonical chain, then everything that happened after it. The chain is the fourteen
-canonical headings, once each, in the order the phase templates in `references/artifacts/` list them, phase by phase, and every complete
-log on record writes them that way. A companion section takes its place from its kind. The rule
-comes from a census of the thirty-three logs on record before this rule's own run (168 non-canonical
-sections, counted 2026-09-14), and each row cites the count it codifies.
+canonical headings, once each. They come in the order that the phase templates in
+`references/artifacts/` list them, phase by phase. Every complete log on record writes them that way.
+
+A companion section takes its place from its kind. The rule comes from a census of the thirty-three
+logs on record before this rule's own run. That census counted 168 non-canonical sections on
+2026-09-14, and each row cites the count it codifies.
 
 | Kind | Where it belongs | On record |
 |------|------------------|-----------|
@@ -36,18 +39,22 @@ sections, counted 2026-09-14), and each row cites the count it codifies.
 | `ad-hoc` | Not governed. The heading says what the section is, and the section sits where that makes sense. | 2 after the chain, 1 inside the Phase 7 block. |
 
 A repeat of a canonical heading ("Decision Log — Stage 2") is that artifact's amendment, not a
-companion, and is not governed either. All 79 on record sit after the chain: each later stage of a
-multi-stage run opens with a status marker after the previous stage's ticket list, then repeats the
-chain under suffixed headings.
+companion, and is not governed either. All 79 on record sit after the chain. Each later stage of a
+multi-stage run opens with a status marker after the previous stage's ticket list. Then the stage
+repeats the chain under suffixed headings.
 
-Every run on record writes all nine phases before its PR opens, which is why PR review rounds land
-after the chain. The lint reads that from the heading alone, so a review placed above a chain
-that was already finished goes unseen unless its heading names a PR. A section written where the
-chain then grows past it, a status note at a pause for example, takes the advisory and stays where it landed:
-history is append-only, and no log reorders to satisfy this rule. A stage that resumes a chain its
-predecessor left short of Phase 9 grows the chain past the companions that predecessor wrote, and
-they take the advisory too; nothing on record does this, because every first stage shipped its
-ticket list before a second stage opened. `lintCorpus` reports a companion
-section ahead of its place as a `misplaced` advisory that names the section key and, in `after`, the
-key of the section it should follow. The advisory never fails a check and never enters an index
-document, and every deviation older than this rule stands as written.
+Every run on record writes all nine phases before its PR opens. That is why PR review rounds land
+after the chain. The lint reads that placement from the heading alone. So a review placed above a
+finished chain goes unseen unless its heading names a PR.
+
+A section can sit where the chain later grows past it, for example a status note at a pause. That
+section takes the advisory and stays where it landed. History is append-only, and no log reorders to
+satisfy this rule. A stage can resume a chain that its predecessor left short of Phase 9. That stage
+grows the chain past the companions the predecessor wrote, and those companions take the advisory
+too. Nothing on record does this, because every first stage shipped its ticket list before a second
+stage opened.
+
+`lintCorpus` reports a companion section ahead of its place as a `misplaced` advisory. The advisory
+names the section key. Its `after` field names the key of the section that the companion should
+follow. The advisory never fails a check and never enters an index document. Every deviation older
+than this rule stands as written.
