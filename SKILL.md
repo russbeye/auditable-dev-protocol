@@ -197,8 +197,9 @@ Three writes need a file of their own, at any phase:
 - Before you write an H2 heading that no artifact file gives, read `<skill-dir>/references/sections.md`.
 - Before you write a CLOSED or RE-ANCHORED line, read
   `<skill-dir>/references/artifacts/obligation-ticket-list.md`.
-- Before you write a Decision Log entry in Phases 6 to 8, read
-  `<skill-dir>/references/artifacts/decision-log.md` when its template is not in context.
+- Before you write your first Decision Log entry, at any phase, read
+  `<skill-dir>/references/artifacts/decision-log.md`. Read it again before a later entry when its
+  template is not in context.
 
 ---
 
