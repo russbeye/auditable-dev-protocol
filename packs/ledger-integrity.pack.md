@@ -22,7 +22,7 @@ key it should follow. A control-byte is a raw control byte in a log, named
 with its UTF-8 byte offset. An undated-window is a live watch whose window is
 the dash while its exit condition names a date, so the board can never date
 it. An ad-hoc-excess is a log with more than the two ad hoc sections a run
-may write, named by the log. Its sections stay where they landed: either the
+may write, named with its path. Its sections stay where they landed: either the
 run passed the limit, or a heading is a companion the section registry does
 not know yet. Fix every other kind by appending to the record. Never edit a
 landed line: a wrong record is corrected by the next record, and a row whose

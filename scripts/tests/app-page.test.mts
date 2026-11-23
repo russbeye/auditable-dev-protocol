@@ -334,7 +334,7 @@ function withoutChip(want: Snapshot): Snapshot {
 const PACK_LIFT: [string, string][] = [
   [" · undated-window 0 LEDGER", " · undated-window 0 · ad-hoc-excess 0 LEDGER"],
   ["date it. Fix each by appending", "date it. An ad-hoc-excess is a log with more than the two ad hoc sections a run " +
-    "may write, named by the log. Its sections stay where they landed: either the run passed the limit, or a heading " +
+    "may write, named with its path. Its sections stay where they landed: either the run passed the limit, or a heading " +
     "is a companion the section registry does not know yet. Fix every other kind by appending"],
   ["{{advisory_counts.undated_window}} {{#advisories}}", "{{advisory_counts.undated_window}} {{advisory_counts.ad_hoc_excess}} {{#advisories}}"]
 ];

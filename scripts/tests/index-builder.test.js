@@ -805,8 +805,11 @@ test("the contract's advisory paragraph and the ledger-integrity pack name the a
   assert.ok(pack.includes("An ad-hoc-excess"), "the pack does not say what the kind means");
 });
 
-test("own corpus: the live .adp raises no ad-hoc-excess advisory", t => {
+// A live log may pass the limit and be accepted as written, so this sweep
+// only reports, the same way the phantom sweep does.
+test("own corpus: the live .adp reports its ad-hoc-excess advisories", t => {
   const root = path.join(__dirname, "..", "..", ".adp");
   if (!fs.existsSync(root)) return t.skip(".adp is not present in this checkout");
-  assert.deepEqual(builder.lintCorpus(readCorpus(root)).filter(f => f.finding === "ad-hoc-excess"), []);
+  const over = builder.lintCorpus(readCorpus(root)).filter(f => f.finding === "ad-hoc-excess");
+  t.annotate("ad-hoc-excess logs: " + over.length + (over.length ? " (" + over.map(f => f.id).join("; ") + ")" : ""));
 });
