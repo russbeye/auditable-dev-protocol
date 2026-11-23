@@ -1,6 +1,6 @@
 ## Phase 9: Obligations
 
-**Do:** After deployment, review every OPEN or UNVALIDATED Decision Log assumption. Each assumption
+**Do:** After the Phase 8 gate, review every OPEN or UNVALIDATED Decision Log assumption. Each assumption
 that implementation did not resolve becomes an Obligation Ticket. An Obligation Ticket is a
 first-class work item that traces back to the Decision Log entry that created it.
 
