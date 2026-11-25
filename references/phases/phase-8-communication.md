@@ -1,7 +1,10 @@
 ## Phase 8: Communication
 
-**Do:** Before deploying, document the known unknowns at ship time, what monitoring should catch if
-an assumption was wrong, and explicit rollback triggers.
+**Do:** Before deployment, document three things:
 
-**Gate:** Rollback trigger conditions are defined before deployment. "We'll know if something is
-wrong" is not a trigger condition; name the observable signal and threshold.
+- The known unknowns at ship time.
+- What monitoring should catch if an assumption was wrong.
+- Explicit rollback triggers.
+
+**Gate:** Define the rollback trigger conditions before deployment. "We'll know if something is
+wrong" is not a trigger condition. Name the observable signal and its threshold.

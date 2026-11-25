@@ -62,6 +62,17 @@ test("SKILL.md names a phase file and an artifact file for every phase, and ever
   }
 });
 
+// A run logs an assumption the moment it makes one, so its first Decision Log
+// entry can come at Phase 2 or 3. The Phase 5 loading row is then too late,
+// and a rule that names only some phases leaves the others without the template.
+test("SKILL.md tells a run to read the Decision Log template before its first entry at any phase", () => {
+  const skill = fs.readFileSync(path.join(ROOT, "SKILL.md"), "utf8");
+  const rule = skill.split(/\n(?=- )|\n\n/).find(p => p.includes("references/artifacts/decision-log.md") && p.includes("first Decision Log entry"));
+  assert.ok(rule, "no rule sends a run to the template before its first entry");
+  assert.match(rule, /at any phase/);
+  assert.doesNotMatch(skill, /Phases \d to \d, read/, "a phase range still limits the read");
+});
+
 const SKILL_FILES = ["SKILL.md", "references/sections.md",
   ...["phases", "artifacts"].flatMap(d => fs.readdirSync(path.join(ROOT, "references", d)).map(f => `references/${d}/${f}`))];
 

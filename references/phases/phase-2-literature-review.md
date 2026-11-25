@@ -1,10 +1,14 @@
 ## Phase 2: Literature Review
 
-**Do:** Gather two inputs, in order. First, codebase context from the developer: architecture,
-conventions, operational and organizational constraints, system history and intent. This is the
-situational awareness a senior engineer carries and no file records, so ask for it. Second, directed
-code reading by you: targeted examination that answers questions the Problem Statement raised,
-directed by hypotheses rather than curiosity. Then build the three-column knowledge inventory.
+**Do:** Gather two inputs, in this order:
 
-**Gate:** Every "Cannot Determine" item is resolved by the developer or logged as an accepted unknown
-before Phase 3.
+1. Codebase context from the developer: architecture, conventions, operational and organizational
+   constraints, system history, and intent. A senior engineer carries this situational awareness,
+   and no file records it, so ask the developer for it.
+2. Directed code reading by you. Read to answer the questions that the Problem Statement raised.
+   Let hypotheses direct the reading, not curiosity.
+
+Then build the three-column knowledge inventory.
+
+**Gate:** Before Phase 3, the developer resolves every "Cannot Determine" item, or you log that item
+as an accepted unknown.
